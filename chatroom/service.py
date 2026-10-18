@@ -21,6 +21,8 @@ import os
 import re
 from datetime import datetime, timezone
 
+from . import onchain
+
 logger = logging.getLogger(__name__)
 
 ROOM = "general"
@@ -117,6 +119,39 @@ def get_username(wallet: str | None) -> str | None:
 def display_name(wallet: str | None) -> str:
     """Username when set, otherwise a shortened wallet address."""
     return get_username(wallet) or short_wallet(wallet)
+
+
+def _usernames_for(wallets: list[str]) -> dict[str, str]:
+    """Batched username lookup, keyed by lowercase wallet.
+
+    One query (not N+1) with an ``or_`` of ``ilike`` clauses — the same shape as
+    ``_admin_wallets``. On-chain messages carry only the author ADDRESS, so
+    rendering a page of them would otherwise cost one query per message.
+    """
+    cleaned = sorted({(w or "").strip().lower() for w in wallets if w})
+    if not cleaned:
+        return {}
+    supabase = _get_supabase()
+    if not supabase:
+        return {}
+    clauses = ",".join(f"wallet_address.ilike.{w}" for w in cleaned)
+    try:
+        result = (
+            supabase.table("user_data")
+            .select("wallet_address, username")
+            .or_(clauses)
+            .execute()
+        )
+        out: dict[str, str] = {}
+        for r in (result.data or []):
+            addr = (r.get("wallet_address") or "").strip().lower()
+            name = (r.get("username") or "").strip()
+            if addr and name:
+                out[addr] = name
+        return out
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("chatroom: username batch lookup failed: %s", exc)
+        return {}
 
 
 def is_admin_wallet(wallet: str | None) -> bool:
@@ -259,6 +294,27 @@ def is_enabled() -> bool:
 # ── Moderation state ─────────────────────────────────────────────────────────
 
 def is_banned(wallet: str | None) -> bool:
+    """Whether this wallet may not post.
+
+    When the on-chain room is configured the CONTRACT is the source of truth
+    (that is where a moderator's ban now lives). A chain read failure fails
+    OPEN — a moderation outage must not lock every user out of the room — and
+    the DB list is still consulted so a ban applied before the migration keeps
+    working.
+    """
+    if not wallet:
+        return False
+    if onchain.is_configured():
+        onchain_verdict = onchain.is_banned_onchain(wallet)
+        if onchain_verdict is True:
+            return True
+        if onchain_verdict is False:
+            return False
+    return _is_banned_db(wallet)
+
+
+def _is_banned_db(wallet: str | None) -> bool:
+    """Legacy database ban list (pre-migration bans, and the fallback path)."""
     if not wallet:
         return False
     supabase = _get_supabase()
@@ -478,6 +534,84 @@ def get_deleted_ids(since: str | None = None, limit: int = 200) -> dict:
     except Exception as exc:  # noqa: BLE001
         logger.error("chatroom: get_deleted_ids failed: %s", exc)
         return {"success": False, "error": "Failed to load deletions", "deleted_ids": []}
+
+
+def _public_onchain_row(row: dict, viewer_wallet: str | None,
+                        usernames: dict[str, str],
+                        admin_wallets: set[str] | None = None) -> dict:
+    """Shape an ON-CHAIN message for the browser.
+
+    Same contract as ``_public_row``: the wallet address is dropped and
+    ownership is reduced to a boolean ``is_me``. The address exists only as the
+    event's author, so usernames are resolved from a batched lookup and fall
+    back to a shortened address when the user never set one.
+    """
+    author = (row.get("wallet_address") or "").lower()
+    kind = row.get("kind")
+    public = {
+        "id": row.get("id"),
+        "username": usernames.get(author) or short_wallet(author),
+        "message": row.get("body") or "",
+        "created_at": row.get("created_at"),
+        "is_me": bool(viewer_wallet) and author == viewer_wallet.lower(),
+        "is_admin": bool(admin_wallets) and author in admin_wallets,
+        "message_type": row.get("message_type") or "text",
+        # Provenance so the UI can link a post to Celoscan without the server
+        # having to look the tx up again.
+        "tx_hash": row.get("tx_hash"),
+    }
+    if row.get("ref"):
+        public["reply_to"] = {"id": row.get("ref"), "username": "member"}
+    if kind == onchain.KIND_IMAGE:
+        url = row.get("body") or ""
+        if _attachment_url_allowed(url):
+            public["attachment"] = {"url": url, "kind": "image", "mime": None,
+                                    "name": "shared image", "bytes": None}
+        else:
+            # An on-chain body is whatever the author signed; an image post whose
+            # URL is not on the allow-list is downgraded to text rather than
+            # rendered as a link to an arbitrary host.
+            public["message_type"] = "text"
+    return public
+
+
+def get_onchain_messages(after_id: int | None = None, limit: int = DEFAULT_PAGE_SIZE,
+                         viewer_wallet: str | None = None,
+                         deleted_after: str | None = None) -> dict:
+    """Read the room from the contract and shape it for the browser.
+
+    Returns ``success: False`` with ``onchain_unavailable`` when the chain could
+    not be read, so the caller can fall back instead of showing an empty room.
+    """
+    if not onchain.is_configured():
+        return {"success": False, "error": "onchain_unavailable", "messages": []}
+
+    size = max(1, min(int(limit or DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE))
+    result = onchain.fetch_messages(after_id=after_id, limit=size)
+    if not result.get("success"):
+        return {"success": False, "error": "onchain_unavailable",
+                "messages": [], "detail": result.get("error")}
+
+    rows = result["messages"]
+    wallets = [r.get("wallet_address") for r in rows]
+    usernames = _usernames_for(wallets)
+    admin_wallets = _admin_wallets(wallets)
+    messages = [_public_onchain_row(r, viewer_wallet, usernames, admin_wallets)
+                for r in rows]
+
+    payload = {
+        "success": True,
+        "messages": messages,
+        "latest_id": result.get("latest_id") or (after_id or 0),
+        "has_more": result.get("has_more", False),
+        "server_time": _now().isoformat(),
+        # The UI hides the moderation affordances the contract cannot honour
+        # (there is no delete on-chain — only bans).
+        "onchain": True,
+    }
+    # Deletions do not exist on-chain, so a deletion cursor is never emitted.
+    # The UI keeps its pruning code for the DB fallback path.
+    return payload
 
 
 def get_messages(after_id: int | None = None, limit: int = DEFAULT_PAGE_SIZE,
