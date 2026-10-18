@@ -96,6 +96,9 @@ def chatroom_home():
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=bool(os.getenv("WC_SERVICE_URL"))
         or not bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME")),
+        # Drives the boot flag: when true the UI signs posts instead of POSTing
+        # them, and hides the delete affordance the contract cannot honour.
+        chatroom_onchain=svc.onchain.is_configured(),
     )
 
 
@@ -143,6 +146,9 @@ def api_state():
         "retry_after": gate["retry_after"],
         "rate_limit_seconds": svc.RATE_LIMIT_SECONDS,
         "max_length": svc.MAX_MESSAGE_LENGTH,
+        # True when messages live in the contract: the UI must sign posts and
+        # must not offer the (impossible) delete affordance.
+        "onchain": svc.onchain.is_configured(),
         # Tipping: the tokens on offer + this viewer's own wallet address (used
         # only to sign the transfer in their browser — never echoed to the room).
         "can_tip": bool(username) and not svc.is_banned(wallet),
@@ -166,10 +172,113 @@ def api_messages():
     # `deleted_after` (ISO ts) makes polling return the ids deleted since the
     # last tick so other viewers' screens prune them without a full refresh.
     deleted_after = (request.args.get("deleted_after") or "").strip() or None
+
+    # On-chain room: messages are contract events. Fall back to the database
+    # when the chain cannot be read, so an RPC outage shows the last known room
+    # instead of an empty one.
+    if svc.onchain.is_configured():
+        result = svc.get_onchain_messages(
+            after_id=after_id, limit=limit, viewer_wallet=wallet,
+            deleted_after=deleted_after,
+        )
+        if result.get("success"):
+            return jsonify(result)
+        logger.warning("chatroom: on-chain read failed (%s); using the database fallback",
+                       result.get("detail"))
+
     return jsonify(svc.get_messages(
         after_id=after_id, limit=limit, viewer_wallet=wallet,
         deleted_after=deleted_after,
     ))
+
+
+@chatroom_bp.route("/api/prepare-post", methods=["POST"])
+def api_prepare_post():
+    """Build the UNSIGNED transaction for a post.
+
+    The browser signs it, so the user is the only party that can post and the
+    user pays the gas. The server never holds a key for this room.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    text = svc.sanitize_message(data.get("message", ""))
+    attachment = data.get("attachment")
+    reply_to_id = data.get("reply_to_id")
+
+    kind = svc.onchain.KIND_TEXT
+    body = text
+    if attachment:
+        cols = svc.normalize_attachment(attachment)
+        if not cols:
+            return jsonify({"success": False, "error": "That attachment is not allowed.",
+                            "code": "attachment"}), 400
+        kind = svc.onchain.KIND_IMAGE
+        # An image post's on-chain body is the image URL; the caption, when
+        # present, is appended so it survives in the same immutable record.
+        body = cols["attachment_url"]
+        if text:
+            body = body + "\n" + text
+
+    if not body:
+        return jsonify({"success": False, "error": "Message cannot be empty",
+                        "code": "empty"}), 400
+    if len(body.encode("utf-8")) > svc.onchain.MAX_BODY_BYTES:
+        return jsonify({
+            "success": False,
+            "error": f"Message is too long (max {svc.onchain.MAX_BODY_BYTES} bytes)",
+            "code": "too_long",
+        }), 400
+
+    ref = 0
+    if reply_to_id is not None:
+        try:
+            ref = int(reply_to_id)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "Invalid reply target",
+                            "code": "reply_target"}), 400
+
+    result = svc.onchain.prepare_post(wallet, kind, ref, body)
+    status = 200 if result.get("success") else 400
+    if result.get("code") == "banned":
+        status = 403
+    if result.get("code") == "not_configured":
+        status = 503
+    return jsonify(result), status
+
+
+@chatroom_bp.route("/api/posted", methods=["POST"])
+def api_posted():
+    """Confirm a broadcast post so the author sees it immediately.
+
+    The message is already on-chain once the wallet returns a hash; this only
+    drops the read cache and reports where to link the transaction. It does NOT
+    write the message anywhere — the event is the record.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    tx_hash = (data.get("tx_hash") or "").strip()
+    if not tx_hash.startswith("0x") or len(tx_hash) != 66:
+        return jsonify({"success": False, "error": "A transaction hash is required.",
+                        "code": "tx_hash"}), 400
+
+    svc.onchain.invalidate_cache()
+    return jsonify({
+        "success": True,
+        "tx_hash": tx_hash,
+        "explorer_url": svc.onchain.explorer_url(tx_hash),
+    })
 
 
 @chatroom_bp.route("/api/messages", methods=["POST"])
@@ -180,6 +289,16 @@ def api_post_message():
     wallet = _session_wallet()
     if not wallet:
         return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    # On-chain room: refuse the direct write so a post can never be recorded
+    # off-chain (and thus become unreadable to everyone else). The browser must
+    # sign instead. The DB path stays for deployments without a contract.
+    if svc.onchain.is_configured():
+        return jsonify({
+            "success": False,
+            "code": "onchain_required",
+            "error": "Posting requires a wallet signature. Please use the in-app chat.",
+        }), 409
 
     data = request.get_json(silent=True) or {}
     result = svc.post_message(
