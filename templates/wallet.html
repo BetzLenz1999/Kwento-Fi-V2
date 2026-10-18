@@ -2053,7 +2053,7 @@
         /* The four visible nav items keep the bar airy: subtle active pill,
            comfortable tap targets even with four equal columns. */
         .bn-item { padding: 0.52rem 0.1rem; gap: 0.22rem; border-radius: 16px; }
-        .bn-item .bn-label { white-space: nowrap; }
+        .bn-item .bn-label { white-space: normal; }
 
         /* ── Wallet side navigation (desktop only) ──
            The same <nav> serves both layouts: a thumb-reachable bottom bar on
@@ -2253,7 +2253,7 @@
         ✅ GoodMarket now checks Celo and XDC availability and recommends the next compatible unclaimed network. The in-app GoodMarket wallet supports Celo & XDC; MiniPay remains Celo-only.
     </div>
     <div id="walletDashboardFVMsg" class="alert alert-info" style="display:none;margin:0.9rem 1rem 0;padding:0.75rem 0.9rem;text-align:center;border-radius:12px;">
-        Please click <strong>Claim G$</strong> button to start your face verification to start G$ daily claiming and using GoodMarket full features.
+        Please click <strong>Claim Free G$</strong> button to start your face verification to start G$ daily claiming and using GoodMarket full features.
     </div>
     <div id="fvExpiryBanner" style="display:none;margin:0.9rem 1rem 0;padding:0.8rem 0.95rem;border-radius:12px;font-size:0.88rem;line-height:1.5;">
         <span id="fvExpiryBannerIcon" style="margin-right:0.4rem;">⏳</span><span id="fvExpiryBannerText"></span>
@@ -3873,9 +3873,9 @@
             <span class="bn-icon" aria-hidden="true">👛</span>
             <span class="bn-label">Wallet</span>
         </button>
-        <button type="button" class="bn-item bn-claim" onclick="openClaimOrVerify()" aria-haspopup="dialog" aria-controls="claimModal" aria-label="Claim G$" title="Claim G$">
+        <button type="button" class="bn-item bn-claim" onclick="openClaimOrVerify()" aria-haspopup="dialog" aria-controls="claimModal" aria-label="Claim Free G$" title="Claim Free G$">
             <span class="bn-icon" aria-hidden="true">🪙</span>
-            <span class="bn-label">Claim G$</span>
+            <span class="bn-label">Claim Free G$</span>
         </button>
         <a class="bn-item bn-swap" href="/swap?tab=goodswap" aria-label="Swap" title="Swap">
             <span class="bn-icon" aria-hidden="true">⇌</span>
