@@ -14,6 +14,7 @@ import os
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from web3 import Web3
 
@@ -66,6 +67,28 @@ REMOVAL_GRACE_PERIOD = get_env_int('PALUWAGAN_REMOVAL_GRACE_PERIOD', 2 * 24 * 36
 # down to GETLOGS_MIN_CHUNK.
 GETLOGS_MAX_CHUNK = get_env_int("GETLOGS_MAX_CHUNK", 4000)
 GETLOGS_MIN_CHUNK = get_env_int("GETLOGS_MIN_CHUNK", 500)
+
+# Fallback lookback when PALUWAGAN_DEPLOYMENT_BLOCK is unset. This was 500_000
+# (~750 serial eth_getLogs calls per list load) and is the reason the group list
+# took tens of seconds. Celo blocks are ~5s, so 7 days ≈ 120_960 blocks — a
+# bounded window the scan can actually finish inside the request deadline.
+# Production SHOULD set PALUWAGAN_DEPLOYMENT_BLOCK; this is the safety net.
+PALUWAGAN_LOOKBACK_BLOCKS_DEFAULT = get_env_int("PALUWAGAN_LOOKBACK_BLOCKS", 120_000)
+# Upper bound on the eth_getCode binary search for the deploy block, so a
+# missing env var can never walk the whole chain.
+DEPLOY_BLOCK_SEARCH_MAX_SPAN = get_env_int("PALUWAGAN_DEPLOY_SEARCH_SPAN", 2_000_000)
+
+# TTLs for the read cache (seconds). Short enough to stay fresh for the lobby,
+# long enough to absorb the 15s page poll and the duplicate reads inside one
+# render (list + detail + history). Writes call invalidate_wallet_cache().
+CACHE_TTL_GROUPS = get_env_int("PALUWAGAN_CACHE_TTL_GROUPS", 20)
+CACHE_TTL_OVERVIEW = get_env_int("PALUWAGAN_CACHE_TTL_OVERVIEW", 10)
+CACHE_TTL_HISTORY = get_env_int("PALUWAGAN_CACHE_TTL_HISTORY", 30)
+CACHE_TTL_BALANCE = get_env_int("PALUWAGAN_CACHE_TTL_BALANCE", 15)
+
+# Soft wall-clock budget for one request's on-chain reads. The route returns
+# whatever was gathered (partial) instead of running into gunicorn's 120s kill.
+PALUWAGAN_READ_DEADLINE = get_env_int("PALUWAGAN_READ_DEADLINE", 12)
 
 PALUWAGAN_ABI = [
     # ── Constants / state ──────────────────────────────────────────────────
@@ -186,6 +209,126 @@ _deploy_block_cache = {}
 _removal_support_lock = threading.Lock()
 _removal_support_cache = {}
 
+# ── read cache ───────────────────────────────────────────────────────────────
+# The read path is unbounded by nature (event scans + per-group view calls), so
+# every public read funnels through this TTL cache. A 15s page poll would
+# otherwise repeat the whole scan; with the cache it is a dict lookup. Keys are
+# namespaced ("groups:<wallet>", "overview:<gid>:<wallet>", …) so a wallet can
+# be invalidated without touching other wallets.
+_cache_lock = threading.Lock()
+_read_cache = {}
+
+
+def _cache_get(key):
+    with _cache_lock:
+        entry = _read_cache.get(key)
+        if not entry:
+            return None
+        value, expiry = entry
+        if time.time() >= expiry:
+            del _read_cache[key]
+            return None
+        return value
+
+
+def _cache_set(key, value, ttl):
+    if ttl <= 0:
+        return
+    with _cache_lock:
+        _read_cache[key] = (value, time.time() + ttl)
+
+
+def invalidate_wallet_cache(wallet):
+    """Drop every cached read for a wallet (called after a confirmed tx).
+
+    A write must never be masked by a stale read: the JS calls this right after
+    a receipt so the next poll reflects the new on-chain state immediately
+    instead of waiting out the TTL.
+    """
+    w = str(wallet or "").lower()
+    if not w:
+        return 0
+    with _cache_lock:
+        keys = [k for k in _read_cache if w in k]
+        for k in keys:
+            del _read_cache[k]
+    return len(keys)
+
+
+def invalidate_group_cache(group_id):
+    """Drop cached history/overview for one group (any wallet)."""
+    if group_id is None:
+        return 0
+    gid = int(group_id)
+    prefixes = ("overview:{}:".format(gid), "contributions:{}".format(gid),
+                "payouts:{}".format(gid))
+    with _cache_lock:
+        keys = [k for k in _read_cache if k.startswith(prefixes)]
+        for k in keys:
+            del _read_cache[k]
+    return len(keys)
+
+
+def clear_read_cache():
+    """Test/maintenance helper: drop the whole read cache."""
+    with _cache_lock:
+        _read_cache.clear()
+
+
+class _Deadline:
+    """Wall-clock budget shared by one request's reads.
+
+    Thread-safe enough for our use (a float compare): once ``expired()`` is
+    true, the scanners stop and the route returns whatever was gathered with
+    ``partial: true`` instead of running into gunicorn's 120s worker kill.
+    """
+
+    def __init__(self, seconds=None):
+        secs = PALUWAGAN_READ_DEADLINE if seconds is None else seconds
+        self._expiry = time.time() + max(1, int(secs))
+
+    def expired(self):
+        return time.time() >= self._expiry
+
+    def remaining(self):
+        return max(0.0, self._expiry - time.time())
+
+
+_ACTIVE_DEADLINE = threading.local()
+
+
+def set_deadline(deadline):
+    """Install (or clear with None) the deadline for the current thread."""
+    _ACTIVE_DEADLINE.value = deadline
+
+
+def get_deadline():
+    return getattr(_ACTIVE_DEADLINE, "value", None)
+
+
+def _deadline_expired():
+    d = get_deadline()
+    return bool(d and d.expired())
+
+
+def _carry_deadline(fn):
+    """Wrap fn so it runs in a pool worker with THIS thread's deadline.
+
+    The deadline is thread-local, and pool workers are different threads — an
+    unwrapped call would silently run without a budget and could still push the
+    request into gunicorn's 120s kill.
+    """
+    dl = get_deadline()
+
+    def _wrapped(*args, **kwargs):
+        set_deadline(dl)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            set_deadline(None)
+
+    return _wrapped
+
 # 4-byte function selectors of the v2 slot-removal API. Kept as literals rather
 # than computed from keccak so the probe (and its tests) never depend on a
 # hashing backend being importable.
@@ -276,7 +419,14 @@ def get_deploy_block():
     try:
         if not _has_code(head):
             return 0
-        low, high = 0, head
+        # Bound the search: the contract cannot be older than this span, so the
+        # binary search is ~log2(span) calls instead of walking the whole chain.
+        low = max(0, head - DEPLOY_BLOCK_SEARCH_MAX_SPAN)
+        high = head
+        if not _has_code(low):
+            # Bytecode predates the window — the search would be unbounded, so
+            # report "unknown" and let the caller use the bounded lookback.
+            return 0
         while low < high:
             mid = (low + high) // 2
             if _has_code(mid):
@@ -375,6 +525,14 @@ def _chunked_logs(contract, event_name, from_block, to_block, argument_filters=N
     if step is None:
         step = max(GETLOGS_MIN_CHUNK, int(GETLOGS_MAX_CHUNK))
     while start <= end:
+        if _deadline_expired():
+            # Stop cleanly: the caller reports `partial` rather than blocking
+            # the whole request into gunicorn's 120s worker kill.
+            logger.warning(
+                "paluwagan: read deadline hit mid-scan for %s (blocks %s..%s)",
+                event_name, start, end,
+            )
+            break
         stop = min(start + step - 1, end)
         try:
             logs.extend(event.get_logs(
@@ -406,7 +564,14 @@ def _from_block():
         return deploy
     w3 = get_w3()
     latest = w3.eth.block_number
-    return max(0, latest - get_env_int('PALUWAGAN_LOOKBACK_BLOCKS', 500_000))
+    # Bounded fallback: a missing PALUWAGAN_DEPLOYMENT_BLOCK must never turn one
+    # list load into hundreds of eth_getLogs calls. Logged so a misconfigured
+    # production deploy is visible instead of silently slow.
+    logger.warning(
+        "paluwagan: PALUWAGAN_DEPLOYMENT_BLOCK unset and discovery failed; "
+        "scanning the last %s blocks only", PALUWAGAN_LOOKBACK_BLOCKS_DEFAULT,
+    )
+    return max(0, latest - PALUWAGAN_LOOKBACK_BLOCKS_DEFAULT)
 
 
 def _tx_hash_hex(log):
@@ -469,8 +634,19 @@ def get_payout_order(group_id):
     return [int(x) for x in contract.functions.getPayoutOrder(int(group_id)).call()]
 
 
-def get_group_overview(group_id, wallet=None):
-    """Group state + membership + the current round's payout/contribution view."""
+def get_group_overview(group_id, wallet=None, force=False):
+    """Group state + membership + the current round's payout/contribution view.
+
+    Cached briefly (CACHE_TTL_OVERVIEW) because the page polls the open group
+    every 15s AND the history tabs re-read it; a write invalidates it via
+    invalidate_wallet_cache(). The per-member `paid()` reads run concurrently.
+    """
+    key = "overview:{}:{}".format(int(group_id), str(wallet or "").lower())
+    if not force:
+        cached = _cache_get(key)
+        if cached is not None:
+            return cached
+
     contract = get_contract()
     group = get_group(group_id)
     members = get_members(group_id)
@@ -489,10 +665,16 @@ def get_group_overview(group_id, wallet=None):
             contract.functions.isPoolComplete(int(group_id), current_round).call()
         )
         paid_map = {}
-        for m in members:
-            paid_map[m.lower()] = bool(
-                contract.functions.paid(int(group_id), current_round, m).call()
-            )
+        if members:
+            # Independent per-member reads — one pool instead of a serial loop.
+            with ThreadPoolExecutor(max_workers=min(5, len(members))) as pool:
+                paid_flags = list(pool.map(
+                    _carry_deadline(lambda m: bool(
+                        contract.functions.paid(int(group_id), current_round, m).call()
+                    )),
+                    members,
+                ))
+            paid_map = {m.lower(): flag for m, flag in zip(members, paid_flags)}
         group["current_round_paid"] = paid_map
 
     if wallet:
@@ -505,6 +687,8 @@ def get_group_overview(group_id, wallet=None):
             group["my_defaulted"] = bool(contract.functions.isDefaulted(int(group_id), w).call())
 
     _add_removal_info(group, contract, group_id, wallet)
+    if not _deadline_expired():
+        _cache_set(key, group, CACHE_TTL_OVERVIEW)
     return group
 
 
@@ -595,39 +779,84 @@ def _groups_for_wallet_event(contract, event_name, arg_name, wallet, from_block,
     return {int(log["args"]["groupId"]) for log in logs}
 
 
-def get_my_groups(wallet):
+def get_my_groups(wallet, force=False):
     """Every group the wallet is a member of or has transacted with.
 
     Unions MemberJoined with the other member-indexed events (contributions and
     payouts) so a group becomes visible from the first action the wallet takes,
     not only from the join that may predate the indexed scan window.
+
+    Cached per wallet (CACHE_TTL_GROUPS) because the page polls every 15s and
+    the scan is the expensive part. The 6 event scans run concurrently, as do
+    the per-group overview reads; each is isolated so one failure cannot blank
+    the list.
     """
     if not wallet or not is_configured():
         return []
+    key = "groups:{}".format(str(wallet).lower())
+    if not force:
+        cached = _cache_get(key)
+        if cached is not None:
+            return cached
+
     contract = get_contract()
     w3 = get_w3()
     latest = w3.eth.block_number
     from_block = _from_block()
 
     group_ids = set()
-    for event_name, arg_name in _MEMBER_EVENT_FILTERS:
-        group_ids |= _groups_for_wallet_event(
-            contract, event_name, arg_name, wallet, from_block, latest
-        )
+    # The 6 scans are independent reads — run them together. Each is already
+    # guarded internally, so a single dead event type still yields a list.
+    with ThreadPoolExecutor(max_workers=len(_MEMBER_EVENT_FILTERS)) as pool:
+        futures = [
+            pool.submit(
+                _carry_deadline(_groups_for_wallet_event),
+                contract, event_name, arg_name, wallet, from_block, latest,
+            )
+            for event_name, arg_name in _MEMBER_EVENT_FILTERS
+        ]
+        for fut in futures:
+            try:
+                group_ids |= fut.result()
+            except Exception as e:
+                logger.warning("paluwagan: event scan failed for %s: %s", wallet, e)
 
     out = []
-    for gid in sorted(group_ids):
-        try:
-            out.append(get_group_overview(gid, wallet))
-        except Exception as e:
-            logger.warning("paluwagan: failed to load group %s: %s", gid, e)
+    if group_ids:
+        ids = sorted(group_ids)
+        with ThreadPoolExecutor(max_workers=min(4, len(ids))) as pool:
+            results = list(pool.map(
+                _carry_deadline(lambda gid: _safe_overview(gid, wallet)), ids,
+            ))
+        out = [g for g in results if g]
+
+    # Never cache a partial result: a deadline-truncated scan would otherwise
+    # pin an incomplete list for the whole TTL.
+    if not _deadline_expired():
+        _cache_set(key, out, CACHE_TTL_GROUPS)
     return out
 
 
+def _safe_overview(group_id, wallet):
+    """get_group_overview that never raises (one bad group ≠ empty list)."""
+    try:
+        return get_group_overview(group_id, wallet)
+    except Exception as e:
+        logger.warning("paluwagan: failed to load group %s: %s", group_id, e)
+        return None
+
+
 def get_contributions(group_id):
-    """All contribution events for a group (for the history tab)."""
+    """All contribution events for a group (for the history tab).
+
+    Append-only history, so a longer TTL is safe; cached per group.
+    """
     if not is_configured():
         return []
+    key = "contributions:{}:".format(int(group_id))
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
     contract = get_contract()
     w3 = get_w3()
     latest = w3.eth.block_number
@@ -656,13 +885,18 @@ def get_contributions(group_id):
             "tx_hash": _tx_hash_hex(log),
         })
     rows.sort(key=lambda r: (int(r["block"]), r["tx_hash"]))
+    _cache_set(key, rows, CACHE_TTL_HISTORY)
     return rows
 
 
 def get_payout_history(group_id):
-    """All PayoutClaimed events for a group."""
+    """All PayoutClaimed events for a group (append-only, cached per group)."""
     if not is_configured():
         return []
+    key = "payouts:{}".format(int(group_id))
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
     contract = get_contract()
     w3 = get_w3()
     latest = w3.eth.block_number
@@ -677,19 +911,31 @@ def get_payout_history(group_id):
             "tx_hash": _tx_hash_hex(log),
         })
     rows.sort(key=lambda r: int(r["block"]))
+    _cache_set(key, rows, CACHE_TTL_HISTORY)
     return rows
 
 
 def get_token_balance(wallet, token_address=None):
-    """Read the connected wallet's balance of the group token (G$ in v1)."""
+    """Read the connected wallet's balance of the group token (G$ in v1).
+
+    Cached briefly (CACHE_TTL_BALANCE); a confirmed tx invalidates it via
+    invalidate_wallet_cache() so the post-write read is never stale.
+    """
     if not wallet:
         return 0
-    w3 = get_w3()
     token = token_address or GD_TOKEN_ADDRESS
+    key = "balance:{}:{}".format(str(wallet).lower(), str(token).lower())
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    w3 = get_w3()
     try:
         erc20 = w3.eth.contract(address=_to_checksum(token), abi=ERC20_ABI)
-        return int(erc20.functions.balanceOf(_to_checksum(wallet)).call())
+        value = int(erc20.functions.balanceOf(_to_checksum(wallet)).call())
+        _cache_set(key, value, CACHE_TTL_BALANCE)
+        return value
     except Exception as e:
+        # Never cache a failure — the next request must retry.
         logger.warning("paluwagan: balance read failed: %s", e)
         return 0
 
@@ -698,8 +944,14 @@ def get_native_balance(wallet):
     """CELO balance — used to warn about gas before a contribution."""
     if not wallet:
         return 0
+    key = "native:{}".format(str(wallet).lower())
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
     try:
-        return int(get_w3().eth.get_balance(_to_checksum(wallet)))
+        value = int(get_w3().eth.get_balance(_to_checksum(wallet)))
+        _cache_set(key, value, CACHE_TTL_BALANCE)
+        return value
     except Exception as e:
         logger.warning("paluwagan: native balance read failed: %s", e)
         return 0
