@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 
 from flask import Blueprint, jsonify, render_template, request, session
 
@@ -61,6 +62,27 @@ def _feature_enabled():
     return os.getenv("PALUWAGAN_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
+class _timed_read:
+    """Context manager that installs the request's read deadline.
+
+    Every on-chain read inside the block shares a wall-clock budget, so a slow
+    or hung RPC stops the scan and the route returns what it gathered
+    (``partial``) instead of running into gunicorn's 120s worker kill. Cleared
+    on exit so a pooled worker never inherits a stale budget.
+    """
+
+    def __enter__(self):
+        self.deadline = chain._Deadline()
+        chain.set_deadline(self.deadline)
+        self.started = time.time()
+        return self
+
+    def __exit__(self, *exc):
+        chain.set_deadline(None)
+        self.took_ms = int((time.time() - self.started) * 1000)
+        return False
+
+
 # ── Page ─────────────────────────────────────────────────────────────────────
 
 def _render_paluwagan(join_name=""):
@@ -80,11 +102,20 @@ def _render_paluwagan(join_name=""):
     is_serverless_runtime = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
     wc_sidecar = has_explicit_sidecar or not is_serverless_runtime
 
+    # A deep link (/paluwagan/<name> or ?join=…) must render the invite pane,
+    # not the generic join form — otherwise an existing member sees the join
+    # form first and has to tap through. The client resolves membership on-chain
+    # and then routes to the team dashboard or the invite card.
+    params = request.args if request else None
+    has_join_param = bool(params and (params.get("join") or "").strip())
+    invite_mode = bool(join_name) or has_join_param
+
     return render_template(
         "paluwagan.html",
         wallet=wallet,
         is_guest=is_guest,
         join_name=join_name,
+        paluwagan_invite=invite_mode,
         paluwagan_contract=chain.PALUWAGAN_CONTRACT_ADDRESS,
         paluwagan_deployment_block=chain.PALUWAGAN_DEPLOYMENT_BLOCK,
         paluwagan_configured=chain.is_configured(),
@@ -161,19 +192,30 @@ def api_config():
 
 @paluwagan_bp.route("/api/groups")
 def api_my_groups():
-    """The session wallet's groups (read from MemberJoined events)."""
+    """The session wallet's groups (read from member-indexed events).
+
+    ``partial`` is true when the read deadline cut the scan short, so the UI can
+    say "some data could not be loaded" instead of showing a misleading empty
+    list. ``force=1`` bypasses the cache (used after a write).
+    """
     guard = _require_configured()
     if guard:
         return guard
     wallet = _session_wallet()
     if not wallet:
         return jsonify({"error": "Unauthorized"}), 401
-    try:
-        groups = chain.get_my_groups(wallet)
-    except Exception as e:
-        logger.warning("paluwagan: get_my_groups failed: %s", e)
-        return jsonify({"error": "chain_read_failed", "groups": []}), 200
-    return jsonify({"groups": groups, "wallet": wallet})
+    force = (request.args.get("force") or "").strip() in ("1", "true", "yes")
+    with _timed_read() as tr:
+        try:
+            groups = chain.get_my_groups(wallet, force=force)
+        except Exception as e:
+            logger.warning("paluwagan: get_my_groups failed: %s", e)
+            return jsonify({"error": "chain_read_failed", "groups": [],
+                            "partial": True}), 200
+        partial = chain._deadline_expired()
+    return jsonify({"groups": groups, "wallet": wallet,
+                    "partial": partial, "cached": not force and not partial,
+                    "took_ms": tr.took_ms})
 
 
 @paluwagan_bp.route("/api/group/<int:group_id>")
@@ -183,12 +225,40 @@ def api_group(group_id):
     if guard:
         return guard
     wallet = _session_wallet()
-    try:
-        group = chain.get_group_overview(group_id, wallet)
-    except Exception as e:
-        logger.warning("paluwagan: group %s read failed: %s", group_id, e)
-        return jsonify({"error": "chain_read_failed"}), 200
-    return jsonify({"group": group})
+    force = (request.args.get("force") or "").strip() in ("1", "true", "yes")
+    with _timed_read() as tr:
+        try:
+            group = chain.get_group_overview(group_id, wallet, force=force)
+        except Exception as e:
+            logger.warning("paluwagan: group %s read failed: %s", group_id, e)
+            return jsonify({"error": "chain_read_failed", "partial": True}), 200
+        partial = chain._deadline_expired()
+    return jsonify({"group": group, "partial": partial,
+                    "cached": not force and not partial, "took_ms": tr.took_ms})
+
+
+@paluwagan_bp.route("/api/invalidate", methods=["POST"])
+def api_invalidate():
+    """Drop this wallet's cached reads after a confirmed transaction.
+
+    Called by the page right after a receipt so the next poll reflects the new
+    on-chain state immediately instead of waiting out the TTL. Session-scoped:
+    a caller can only invalidate its own wallet.
+    """
+    if not _feature_enabled():
+        return jsonify({"error": "feature_disabled"}), 403
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    dropped = chain.invalidate_wallet_cache(wallet)
+    gid = body.get("group_id")
+    if gid not in (None, "", 0, "0"):
+        try:
+            dropped += chain.invalidate_group_cache(int(gid))
+        except (TypeError, ValueError):
+            pass
+    return jsonify({"ok": True, "dropped": dropped})
 
 
 @paluwagan_bp.route("/api/resolve/<name>")
@@ -204,11 +274,12 @@ def api_resolve_name(name):
     if not NAME_RE.match(name or ""):
         return jsonify({"error": "bad_name"}), 400
     wallet = _session_wallet()
-    try:
-        group = chain.get_group_by_name(name, wallet)
-    except Exception as e:
-        logger.warning("paluwagan: resolve %s failed: %s", name, e)
-        return jsonify({"error": "chain_read_failed"}), 200
+    with _timed_read():
+        try:
+            group = chain.get_group_by_name(name, wallet)
+        except Exception as e:
+            logger.warning("paluwagan: resolve %s failed: %s", name, e)
+            return jsonify({"error": "chain_read_failed"}), 200
     if not group:
         return jsonify({"error": "not_found", "name": name}), 404
     return jsonify({"group": group, "name": name})
@@ -222,11 +293,12 @@ def api_group_contributions(group_id):
         return guard
     if not _session_wallet():
         return jsonify({"error": "Unauthorized"}), 401
-    try:
-        rows = chain.get_contributions(group_id)
-    except Exception as e:
-        logger.warning("paluwagan: contributions read failed: %s", e)
-        return jsonify({"error": "chain_read_failed", "contributions": []}), 200
+    with _timed_read():
+        try:
+            rows = chain.get_contributions(group_id)
+        except Exception as e:
+            logger.warning("paluwagan: contributions read failed: %s", e)
+            return jsonify({"error": "chain_read_failed", "contributions": []}), 200
     return jsonify({"contributions": rows})
 
 
@@ -238,11 +310,12 @@ def api_group_payouts(group_id):
         return guard
     if not _session_wallet():
         return jsonify({"error": "Unauthorized"}), 401
-    try:
-        rows = chain.get_payout_history(group_id)
-    except Exception as e:
-        logger.warning("paluwagan: payouts read failed: %s", e)
-        return jsonify({"error": "chain_read_failed", "payouts": []}), 200
+    with _timed_read():
+        try:
+            rows = chain.get_payout_history(group_id)
+        except Exception as e:
+            logger.warning("paluwagan: payouts read failed: %s", e)
+            return jsonify({"error": "chain_read_failed", "payouts": []}), 200
     return jsonify({"payouts": rows})
 
 
@@ -255,11 +328,14 @@ def api_balances():
     wallet = _session_wallet()
     if not wallet:
         return jsonify({"error": "Unauthorized"}), 401
+    with _timed_read():
+        token_balance = chain.get_token_balance(wallet)
+        celo_balance = chain.get_native_balance(wallet)
     return jsonify({
         "wallet": wallet,
         "token": GD_TOKEN_ADDRESS,
         "token_symbol": "G$",
         "decimals": 18,
-        "token_balance": str(chain.get_token_balance(wallet)),
-        "celo_balance": str(chain.get_native_balance(wallet)),
+        "token_balance": str(token_balance),
+        "celo_balance": str(celo_balance),
     })
