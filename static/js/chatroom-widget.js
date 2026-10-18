@@ -175,6 +175,11 @@
   // for the price.
   var TIP_GAS_FALLBACK = { celo: 120000n, xdc: 500000n };
   var TIP_GAS_CEILING = { celo: 600000n, xdc: 900000n };
+  // A chat post is a much smaller call than an ERC-20 transfer: the measured
+  // worst case is ~72k gas at 500 bytes (see the contract header). These are
+  // deliberately NOT the tip numbers.
+  var POST_GAS_FALLBACK = 150000n;
+  var POST_GAS_CEILING = 300000n;
   var TIP_SIGN_TIMEOUT_MS = 120000;
   var tipBusy = false;
   // Human label of the signer the tip will use ("MetaMask", "WalletConnect"…),
@@ -253,6 +258,74 @@
       if (gpBig > 0n) gasPriceHex = _tipHex(gpBig);
     } catch (_) { /* keep the fallback price */ }
     return { gas: gasHex, gasPrice: gasPriceHex };
+  }
+
+  async function _postGasParams(provider, from, prep) {
+    var net = (prep && prep.network) === 'xdc' ? 'xdc' : 'celo';
+    var tx = { from: from, to: prep.to, data: prep.data || '0x', value: prep.value || '0x0' };
+    var gasHex = _tipHex(POST_GAS_FALLBACK);
+    try {
+      var est = await provider.request({ method: 'eth_estimateGas', params: [tx] });
+      var estBig = BigInt(est);
+      if (estBig > 0n) {
+        var padded = estBig * 140n / 100n;
+        gasHex = _tipHex(padded > POST_GAS_CEILING ? POST_GAS_CEILING : padded);
+      }
+    } catch (_) { /* the contract's measured worst case */ }
+    var gasPriceHex = _tipHex((CHAIN_META[net] && CHAIN_META[net].fallbackGasPrice) || 500000000000n);
+    try {
+      var gp = await provider.request({ method: 'eth_gasPrice', params: [] });
+      var gpBig = BigInt(gp);
+      if (gpBig > 0n) gasPriceHex = _tipHex(gpBig);
+    } catch (_) { /* keep the fallback price */ }
+    return { gas: gasHex, gasPrice: gasPriceHex };
+  }
+
+  /**
+   * Publish a message by signing the post() call with the user's own wallet.
+   *
+   * The user pays the gas — that is the whole point of moving the room
+   * on-chain. Routing mirrors the tip flow: the in-app wallet signs locally
+   * (PIN), WalletConnect uses its session, otherwise the injected provider is
+   * bound to the account that matches the signed-in wallet.
+   */
+  async function _postSendTransaction(provider, prep) {
+    var net = (prep && prep.network) === 'xdc' ? 'xdc' : 'celo';
+    if (_isLocalLogin()) {
+      return await _withSignTimeout(
+        provider.request({
+          method: 'eth_sendTransaction',
+          params: [{ from: TIP_BOOT.wallet, to: prep.to, data: prep.data || '0x',
+                     value: prep.value || '0x0', chainId: prep.chain_id }]
+        }),
+        TIP_SIGN_TIMEOUT_MS,
+        'Your in-app wallet did not finish signing. Please try again.'
+      );
+    }
+    var accounts = [];
+    try { accounts = await provider.request({ method: 'eth_requestAccounts' }) || []; } catch (_) {}
+    if (!accounts.length) {
+      try { accounts = await provider.request({ method: 'eth_accounts' }) || []; } catch (_) {}
+    }
+    var wanted = (TIP_BOOT.wallet || '').toLowerCase();
+    var from = null;
+    for (var i = 0; i < accounts.length; i++) {
+      if (String(accounts[i]).toLowerCase() === wanted) { from = accounts[i]; break; }
+    }
+    if (!from) {
+      throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet before posting.');
+    }
+    await _tipEnsureChain(provider, net);
+    var fee = await _postGasParams(provider, from, prep);
+    return await _withSignTimeout(
+      provider.request({
+        method: 'eth_sendTransaction',
+        params: [{ from: from, to: prep.to, data: prep.data || '0x', value: prep.value || '0x0',
+                   gas: fee.gas, gasPrice: fee.gasPrice }]
+      }),
+      TIP_SIGN_TIMEOUT_MS,
+      (TIP_SIGNER ? TIP_SIGNER + ' did not' : 'Your wallet did not') + ' respond to the post request. Please try again.'
+    );
   }
 
   function configureTip(opts) {
@@ -641,6 +714,55 @@
     }
   }
 
+  /**
+   * Publish a message on-chain and hand the rendered row back to the caller.
+   *
+   * Three hops, mirroring the tip flow:
+   *   1. POST /chatroom/api/prepare-post -> unsigned calldata (server builds it
+   *      so the encoding has one implementation)
+   *   2. the user's own wallet signs and broadcasts it (the user pays gas)
+   *   3. POST /chatroom/api/posted -> drop the read cache so the next poll shows
+   *      the message. The event is the record; nothing is written.
+   *
+   * Returns the shaped message so the caller can append it immediately.
+   */
+  async function postMessage(text, opts) {
+    opts = opts || {};
+    var prepared = await fetch('/chatroom/api/prepare-post', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: text,
+        reply_to_id: opts.replyToId != null ? opts.replyToId : null,
+        attachment: opts.attachment || null
+      })
+    });
+    var prep = await prepared.json().catch(function () { return null; });
+    if (!prepared.ok || !prep || !prep.success) {
+      throw new Error((prep && prep.error) || 'Could not prepare the message.');
+    }
+
+    var provider = await _tipProvider();
+    var txHash = await _postSendTransaction(provider, prep);
+
+    // Best-effort: a failed cache-drop must not turn a broadcast post into an
+    // error, because the message IS on-chain.
+    var confirmed = null;
+    try {
+      var res = await fetch('/chatroom/api/posted', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tx_hash: txHash })
+      });
+      confirmed = await res.json().catch(function () { return null; });
+    } catch (_) { /* the next poll picks it up */ }
+
+    return {
+      tx_hash: txHash,
+      explorer_url: (confirmed && confirmed.explorer_url) || _explorerUrl('celo', txHash)
+    };
+  }
+
   function _tipModal() {
     return document.querySelector('[data-gm-tip-modal]');
   }
@@ -828,7 +950,9 @@
       }
       // Admin delete — visible only when the server told us this viewer is an
       // admin. Available on ANY message (including the admin's own).
-      if (options.isAdmin) {
+      // NOT offered when the room is on-chain: the contract has no delete, so
+      // the button would only ever fail.
+      if (options.isAdmin && !options.onchain) {
         var del = el('button', 'gm-chat-delete', '🗑 Delete');
         del.type = 'button';
         del.title = 'Delete this message for everyone';
@@ -1008,6 +1132,10 @@
     var interval = POLL_FAST_MS;
     // Server-side truth: only an admin sees the in-room delete affordance.
     var viewerIsAdmin = false;
+    // True when the room is served from the contract, so posting must be
+    // signed by the user's wallet (and the delete affordance is hidden — the
+    // contract has no delete, only bans).
+    var onchainMode = false;
     // High-water mark of deletions we have already pruned, so each poll only
     // asks for deletions newer than the last tick.
     var deletedCursor = null;
@@ -1078,6 +1206,7 @@
       list.appendChild(buildChatRow(m, {
         onReply: startReply,
         isAdmin: viewerIsAdmin,
+        onchain: onchainMode,
         onDelete: function (deletedId) { removeMessageRow(Number(deletedId)); }
       }));
       if (m.is_reply_to_me && !m.is_me) {
@@ -1104,6 +1233,9 @@
         if (data.wallet) TIP_BOOT.wallet = data.wallet;
         // Admin status drives the delete affordance (server-verified).
         viewerIsAdmin = data.is_admin === true;
+        // The contract has no delete — only bans — so an on-chain room must not
+        // offer a control that cannot work.
+        onchainMode = data.onchain === true;
         if (data.has_username === false) {
           setStatus('Tip: set a username on the wallet page so people can tip you.');
         }
@@ -1220,6 +1352,30 @@
           name: pendingAttachment.name,
           bytes: pendingAttachment.bytes
         };
+      }
+      // On-chain room: the user's own wallet signs the post and pays the gas.
+      // The server refuses a direct write in that mode, so this is the only
+      // path that can actually publish.
+      if (onchainMode) {
+        try {
+          await postMessage(clean, {
+            replyToId: replyTarget ? replyTarget.id : null,
+            attachment: hasImage ? payload.attachment : null
+          });
+          setStatus('');
+          clearReply();
+          pendingAttachment = null;
+          renderAttachPreview();
+          if (input) input.placeholder = 'Message the community…';
+          // The message is already on-chain; poll now so it renders without
+          // waiting out the interval.
+          needInitial = false;
+          await loadMessages();
+          return;
+        } catch (err) {
+          setStatus((err && err.message) || 'Failed to send message.');
+          return;
+        }
       }
       try {
         var res = await fetch('/chatroom/api/messages', {
