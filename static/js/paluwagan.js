@@ -77,6 +77,71 @@
     var currentGroup = null;
     var busy = false;
 
+    // ── loading locks ───────────────────────────────────────────────────────
+    // `busy` is the re-entrancy guard (a disabled button can still be triggered
+    // programmatically). `_inFlight` counts network reads so the poll can skip
+    // while a user action is running, and `lockButton` is the VISUAL contract:
+    // a control must be blocked, with progress, for the whole async window.
+    var _inFlight = 0;
+
+    function _beginRequest() { _inFlight += 1; }
+    function _endRequest() { _inFlight = Math.max(0, _inFlight - 1); }
+
+    function lockButton(btn, label) {
+        if (!btn) return function () {};
+        var original = btn.textContent;
+        var wasDisabled = btn.disabled;
+        btn.disabled = true;
+        if (label) {
+            btn.innerHTML = '<span class="spinner"></span> ' + esc(label);
+        }
+        return function restore() {
+            btn.innerHTML = "";
+            btn.textContent = original;
+            btn.disabled = wasDisabled;
+        };
+    }
+
+    // Wrap a fetch so every request is counted and a failure never leaves a
+    // button locked (callers use try/finally, this just tracks the counter).
+    function _fetch(url, opts) {
+        _beginRequest();
+        return fetch(url, opts).finally(_endRequest);
+    }
+
+    // Drop the server-side read cache for this wallet after a confirmed tx so
+    // the next poll is fresh instead of waiting out the TTL.
+    function _invalidateCache(groupId) {
+        try {
+            var body = {};
+            if (groupId) body.group_id = groupId;
+            _fetch("/paluwagan/api/invalidate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            }).catch(function () {});
+        } catch (_) {}
+    }
+
+    function _lockSection(sectionId, locked) {
+        var sec = $(sectionId);
+        if (!sec) return;
+        sec.setAttribute("data-loading", locked ? "1" : "0");
+        sec.querySelectorAll("button").forEach(function (b) {
+            if (locked) {
+                // Remember the pre-lock state so unlock restores it exactly —
+                // some buttons are legitimately disabled by their own logic.
+                b.setAttribute("data-was-disabled", b.disabled ? "1" : "0");
+                b.setAttribute("aria-busy", "true");
+                b.disabled = true;
+            } else {
+                b.removeAttribute("aria-busy");
+                b.disabled = b.getAttribute("data-was-disabled") === "1";
+                b.removeAttribute("data-was-disabled");
+            }
+        });
+    }
+
     // ── ABIs (human-readable, mirrors paluwagan/blockchain.py) ──────────────
     var PALUWAGAN_ABI = [
         "function createGroup(string name, address token, uint256 contributionAmount, uint256 weeks, uint8[5] payoutOrder) returns (uint256)",
@@ -394,12 +459,14 @@
 
     // ── navigation ──────────────────────────────────────────────────────────
     function showSection(id) {
-        ["secOverview", "secCreate", "secJoin", "secGroup", "secContribute"].forEach(function (s) {
+        ["secInvite", "secOverview", "secCreate", "secJoin", "secGroup", "secContribute"].forEach(function (s) {
             var el = $(s); if (el) el.classList.remove("active");
         });
         var el = $(id); if (el) el.classList.add("active");
         window.scrollTo({ top: 0, behavior: "smooth" });
     }
+    // Plain navigation: the cache is invalidated after a write, so a normal
+    // return to the overview does not need to force a re-scan.
     window.showOverview = function () { currentGroupId = null; showSection("secOverview"); loadGroups(); };
     window.showCreate = function () { buildCreateForm(); showSection("secCreate"); };
     window.showJoin = function () { showSection("secJoin"); };
@@ -425,23 +492,47 @@
             '/week - ' + g.weeks + ' wks - ' + esc(line) + '</div>' +
             '</div></div>';
     }
-    async function loadGroups() {
+    function _groupSkeleton() {
+        var row = '<div class="skel-row"><span class="skel skel-idx"></span>' +
+            '<div style="flex:1;min-width:0;"><span class="skel skel-line"></span>' +
+            '<span class="skel skel-line short"></span></div></div>';
+        return '<div class="skeleton">' + row + row + '</div>';
+    }
+
+    async function loadGroups(opts) {
         var box = $("groupList");
         if (!box) return;
         if (!CONFIGURED) { box.innerHTML = '<div class="empty-state">Not configured on this deployment.</div>'; return; }
         if (!WALLET) { box.innerHTML = '<div class="empty-state">Log in to see your groups.</div>'; return; }
-        box.innerHTML = '<div class="empty-state"><span class="spinner"></span> Loading your groups&hellip;</div>';
+        var silent = !!(opts && opts.silent);
+        var force = !!(opts && opts.force);
+        // The overview entry buttons stay live while the list loads unless we
+        // lock the section; a cold load must block them.
+        if (!silent) {
+            _lockSection("secOverview", true);
+            box.innerHTML = _groupSkeleton();
+        }
         try {
-            var res = await fetch("/paluwagan/api/groups");
+            var url = "/paluwagan/api/groups" + (force ? "?force=1" : "");
+            var res = await _fetch(url);
             var data = await res.json();
             var groups = (data && data.groups) || [];
+            var notice = "";
+            if (data && data.partial) {
+                notice = '<div class="alert alert-warn show" style="margin-bottom:.6rem;">Some data could not be loaded in time. ' +
+                    '<a href="#" onclick="loadGroups({force:true});return false;">Retry</a></div>';
+            } else if (data && data.cached && groups.length) {
+                notice = '<div class="note" style="margin:0 0 .6rem;">Showing cached data &middot; refreshing&hellip;</div>';
+            }
             if (!groups.length) {
-                box.innerHTML = '<div class="empty-state">No groups yet. Create one or join with a group id.</div>';
+                box.innerHTML = notice + '<div class="empty-state">No groups yet. Create one or join with a group id.</div>';
                 return;
             }
-            box.innerHTML = groups.map(groupCard).join("");
+            box.innerHTML = notice + groups.map(groupCard).join("");
         } catch (e) {
-            box.innerHTML = '<div class="empty-state">Could not load groups. <a href="#" onclick="loadGroups();return false;">Retry</a></div>';
+            box.innerHTML = '<div class="empty-state">Could not load groups. <a href="#" onclick="loadGroups({force:true});return false;">Retry</a></div>';
+        } finally {
+            if (!silent) _lockSection("secOverview", false);
         }
     }
     window.loadGroups = loadGroups;
@@ -548,19 +639,21 @@
         if (!(amt > 0)) { alertBox(alertEl, "error", "Enter a weekly contribution amount greater than zero."); return; }
         if (ALLOWED_WEEKS.indexOf(weeks) === -1) { alertBox(alertEl, "error", "Choose a commitment period of " + ALLOWED_WEEKS.join(" or ") + " weeks."); return; }
         if (new Set(order).size !== MEMBERS) { alertBox(alertEl, "error", "Each payout round must use a different slot."); return; }
-        busy = true; updateSummary();
+        busy = true;
+        var restore = lockButton($("createBtn"), "Creating\u2026");
         try {
             var s = await resolveSigner();
             var amountWei = ethers.parseUnits(String(amt), DECIMALS);
             var hash = await _signTimeout(_sendContractCall(s, "createGroup", [name, token, amountWei, weeks, order]), 180000);
             alertBox(alertEl, "info", "Creating group... " + hash);
             await _waitReceipt(s.provider, hash);
+            _invalidateCache();
             alertBox(alertEl, "success", "Group \"" + name + "\" created. Share /paluwagan/" + name.toLowerCase() + " so 4 others can join.");
             setTimeout(function () { window.showOverview(); }, 1200);
         } catch (e) {
             alertBox(alertEl, "error", _friendlyError(e));
         } finally {
-            busy = false; updateSummary();
+            busy = false; restore(); updateSummary();
         }
     };
 
@@ -573,7 +666,7 @@
         var name = _nameFromInput(rawName);
         var gid = Number(($("joinId") || {}).value || 0);
         if (!name) return gid;
-        var res = await fetch("/paluwagan/api/resolve/" + encodeURIComponent(name));
+        var res = await _fetch("/paluwagan/api/resolve/" + encodeURIComponent(name));
         if (res.status === 404) return -1;
         var data = await res.json();
         var g = data && data.group;
@@ -582,78 +675,94 @@
         return Number(g.id);
     }
 
+    // Shared preview renderer used by the manual join form AND the invite card.
+    // `container` is the element to fill; returns the group so the caller can
+    // decide whether to route to the dashboard instead.
+    function _renderJoinPreview(g, gid, container) {
+        if (!container) return g;
+        currentGroupId = gid;
+        var rows =
+            '<div class="split"><div class="kv"><div class="k">Group</div><div class="v">' + esc(g.name || ("#" + g.id)) + '</div></div>' +
+            '<div class="kv"><div class="k">Token</div><div class="v">' + esc(g.token_symbol) + '</div></div>' +
+            '<div class="kv"><div class="k">Weekly</div><div class="v">' + esc(g.contribution_amount_h) + ' ' + esc(g.token_symbol) + '</div></div>' +
+            '<div class="kv"><div class="k">Period</div><div class="v">' + g.weeks + ' weeks</div></div>' +
+            '<div class="kv"><div class="k">Members</div><div class="v">' + g.member_count + '/' + MEMBERS + '</div></div></div>' +
+            '<p class="note">Contribute ' + esc(g.contribution_amount_h) + ' ' + esc(g.token_symbol) + ' every week for ' + g.weeks + ' weeks. ' +
+            'One payout of ' + esc(g.pool_amount_h) + ' ' + esc(g.token_symbol) + ' on your turn. Deadlines every 7 days with a 2-day grace period. ' +
+            'No early exit after the group starts. Payouts are released only when the full weekly pool is collected.</p>';
+        container.innerHTML = rows;
+        return g;
+    }
+
+    function _setJoinButton(jb, g) {
+        if (!jb) return;
+        var full = g.member_count >= MEMBERS || g.status !== "forming";
+        var mine = _toLower(WALLET) && (g.members || []).map(_toLower).indexOf(_toLower(WALLET)) !== -1;
+        jb.disabled = full || mine || !WALLET;
+        if (!WALLET) jb.textContent = "Log in to join";
+        else if (mine) jb.textContent = "You are already in this group";
+        else if (full) jb.textContent = "Group is full";
+        else jb.textContent = "Join Group";
+    }
+
     window.previewJoin = async function () {
         var alertEl = $("pageAlert");
         hideAlert(alertEl);
         var box = $("joinPreview");
         if (box) box.style.display = "block";
         var body = $("joinPreviewBody");
-        if (body) body.innerHTML = '<span class="spinner"></span> Loading group&hellip;';
-        var gid;
+        var restore = lockButton($("joinPreviewBtn") || null, "Loading\u2026");
+        if (body) body.innerHTML = '<div class="skeleton"><span class="skel skel-line"></span><span class="skel skel-line short"></span></div>';
         try {
-            gid = await _resolveJoinTarget();
-        } catch (_) {
-            if (body) body.innerHTML = '<div class="empty-state">Could not look up that group.</div>';
-            return;
-        }
-        if (gid === -1) {
-            if (body) body.innerHTML = '<div class="empty-state">No group found with that name.</div>';
-            return;
-        }
-        if (!(gid > 0)) {
-            if (body) body.innerHTML = '<div class="empty-state">Enter a group name or id.</div>';
-            return;
-        }
-        try {
-            var res = await fetch("/paluwagan/api/group/" + gid);
+            var gid;
+            try {
+                gid = await _resolveJoinTarget();
+            } catch (_) {
+                if (body) body.innerHTML = '<div class="empty-state">Could not look up that group.</div>';
+                return;
+            }
+            if (gid === -1) {
+                if (body) body.innerHTML = '<div class="empty-state">No group found with that name.</div>';
+                return;
+            }
+            if (!(gid > 0)) {
+                if (body) body.innerHTML = '<div class="empty-state">Enter a group name or id.</div>';
+                return;
+            }
+            var res = await _fetch("/paluwagan/api/group/" + gid);
             var data = await res.json();
             var g = data && data.group;
             if (!g) { if (body) body.innerHTML = '<div class="empty-state">Group not found.</div>'; return; }
-            currentGroupId = gid;
-            var rows =
-                '<div class="split"><div class="kv"><div class="k">Group</div><div class="v">' + esc(g.name || ("#" + g.id)) + '</div></div>' +
-                '<div class="kv"><div class="k">Token</div><div class="v">' + esc(g.token_symbol) + '</div></div>' +
-                '<div class="kv"><div class="k">Weekly</div><div class="v">' + esc(g.contribution_amount_h) + ' ' + esc(g.token_symbol) + '</div></div>' +
-                '<div class="kv"><div class="k">Period</div><div class="v">' + g.weeks + ' weeks</div></div>' +
-                '<div class="kv"><div class="k">Members</div><div class="v">' + g.member_count + '/' + MEMBERS + '</div></div></div>' +
-                '<p class="note">Contribute ' + esc(g.contribution_amount_h) + ' ' + esc(g.token_symbol) + ' every week for ' + g.weeks + ' weeks. ' +
-                'One payout of ' + esc(g.pool_amount_h) + ' ' + esc(g.token_symbol) + ' on your turn. Deadlines every 7 days with a 2-day grace period. ' +
-                'No early exit after the group starts. Payouts are released only when the full weekly pool is collected.</p>';
-            if (body) body.innerHTML = rows;
-            var jb = $("joinBtn");
-            if (jb) {
-                var full = g.member_count >= MEMBERS || g.status !== "forming";
-                var mine = _toLower(WALLET) && (g.members || []).map(_toLower).indexOf(_toLower(WALLET)) !== -1;
-                jb.disabled = full || mine || !WALLET;
-                if (!WALLET) jb.textContent = "Log in to join";
-                else if (mine) jb.textContent = "You are already in this group";
-                else if (full) jb.textContent = "Group is full";
-                else jb.textContent = "Join Group";
-            }
+            _renderJoinPreview(g, gid, body);
+            _setJoinButton($("joinBtn"), g);
         } catch (e) {
-            if (body) body.innerHTML = '<div class="empty-state">Could not load the group.</div>';
+            if (body) body.innerHTML = '<div class="empty-state">Could not load the group. <a href="#" onclick="previewJoin();return false;">Retry</a></div>';
+        } finally {
+            restore();
         }
     };
 
     window.joinGroup = async function () {
         if (busy) return;
         var alertEl = $("pageAlert");
-        var gid;
-        try {
-            gid = await _resolveJoinTarget();
-        } catch (_) { gid = 0; }
-        if (!(gid > 0)) { alertBox(alertEl, "error", "Enter a valid group name or id."); return; }
+        var restore = lockButton($("joinBtn") || null, "Joining\u2026");
         busy = true;
         try {
+            var gid;
+            try {
+                gid = await _resolveJoinTarget();
+            } catch (_) { gid = 0; }
+            if (!(gid > 0)) { alertBox(alertEl, "error", "Enter a valid group name or id."); return; }
             var s = await resolveSigner();
             var hash = await _signTimeout(_sendContractCall(s, "joinGroup", [gid]), 180000);
             alertBox(alertEl, "info", "Joining group... " + hash);
             await _waitReceipt(s.provider, hash);
+            _invalidateCache(gid);
             alertBox(alertEl, "success", "You joined group #" + gid + ".");
             setTimeout(function () { openGroup(gid); }, 1000);
         } catch (e) {
             alertBox(alertEl, "error", _friendlyError(e));
-        } finally { busy = false; }
+        } finally { busy = false; restore(); }
     };
 
     // ── group detail ────────────────────────────────────────────────────────
@@ -665,9 +774,15 @@
     window.refreshGroup = async function (opts) {
         if (!currentGroupId) return;
         var silent = !!(opts && opts.silent);
+        var force = !!(opts && opts.force);
         var alertEl = $("pageAlert");
+        // Only the Refresh button is locked here — renderGroup() owns the
+        // contribute/claim/activate disabled states, so a blanket section lock
+        // would clobber them on unlock.
+        var restore = silent ? function () {} : lockButton($("refreshBtn") || null, "Refreshing\u2026");
         try {
-            var res = await fetch("/paluwagan/api/group/" + currentGroupId);
+            var url = "/paluwagan/api/group/" + currentGroupId + (force ? "?force=1" : "");
+            var res = await _fetch(url);
             var data = await res.json();
             currentGroup = data && data.group;
             if (!currentGroup) {
@@ -675,6 +790,9 @@
                 return;
             }
             renderGroup(currentGroup);
+            if (data && data.partial && !silent) {
+                alertBox(alertEl, "warn", "Some data could not be loaded in time. Retry in a moment.");
+            }
             // A background poll must not flash spinners over history the user
             // may be reading — the member list / progress bar is what changes
             // when other wallets join or pay.
@@ -684,16 +802,19 @@
             }
         } catch (e) {
             if (!silent) alertBox(alertEl, "error", "Could not load group. Please retry.");
+        } finally {
+            if (!silent) restore();
         }
     };
 
     // Keep the open group live: the member list and contribution progress change
     // when OTHER wallets join or pay, and without a poll the page only ever
     // showed the state from the moment it was opened. Paused while the tab is
-    // hidden or a tx is in flight, and only runs while the group view is open.
+    // hidden, a tx is in flight, or any read is already running — a poll must
+    // never disable a control the user is about to tap.
     var GROUP_POLL_MS = 15000;
     async function _pollGroupOnce() {
-        if (document.hidden || busy || !currentGroupId) return;
+        if (document.hidden || busy || _inFlight > 0 || !currentGroupId) return;
         var groupSection = $("secGroup");
         if (!groupSection || !groupSection.classList.contains("active")) return;
         await window.refreshGroup({ silent: true });
@@ -735,9 +856,9 @@
                     var action = "";
                     if (REMOVAL_SUPPORTED && forming) {
                         if (isYou && g.can_leave) {
-                            action = '<button class="btn btn-ghost sm slot-act" onclick="leaveGroup()">Leave</button>';
+                            action = '<button class="btn btn-ghost sm slot-act" onclick="leaveGroup(this)">Leave</button>';
                         } else if (!isYou && removable.indexOf(ml) !== -1) {
-                            action = '<button class="btn btn-ghost sm slot-act slot-act-danger" onclick="removeMember(\'' + esc(m) + '\')">Remove</button>';
+                            action = '<button class="btn btn-ghost sm slot-act slot-act-danger" onclick="removeMember(\'' + esc(m) + '\', this)">Remove</button>';
                         }
                     }
                     html += '<div class="slot"><span class="idx">' + (i + 1) + '</span>' +
@@ -877,51 +998,57 @@
     // A member who has not started yet may free their own slot; the creator
     // may free a quiet member's slot after the grace period. Both are
     // Forming-only on-chain, so the group cannot be broken once it starts.
-    window.leaveGroup = async function () {
+    window.leaveGroup = async function (btn) {
         if (busy || !currentGroupId) return;
         if (!window.confirm("Leave this group? Your slot will be freed for someone else.")) return;
         var alertEl = $("pageAlert");
         busy = true;
+        var restore = lockButton(btn, "Leaving\u2026");
         try {
             var s = await resolveSigner();
             var hash = await _signTimeout(_sendContractCall(s, "leaveGroup", [currentGroupId]), 180000);
             alertBox(alertEl, "info", "Leaving group... " + hash);
             await _waitReceipt(s.provider, hash);
+            _invalidateCache(currentGroupId);
             alertBox(alertEl, "success", "You left the group. Your slot is now open for another member.");
             setTimeout(refreshGroup, 1200);
         } catch (e) { alertBox(alertEl, "error", _friendlyError(e)); }
-        finally { busy = false; }
+        finally { busy = false; restore(); }
     };
 
-    window.removeMember = async function (member) {
+    window.removeMember = async function (member, btn) {
         if (busy || !currentGroupId || !member) return;
         if (!window.confirm("Remove " + shortAddr(member) + " from this group? Their slot will be freed for someone else.")) return;
         var alertEl = $("pageAlert");
         busy = true;
+        var restore = lockButton(btn, "Removing\u2026");
         try {
             var s = await resolveSigner();
             var hash = await _signTimeout(_sendContractCall(s, "removeMember", [currentGroupId, member]), 180000);
             alertBox(alertEl, "info", "Removing member... " + hash);
             await _waitReceipt(s.provider, hash);
+            _invalidateCache(currentGroupId);
             alertBox(alertEl, "success", "Member removed. The slot is now open - share the invite link.");
             setTimeout(refreshGroup, 1200);
         } catch (e) { alertBox(alertEl, "error", _friendlyError(e)); }
-        finally { busy = false; }
+        finally { busy = false; restore(); }
     };
 
-    window.activateGroup = async function () {
+    window.activateGroup = async function (btn) {
         if (busy || !currentGroupId) return;
         var alertEl = $("pageAlert");
         busy = true;
+        var restore = lockButton(btn || $("activateBtn"), "Activating\u2026");
         try {
             var s = await resolveSigner();
             var hash = await _signTimeout(_sendContractCall(s, "activateGroup", [currentGroupId]), 180000);
             alertBox(alertEl, "info", "Activating group... " + hash);
             await _waitReceipt(s.provider, hash);
+            _invalidateCache(currentGroupId);
             alertBox(alertEl, "success", "Group activated. Week 1 has started.");
             setTimeout(refreshGroup, 1000);
         } catch (e) { alertBox(alertEl, "error", _friendlyError(e)); }
-        finally { busy = false; }
+        finally { busy = false; restore(); }
     };
 
     window.copyInvite = function () {
@@ -945,8 +1072,9 @@
         if ($("cAmount")) $("cAmount").textContent = currentGroup.contribution_amount_h + " " + currentGroup.token_symbol;
         if ($("cToGroup")) $("cToGroup").textContent = currentGroup.contribution_amount_h + " " + currentGroup.token_symbol;
         if ($("payBtn")) $("payBtn").textContent = "Step 2 - Contribute " + currentGroup.contribution_amount_h + " " + currentGroup.token_symbol;
+        var restore = lockButton($("payBtn"), "Loading\u2026");
         try {
-            var res = await fetch("/paluwagan/api/balances");
+            var res = await _fetch("/paluwagan/api/balances");
             var d = await res.json();
             if ($("cBalance")) $("cBalance").textContent = fmtGd(d.token_balance || 0);
             if ($("cCelo")) $("cCelo").textContent = (Number(d.celo_balance || 0) / 1e18).toFixed(4) + " CELO";
@@ -963,13 +1091,15 @@
                 }
             }
         } catch (_) {}
+        finally { restore(); }
         if ($("cGas")) $("cGas").textContent = "shown in wallet";
     };
 
-    window.doApprove = async function () {
+    window.doApprove = async function (btn) {
         if (busy || !currentGroup) return;
         var alertEl = $("contributeAlert");
         busy = true;
+        var restore = lockButton(btn || $("approveBtn"), "Approving\u2026");
         try {
             var s = await resolveSigner();
             var amountWei = ethers.parseUnits(String(currentGroup.contribution_amount_h), DECIMALS);
@@ -983,41 +1113,111 @@
             alertBox(alertEl, "success", "Approved. You can now contribute.");
             var ab = $("approveBtn"); if (ab) ab.style.display = "none";
         } catch (e) { alertBox(alertEl, "error", _friendlyError(e)); }
-        finally { busy = false; }
+        finally { busy = false; restore(); }
     };
 
     window.doContribute = async function () {
         if (busy || !currentGroupId) return;
         var alertEl = $("contributeAlert");
         busy = true;
-        if ($("payBtn")) $("payBtn").disabled = true;
+        var restore = lockButton($("payBtn"), "Contributing\u2026");
         try {
             var s = await resolveSigner();
             var hash = await _signTimeout(_sendContractCall(s, "contribute", [currentGroupId]), 180000);
             alertBox(alertEl, "info", "Submitting contribution... " + hash);
             var receipt = await _waitReceipt(s.provider, hash);
+            _invalidateCache(currentGroupId);
             if (receipt) alertBox(alertEl, "success", "Contribution confirmed for this week.");
             else alertBox(alertEl, "warn", "Submitted but not yet confirmed. Check CeloScan: " + txUrl(hash));
             setTimeout(refreshGroup, 1200);
         } catch (e) { alertBox(alertEl, "error", _friendlyError(e)); }
-        finally { busy = false; if ($("payBtn")) $("payBtn").disabled = false; }
+        finally { busy = false; restore(); }
     };
 
     window.claimPayout = async function () {
         if (busy || !currentGroupId || !currentGroup) return;
         var alertEl = $("pageAlert");
         busy = true;
+        var restore = lockButton($("claimBtn"), "Claiming\u2026");
         try {
             var s = await resolveSigner();
             var round = currentGroup.current_round;
             var hash = await _signTimeout(_sendContractCall(s, "claimPayout", [currentGroupId, round]), 180000);
             alertBox(alertEl, "info", "Claiming payout... " + hash);
             await _waitReceipt(s.provider, hash);
+            _invalidateCache(currentGroupId);
             alertBox(alertEl, "success", "Payout claimed. " + currentGroup.pool_amount_h + " " + currentGroup.token_symbol + " sent to your wallet.");
             setTimeout(refreshGroup, 1200);
         } catch (e) { alertBox(alertEl, "error", _friendlyError(e)); }
-        finally { busy = false; }
+        finally { busy = false; restore(); }
     };
+
+    // ── invite deep link ────────────────────────────────────────────────────
+    // /paluwagan/<name> (or ?join=…) must be intent-aware: an EXISTING MEMBER
+    // goes straight to the team dashboard, everyone else gets one clear card
+    // that explains the group and offers the next step. Previously everyone was
+    // dumped on the generic join form, so a member had to tap through manually.
+    function _inviteMessage(kind, extra) {
+        var map = {
+            not_found: ["We couldn't find that group", "The name may be misspelled, or the group was never created. You can create your own or join with a group id."],
+            full: ["This group is full", "All five slots are taken. You can create your own group or join another with a group id."],
+            started: ["This group already started", "Members and the rotation are locked once a group is activated. You can create your own group or join another with a group id."],
+            guest: ["You're invited to join", "Log in to join this group. The group is looked up on-chain, so nothing is stored off-chain."]
+        };
+        var m = map[kind] || ["Group", ""];
+        return '<div class="empty-state" style="text-align:left;padding:.6rem 0;">' +
+            '<div class="val" style="font-size:1rem;margin-bottom:.3rem;">' + esc(m[0]) + '</div>' +
+            '<div class="note" style="margin-top:0;">' + esc(extra || m[1]) + '</div></div>';
+    }
+
+    async function _routeInvite(nameOrId) {
+        var body = $("inviteBody");
+        var actions = $("inviteActions");
+        if (actions) actions.style.display = "none";
+        if (!body) return;
+        body.innerHTML = '<div class="skeleton"><span class="skel skel-line"></span><span class="skel skel-line short"></span></div>';
+        try {
+            var gid = 0;
+            if (/^\d+$/.test(String(nameOrId))) {
+                gid = Number(nameOrId);
+            } else {
+                var rres = await _fetch("/paluwagan/api/resolve/" + encodeURIComponent(_nameFromInput(nameOrId)));
+                if (rres.status === 404) { body.innerHTML = _inviteMessage("not_found"); return; }
+                var rdata = await rres.json();
+                var rg = rdata && rdata.group;
+                if (!rg) { body.innerHTML = _inviteMessage("not_found"); return; }
+                gid = Number(rg.id);
+            }
+            var res = await _fetch("/paluwagan/api/group/" + gid);
+            var data = await res.json();
+            var g = data && data.group;
+            if (!g) { body.innerHTML = _inviteMessage("not_found"); return; }
+
+            // The reported requirement: a member lands on the team dashboard.
+            if (_toLower(WALLET) && (g.members || []).map(_toLower).indexOf(_toLower(WALLET)) !== -1) {
+                currentGroupId = gid;
+                await window.openGroup(gid);
+                return;
+            }
+
+            _renderJoinPreview(g, gid, body);
+            if (actions) actions.style.display = "block";
+            var jb = $("inviteJoinBtn");
+            _setJoinButton(jb, g);
+            // Non-members who cannot join still need a way forward — say why.
+            if (g.status !== "forming") {
+                body.insertAdjacentHTML("beforeend", _inviteMessage("started"));
+            } else if (g.member_count >= MEMBERS) {
+                body.insertAdjacentHTML("beforeend", _inviteMessage("full"));
+            } else if (!WALLET) {
+                body.insertAdjacentHTML("beforeend", _inviteMessage("guest"));
+            }
+        } catch (e) {
+            body.innerHTML = '<div class="empty-state">Could not load this group. ' +
+                '<a href="#" onclick="_routeInvite(\'' + esc(String(nameOrId)) + '\');return false;">Retry</a></div>';
+        }
+    }
+    window._routeInvite = _routeInvite;
 
     // ── boot ────────────────────────────────────────────────────────────────
     function _boot() {
@@ -1038,28 +1238,22 @@
             } catch (_) {}
         }
         // Deep link: /paluwagan/<name> (path) or /paluwagan?join=<id|name>.
+        // Intent-aware: resolve membership and route to the team dashboard for
+        // a member, or the invite card for everyone else. The template already
+        // rendered #secInvite as the active pane, so there is no flash of the
+        // generic join form.
         try {
             var deepName = boot.joinName || "";
             var params = new URLSearchParams(window.location.search);
             var join = params.get("join") || "";
-            if (!deepName && join) {
-                // `join` is either a numeric id or a name.
-                if (/^\d+$/.test(join)) {
-                    if ($("joinId")) $("joinId").value = join;
-                } else {
-                    deepName = join;
-                }
-            }
-            if (deepName && $("joinName")) {
-                $("joinName").value = deepName;
-                showSection("secJoin");
-                window.previewJoin();
-                return;
-            }
-            if (join && $("joinId")) {
-                $("joinId").value = join;
-                showSection("secJoin");
-                window.previewJoin();
+            var target = deepName || join;
+            if (target) {
+                // Keep the manual join form populated too, so "Join Group"
+                // after a lookup still works if the user navigates there.
+                if ($("joinName") && !/^\d+$/.test(target)) $("joinName").value = target;
+                if ($("joinId") && /^\d+$/.test(target)) $("joinId").value = target;
+                showSection("secInvite");
+                _routeInvite(target);
                 return;
             }
         } catch (_) {}
