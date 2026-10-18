@@ -167,6 +167,28 @@
 
         /* A locked section blocks its controls while a request is in flight. */
         [data-loading="1"] button { pointer-events:none; }
+
+        /* ── Onboarding guide overlay (Notion embed) ──
+           Full-screen, above the page chrome (navbar is 100) but BELOW the
+           local-wallet PIN prompt (99999/100000) so signing always stacks on
+           top of the guide. The iframe is lazy — its src is only set on first
+           open, so the Notion page's ~11 scripts never load for a member who
+           never opens the guide. */
+        .palu-guide-overlay { display:none; position:fixed; inset:0; z-index:99990;
+            background:rgba(7,5,25,.94); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+            flex-direction:column; }
+        .palu-guide-overlay.open { display:flex; }
+        .palu-guide-bar { display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+            padding:.7rem 1rem; background:linear-gradient(135deg,var(--palu2),#0f766e);
+            border-bottom:1px solid rgba(255,255,255,.14); flex-shrink:0; }
+        .palu-guide-title { font-size:.95rem; font-weight:800; color:#fff; }
+        .palu-guide-sub { font-size:.72rem; color:rgba(255,255,255,.75); }
+        .palu-guide-close { background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.36);
+            color:#fff; border-radius:10px; padding:.5rem .9rem; font-weight:700; font-size:.82rem;
+            font-family:inherit; cursor:pointer; white-space:nowrap; flex-shrink:0; }
+        .palu-guide-close:hover { background:rgba(255,255,255,.26); }
+        .palu-guide-body { flex:1; min-height:0; background:#0f0a2e; }
+        .palu-guide-body iframe { display:block; width:100%; height:100%; border:0; }
     </style>
 </head>
 <body>
@@ -241,6 +263,7 @@
             <div class="btn-row" style="margin-top:.9rem;">
                 <button class="btn btn-palu" onclick="showCreate()">+ Create Group</button>
                 <button class="btn btn-ghost" onclick="showJoin()">Join Group</button>
+                {% if paluwagan_guide_url %}<button class="btn btn-ghost" onclick="openPaluwaganGuide()">&#128218; How it works</button>{% endif %}
             </div>
         </div>
 
@@ -401,6 +424,33 @@
 {% include "_get_started_modal.html" %}
 {% endif %}
 
+{% if paluwagan_guide_url %}
+<!-- ── ONBOARDING GUIDE (Notion embed) ──
+     Sits before the page content so a first-time visitor reads how the
+     paluwagan works before joining one. Auto-opened once per browser (the
+     seen-flag is written at reveal, so closing it without reading does not
+     bring it back) and re-openable from "How it works".
+     src is NOT set here — the JS copies data-src on first open, so the
+     Notion page's scripts never load for someone who ignores the guide. -->
+<div id="paluGuideOverlay" class="palu-guide-overlay" role="dialog" aria-modal="true"
+     aria-label="Paluwagan guide">
+    <div class="palu-guide-bar">
+        <div>
+            <div class="palu-guide-title">&#129309; How Paluwagan works</div>
+            <div class="palu-guide-sub">Read the guide, then close it to create or join a group.</div>
+        </div>
+        <button type="button" class="palu-guide-close" onclick="closePaluwaganGuide()">
+            &#10005; Close guide
+        </button>
+    </div>
+    <div class="palu-guide-body">
+        <iframe id="paluGuideFrame" title="Paluwagan guide"
+                data-src="{{ paluwagan_guide_url }}"
+                allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>
+    </div>
+</div>
+{% endif %}
+
 <script>
     // Must precede paluwagan.js: the bundle reads this to resolve the signer
     // (login method + session wallet). Emitting it after the bundle left WALLET
@@ -424,7 +474,8 @@
         gracePeriod: {{ 2 * 24 * 3600 }},
         roundDuration: {{ 7 * 24 * 3600 }},
         walletconnectProjectId: {{ walletconnect_project_id|tojson }},
-        assetVersion: {{ ASSET_VERSION|tojson }}
+        assetVersion: {{ ASSET_VERSION|tojson }},
+        guideUrl: {{ paluwagan_guide_url|tojson }}
     };
     {% if is_guest and not paluwagan_invite %}
     // A guest landing on a DEEP LINK must not get the connect modal shoved in
@@ -442,5 +493,6 @@
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/paluwagan.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/paluwagan-guide.js', v=ASSET_VERSION) }}"></script>
 </body>
 </html>
