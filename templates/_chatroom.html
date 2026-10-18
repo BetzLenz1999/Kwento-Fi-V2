@@ -43,7 +43,8 @@
   window.GM_CHAT_BOOT = {
     wallet: {{ (wallet or '')|tojson }},
     loginMethod: {{ (login_method or '')|tojson }},
-    assetVersion: {{ ASSET_VERSION|tojson }}
+    assetVersion: {{ ASSET_VERSION|tojson }},
+    onchain: {{ 'true' if (chatroom_onchain|default(false)) else 'false' }}
   };
 </script>
 
