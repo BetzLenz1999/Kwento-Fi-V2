@@ -550,20 +550,40 @@ def record_tip(sender_wallet: str, username: str, token: str, amount, tx_hash: s
 
     tip_row = (result.data or [{}])[0] if result else {}
 
-    message_row = _tip_message_insert(supabase, sender_wallet, congrats, token_key, amount_text, tx_hash)
-    message_id = (message_row or {}).get("id")
-    if message_id and tip_row.get("id"):
-        try:
-            supabase.table("community_chat_tips").update({"message_id": message_id}).eq("id", tip_row["id"]).execute()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("chatroom tips: linking message failed: %s", exc)
+    # Phase 2: the public announcement is an ON-CHAIN post (KIND_TIP), signed by
+    # the sender. The tips table above stays as the tip LEDGER (idempotency and
+    # on-chain verification need a unique tx_hash), but the message everyone
+    # reads in the room lives in the contract like every other message.
+    #
+    # The transfer has already moved by this point, so a declined announcement
+    # signature must NOT fail the tip — the caller reports it as a separate step.
+    announcement = None
+    if svc.onchain.is_configured():
+        announcement = svc.onchain.prepare_post(
+            sender_wallet, svc.onchain.KIND_TIP, 0, congrats)
+        if not announcement.get("success"):
+            logger.warning("chatroom tips: could not prepare the on-chain announcement: %s",
+                           announcement.get("error"))
+            announcement = None
+    else:
+        # Database-only deployment: keep the legacy announcement row.
+        message_row = _tip_message_insert(supabase, sender_wallet, congrats,
+                                          token_key, amount_text, tx_hash)
+        message_id = (message_row or {}).get("id")
+        if message_id and tip_row.get("id"):
+            try:
+                supabase.table("community_chat_tips").update(
+                    {"message_id": message_id}).eq("id", tip_row["id"]).execute()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("chatroom tips: linking message failed: %s", exc)
 
     return {
         "success": True,
         "duplicate": False,
-        "message": svc._public_row(
-            message_row, sender_wallet, svc._admin_wallets([sender_wallet])
-        ) if message_row else None,
+        # When the room is on-chain the browser must sign this to publish the
+        # announcement; the tip itself is already settled.
+        "announcement": announcement,
+        "announcement_message": congrats,
         "tip": {
             "token": token_key,
             "token_label": meta["label"],
