@@ -120,7 +120,8 @@
         window.GM_CHAT_BOOT = {
             wallet: {{ wallet|tojson }},
             loginMethod: {{ login_method|tojson }},
-            assetVersion: {{ ASSET_VERSION|tojson }}
+            assetVersion: {{ ASSET_VERSION|tojson }},
+            onchain: {{ 'true' if (chatroom_onchain|default(false)) else 'false' }}
         };
         window.WALLET_ADDRESS = {{ wallet|tojson }};
         document.addEventListener('DOMContentLoaded', function () {
