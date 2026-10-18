@@ -62,6 +62,19 @@ def _feature_enabled():
     return os.getenv("PALUWAGAN_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
+# Onboarding guide, a Notion page embedded in a full-screen overlay. Shown once
+# per browser before the page content, then re-openable from "How it works".
+# Env-overridable so the guide can be repointed without a code change; an empty
+# value removes both the overlay and its button.
+GUIDE_URL_DEFAULT = (
+    "https://gooddollarphilippines.notion.site/ebd/3fd98a6d728280a9a27bcbecc6403a3c"
+)
+
+
+def _guide_url():
+    return os.getenv("PALUWAGAN_GUIDE_URL", GUIDE_URL_DEFAULT).strip()
+
+
 class _timed_read:
     """Context manager that installs the request's read deadline.
 
@@ -131,6 +144,7 @@ def _render_paluwagan(join_name=""):
         ],
         walletconnect_project_id=wc_pid,
         walletconnect_sidecar_enabled=wc_sidecar,
+        paluwagan_guide_url=_guide_url(),
         privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
         # Guests have no login method — never default this to "walletconnect"
