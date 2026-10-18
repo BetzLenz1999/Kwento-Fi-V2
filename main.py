@@ -225,6 +225,10 @@ _CSP_DIRECTIVES = (
     "https://telegram.org https://*.telegram.org "
     "https://www.youtube.com https://www.youtube-nocookie.com "
     "https://platform.twitter.com "
+    # Notion-hosted onboarding guides embedded as <iframe> (paluwagan guide).
+    # notion.site serves `frame-ancestors https: http:`, so embedding is
+    # permitted — we only need to allow the frame here.
+    "https://*.notion.site "
     "https://apiplus.squidrouter.com https://v2.api.squidrouter.com "
     "https://studio.squidrouter.com https://app.squidrouter.com "
     "https://*.squidrouter.com "
