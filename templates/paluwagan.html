@@ -151,7 +151,22 @@
         .order-row .idx { width:26px; height:26px; border-radius:8px; display:grid; place-items:center; font-weight:800;
             font-size:.78rem; background:rgba(45,212,191,.14); color:var(--palu); border:1px solid rgba(45,212,191,.3); flex-shrink:0; }
 
-        @media(max-width:560px){ .split{ grid-template-columns:1fr; } .container{ padding:.85rem .85rem 2.5rem; } }
+        /* ── skeleton loaders ──
+           Stable layout while on-chain data loads (no jump when it lands) and a
+           clear progress cue that is not a spinner that can hang forever. */
+        .skeleton { padding:.2rem 0; }
+        .skel { display:block; background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.12),rgba(255,255,255,.06));
+            background-size:200% 100%; border-radius:8px; animation:skel 1.4s ease-in-out infinite; }
+        .skel-row { display:flex; align-items:center; gap:.7rem; padding:.6rem .7rem; }
+        .skel-row + .skel-row { margin-top:.5rem; }
+        .skel-idx { width:26px; height:26px; border-radius:8px; flex-shrink:0; }
+        .skel-line { height:12px; width:100%; }
+        .skel-line.short { width:55%; margin-top:.45rem; }
+        @keyframes skel { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+        @media (prefers-reduced-motion:reduce){ .skel{ animation:none; } }
+
+        /* A locked section blocks its controls while a request is in flight. */
+        [data-loading="1"] button { pointer-events:none; }
     </style>
 </head>
 <body>
@@ -187,8 +202,34 @@
 
     <div id="pageAlert" class="alert"></div>
 
+    <!-- ── INVITE (deep link /paluwagan/<name> or ?join=…) ──
+         Rendered as the FIRST pane for a deep link so a member never sees the
+         generic join form. The client resolves membership on-chain and then
+         either opens the team dashboard or fills in the invite card. -->
+    <div id="secInvite" class="section{% if paluwagan_invite %} active{% endif %}">
+        <div class="card palu">
+            <div class="card-title">Group invite</div>
+            <div id="inviteBody">
+                <div class="skeleton">
+                    <span class="skel skel-line"></span>
+                    <span class="skel skel-line short"></span>
+                </div>
+            </div>
+        </div>
+        <div class="card" id="inviteActions" style="display:none;">
+            <button class="btn btn-palu" id="inviteJoinBtn" onclick="joinGroup()">Join Group</button>
+            <div class="btn-row" style="margin-top:.6rem;">
+                <button class="btn btn-ghost" onclick="showOverview()">My groups</button>
+                <button class="btn btn-ghost" onclick="showCreate()">Create a group</button>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-ghost" onclick="showOverview()">&larr; All groups</button>
+        </div>
+    </div>
+
     <!-- ── OVERVIEW ── -->
-    <div id="secOverview" class="section active">
+    <div id="secOverview" class="section{% if not paluwagan_invite %} active{% endif %}">
         <div class="card palu">
             <div class="row">
                 <div>
@@ -259,7 +300,7 @@
             <p class="note">You can paste the whole invite link (e.g. goodmarketph.live/paluwagan/teambetz) &mdash; the group is looked up on-chain.</p>
             <div class="btn-row" style="margin-top:1rem;">
                 <button class="btn btn-ghost" onclick="showOverview()">Cancel</button>
-                <button class="btn btn-palu" onclick="previewJoin()">Preview Group</button>
+                <button class="btn btn-palu" id="joinPreviewBtn" onclick="previewJoin()">Preview Group</button>
             </div>
         </div>
         <div class="card" id="joinPreview" style="display:none;">
@@ -329,7 +370,7 @@
 
         <div class="btn-row">
             <button class="btn btn-ghost" onclick="showOverview()">&larr; All groups</button>
-            <button class="btn btn-ghost" onclick="refreshGroup()">Refresh</button>
+            <button class="btn btn-ghost" id="refreshBtn" onclick="refreshGroup({force:true})">Refresh</button>
         </div>
     </div>
 
@@ -370,6 +411,7 @@
         isGuest: {{ 'true' if is_guest else 'false' }},
         loginMethod: {{ login_method|tojson }},
         joinName: {{ join_name|tojson }},
+        invite: {{ 'true' if paluwagan_invite else 'false' }},
         contract: {{ paluwagan_contract|tojson }},
         deploymentBlock: {{ paluwagan_deployment_block|tojson }},
         configured: {{ 'true' if paluwagan_configured else 'false' }},
@@ -384,7 +426,9 @@
         walletconnectProjectId: {{ walletconnect_project_id|tojson }},
         assetVersion: {{ ASSET_VERSION|tojson }}
     };
-    {% if is_guest %}
+    {% if is_guest and not paluwagan_invite %}
+    // A guest landing on a DEEP LINK must not get the connect modal shoved in
+    // their face — the invite card is the primary action there.
     document.addEventListener('DOMContentLoaded', function () {
         if (typeof window.openGoodMarketGetStarted === 'function') window.openGoodMarketGetStarted();
     });
