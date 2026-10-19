@@ -40,6 +40,7 @@ function build() {
     },
     POST_GAS_FALLBACK: 150000n,
     POST_GAS_CEILING: 300000n,
+    FEE_CURRENCY_NATIVE: 'CELO',
     TIP_SIGN_TIMEOUT_MS: 5000,
     _tipEnsureChain: async () => { ctx.__chainSwitches.push(1); },
     _tipProvider: async () => ctx.__provider,
@@ -49,12 +50,11 @@ function build() {
     __chainSwitches: []
   };
   const body = [
-    slice('async function _postGasParams', 'async function _postSendTransaction'),
-    slice('async function _postSendTransaction', 'function configureTip'),
+    slice('function _tipErrCode', 'function configureTip'),
     slice('async function postMessage', 'function _tipModal')
   ].join('\n');
   const factory = new Function('ctx', 'with (ctx) { ' + body +
-    '; return { _postGasParams, _postSendTransaction, postMessage }; }');
+    '; return { _postGasParams, _postSendTransaction, postMessage, _feeCurrencyCandidates }; }');
   const api = factory(ctx);
   return { ctx, api };
 }
@@ -111,6 +111,68 @@ async function main() {
     check('carries the chainId (in-app wallet routes by it)', tx && tx.chainId === 42220);
     // The in-app wallet estimates via ethers, so it must NOT be sent a fee.
     check('no gas field (in-app wallet estimates locally)', tx && tx.gas === undefined);
+    check('no feeCurrency for a native-CELO choice', tx && tx.feeCurrency === undefined);
+  }
+
+  // ── 1b. the in-app wallet carries the chosen CIP-64 fee currency ─────────────
+  console.log('in-app wallet with a fee currency:');
+  {
+    const CUSD = '0x765DE816845861e75A25fCA122bb6898B8B1282a';
+    const { ctx, api } = build();
+    ctx.__local = true;
+    const provider = makeProvider();
+    await api._postSendTransaction(provider, {
+      to: '0x' + '1'.repeat(40), data: '0x1c9d6ab3', value: '0x0',
+      chain_id: 42220, network: 'celo',
+      fee_currency: 'CUSD', fee_currency_address: CUSD, fee_currency_native: false
+    }).catch(() => {});
+    const tx = provider.sent[0];
+    check('carries the chosen feeCurrency', tx && String(tx.feeCurrency).toLowerCase() === CUSD.toLowerCase(),
+      tx && tx.feeCurrency);
+    check('still no gas fields', tx && tx.gas === undefined && tx.gasPrice === undefined);
+
+    // A cancelled PIN prompt must NOT be retried with another token.
+    const cancel = build();
+    cancel.ctx.__local = true;
+    let localAttempts = 0;
+    const cancelling = {
+      async request() {
+        localAttempts += 1;
+        const e = new Error('User cancelled');
+        e.code = 4001;
+        throw e;
+      }
+    };
+    await cancel.api._postSendTransaction(cancelling, {
+      to: '0x' + '1'.repeat(40), data: '0x1c9d6ab3', value: '0x0',
+      chain_id: 42220, network: 'celo',
+      fee_currency: 'CUSD', fee_currency_address: CUSD, fee_currency_native: false
+    }).catch(() => {});
+    check('a cancelled PIN prompt is not retried', localAttempts === 1, String(localAttempts));
+
+    // A fee-currency rejection IS retried with native CELO.
+    const retry = build();
+    retry.ctx.__local = true;
+    let retryTxs = [];
+    const feeRejecting = {
+      async request(payload) {
+        retryTxs.push(payload.params[0]);
+        if (payload.params[0].feeCurrency) {
+          const e = new Error('feeCurrency not supported');
+          e.code = -32602;
+          throw e;
+        }
+        return '0x' + 'd'.repeat(64);
+      }
+    };
+    const ok = await retry.api._postSendTransaction(feeRejecting, {
+      to: '0x' + '1'.repeat(40), data: '0x1c9d6ab3', value: '0x0',
+      chain_id: 42220, network: 'celo',
+      fee_currency: 'CUSD', fee_currency_address: CUSD, fee_currency_native: false
+    }).catch((e) => 'ERR:' + e.message);
+    check('the in-app wallet retries without the token', retryTxs.length === 2, String(retryTxs.length));
+    check('the retry dropped the field', retryTxs[1] && retryTxs[1].feeCurrency === undefined);
+    check('the in-app retry succeeded', ok === '0x' + 'd'.repeat(64), ok);
   }
 
   // ── 2. injected wallet gets explicit gas + gasPrice ──────────────────────────
@@ -206,7 +268,95 @@ async function main() {
     check('returns the hash', out.tx_hash && out.tx_hash.startsWith('0x'));
   }
 
-  // ── 7. a rejected prepare is surfaced ────────────────────────────────────────
+  // ── 7. CIP-64: a chosen fee currency is sent, and CELO is the fallback ───────
+  console.log('CIP-64 fee currency:');
+  {
+    const CUSD = '0x765DE816845861e75A25fCA122bb6898B8B1282a';
+    // 7a. The chosen token is attached to both the estimate and the send.
+    const { ctx, api } = build();
+    ctx.__local = false;
+    const provider = makeProvider({ accounts: [WALLET] });
+    const prep = { to: '0x' + '1'.repeat(40), data: '0x1c9d6ab3', value: '0x0',
+                   chain_id: 42220, network: 'celo',
+                   fee_currency: 'CUSD', fee_currency_address: CUSD, fee_currency_native: false };
+    await api._postSendTransaction(provider, prep).catch(() => {});
+    const tx = provider.sent[0];
+    check('the chosen feeCurrency is sent', tx && String(tx.feeCurrency).toLowerCase() === CUSD.toLowerCase(),
+      tx && tx.feeCurrency);
+    check('gas is still explicit', tx && typeof tx.gas === 'string' && typeof tx.gasPrice === 'string');
+
+    // 7b. Native CELO omits the field entirely (every wallet can honour it).
+    const native = build();
+    native.ctx.__local = false;
+    const p2 = makeProvider({ accounts: [WALLET] });
+    await native.api._postSendTransaction(p2, {
+      to: '0x' + '1'.repeat(40), data: '0x1c9d6ab3', value: '0x0',
+      chain_id: 42220, network: 'celo', fee_currency: 'CELO', fee_currency_native: true
+    }).catch(() => {});
+    check('native CELO sends no feeCurrency field', p2.sent[0] && p2.sent[0].feeCurrency === undefined);
+    check('candidates are [native] for CELO',
+      JSON.stringify(api._feeCurrencyCandidates({ fee_currency: 'CELO' })) === '[null]');
+
+    // 7c. A wallet that rejects the fee currency is retried with native CELO.
+    const retry = build();
+    retry.ctx.__local = false;
+    let attempts = [];
+    const rejecting = {
+      sent: attempts,
+      async request(payload) {
+        if (payload.method === 'eth_requestAccounts' || payload.method === 'eth_accounts') return [WALLET];
+        if (payload.method === 'eth_estimateGas') return '0x' + (70000).toString(16);
+        if (payload.method === 'eth_gasPrice') return '0x' + (100000000000).toString(16);
+        if (payload.method === 'eth_sendTransaction') {
+          attempts.push(payload.params[0]);
+          if (payload.params[0].feeCurrency) {
+            const e = new Error('feeCurrency not whitelisted');
+            e.code = -32602;
+            throw e;
+          }
+          return '0x' + 'c'.repeat(64);
+        }
+        return null;
+      }
+    };
+    const hash = await retry.api._postSendTransaction(rejecting, {
+      to: '0x' + '1'.repeat(40), data: '0x1c9d6ab3', value: '0x0',
+      chain_id: 42220, network: 'celo',
+      fee_currency: 'CUSD', fee_currency_address: CUSD, fee_currency_native: false
+    }).catch((e) => 'ERR:' + e.message);
+    check('retried after the fee-currency rejection', attempts.length === 2, JSON.stringify(attempts.length));
+    check('first attempt carried the token', attempts[0] && attempts[0].feeCurrency);
+    check('retry dropped the field (native CELO)', attempts[1] && attempts[1].feeCurrency === undefined);
+    check('the retry succeeded', hash === '0x' + 'c'.repeat(64), hash);
+
+    // 7d. A USER REJECTION is never retried with another token.
+    const cancel = build();
+    cancel.ctx.__local = false;
+    let cancels = 0;
+    const cancelling = {
+      async request(payload) {
+        if (payload.method === 'eth_requestAccounts' || payload.method === 'eth_accounts') return [WALLET];
+        if (payload.method === 'eth_estimateGas') return '0x' + (70000).toString(16);
+        if (payload.method === 'eth_gasPrice') return '0x' + (100000000000).toString(16);
+        if (payload.method === 'eth_sendTransaction') {
+          cancels += 1;
+          const e = new Error('User rejected the request');
+          e.code = 4001;
+          throw e;
+        }
+        return null;
+      }
+    };
+    const cancelErr = await cancel.api._postSendTransaction(cancelling, {
+      to: '0x' + '1'.repeat(40), data: '0x1c9d6ab3', value: '0x0',
+      chain_id: 42220, network: 'celo',
+      fee_currency: 'CUSD', fee_currency_address: CUSD, fee_currency_native: false
+    }).then(() => null, (e) => e.message);
+    check('a user rejection stops the flow', cancels === 1, String(cancels));
+    check('the rejection reason is surfaced', /reject/i.test(cancelErr || ''), cancelErr);
+  }
+
+  // ── 8. a rejected prepare is surfaced ────────────────────────────────────────
   console.log('prepare rejection:');
   {
     const { ctx, api } = build();
