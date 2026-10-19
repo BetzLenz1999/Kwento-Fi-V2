@@ -1372,30 +1372,36 @@ class LearnEarnQuizManager:
                             )
 
                             if main_content:
+                                # Emit NO literal newline between block tags.
+                                # The old per-tag "\n" was rendered as a blank
+                                # line by the client's `white-space: pre-wrap`
+                                # and measured +80px of dead space in a 465px
+                                # document. Spacing belongs to CSS, not to the
+                                # transport.
                                 scraped_html = ""
 
                                 # Extract headings and paragraphs
                                 for element in main_content.find_all(['h1', 'h2', 'h3', 'p', 'ul', 'ol']):
                                     if element.name == 'h1':
-                                        scraped_html += f"<h2>{element.get_text().strip()}</h2>\n"
+                                        scraped_html += f"<h2>{element.get_text().strip()}</h2>"
                                     elif element.name == 'h2':
-                                        scraped_html += f"<h3>{element.get_text().strip()}</h3>\n"
+                                        scraped_html += f"<h3>{element.get_text().strip()}</h3>"
                                     elif element.name == 'h3':
-                                        scraped_html += f"<h3>{element.get_text().strip()}</h3>\n"
+                                        scraped_html += f"<h3>{element.get_text().strip()}</h3>"
                                     elif element.name == 'p':
                                         text = element.get_text().strip()
                                         if text:
-                                            scraped_html += f"<p>{text}</p>\n"
+                                            scraped_html += f"<p>{text}</p>"
                                     elif element.name == 'ul':
-                                        scraped_html += "<ul>\n"
+                                        scraped_html += "<ul>"
                                         for li in element.find_all('li', recursive=False):
-                                            scraped_html += f"<li>{li.get_text().strip()}</li>\n"
-                                        scraped_html += "</ul>\n"
+                                            scraped_html += f"<li>{li.get_text().strip()}</li>"
+                                        scraped_html += "</ul>"
                                     elif element.name == 'ol':
-                                        scraped_html += "<ol>\n"
+                                        scraped_html += "<ol>"
                                         for li in element.find_all('li', recursive=False):
-                                            scraped_html += f"<li>{li.get_text().strip()}</li>\n"
-                                        scraped_html += "</ol>\n"
+                                            scraped_html += f"<li>{li.get_text().strip()}</li>"
+                                        scraped_html += "</ol>"
 
                                 content = scraped_html.strip()
 
