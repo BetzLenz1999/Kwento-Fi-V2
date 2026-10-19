@@ -16,14 +16,8 @@
             box-sizing: border-box;
         }
 
-        /* ── Type scale ──────────────────────────────────────────────────────
-           Base is 16px (the accessible floor) and the module card is expressed
-           in `rem` against it. This page used to set 13px AND scale the whole
-           document to 70%, which rendered lesson body text at 8.19px — roughly
-           half the floor. Never re-introduce a document-wide scale here; size
-           the content for the viewport instead. */
         html {
-            font-size: 16px;
+            font-size: 13px;
         }
 
         body {
@@ -35,178 +29,10 @@
             color: #ffffff;
             position: relative;
             overflow-x: hidden;
-        }
-
-        /* ── Learn & Earn module (study material) ────────────────────────────
-           The module card is injected by displayModuleLinks() as HTML. It used
-           to carry every style inline in a JS template literal, so it could not
-           inherit the theme, could not reflow, and was the last dark-theme
-           surface on an otherwise light page. These classes are the single
-           source of truth for its look. */
-        .le-module-head { text-align: center; margin-bottom: 1.5rem; }
-        .le-module-head h2 {
-            color: var(--accent, #667eea);
-            margin-bottom: 0.6rem;
-            font-size: 1.35rem;
-            line-height: 1.3;
-        }
-        .le-module-sub { color: var(--text-dim, #475569); font-size: 1rem; }
-        .le-module-progress {
-            margin-top: 0.85rem;
-            padding: 0.7rem 0.9rem;
-            background: rgba(251, 191, 36, 0.12);
-            border-radius: 8px;
-            border: 1px solid rgba(251, 191, 36, 0.35);
-            color: var(--gold-deep, #92400e);
-            font-weight: 700;
-        }
-
-        .le-module-card {
-            background: var(--card, #ffffff);
-            border: 1px solid var(--card-border, rgba(15, 23, 42, 0.10));
-            border-radius: 12px;
-            padding: 0.9rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
-        }
-        .le-module-title {
-            /* 4.5:1 on the light card (the old #667eea measured 3.66:1). */
-            color: var(--accent-strong, #4338ca);
-            margin-bottom: 0.4rem;
-            font-size: 1.15rem;
-            line-height: 1.35;
-        }
-        .le-module-desc {
-            color: var(--text-dim, #475569);
-            margin-bottom: 0.7rem;
-            font-style: italic;
-            font-size: 0.92rem;
-        }
-
-        /* Timer: readable label + a countdown that is announced politely. */
-        .le-module-timer {
-            background: linear-gradient(135deg, #4f46e5, #7c3aed);
-            padding: 0.7rem;
-            border-radius: 10px;
-            margin-bottom: 0.9rem;
-            text-align: center;
-        }
-        .le-module-timer-label { font-size: 0.85rem; color: #ffffff; margin-bottom: 0.15rem; }
-        .le-module-timer-value {
-            font-size: 1.9rem;
-            font-weight: 700;
-            color: #ffffff;
-            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-            line-height: 1.1;
-        }
-        .le-module-timer-note { font-size: 0.8rem; color: rgba(255, 255, 255, 0.92); margin-top: 0.15rem; }
-
-        /* Lesson body. `pre-wrap` is applied ONLY to genuinely plain-text
-           modules (see .is-plain) — applying it to HTML content turns the
-           transport newlines into blank lines and measured +80px of dead
-           space in a 465px document.
-
-           There is deliberately NO inner scroll box. The old `max-height:300px
-           + overflow-y:auto` hid ~57% of a normal lesson behind a nested
-           scrollbar (459px of 856px at 360px wide), which is both the ugliest
-           part of the old layout and awkward to scroll on a phone. The lesson
-           now flows and the page scrolls, like any other reading surface. */
-        .le-module-body {
-            background: var(--card, #ffffff);
-            padding: 0.9rem 1rem;
-            border-radius: 8px;
-            color: var(--text, #1f2937);
-            line-height: 1.65;
-            font-size: 1rem;
-            word-break: break-word;
-            overflow-wrap: anywhere;
-        }
-        .le-module-body.is-plain { white-space: pre-wrap; }
-        /* The page-wide `* { margin:0; padding:0 }` reset strips the browser's
-           `ul { padding-left: 40px }`, so list items had no hanging indent and
-           the discs sat in the card's own padding. Restore a real list. */
-        .le-module-body p { margin: 0 0 0.8em; }
-        .le-module-body p:last-child { margin-bottom: 0; }
-        .le-module-body ul,
-        .le-module-body ol { margin: 0.4em 0 0.85em; padding-left: 1.45em; }
-        .le-module-body li { margin: 0.3em 0; }
-        .le-module-body li > ul,
-        .le-module-body li > ol { margin: 0.25em 0 0.25em; }
-        .le-module-body a { color: var(--link, #1d4ed8); text-decoration: underline; font-weight: 600; }
-        .le-module-body strong { font-weight: 700; }
-        .le-module-body blockquote {
-            margin: 0.6em 0;
-            padding: 0.4em 0 0.4em 0.9em;
-            border-left: 3px solid var(--card-border, rgba(15, 23, 42, 0.15));
-            color: var(--text-dim, #475569);
-        }
-        .le-module-body img { max-width: 100%; height: auto; border-radius: 6px; }
-        .le-module-empty { color: var(--text-dim, #475569); }
-
-        /* The module card is injected INSIDE #quiz-container, which carries a
-           legacy `#quiz-container h3` rule (an ID, so it outranks any class
-           selector). That rule was written for the quiz question heading and
-           gives every lesson <h3> a white padded box and 0.95rem text. These
-           ID-prefixed rules deliberately out-specify it so lesson typography
-           is owned by the module, not by the quiz shell. */
-        #quiz-container .le-module-body h2 { font-size: 1.25rem; line-height: 1.35; margin: 0.2em 0 0.5em; color: var(--text, #1f2937); }
-        #quiz-container .le-module-body h3 { font-size: 1.1rem; line-height: 1.4; margin: 1.1em 0 0.4em; color: var(--text, #1f2937); font-weight: 700; background: none; padding: 0; border-radius: 0; text-shadow: none; }
-        #quiz-container .le-module-body h4 { font-size: 1rem; margin: 0.9em 0 0.35em; color: var(--text, #1f2937); font-weight: 700; background: none; padding: 0; }
-        #quiz-container .le-module-body h2:first-child,
-        #quiz-container .le-module-body h3:first-child,
-        #quiz-container .le-module-body h4:first-child { margin-top: 0; }
-        #quiz-container .le-module-title {
-            color: var(--accent-strong, #b45309);
-            font-size: 1.15rem;
-            line-height: 1.35;
-            margin: 0 0 0.4rem;
-            font-weight: 700;
-            background: none;
-            padding: 0;
-            border-radius: 0;
-            text-shadow: none;
-        }
-
-        /* Unlock state stays visually distinct from the disabled state but is
-           readable: the old white-on-#a0aec0 measured 1.49:1. */
-        .le-next-btn {
-            width: 100%;
-            min-height: 48px;
-            padding: 1rem 1.1rem;
-            border: none;
-            border-radius: 12px;
-            font-size: 1.05rem;
-            font-weight: 700;
-            font-family: inherit;
-            cursor: pointer;
-        }
-        .le-next-btn[disabled] {
-            background: #e2e8f0;
-            color: #475569;
-            cursor: not-allowed;
-        }
-        .le-next-btn:not([disabled]) {
-            background: linear-gradient(135deg, #059669, #047857);
-            color: #ffffff;
-            cursor: pointer;
-        }
-        .le-next-btn:focus-visible { outline: 3px solid var(--accent, #667eea); outline-offset: 2px; }
-        .le-module-timer.is-warning { background: linear-gradient(135deg, #b91c1c, #991b1b); }
-        /* Applied once the reading timer elapses. The lesson stays readable on
-           purpose — see the note in startModuleReadingTimer(). */
-        #quiz-container .le-module-body.is-unlocked { border: 1px solid rgba(5, 150, 105, 0.45); }
-
-        /* Off-screen text for screen-reader-only announcements. */
-        .sr-only {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            white-space: nowrap;
-            border: 0;
+            transform: scale(0.7);
+            transform-origin: top center;
+            width: 142.857%;
+            margin-left: -21.4285%;
         }
 
         @keyframes gradientShift {
@@ -1057,13 +883,6 @@
             --text-muted: #8a8378;
             --card-border: #e9e2d6;
             --serif: 'Fraunces', 'Georgia', serif;
-            /* Tokens consumed by the Learn & Earn module card. --accent-strong
-               is the readable variant of the accent for TEXT on a light card:
-               the old #667eea measured 3.66:1, below the 4.5:1 AA floor. */
-            --accent: #e8720a;
-            --accent-strong: #b45309;
-            --card: #ffffff;
-            --link: #1d4ed8;
         }
 
         body {
@@ -1156,26 +975,6 @@
             box-shadow: 0 4px 15px rgba(var(--accent-rgb),0.3);
         }
         .btn-share:hover { box-shadow: 0 6px 20px rgba(var(--accent-rgb),0.4); }
-
-        /* ─────────────────────────────────────────────────────────────
-           Phone rules. This page previously had NO media query at all and
-           instead scaled the whole document to 70% at every width, which
-           shrank lesson text to 8.19px on a phone. Size for the viewport
-           instead.
-           ───────────────────────────────────────────────────────────── */
-        @media (max-width: 640px) {
-            .container { padding: 12px; }
-            .le-module-head h2 { font-size: 1.2rem; }
-            .le-module-title { font-size: 1.08rem; }
-            .le-module-body { font-size: 1rem; padding: 0.85rem 0.9rem; }
-            .le-module-timer-value { font-size: 1.7rem; }
-            .le-module-card { padding: 0.8rem; }
-            .le-next-btn { font-size: 1rem; padding: 0.95rem 1rem; }
-        }
-
-        /* Short viewports: nothing to reclaim now that the lesson flows
-           naturally, so this block is intentionally empty. Kept as a marker
-           so a future short-screen tweak has an obvious home. */
     </style>
     <!-- Shared Get Started modal styles (guest connect flow). -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
@@ -2706,135 +2505,15 @@
         let moduleReadingTimer = null;
         let moduleTimeRemaining = 0;
 
-        // Admin-authored free text (module title/description) is injected into
-        // an innerHTML template, so it must be escaped before interpolation.
-        function _leEscapeHtml(value) {
-            return String(value == null ? '' : value)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        // ── Module content: sanitize, normalize, then linkify ────────────────
-        //
-        // Module content arrives from two untrusted places: a third-party page
-        // fetched by the server-side scraper, and an admin free-text field. It
-        // is rendered with innerHTML, so it must be reduced to a known-safe tag
-        // set first. The allow-list is exactly what the admin textarea
-        // advertises plus the inline tags the scraper can emit.
-        const MODULE_ALLOWED_TAGS = {
-            P: 1, UL: 1, OL: 1, LI: 1, H2: 1, H3: 1, H4: 1,
-            STRONG: 1, B: 1, EM: 1, I: 1, U: 1, A: 1, BR: 1,
-            BLOCKQUOTE: 1, CODE: 1, PRE: 1, SPAN: 1
-        };
-
-        function sanitizeModuleHtml(rawHtml) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(`<div>${String(rawHtml)}</div>`, 'text/html');
-            const root = doc.body.firstElementChild;
-            if (!root) return '';
-
-            // Walk a snapshot: the tree is mutated as we go.
-            Array.from(root.querySelectorAll('*')).forEach(el => {
-                const tag = el.tagName;
-
-                if (!MODULE_ALLOWED_TAGS[tag]) {
-                    // Drop the element but keep its text (a <script> body is
-                    // removed by the text-node pass below).
-                    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'IFRAME' ||
-                        tag === 'OBJECT' || tag === 'EMBED' || tag === 'LINK' ||
-                        tag === 'META' || tag === 'TEMPLATE') {
-                        el.remove();
-                    } else if (el.parentNode) {
-                        const frag = doc.createDocumentFragment();
-                        while (el.firstChild) frag.appendChild(el.firstChild);
-                        el.parentNode.replaceChild(frag, el);
-                    }
-                    return;
-                }
-
-                // Strip every attribute except a validated href/target/rel.
-                Array.from(el.attributes).forEach(attr => {
-                    const name = attr.name.toLowerCase();
-                    const keep = (tag === 'A' && (name === 'href' || name === 'target' || name === 'rel'));
-                    if (!keep) el.removeAttribute(attr.name);
-                });
-
-                if (tag === 'A') {
-                    const href = (el.getAttribute('href') || '').trim();
-                    // javascript:/data: URLs are an XSS vector in innerHTML.
-                    if (!href || /^\s*(javascript|data|vbscript):/i.test(href)) {
-                        el.removeAttribute('href');
-                    }
-                }
-            });
-
-            return root.innerHTML;
-        }
-
-        // Collapse the whitespace a scraper leaves BETWEEN block elements.
-        // The server used to emit a literal "\n" after every tag; under
-        // `white-space: pre-wrap` each one rendered as a blank line and
-        // measured +80px of dead space in a 465px document. Whitespace inside
-        // a paragraph is left alone (it is real inline spacing).
-        const MODULE_BLOCK_TAGS = {
-            P: 1, UL: 1, OL: 1, LI: 1, H2: 1, H3: 1, H4: 1,
-            BLOCKQUOTE: 1, PRE: 1, DIV: 1, TABLE: 1
-        };
-
-        function normalizeModuleWhitespace(root) {
-            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-            const doomed = [];
-            while (walker.nextNode()) {
-                const node = walker.currentNode;
-                const parent = node.parentElement;
-                if (!parent || parent.closest('pre')) continue;
-                if (node.textContent.trim() !== '') continue;   // real content
-
-                // A whitespace-only text node between two block-level siblings
-                // is transport noise, not authored spacing.
-                const prev = node.previousElementSibling;
-                const next = node.nextElementSibling;
-                const betweenBlocks =
-                    (!prev || MODULE_BLOCK_TAGS[prev.tagName]) &&
-                    (!next || MODULE_BLOCK_TAGS[next.tagName]);
-                if (betweenBlocks) doomed.push(node);
-            }
-            doomed.forEach(node => node.remove());
-
-            // Also collapse a run of <br><br><br>+ into a single break.
-            Array.from(root.querySelectorAll('br')).forEach(br => {
-                let run = 1;
-                let cursor = br.nextElementSibling;
-                while (cursor && cursor.tagName === 'BR') { run++; cursor = cursor.nextElementSibling; }
-                for (let i = 1; i < run; i++) {
-                    const extra = br.nextElementSibling;
-                    if (extra && extra.tagName === 'BR') extra.remove();
-                }
-            });
-        }
-
-        // Does this content contain real block markup, or is it plain text?
-        // Only plain text keeps `white-space: pre-wrap`.
-        function moduleContentIsPlainText(rawContent) {
-            return !/<(p|ul|ol|li|h[1-6]|div|blockquote|table|pre)\b/i.test(String(rawContent || ''));
-        }
-
         function makeModuleContentLinksClickable(rawContent) {
             if (!rawContent || !String(rawContent).trim()) {
-                return { html: '<p class="le-module-empty">No content available for this module.</p>', plain: false };
+                return '<p style="color: #999;">No content available for this module.</p>';
             }
 
-            const isPlain = moduleContentIsPlainText(rawContent);
-            const safe = sanitizeModuleHtml(rawContent);
-
+            const wrapped = `<div>${String(rawContent)}</div>`;
             const parser = new DOMParser();
-            const doc = parser.parseFromString(`<div>${safe}</div>`, 'text/html');
+            const doc = parser.parseFromString(wrapped, 'text/html');
             const container = doc.body.firstElementChild;
-
-            normalizeModuleWhitespace(container);
 
             // 1) Ensure existing anchor tags are safely clickable
             container.querySelectorAll('a[href]').forEach(anchor => {
@@ -2847,6 +2526,9 @@
 
                 anchor.setAttribute('target', '_blank');
                 anchor.setAttribute('rel', 'noopener noreferrer');
+                anchor.style.color = '#2563eb';
+                anchor.style.textDecoration = 'underline';
+                anchor.style.fontWeight = '600';
             });
 
             // 2) Convert plain text URLs into clickable links
@@ -2882,6 +2564,9 @@
                     link.target = '_blank';
                     link.rel = 'noopener noreferrer';
                     link.textContent = matchedText;
+                    link.style.color = '#2563eb';
+                    link.style.textDecoration = 'underline';
+                    link.style.fontWeight = '600';
                     fragment.appendChild(link);
 
                     lastIndex = start + matchedText.length;
@@ -2894,7 +2579,7 @@
                 node.parentNode.replaceChild(fragment, node);
             });
 
-            return { html: container.innerHTML, plain: isPlain };
+            return container.innerHTML;
         }
 
         // Display module links with embedded content and reading timer
@@ -2909,60 +2594,50 @@
 
             const currentModule = moduleLinks[currentModuleIndex];
             const readingTime = currentModule.reading_time_minutes || 5;
-            const rendered = makeModuleContentLinksClickable(currentModule.content);
-            const bodyClass = rendered.plain ? 'le-module-body is-plain' : 'le-module-body';
+            const renderedModuleContent = makeModuleContentLinksClickable(currentModule.content);
             moduleTimeRemaining = readingTime * 60; // Convert to seconds
 
-            // The module title/description are admin-authored free text.
-            const titleText = _leEscapeHtml(currentModule.title || 'Study module');
-            const descText = currentModule.description
-                ? _leEscapeHtml(currentModule.description) : '';
-
             container.innerHTML = `
-                <div class="le-module-head">
-                    <h2>📚 Required Study Materials</h2>
-                    <p class="le-module-sub">
+                <div style="text-align: center; margin-bottom: 2rem;">
+                    <h2 style="color: #667eea; margin-bottom: 1rem;">📚 Required Study Materials</h2>
+                    <p style="color: rgba(241, 245, 249, 0.8); font-size: 1.1rem;">
                         Read each module carefully for ${readingTime} minutes before proceeding
                     </p>
-                    <div class="le-module-progress">
-                        📖 Progress: ${currentModuleIndex + 1}/${moduleLinks.length} modules
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(255, 215, 0, 0.1); border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3);">
+                        <strong style="color: #fbbf24;">📖 Progress: ${currentModuleIndex + 1}/${moduleLinks.length} modules</strong>
                     </div>
                 </div>
 
                 <!-- Module Content Card -->
-                <div class="le-module-card">
-                    <h3 class="le-module-title">${titleText}</h3>
-                    ${descText ? `<p class="le-module-desc">${descText}</p>` : ''}
+                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 14px; margin-bottom: 14px; border: 2px solid rgba(102, 126, 234, 0.4);">
+                    <h3 style="color: #667eea; margin-bottom: 8px; font-size: 1.1rem;">
+                        ${currentModule.title}
+                    </h3>
+                    ${currentModule.description ? `<p style="color: rgba(241, 245, 249, 0.8); margin-bottom: 10px; font-style: italic; font-size: 0.88rem;">${currentModule.description}</p>` : ''}
 
-                    <!-- Reading Timer.
-                         The countdown ticks every second, so aria-live sits on
-                         a SEPARATE off-screen element that is updated only on
-                         the state change (unlocked) — putting aria-live on the
-                         per-second value would make a screen reader announce
-                         every tick. -->
-                    <div id="module-timer" class="le-module-timer" role="timer">
-                        <div class="le-module-timer-label">⏰ Required Reading Time</div>
-                        <div id="module-time-display" class="le-module-timer-value">
+                    <!-- Reading Timer -->
+                    <div id="module-timer" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); padding: 12px; border-radius: 10px; margin-bottom: 14px; text-align: center;">
+                        <div style="font-size: 0.82rem; color: rgba(255,255,255,0.9); margin-bottom: 4px;">⏰ Required Reading Time</div>
+                        <div id="module-time-display" style="font-size: 2rem; font-weight: bold; color: white; font-family: monospace;">
                             ${Math.floor(moduleTimeRemaining / 60)}:${String(moduleTimeRemaining % 60).padStart(2, '0')}
                         </div>
-                        <div class="le-module-timer-note">
-                            Take your time — you can re-read this lesson at any point.
+                        <div style="font-size: 0.78rem; color: rgba(255,255,255,0.8); margin-top: 4px;">
+                            Please read carefully - content will hide after timer ends
                         </div>
-                        <div id="module-timer-status" class="sr-only" role="status" aria-live="polite"></div>
                     </div>
 
                     <!-- Module Content -->
-                    <div id="module-content" class="${bodyClass}">
-                        ${rendered.html}
+                    <div id="module-content" style="background: white; padding: 12px; border-radius: 8px; color: #333; line-height: 1.7; font-size: 0.9rem; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;">
+                        ${renderedModuleContent}
                     </div>
                 </div>
 
                 <!-- Next Button (disabled until timer finishes) -->
                 <button
                     id="next-module-btn"
-                    class="le-next-btn"
                     onclick="nextModule()"
-                    disabled>
+                    disabled
+                    style="width: 100%; padding: 1.25rem; background: linear-gradient(135deg, #cbd5e0, #a0aec0); color: white; border: none; border-radius: 12px; font-size: 1.2rem; font-weight: bold; cursor: not-allowed;">
                     🔒 Continue Reading (${Math.floor(moduleTimeRemaining / 60)}m ${moduleTimeRemaining % 60}s remaining)
                 </button>
             `;
@@ -3003,27 +2678,26 @@
                 // Warning color when < 30 seconds
                 if (moduleTimeRemaining <= 30 && moduleTimeRemaining > 0) {
                     const moduleTimer = document.getElementById('module-timer');
-                    if (moduleTimer) moduleTimer.classList.add('is-warning');
+                    if (moduleTimer) {
+                        moduleTimer.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
+                    }
                 }
 
                 // Timer finished
                 if (moduleTimeRemaining <= 0) {
                     clearInterval(moduleReadingTimer);
 
-                    // Keep the lesson in the DOM. It used to be replaced with a
-                    // "reading complete" notice, which punished anyone who
-                    // looked away mid-read and made the material unrecoverable
-                    // without restarting the quiz.
-                    const body = document.getElementById('module-content');
-                    if (body) body.classList.add('is-unlocked');
-
-                    const status = document.getElementById('module-timer-status');
-                    if (status) status.textContent = 'Reading time complete. You may proceed.';
+                    // Hide content
+                    const contentDiv = document.getElementById('module-content');
+                    if (contentDiv) {
+                        contentDiv.innerHTML = '<p style="color: #10b981; text-align: center; padding: 2rem; font-size: 1.2rem;">✅ Reading time complete! You may proceed to the next module.</p>';
+                    }
 
                     // Enable next button
                     if (nextBtn) {
                         nextBtn.disabled = false;
-                        nextBtn.classList.add('is-ready');
+                        nextBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+                        nextBtn.style.cursor = 'pointer';
                     }
 
                     showNotification('✅ Module reading complete! You may proceed.', 'success');
