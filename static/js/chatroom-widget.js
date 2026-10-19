@@ -180,6 +180,9 @@
   // deliberately NOT the tip numbers.
   var POST_GAS_FALLBACK = 150000n;
   var POST_GAS_CEILING = 300000n;
+  // Native CELO is the one fee currency every wallet can honour, so it is the
+  // default and always the last candidate tried.
+  var FEE_CURRENCY_NATIVE = 'CELO';
   var TIP_SIGN_TIMEOUT_MS = 120000;
   var tipBusy = false;
   // Human label of the signer the tip will use ("MetaMask", "WalletConnect"…),
@@ -237,10 +240,31 @@
     return '0x' + v.toString(16);
   }
 
+  // CIP-64 fee currencies. Only Celo supports them; a wallet that does not
+  // implement CIP-64 drops the field and pays in CELO anyway, which is why the
+  // native entry is always appended as the final candidate.
+  function _feeCurrencyCandidates(prep) {
+    var chosen = (prep && prep.fee_currency) || FEE_CURRENCY_NATIVE;
+    var address = (prep && prep.fee_currency_address) || '';
+    var candidates = [];
+    // The user's choice first, then native CELO as the guaranteed fallback.
+    if (chosen !== FEE_CURRENCY_NATIVE && address) candidates.push(address);
+    candidates.push(null); // null = omit feeCurrency (native CELO)
+    return candidates;
+  }
+
+  function _isFeeCurrencyError(err) {
+    var msg = _tipErrMessage(err).toLowerCase();
+    return /fee ?currency|feecurrency|not whitelisted|unsupported.*currency|currency.*not.*support/.test(msg);
+  }
+
   // Build the fee fields the wallet must not have to look up itself.
-  async function _tipGasParams(provider, from, prep) {
+  // `feeCurrency` is included when a non-native token was chosen; the caller
+  // retries without it when the wallet rejects the field.
+  async function _tipGasParams(provider, from, prep, feeCurrency) {
     var net = prep.network === 'xdc' ? 'xdc' : 'celo';
     var tx = { from: from, to: prep.to, data: prep.data || '0x', value: prep.value || '0x0' };
+    if (feeCurrency) tx.feeCurrency = feeCurrency;
     var gasHex = _tipHex(TIP_GAS_FALLBACK[net]);
     try {
       var est = await provider.request({ method: 'eth_estimateGas', params: [tx] });
@@ -260,9 +284,10 @@
     return { gas: gasHex, gasPrice: gasPriceHex };
   }
 
-  async function _postGasParams(provider, from, prep) {
+  async function _postGasParams(provider, from, prep, feeCurrency) {
     var net = (prep && prep.network) === 'xdc' ? 'xdc' : 'celo';
     var tx = { from: from, to: prep.to, data: prep.data || '0x', value: prep.value || '0x0' };
+    if (feeCurrency) tx.feeCurrency = feeCurrency;
     var gasHex = _tipHex(POST_GAS_FALLBACK);
     try {
       var est = await provider.request({ method: 'eth_estimateGas', params: [tx] });
@@ -292,15 +317,34 @@
   async function _postSendTransaction(provider, prep) {
     var net = (prep && prep.network) === 'xdc' ? 'xdc' : 'celo';
     if (_isLocalLogin()) {
-      return await _withSignTimeout(
-        provider.request({
-          method: 'eth_sendTransaction',
-          params: [{ from: TIP_BOOT.wallet, to: prep.to, data: prep.data || '0x',
-                     value: prep.value || '0x0', chainId: prep.chain_id }]
-        }),
-        TIP_SIGN_TIMEOUT_MS,
-        'Your in-app wallet did not finish signing. Please try again.'
-      );
+      // The in-app wallet signs locally and pays its own gas. When a CIP-64 fee
+      // currency is chosen it builds the type-0x7b transaction itself; the
+      // native path stays byte-for-byte what it was (no gas fields — the
+      // in-app wallet estimates through ethers).
+      var localBase = { from: TIP_BOOT.wallet, to: prep.to, data: prep.data || '0x',
+                        value: prep.value || '0x0', chainId: prep.chain_id };
+      var localCandidates = _feeCurrencyCandidates(prep);
+      var localLastErr = null;
+      for (var lc = 0; lc < localCandidates.length; lc++) {
+        var localTx = Object.assign({}, localBase);
+        if (localCandidates[lc]) localTx.feeCurrency = localCandidates[lc];
+        try {
+          return await _withSignTimeout(
+            provider.request({ method: 'eth_sendTransaction', params: [localTx] }),
+            TIP_SIGN_TIMEOUT_MS,
+            'Your in-app wallet did not finish signing. Please try again.'
+          );
+        } catch (localErr) {
+          localLastErr = localErr;
+          // A cancelled PIN prompt is a decision, not a fee problem.
+          if (_tipIsUserRejection(localErr) || /GM_WALLET_LOCKED/.test(_tipErrMessage(localErr))) {
+            throw localErr;
+          }
+          // Only a fee-currency rejection is worth retrying with native CELO.
+          if (!localCandidates[lc] || !_isFeeCurrencyError(localErr)) throw localErr;
+        }
+      }
+      throw localLastErr || new Error('Could not send the post.');
     }
     var accounts = [];
     try { accounts = await provider.request({ method: 'eth_requestAccounts' }) || []; } catch (_) {}
@@ -316,16 +360,36 @@
       throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet before posting.');
     }
     await _tipEnsureChain(provider, net);
-    var fee = await _postGasParams(provider, from, prep);
-    return await _withSignTimeout(
-      provider.request({
-        method: 'eth_sendTransaction',
-        params: [{ from: from, to: prep.to, data: prep.data || '0x', value: prep.value || '0x0',
-                   gas: fee.gas, gasPrice: fee.gasPrice }]
-      }),
-      TIP_SIGN_TIMEOUT_MS,
-      (TIP_SIGNER ? TIP_SIGNER + ' did not' : 'Your wallet did not') + ' respond to the post request. Please try again.'
-    );
+
+    // CIP-64 is best-effort: the user's chosen token is tried first, then
+    // native CELO. A wallet without CIP-64 silently drops the field (and pays
+    // CELO) rather than erroring, so a rejection here is not fatal either.
+    var candidates = _feeCurrencyCandidates(prep);
+    var lastErr = null;
+    for (var c = 0; c < candidates.length; c++) {
+      var feeCurrency = candidates[c];
+      var fee = await _postGasParams(provider, from, prep, feeCurrency);
+      var params = { from: from, to: prep.to, data: prep.data || '0x', value: prep.value || '0x0',
+                     gas: fee.gas, gasPrice: fee.gasPrice };
+      if (feeCurrency) params.feeCurrency = feeCurrency;
+      try {
+        return await _withSignTimeout(
+          provider.request({ method: 'eth_sendTransaction', params: [params] }),
+          TIP_SIGN_TIMEOUT_MS,
+          (TIP_SIGNER ? TIP_SIGNER + ' did not' : 'Your wallet did not') + ' respond to the post request. Please try again.'
+        );
+      } catch (err) {
+        lastErr = err;
+        // A user rejection ends the flow — never re-prompt with another token.
+        if (_tipIsUserRejection(err)) throw err;
+        // Only a fee-currency problem is worth retrying without the field.
+        if (!feeCurrency || !_isFeeCurrencyError(err)) throw err;
+        try {
+          console.info('[chatroom] fee currency ' + feeCurrency + ' rejected; retrying with native CELO');
+        } catch (_) {}
+      }
+    }
+    throw lastErr || new Error('Could not send the post.');
   }
 
   function configureTip(opts) {
@@ -734,7 +798,10 @@
       body: JSON.stringify({
         message: text,
         reply_to_id: opts.replyToId != null ? opts.replyToId : null,
-        attachment: opts.attachment || null
+        attachment: opts.attachment || null,
+        // Which token settles the network fee (CIP-64). The server falls back
+        // to native CELO for an unknown value, so this can never block a post.
+        fee_currency: opts.feeCurrency || null
       })
     });
     var prep = await prepared.json().catch(function () { return null; });
@@ -1143,7 +1210,101 @@
     // always a "latest N" read; every later tick is a cheap after_id cursor.
     var needInitial = true;
 
+    // ── Network fee (CIP-64) ─────────────────────────────────────────────
+    // Posting is an on-chain tx the USER signs, so the cost is shown before
+    // they type. CELO is ALWAYS the headline figure — the chosen token only
+    // settles the fee — because that is what makes the signature prompt make
+    // sense and keeps the number comparable across wallets.
+    var feeBar = root.querySelector('[data-gm-chat-fee-bar]');
+    var feeText = root.querySelector('[data-gm-chat-fee-text]');
+    var feeSelect = root.querySelector('[data-gm-chat-fee-select]');
+    var feeState = null;
+    var feeChoice = FEE_CURRENCY_NATIVE;
+    // Once the user picks a settling token, a background state poll must not
+    // reset it — /api/state always reports the default (CELO).
+    var feeChoiceChosen = false;
+
     function setStatus(text) { if (status) status.textContent = text || ''; }
+
+    function _feeAmount(fee) {
+      if (!fee || !fee.estimated) return '';
+      var celo = fee.celo_cost_formatted || String(fee.celo_cost || '');
+      if (!celo || celo === '0') return '';
+      var usd = fee.usd_cost_formatted ? ' (' + fee.usd_cost_formatted + ')' : '';
+      return celo + ' CELO' + usd;
+    }
+
+    // The fee bar is the ONE place markup is assembled as a string (it needs
+    // <strong>). Every interpolated value is backend-controlled, but escape
+    // anyway so a future change to those fields can never inject markup.
+    function _feeEsc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // The notice is deliberately explicit that the amount is CELO even when a
+    // stablecoin settles it, and that the fee is what the signature is for.
+    function renderFeeBar(fee) {
+      feeState = fee || feeState;
+      if (!feeBar) return;
+      var f = feeState;
+      if (!f || !onchainMode) { feeBar.hidden = true; return; }
+      feeBar.hidden = false;
+      var amount = _feeEsc(_feeAmount(f));
+      var label = _feeEsc(f.fee_currency_label || FEE_CURRENCY_NATIVE);
+      var native = f.fee_currency_native !== false;
+      var html;
+      if (!amount) {
+        // Never invent a number: say the cost varies instead.
+        html = 'Network fee: paid in <strong>CELO</strong> (amount varies with network conditions). '
+             + 'Posting is a blockchain transaction, so your wallet will ask you to sign.';
+      } else if (native) {
+        html = 'Network fee: <strong>' + amount + '</strong>, paid in <strong>CELO</strong>. '
+             + 'Posting is a blockchain transaction, so your wallet will ask you to sign.';
+      } else {
+        // The value is still quoted in CELO (the chain's unit of account); only
+        // the token that settles it changes. Celo charges a small extra
+        // intrinsic cost for a token fee, so the figure is genuinely a little
+        // higher — never claim the two are identical.
+        html = 'Network fee: about <strong>' + amount + '</strong> &middot; paid in <strong>'
+             + label + '</strong>. Posting is a blockchain transaction, so your wallet will ask you to sign.';
+      }
+      if (feeText) feeText.innerHTML = html;
+    }
+
+    function renderFeeOptions(currencies, supported) {
+      if (!feeSelect) return;
+      var list = currencies || [];
+      // Only offer the choice where it is real (Celo + more than one currency).
+      if (!onchainMode || !supported || list.length < 2) {
+        feeSelect.hidden = true;
+        return;
+      }
+      feeSelect.innerHTML = '';
+      list.forEach(function (cur) {
+        var opt = document.createElement('option');
+        opt.value = cur.key;
+        opt.textContent = cur.label;
+        if (cur.key === feeChoice) opt.selected = true;
+        feeSelect.appendChild(opt);
+      });
+      feeSelect.hidden = false;
+    }
+
+    function loadFee(currency) {
+      if (!onchainMode) return Promise.resolve(null);
+      var url = '/chatroom/api/fee' + (currency ? '?currency=' + encodeURIComponent(currency) : '');
+      return fetch(url).then(function (res) {
+        return res.ok ? res.json() : null;
+      }).then(function (data) {
+        if (!data || !data.success) return null;
+        feeState = data;
+        if (data.fee_currency) feeChoice = data.fee_currency;
+        renderFeeBar(data);
+        renderFeeOptions(data.currencies, data.supported);
+        return data;
+      }).catch(function () { return null; });
+    }
 
     function renderBadge() {
       if (!badge) return;
@@ -1236,6 +1397,20 @@
         // The contract has no delete — only bans — so an on-chain room must not
         // offer a control that cannot work.
         onchainMode = data.onchain === true;
+        // The fee notice only exists for an on-chain room (a DB room posts
+        // without any wallet interaction at all).
+        if (onchainMode) {
+          if (data.fee && !feeChoiceChosen) {
+            // Only adopt the server default while the user has not chosen.
+            feeState = data.fee;
+            if (data.fee.fee_currency) feeChoice = data.fee.fee_currency;
+            renderFeeBar(data.fee);
+          }
+          renderFeeOptions(data.fee_currencies, data.fee_supported);
+          if (!feeState) loadFee(feeChoice);
+        } else {
+          renderFeeBar(null);
+        }
         if (data.has_username === false) {
           setStatus('Tip: set a username on the wallet page so people can tip you.');
         }
@@ -1360,7 +1535,8 @@
         try {
           await postMessage(clean, {
             replyToId: replyTarget ? replyTarget.id : null,
-            attachment: hasImage ? payload.attachment : null
+            attachment: hasImage ? payload.attachment : null,
+            feeCurrency: feeChoice
           });
           setStatus('');
           clearReply();
@@ -1414,6 +1590,16 @@
     }
     if (closeBtn) {
       closeBtn.addEventListener('click', function () { setOpen(false); });
+    }
+
+    // Choosing a settling token re-prices nothing (the cost is CELO either
+    // way) but it re-renders the notice so the wording matches the choice.
+    if (feeSelect) {
+      feeSelect.addEventListener('change', function () {
+        feeChoiceChosen = true;
+        feeChoice = feeSelect.value || FEE_CURRENCY_NATIVE;
+        loadFee(feeChoice);
+      });
     }
 
     // Tip modal — lives in the page (not the widget root) so it can overlay
