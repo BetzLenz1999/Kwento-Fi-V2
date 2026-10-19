@@ -6700,7 +6700,6 @@ def admin_dashboard():
     response = make_response(render_template(
         "admin_dashboard.html",
         wallet=wallet,
-        lotto_contract_address=os.environ.get("GOODMARKET_LOTTO_CONTRACT", "").strip(),
     ))
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
