@@ -1,9 +1,29 @@
 # GoodMarket G$ Raffle Automation
 
-The raffle contract automatically **closes deposits** when the 400th wallet joins,
-but a blockchain contract cannot start a new transaction by itself. Winner
+The raffle contract automatically **closes deposits** when the last participant
+joins, but a blockchain contract cannot start a new transaction by itself. Winner
 selection becomes automatic for users by running a small keeper/cron job that
 calls `drawWinners(bytes32)` as the configured randomness provider.
+
+## Round economics
+
+Read from the contract, never hardcoded:
+
+| | Value |
+|---|---|
+| Participants per round | 10 |
+| Entry fee | 500 G$ |
+| Winners | 4 |
+| Prizes (1st to 4th) | 2,000 / 1,500 / 1,000 / 500 G$ |
+| Pool in / out | 5,000 G$ / 5,000 G$ |
+
+The pool is a **pure pass-through (100% payout)**: there is no house edge and the
+contract never needs external funding. The constructor enforces
+`sum(prizeTiers) == ENTRY_FEE * MAX_PARTICIPANTS`, so a deployment that could not
+pay its winners is impossible.
+
+A participant can `refundEntry()` only while the round is **Open** — once it
+fills the contract closes refunds, so a committed draw can never be under-funded.
 
 ## Required environment variables
 
@@ -16,15 +36,30 @@ export GOODMARKET_RAFFLE_RANDOMNESS_KEY=0xPrivateKeyForRandomnessProvider
 `GOODMARKET_RAFFLE_RANDOMNESS_KEY` must belong to the same wallet address that
 was passed as `trustedRandomnessProvider` when `GoodMarketRaffle` was deployed.
 
+## Deploy
+
+```bash
+export GOODMARKET_RAFFLE_DEPLOY_KEY=0xPrivateKeyPayingDeployGas
+uv run python contracts/deploy_goodmarket_raffle.py
+```
+
+The script prints the address + block and writes
+`contracts/raffle_deployment_info.json`. Then set:
+
+```bash
+export GOODMARKET_RAFFLE_CONTRACT_ADDRESS=<deployed_address>
+export GOODMARKET_RAFFLE_DEPLOYMENT_BLOCK=<receipt block>
+```
+
 ## Run manually
 
 ```bash
 uv run python contracts/draw_goodmarket_raffle.py
 ```
 
-If the current round has fewer than 400 participants, the script exits without
-sending a transaction. If the round is full and in `Drawing` status, it submits a
-fresh 32-byte seed and finalizes the 10 winners on-chain.
+If the current round has fewer than `MAX_PARTICIPANTS` participants, the script
+exits without sending a transaction. If the round is full and in `Drawing`
+status, it submits a fresh 32-byte seed and finalizes the 4 winners on-chain.
 
 ## Run automatically
 
@@ -36,8 +71,22 @@ Run the script every few minutes from cron, a worker, or a keeper service:
 
 From a participant perspective, the flow is:
 
-1. Wallets join until the round reaches 400 participants.
+1. Wallets join until the round reaches 10 participants.
 2. The contract blocks further entries and marks the round as ready for drawing.
 3. The keeper sees the full round and calls `drawWinners(bytes32)`.
-4. The contract selects 10 unique winners and opens the next round.
-5. Winners use **Withdraw Reward** in `wallet.html` to claim 10,000 G$.
+4. The contract selects 4 unique winners and opens the next round.
+5. Winners use **Withdraw Reward** in `wallet.html` to claim their tier.
+
+## Trust assumption
+
+`drawWinners(bytes32 seed)` takes the seed **from the randomness provider**, so
+whoever holds `GOODMARKET_RAFFLE_RANDOMNESS_KEY` can influence the outcome. Use a
+non-incentivized key for a community raffle, or migrate to Chainlink VRF /
+commit-reveal for a trustless draw.
+
+## Superseded deployment
+
+`0x6e3Fa13306dbB67CFEE4711Ac9c4b6218F1145A0` (400 participants / 250 G$ / 10 x
+10,000 G$) is **abandoned**. It has no owner and no withdrawal function, so the
+G$ deposited into its never-filling round is permanently locked. Do not point
+`GOODMARKET_RAFFLE_CONTRACT_ADDRESS` at it.
