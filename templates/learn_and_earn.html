@@ -883,6 +883,13 @@
             --text-muted: #8a8378;
             --card-border: #e9e2d6;
             --serif: 'Fraunces', 'Georgia', serif;
+            /* module (study) view tokens — see the .lem-* block below */
+            --action: #fbbf24;         /* G$ gold, matches homepage */
+            --action-2: #f59e0b;
+            --action-text: #1f1300;    /* dark ink on gold — meets AA */
+            --accent-ink: #9a3412;     /* accent as TEXT on a light surface */
+            --accent-chip-ink: #7c2d12;
+            --timer-bg: #fde8cf;
         }
 
         body {
@@ -975,6 +982,96 @@
             box-shadow: 0 4px 15px rgba(var(--accent-rgb),0.3);
         }
         .btn-share:hover { box-shadow: 0 6px 20px rgba(var(--accent-rgb),0.4); }
+
+        /* ─────────────────────────────────────────────────────────────
+           Learn & Earn module (study) view — light theme (2026-10)
+           The module renderer used to hardcode the old dark palette
+           (#667eea / #6366f1 / #8b5cf6 / rgba(241,245,249,…) / #fbbf24)
+           and a dark translucent card, all painted on the cream canvas.
+           Measured on the light background those pairs fell to 1.1:1
+           (sub-line), 1.19:1 (progress chip) and 1.49:1 (next button) —
+           all far below WCAG AA. Every value below is a page token, and
+           every text/background pair is verified ≥ 4.5:1 in
+           tests/test_learn_earn_module_view_content.py.
+           ───────────────────────────────────────────────────────────── */
+        .lem-head { text-align: center; margin-bottom: 16px; }
+        .lem-kicker {
+            font-size: 0.82rem; font-weight: 800; letter-spacing: 0.06em;
+            text-transform: uppercase; color: var(--accent-ink); margin-bottom: 6px;
+        }
+        .lem-head h2 { color: var(--text); font-size: 1.25rem; margin-bottom: 6px; }
+        .lem-sub { color: var(--text-dim); font-size: 0.95rem; }
+        .lem-step {
+            display: inline-block; margin-top: 12px; padding: 7px 14px;
+            border-radius: 999px; background: rgba(var(--accent-rgb), 0.12);
+            color: var(--accent-chip-ink); font-size: 0.85rem; font-weight: 800;
+        }
+        .lem-card {
+            background: #fff; border: 1px solid var(--card-border);
+            border-radius: 12px; padding: 16px; margin-bottom: 14px;
+            box-shadow: 0 4px 16px rgba(67, 56, 43, 0.05);
+        }
+        .lem-card-title { color: var(--text); font-size: 1.1rem; font-weight: 800; margin-bottom: 6px; }
+        .lem-card-desc { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 14px; line-height: 1.6; }
+        .lem-timer {
+            background: var(--timer-bg); border: 1px solid rgba(var(--accent-rgb), 0.25);
+            border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        }
+        .lem-timer-label {
+            font-size: 0.78rem; font-weight: 700; color: var(--accent-chip-ink);
+            text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .lem-timer-hint { font-size: 0.78rem; color: var(--text-dim); margin-top: 2px; }
+        .lem-timer-value {
+            font-size: 1.6rem; font-weight: 800; color: var(--accent-chip-ink);
+            font-family: 'Courier New', monospace; white-space: nowrap;
+        }
+        .lem-progress {
+            height: 6px; border-radius: 999px; background: rgba(var(--accent-rgb), 0.15);
+            overflow: hidden; margin: 0 0 14px;
+        }
+        .lem-progress > span {
+            display: block; height: 100%; width: 0%;
+            background: linear-gradient(90deg, var(--gold), var(--gold-deep));
+            border-radius: 999px; transition: width 1s linear;
+        }
+        .lem-content {
+            background: #fff; border: 1px solid var(--card-border);
+            border-radius: 10px; padding: 14px; color: var(--text);
+            line-height: 1.75; font-size: 0.95rem;
+            white-space: pre-wrap; word-break: break-word;
+        }
+        .lem-content h2 { font-size: 1.1rem; color: var(--text); margin: 0 0 8px; }
+        .lem-content h3 { font-size: 1rem; color: var(--text); margin: 14px 0 6px; }
+        .lem-content p { margin: 0 0 10px; }
+        .lem-content ul { margin: 0 0 10px 18px; }
+        .lem-content li { margin-bottom: 4px; }
+        .lem-content a { color: #b45309; font-weight: 600; text-decoration: underline; }
+        .lem-content-empty { color: var(--text-muted); font-style: italic; }
+        .lem-next {
+            width: 100%; padding: 15px; border: none; border-radius: 12px;
+            margin-top: 4px; font-size: 1.05rem; font-weight: 800; cursor: pointer;
+            background: linear-gradient(160deg, var(--action) 0%, var(--action-2) 100%);
+            color: var(--action-text);
+        }
+        .lem-next:disabled {
+            background: #f0e7d8; color: var(--text-dim); cursor: not-allowed;
+        }
+        .lem-next.is-ready {
+            /* white on #16a34a is only 3.3:1 — too low for this text size, so
+               the ready state uses the darker end of the same green ramp. */
+            background: linear-gradient(160deg, #15803d, #166534);
+            color: #fff;
+        }
+        .lem-timer.is-done { background: #e7f6ec; border-color: rgba(22, 163, 74, 0.35); }
+        .lem-timer.is-done .lem-timer-label,
+        .lem-timer.is-done .lem-timer-value { color: #166534; }
+        .lem-timer.is-done .lem-timer-hint { color: #14532d; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .lem-progress > span { transition: none; }
+        }
     </style>
     <!-- Shared Get Started modal styles (guest connect flow). -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
@@ -2504,10 +2601,15 @@
         let currentModuleIndex = 0;
         let moduleReadingTimer = null;
         let moduleTimeRemaining = 0;
+        let moduleReadingTotal = 0;   // enforced seconds, for the progress bar
+        // The reading time is a study cue, not a gate: the quiz API never sees
+        // it, so only this many seconds are actually enforced and the rest of
+        // the module's reading_time_minutes is shown as guidance.
+        const MODULE_MIN_READING_SECONDS = 30;
 
         function makeModuleContentLinksClickable(rawContent) {
             if (!rawContent || !String(rawContent).trim()) {
-                return '<p style="color: #999;">No content available for this module.</p>';
+                return '<p class="lem-content-empty">No content available for this module.</p>';
             }
 
             const wrapped = `<div>${String(rawContent)}</div>`;
@@ -2526,7 +2628,7 @@
 
                 anchor.setAttribute('target', '_blank');
                 anchor.setAttribute('rel', 'noopener noreferrer');
-                anchor.style.color = '#2563eb';
+                anchor.style.color = '#b45309';
                 anchor.style.textDecoration = 'underline';
                 anchor.style.fontWeight = '600';
             });
@@ -2564,7 +2666,7 @@
                     link.target = '_blank';
                     link.rel = 'noopener noreferrer';
                     link.textContent = matchedText;
-                    link.style.color = '#2563eb';
+                    link.style.color = '#b45309';
                     link.style.textDecoration = 'underline';
                     link.style.fontWeight = '600';
                     fragment.appendChild(link);
@@ -2595,39 +2697,41 @@
             const currentModule = moduleLinks[currentModuleIndex];
             const readingTime = currentModule.reading_time_minutes || 5;
             const renderedModuleContent = makeModuleContentLinksClickable(currentModule.content);
-            moduleTimeRemaining = readingTime * 60; // Convert to seconds
+            // Reading time is a client-side study cue only (the quiz API never
+            // sees it), so force only a short floor and treat the rest as
+            // guidance. A long forced wait is friction with no enforcement.
+            const enforcedSeconds = Math.min(readingTime * 60, MODULE_MIN_READING_SECONDS);
+            moduleTimeRemaining = enforcedSeconds;
+            moduleReadingTotal = enforcedSeconds;
+            // The enforced countdown (e.g. 0:30) is what the timer shows; the
+            // module's full reading time is presented as guidance ("5 min read").
+            const initialCountdown = `${Math.floor(enforcedSeconds / 60)}:${String(enforcedSeconds % 60).padStart(2, '0')}`;
 
             container.innerHTML = `
-                <div style="text-align: center; margin-bottom: 2rem;">
-                    <h2 style="color: #667eea; margin-bottom: 1rem;">📚 Required Study Materials</h2>
-                    <p style="color: rgba(241, 245, 249, 0.8); font-size: 1.1rem;">
-                        Read each module carefully for ${readingTime} minutes before proceeding
-                    </p>
-                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(255, 215, 0, 0.1); border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.3);">
-                        <strong style="color: #fbbf24;">📖 Progress: ${currentModuleIndex + 1}/${moduleLinks.length} modules</strong>
-                    </div>
+                <div class="lem-head">
+                    <div class="lem-kicker">Module ${currentModuleIndex + 1} of ${moduleLinks.length}</div>
+                    <h2>📖 Study first, then take the quiz</h2>
+                    <p class="lem-sub">Read this module, then the quiz unlocks</p>
+                    <div class="lem-step">${readingTime} min read</div>
                 </div>
 
                 <!-- Module Content Card -->
-                <div style="background: rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 14px; margin-bottom: 14px; border: 2px solid rgba(102, 126, 234, 0.4);">
-                    <h3 style="color: #667eea; margin-bottom: 8px; font-size: 1.1rem;">
-                        ${currentModule.title}
-                    </h3>
-                    ${currentModule.description ? `<p style="color: rgba(241, 245, 249, 0.8); margin-bottom: 10px; font-style: italic; font-size: 0.88rem;">${currentModule.description}</p>` : ''}
+                <div class="lem-card">
+                    <h3 class="lem-card-title">${currentModule.title}</h3>
+                    ${currentModule.description ? `<p class="lem-card-desc">${currentModule.description}</p>` : ''}
 
                     <!-- Reading Timer -->
-                    <div id="module-timer" style="background: linear-gradient(135deg, #6366f1, #8b5cf6); padding: 12px; border-radius: 10px; margin-bottom: 14px; text-align: center;">
-                        <div style="font-size: 0.82rem; color: rgba(255,255,255,0.9); margin-bottom: 4px;">⏰ Required Reading Time</div>
-                        <div id="module-time-display" style="font-size: 2rem; font-weight: bold; color: white; font-family: monospace;">
-                            ${Math.floor(moduleTimeRemaining / 60)}:${String(moduleTimeRemaining % 60).padStart(2, '0')}
+                    <div id="module-timer" class="lem-timer">
+                        <div>
+                            <div class="lem-timer-label">Reading time</div>
+                            <div class="lem-timer-hint">Take your time — the quiz unlocks when the timer ends</div>
                         </div>
-                        <div style="font-size: 0.78rem; color: rgba(255,255,255,0.8); margin-top: 4px;">
-                            Please read carefully - content will hide after timer ends
-                        </div>
+                        <div id="module-time-display" class="lem-timer-value">${initialCountdown}</div>
                     </div>
+                    <div class="lem-progress"><span id="module-progress-bar"></span></div>
 
                     <!-- Module Content -->
-                    <div id="module-content" style="background: white; padding: 12px; border-radius: 8px; color: #333; line-height: 1.7; font-size: 0.9rem; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;">
+                    <div id="module-content" class="lem-content">
                         ${renderedModuleContent}
                     </div>
                 </div>
@@ -2635,10 +2739,10 @@
                 <!-- Next Button (disabled until timer finishes) -->
                 <button
                     id="next-module-btn"
+                    class="lem-next"
                     onclick="nextModule()"
-                    disabled
-                    style="width: 100%; padding: 1.25rem; background: linear-gradient(135deg, #cbd5e0, #a0aec0); color: white; border: none; border-radius: 12px; font-size: 1.2rem; font-weight: bold; cursor: not-allowed;">
-                    🔒 Continue Reading (${Math.floor(moduleTimeRemaining / 60)}m ${moduleTimeRemaining % 60}s remaining)
+                    disabled>
+                    Reading… ${initialCountdown}
                 </button>
             `;
 
@@ -2652,57 +2756,73 @@
                 clearInterval(moduleReadingTimer);
             }
 
+            // Paint the initial state immediately so the progress bar is
+            // correct before the first tick.
+            _updateModuleTimerUI();
+
             moduleReadingTimer = setInterval(() => {
                 moduleTimeRemaining--;
+                _updateModuleTimerUI();
 
-                const minutes = Math.floor(moduleTimeRemaining / 60);
-                const seconds = moduleTimeRemaining % 60;
-
-                const timerDisplay = document.getElementById('module-time-display');
-                const nextBtn = document.getElementById('next-module-btn');
-
-                if (timerDisplay) {
-                    timerDisplay.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
-                }
-
-                // Update button text
-                if (nextBtn) {
-                    if (moduleTimeRemaining > 0) {
-                        nextBtn.textContent = `🔒 Continue Reading (${minutes}m ${seconds}s remaining)`;
-                    } else {
-                        nextBtn.textContent = currentModuleIndex < moduleLinks.length - 1 ? 
-                            '✅ Next Module' : '✅ Start Quiz';
-                    }
-                }
-
-                // Warning color when < 30 seconds
-                if (moduleTimeRemaining <= 30 && moduleTimeRemaining > 0) {
-                    const moduleTimer = document.getElementById('module-timer');
-                    if (moduleTimer) {
-                        moduleTimer.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
-                    }
-                }
-
-                // Timer finished
                 if (moduleTimeRemaining <= 0) {
                     clearInterval(moduleReadingTimer);
-
-                    // Hide content
-                    const contentDiv = document.getElementById('module-content');
-                    if (contentDiv) {
-                        contentDiv.innerHTML = '<p style="color: #10b981; text-align: center; padding: 2rem; font-size: 1.2rem;">✅ Reading time complete! You may proceed to the next module.</p>';
-                    }
-
-                    // Enable next button
-                    if (nextBtn) {
-                        nextBtn.disabled = false;
-                        nextBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
-                        nextBtn.style.cursor = 'pointer';
-                    }
-
-                    showNotification('✅ Module reading complete! You may proceed.', 'success');
+                    moduleReadingTimer = null;
+                    _finishModuleReading();
                 }
             }, 1000);
+        }
+
+        // Paint the reading countdown, progress bar and next-button state.
+        // Extracted so the initial render, every tick and the finished state
+        // share one implementation (no duplicated text/state logic).
+        function _updateModuleTimerUI() {
+            const remaining = Math.max(0, moduleTimeRemaining);
+            const minutes = Math.floor(remaining / 60);
+            const seconds = remaining % 60;
+
+            const timerDisplay = document.getElementById('module-time-display');
+            const nextBtn = document.getElementById('next-module-btn');
+            const progressBar = document.getElementById('module-progress-bar');
+
+            if (timerDisplay) {
+                timerDisplay.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+            }
+
+            if (progressBar && moduleReadingTotal > 0) {
+                const done = Math.min(100, Math.round(((moduleReadingTotal - remaining) / moduleReadingTotal) * 100));
+                progressBar.style.width = `${done}%`;
+            }
+
+            if (nextBtn && remaining > 0) {
+                nextBtn.textContent = `Reading… ${minutes}:${String(seconds).padStart(2, '0')}`;
+            }
+        }
+
+        // Reading time finished. The content is deliberately LEFT IN PLACE
+        // so the user can still read it while answering the quiz.
+        function _finishModuleReading() {
+            _updateModuleTimerUI();
+
+            const moduleTimer = document.getElementById('module-timer');
+            if (moduleTimer) {
+                moduleTimer.classList.add('is-done');
+            }
+
+            const timerLabel = document.querySelector('#module-timer .lem-timer-label');
+            const timerHint = document.querySelector('#module-timer .lem-timer-hint');
+            if (timerLabel) { timerLabel.textContent = 'Reading time complete'; }
+            if (timerHint) { timerHint.textContent = 'You can continue — scroll up if you want to re-read'; }
+
+            const progressBar = document.getElementById('module-progress-bar');
+            if (progressBar) { progressBar.style.width = '100%'; }
+
+            const nextBtn = document.getElementById('next-module-btn');
+            if (nextBtn) {
+                nextBtn.disabled = false;
+                nextBtn.classList.add('is-ready');
+                nextBtn.textContent = currentModuleIndex < moduleLinks.length - 1 ?
+                    'Next module →' : 'Start quiz →';
+            }
         }
 
         // Move to next module
