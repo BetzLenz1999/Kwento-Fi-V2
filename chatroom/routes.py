@@ -149,6 +149,13 @@ def api_state():
         # True when messages live in the contract: the UI must sign posts and
         # must not offer the (impossible) delete affordance.
         "onchain": svc.onchain.is_configured(),
+        # The network fee notice. Posting is an on-chain tx the USER signs, so
+        # the room states the CELO cost up front — that is what explains why a
+        # signature is needed at all. CELO is the primary figure; the chosen
+        # token only settles it (CIP-64).
+        "fee": svc.onchain.estimate_post_fee(),
+        "fee_currencies": svc.onchain.fee_currency_list(),
+        "fee_supported": svc.onchain.FEE_CURRENCY_SUPPORTED,
         # Tipping: the tokens on offer + this viewer's own wallet address (used
         # only to sign the transfer in their browser — never echoed to the room).
         "can_tip": bool(username) and not svc.is_banned(wallet),
@@ -190,6 +197,29 @@ def api_messages():
         after_id=after_id, limit=limit, viewer_wallet=wallet,
         deleted_after=deleted_after,
     ))
+
+
+@chatroom_bp.route("/api/fee")
+def api_fee():
+    """Cost of one post, priced in CELO (the chain's unit of account).
+
+    The room is on-chain, so the poster pays the fee. CELO is always the
+    headline figure — the `?currency=` argument only picks which token settles
+    it (CIP-64), never the price. An unknown currency falls back to CELO rather
+    than erroring, because a bad query param must not block a post.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    currency = request.args.get("currency")
+    result = svc.onchain.estimate_post_fee(currency)
+    result["currencies"] = svc.onchain.fee_currency_list()
+    result["supported"] = svc.onchain.FEE_CURRENCY_SUPPORTED
+    return jsonify(result)
 
 
 @chatroom_bp.route("/api/prepare-post", methods=["POST"])
@@ -243,7 +273,19 @@ def api_prepare_post():
             return jsonify({"success": False, "error": "Invalid reply target",
                             "code": "reply_target"}), 400
 
+    # Which token settles the fee (CIP-64). An unknown value falls back to
+    # native CELO rather than failing the post — a fee preference must never be
+    # the reason a message cannot be sent.
+    currency = svc.onchain.resolve_fee_currency(data.get("fee_currency"))
+    if currency is None:
+        currency = svc.onchain.resolve_fee_currency(None)
+
     result = svc.onchain.prepare_post(wallet, kind, ref, body)
+    if result.get("success"):
+        result["fee_currency"] = currency["key"]
+        result["fee_currency_label"] = currency["label"]
+        result["fee_currency_address"] = currency["address"]
+        result["fee_currency_native"] = currency["native"]
     status = 200 if result.get("success") else 400
     if result.get("code") == "banned":
         status = 403
