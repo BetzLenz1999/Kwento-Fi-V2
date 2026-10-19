@@ -22,6 +22,15 @@
     </header>
 
     <div class="gm-chat-messages" role="log" aria-live="polite" data-gm-chat-messages></div>
+    {# Network-fee notice. Posting is an on-chain transaction the USER signs, so
+       the CELO cost is stated up front — that is what explains the signature
+       prompt. CELO is always the headline figure; the selector only picks which
+       token settles it (CIP-64), and native CELO works with every wallet. #}
+    <div class="gm-chat-fee-bar" data-gm-chat-fee-bar hidden>
+      <span class="gm-chat-fee-icon" aria-hidden="true">⛽</span>
+      <span class="gm-chat-fee-text" data-gm-chat-fee-text></span>
+      <select class="gm-chat-fee-select" data-gm-chat-fee-select aria-label="Token used to pay the network fee" hidden></select>
+    </div>
     <div class="gm-chat-status" data-gm-chat-status></div>
     <div class="gm-chat-attach-preview" data-gm-chat-attach-preview hidden></div>
     <form class="gm-chat-form" data-gm-chat-form>
