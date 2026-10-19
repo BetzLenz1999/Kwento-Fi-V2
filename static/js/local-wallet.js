@@ -373,6 +373,88 @@
         return labels.join('') + ' only.';
     }
 
+    // ── CIP-64 (fee-currency) transactions ──────────────────────────────
+    // ethers 6.13.4 cannot serialise the Celo type-0x7b transaction (it throws
+    // "unsupported transaction type"), so a post whose fee is settled in cUSD /
+    // USDT / USDC must be built and signed by hand:
+    //
+    //   0x7b || RLP([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas,
+    //                gasLimit, to, value, data, accessList, feeCurrency,
+    //                yParity, r, s])
+    //
+    // Verified against Celo mainnet: the node decodes it as
+    // `types.CeloDynamicFeeTxV2` and rejects an unregistered currency, so a
+    // successful broadcast here means the format is right. Native CELO never
+    // takes this path — it stays on the plain ethers signer.
+
+    function _rlpInt(value) {
+        var n = BigInt(value == null ? 0 : value);
+        if (n === 0n) return '0x';            // RLP: zero is the empty string
+        var hex = n.toString(16);
+        if (hex.length % 2) hex = '0' + hex;
+        return '0x' + hex;
+    }
+
+    function _toQuantity(value) {
+        var n = BigInt(value == null ? 0 : value);
+        return '0x' + n.toString(16);
+    }
+
+    async function _sendFeeCurrencyTx(wallet, chain, tx, feeCurrency) {
+        var from = wallet.address;
+        // Nonce must be the PENDING count: a just-broadcast tx would otherwise
+        // be invisible and this one would collide.
+        var nonceHex = await _chainJsonRpc(chain, 'eth_getTransactionCount', [from, 'pending']);
+        var nonce = BigInt(nonceHex || '0x0');
+
+        // Gas limit: estimate WITH the feeCurrency attached (Celo adds a
+        // token-specific intrinsic cost, so an estimate without it is too low).
+        var gasLimit = tx.gas ? BigInt(tx.gas) : null;
+        if (gasLimit == null) {
+            try {
+                var estParams = { from: from, to: tx.to, data: tx.data || '0x',
+                                  value: _toQuantity(tx.value || 0), feeCurrency: feeCurrency };
+                var est = await _chainJsonRpc(chain, 'eth_estimateGas', [estParams]);
+                gasLimit = (BigInt(est) * 140n) / 100n;
+            } catch (_) {
+                gasLimit = 300000n;
+            }
+        }
+
+        // Fee market: reuse the node's gas price for both fields, which is the
+        // safe shape on Celo (base fee + a tip at the same value).
+        var gasPrice = tx.gasPrice ? BigInt(tx.gasPrice) : null;
+        if (gasPrice == null) {
+            var gp = await _chainJsonRpc(chain, 'eth_gasPrice', []);
+            gasPrice = BigInt(gp || '0x0');
+        }
+        if (gasPrice <= 0n) gasPrice = 500000000000n;
+
+        var fields = [
+            _rlpInt(chain.id),
+            _rlpInt(nonce),
+            _rlpInt(gasPrice),   // maxPriorityFeePerGas
+            _rlpInt(gasPrice * 2n),  // maxFeePerGas (headroom over the base fee)
+            _rlpInt(gasLimit),
+            tx.to,
+            _rlpInt(tx.value || 0),
+            tx.data || '0x',
+            [],                  // accessList
+            feeCurrency
+        ];
+        var payload = ethers.encodeRlp(fields);
+        var unsigned = ethers.concat(['0x7b', payload]);
+        var digest = ethers.keccak256(unsigned);
+        var sig = new ethers.SigningKey(wallet.privateKey).sign(digest);
+        var signed = ethers.encodeRlp(fields.concat([
+            _rlpInt(sig.yParity),
+            sig.r,
+            sig.s
+        ]));
+        var raw = ethers.concat(['0x7b', signed]);
+        return await _chainJsonRpc(chain, 'eth_sendRawTransaction', [raw]);
+    }
+
     async function _handleRequest(args) {
         var method = args.method;
         var params = args.params || [];
@@ -430,6 +512,15 @@
                     throw new Error('The in-app GoodMarket wallet supports ' + supportedChainLabels());
                 }
                 _applyChainOverridesOnce();
+                // CIP-64: only Celo supports a feeCurrency, and ethers cannot
+                // serialise the type-0x7b transaction, so build it by hand.
+                // Omitting feeCurrency keeps the original ethers path exactly
+                // as it was.
+                var feeCurrency = tx.feeCurrency;
+                delete tx.feeCurrency;
+                if (feeCurrency && chain.id === 42220) {
+                    return await _sendFeeCurrencyTx(wallet1, chain, tx, feeCurrency);
+                }
                 var provider = new ethers.JsonRpcProvider(chain.rpcs[0], chain.id);
                 var signer = wallet1.connect(provider);
                 var sent = await signer.sendTransaction(tx);
