@@ -2,8 +2,13 @@
 """Finalize a full GoodMarket G$ Raffle round.
 
 This script is the automation/keeper side of the raffle. The smart contract
-cannot wake itself up when the 400th participant joins; a trusted/verifiable
+cannot wake itself up when the last participant joins; a trusted/verifiable
 randomness provider must submit the seed by calling `drawWinners(bytes32)`.
+
+Round economics (participants, entry fee, prize tiers) are READ FROM THE
+CONTRACT, never hardcoded, so this script keeps working across redeploys.
+Current deployment: 10 participants per round, 500 G$ entry, 4 winners paid
+40/30/20/10.
 
 Run from cron, a worker, or a keeper service every few minutes:
 
@@ -14,6 +19,9 @@ Run from cron, a worker, or a keeper service every few minutes:
 
 The wallet that owns GOODMARKET_RAFFLE_RANDOMNESS_KEY must match the
 `randomnessProvider` address configured when GoodMarketRaffle was deployed.
+
+NOTE: whoever holds that key chooses the seed, and therefore can influence the
+outcome. Use a non-incentivized key, or migrate to a VRF/commit-reveal source.
 """
 
 from __future__ import annotations
@@ -36,13 +44,30 @@ RANDOMNESS_KEY = (os.getenv("GOODMARKET_RAFFLE_RANDOMNESS_KEY") or "").strip()
 
 ROUND_STATUS_OPEN = 0
 ROUND_STATUS_DRAWING = 1
-MAX_PARTICIPANTS = 400
+
+# The participant count is NOT hardcoded: it is read from the deployed contract
+# so the keeper keeps working after a redeploy with different round economics.
+FALLBACK_MAX_PARTICIPANTS = 10
 
 RAFFLE_ABI: list[dict[str, Any]] = [
     {
         "inputs": [],
         "name": "currentRoundId",
         "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "MAX_PARTICIPANTS",
+        "outputs": [{"internalType": "uint16", "name": "", "type": "uint16"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "getPrizeTiers",
+        "outputs": [{"internalType": "uint256[]", "name": "", "type": "uint256[]"}],
         "stateMutability": "view",
         "type": "function",
     },
@@ -92,18 +117,30 @@ def main() -> None:
         abi=RAFFLE_ABI,
     )
     round_id = raffle.functions.currentRoundId().call()
+    try:
+        max_participants = int(raffle.functions.MAX_PARTICIPANTS().call())
+    except Exception as exc:
+        logger.warning("MAX_PARTICIPANTS() read failed (%s); using %s", exc, FALLBACK_MAX_PARTICIPANTS)
+        max_participants = FALLBACK_MAX_PARTICIPANTS
     status, participant_count, winner_count, _seed, _opened_at, _completed_at = raffle.functions.getRound(round_id).call()
 
+    try:
+        tiers = [int(t) for t in raffle.functions.getPrizeTiers().call()]
+        prizes = ", ".join(f"{t / 1e18:.0f} G$" for t in tiers)
+    except Exception:
+        prizes = "n/a"
+
     logger.info(
-        "Round #%s status=%s participants=%s/%s winners=%s",
+        "Round #%s status=%s participants=%s/%s winners=%s prizes=[%s]",
         round_id,
         status,
         participant_count,
-        MAX_PARTICIPANTS,
+        max_participants,
         winner_count,
+        prizes,
     )
 
-    if status != ROUND_STATUS_DRAWING or participant_count < MAX_PARTICIPANTS:
+    if status != ROUND_STATUS_DRAWING or participant_count < max_participants:
         logger.info("No draw needed yet. The script exits without sending a transaction.")
         return
 
