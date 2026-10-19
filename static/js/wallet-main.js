@@ -40,19 +40,42 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         "function currentRoundId() view returns (uint256)",
         "function ENTRY_FEE() view returns (uint256)",
         "function MAX_PARTICIPANTS() view returns (uint16)",
-        "function PRIZE_PER_WINNER() view returns (uint256)",
+        "function WINNER_COUNT() view returns (uint8)",
+        "function PRIZE_POOL() view returns (uint256)",
+        "function getPrizeTiers() view returns (uint256[])",
         "function getRound(uint256 roundId) view returns (uint8 status,uint256 participantCount,uint256 winnerCount,bytes32 randomnessSeed,uint256 openedAt,uint256 completedAt)",
         "function hasJoined(uint256 roundId,address user) view returns (bool)",
         "function claimableReward(uint256 roundId,address user) view returns (uint256)",
         "function rewardClaimed(uint256 roundId,address user) view returns (bool)",
         "function joinRaffle() returns (bool)",
+        "function refundEntry() returns (bool)",
         "function withdrawReward(uint256 roundId) returns (bool)"
     ];
     const GD_RAFFLE_TOKEN_ABI = [
         "function allowance(address owner,address spender) view returns (uint256)",
         "function approve(address spender,uint256 amount) returns (bool)"
     ];
-    let gdRaffleState = { roundId: null, previousRoundId: null, entryFee: null, status: null, participantCount: 0 };
+    let gdRaffleState = {
+        roundId: null, previousRoundId: null, entryFee: null, status: null,
+        participantCount: 0, maxParticipants: 0, winnerCount: 0, prizeTiers: [], canRefund: false
+    };
+
+    // The raffle economics are read from the contract, never hardcoded, so a
+    // redeploy with different rules needs no frontend change. These are only a
+    // fallback for the brief window before the first successful read.
+    function _raffleFmtGd(wei) {
+        try { return Number(ethers.formatEther(wei)).toLocaleString(); } catch (e) { return '—'; }
+    }
+
+    function _raffleMax() {
+        return gdRaffleState.maxParticipants || 0;
+    }
+
+    function _raffleTierSummary() {
+        const tiers = gdRaffleState.prizeTiers || [];
+        if (!tiers.length) return '';
+        return tiers.map(function (t) { return _raffleFmtGd(t); }).join(' / ') + ' G$';
+    }
 
     function setRaffleAlert(type, message) {
         const box = document.getElementById('raffleAlert');
@@ -64,6 +87,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     function setRaffleButtons(joinDisabled, withdrawDisabled, joinText, withdrawText) {
         const joinBtn = document.getElementById('joinRaffleBtn');
         const withdrawBtn = document.getElementById('withdrawRaffleBtn');
+        const refundBtn = document.getElementById('refundRaffleBtn');
         if (joinBtn) {
             joinBtn.disabled = !!joinDisabled;
             if (joinText) joinBtn.textContent = joinText;
@@ -71,6 +95,12 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         if (withdrawBtn) {
             withdrawBtn.disabled = !!withdrawDisabled;
             if (withdrawText) withdrawBtn.textContent = withdrawText;
+        }
+        if (refundBtn) {
+            // Refund is only offered while the round is still Open AND this
+            // wallet is actually in it; the contract enforces the same rule.
+            refundBtn.disabled = !gdRaffleState.canRefund;
+            refundBtn.style.display = gdRaffleState.canRefund ? '' : 'none';
         }
     }
 
@@ -180,6 +210,15 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             const round = await raffle.getRound(roundId);
             const entryFee = await raffle.ENTRY_FEE();
             const hasJoined = await raffle.hasJoined(roundId, WALLET);
+
+            // Economics come from the contract so a redeploy needs no UI change.
+            let maxParticipants = 0;
+            let winnerCount = 0;
+            let prizeTiers = [];
+            try { maxParticipants = Number(await raffle.MAX_PARTICIPANTS()); } catch (e) {}
+            try { winnerCount = Number(await raffle.WINNER_COUNT()); } catch (e) {}
+            try { prizeTiers = (await raffle.getPrizeTiers()).map(t => t); } catch (e) {}
+
             const previousRoundId = roundId > 1n ? roundId - 1n : 0n;
             let previousReward = 0n;
             let previousClaimed = false;
@@ -203,35 +242,49 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 entryFee,
                 status: Number(round.status),
                 participantCount: Number(round.participantCount),
+                maxParticipants,
+                winnerCount,
+                prizeTiers,
                 previousReward,
-                previousClaimed
+                previousClaimed,
+                canRefund: Number(round.status) === 0 && hasJoined
             };
 
+            const entryLabel = _raffleFmtGd(entryFee) + ' G$';
             document.getElementById('raffleRound').textContent = '#' + roundId.toString();
-            document.getElementById('raffleParticipants').textContent = Number(round.participantCount).toLocaleString() + ' / 400';
+            document.getElementById('raffleParticipants').textContent =
+                Number(round.participantCount).toLocaleString() + (maxParticipants ? ' / ' + maxParticipants : '');
+            const entryStat = document.getElementById('raffleEntry');
+            if (entryStat) entryStat.textContent = entryLabel;
+            const prizeStat = document.getElementById('rafflePrize');
+            if (prizeStat && prizeTiers.length) {
+                prizeStat.textContent = winnerCount + ' × ' + _raffleTierSummary();
+            }
             if (pill) pill.textContent = raffleStatusText(Number(round.status));
 
             const isOpen = Number(round.status) === 0;
-            const isFull = Number(round.participantCount) >= 400;
+            const isFull = maxParticipants > 0 && Number(round.participantCount) >= maxParticipants;
             const canWithdraw = previousReward > 0n && !previousClaimed;
             setRaffleButtons(
                 !isOpen || isFull || hasJoined,
                 !canWithdraw,
-                hasJoined ? 'Already Joined' : (isFull ? 'Round Full' : 'Join G$ Raffle - 250 G$'),
+                hasJoined ? 'Already Joined' : (isFull ? 'Round Full' : 'Join G$ Raffle - ' + entryLabel),
                 canWithdraw ? 'Withdraw ' + ethers.formatEther(previousReward) + ' G$' : 'Withdraw Reward'
             );
             if (canWithdraw) {
                 setRaffleAlert('success', '🎉 Congratulations! You have an unclaimed raffle reward from round #' + claimRoundId.toString() + '.');
             } else if (hasJoined) {
-                setRaffleAlert('info', '✅ You already joined round #' + roundId.toString() + '. Please wait until the round reaches 400 participants.');
+                setRaffleAlert('info', '✅ You already joined round #' + roundId.toString() + '. Waiting for the round to fill' +
+                    (maxParticipants ? ' (' + Number(round.participantCount) + '/' + maxParticipants + ')' : '') +
+                    '. You can still withdraw your entry while the round is open.');
             } else if (isOpen && !isFull) {
-                setRaffleAlert('info', 'Round is open. Approve 250 G$ and sign Join Raffle to participate.');
+                setRaffleAlert('info', 'Round is open. Approve ' + entryLabel + ' and sign Join Raffle to participate.');
             } else {
                 setRaffleAlert('info', 'Current round is not accepting entries while the automated raffle keeper finalizes winners.');
             }
         } catch (err) {
             console.error('[G$ Raffle] refresh error', err);
-            setRaffleButtons(true, true, 'Join G$ Raffle - 250 G$', 'Withdraw Reward');
+            setRaffleButtons(true, true, 'Join G$ Raffle', 'Withdraw Reward');
             setRaffleAlert('error', 'Could not load raffle contract status: ' + (err && err.message ? err.message : err));
         }
     }
@@ -245,10 +298,11 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             const raffle = new ethers.Contract(GOODMARKET_RAFFLE_ADDRESS, GOODMARKET_RAFFLE_ABI, signer);
             const token = new ethers.Contract(GD_TOKEN_ADDRESS, GD_RAFFLE_TOKEN_ABI, signer);
             const entryFee = gdRaffleState.entryFee || await raffle.ENTRY_FEE();
+            const entryLabel = _raffleFmtGd(entryFee) + ' G$';
             const allowance = await token.allowance(WALLET, GOODMARKET_RAFFLE_ADDRESS);
             if (allowance < entryFee) {
-                setRaffleAlert('info', 'Step 1/2 — approve 250 G$ in your wallet.');
-                if (btn) btn.textContent = 'Approve 250 G$...';
+                setRaffleAlert('info', 'Step 1/2 — approve ' + entryLabel + ' in your wallet.');
+                if (btn) btn.textContent = 'Approve ' + entryLabel + '...';
                 const approveTx = await token.approve(GOODMARKET_RAFFLE_ADDRESS, entryFee);
                 await approveTx.wait();
             }
@@ -260,6 +314,29 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             await refreshGdRaffle();
         } catch (err) {
             console.error('[G$ Raffle] join error', err);
+            setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.toFriendlyMessage(err) : (err && err.message ? err.message : err)));
+            await refreshGdRaffle();
+        }
+    }
+
+    // Leave an open round and get the entry fee back. Only valid while the round
+    // is Open — once it fills, the contract closes refunds for good, so a
+    // committed draw can never be under-funded. A refund just frees the slot.
+    async function refundGdRaffleEntry() {
+        const btn = document.getElementById('refundRaffleBtn');
+        try {
+            if (!GOODMARKET_RAFFLE_ADDRESS) throw new Error('Raffle contract is not deployed/configured yet.');
+            if (!gdRaffleState.canRefund) throw new Error('You can only withdraw your entry while the round is still open.');
+            if (btn) { btn.disabled = true; btn.textContent = 'Withdrawing entry...'; }
+            const { signer } = await getRaffleSignerProvider();
+            const raffle = new ethers.Contract(GOODMARKET_RAFFLE_ADDRESS, GOODMARKET_RAFFLE_ABI, signer);
+            setRaffleAlert('info', 'Confirm withdrawing your raffle entry in your wallet.');
+            const tx = await raffle.refundEntry();
+            await tx.wait();
+            setRaffleAlert('success', '✅ Entry withdrawn. Your ' + _raffleFmtGd(gdRaffleState.entryFee || 0n) + ' G$ was returned.');
+            await refreshGdRaffle();
+        } catch (err) {
+            console.error('[G$ Raffle] refund error', err);
             setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.toFriendlyMessage(err) : (err && err.message ? err.message : err)));
             await refreshGdRaffle();
         }
