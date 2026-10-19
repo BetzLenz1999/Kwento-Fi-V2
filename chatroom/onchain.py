@@ -467,6 +467,212 @@ def message_count() -> int | None:
     return _hex_to_int(result)
 
 
+
+# ── Network fee (CIP-64 fee currencies) ────────────────────────
+#
+# Posting is an on-chain transaction, so the POSTER pays the network fee. The
+# fee is always PRICED in CELO — that is the chain's unit of account — but
+# Celo's CIP-64 lets the sender settle it in an allowlisted ERC-20 instead.
+#
+# CELO stays the PRIMARY displayed value everywhere: the notice shows the CELO
+# cost (and its USD equivalent) no matter which token actually settles it,
+# because that is the one number comparable across wallets and networks. The
+# chosen token is a settlement detail, never the headline. Users otherwise ask
+# "why does posting need a signature?" — the notice answers that up front.
+#
+# USDT/USDC have 6 decimals, so Celo requires their ADAPTER address as
+# `feeCurrency` (the adapter normalises to 18 decimals). cUSD is 18 decimals and
+# is allowlisted directly. Native CELO means "omit the feeCurrency field".
+#
+# Wallet support matters: a wallet that does not implement CIP-64 silently
+# drops the field and pays in CELO instead, so a stablecoin fee is best-effort
+# and the flow must always still work with native CELO.
+
+# Gas accounting for the fee notice. THREE different numbers, do not conflate:
+#
+#   * POST_GAS_LIMIT  — the tx-level LIMIT (insurance). Unused gas is refunded,
+#     so it is NEVER the cost. Mirrors the frontend POST_GAS_FALLBACK.
+#   * POST_GAS_USED   — what a post actually consumes. The contract's measured
+#     worst case is 71,728 gas (cold: a new wallet pays a cold SSTORE for
+#     lastPostAt); a warm post is ~49k. We quote the COLD worst case because a
+#     new user's first post genuinely is cold, so the notice never understates.
+#   * FEE_CURRENCY_INTRINSIC_GAS — Celo's CIP-64 surcharge, charged on top of
+#     the 21,000 standard intrinsic whenever feeCurrency is set. Verified live:
+#     eth_estimateGas returns 71,865 for a fee-currency transfer vs 21,000 for
+#     the same native transfer (71,865 - 21,000 = 50,865 ~= 50,000).
+#
+# Quoting the limit instead of the used gas overstates the cost ~2x
+# (150,000 vs ~72,000), which is what users compared against their wallet.
+POST_GAS_LIMIT = int(os.getenv("CHATROOM_POST_GAS_LIMIT", "150000"))
+POST_GAS_USED = int(os.getenv("CHATROOM_POST_GAS_USED", "72000"))
+FEE_CURRENCY_INTRINSIC_GAS = int(os.getenv("CHATROOM_FEE_CURRENCY_INTRINSIC_GAS", "50000"))
+
+# Back-compat alias for the value the estimate bills by default.
+DEFAULT_POST_GAS_UNITS = POST_GAS_USED
+
+FEE_CURRENCY_CELO = "CELO"
+
+FEE_CURRENCIES = {
+    "CELO": {
+        "key": "CELO",
+        "label": "CELO",
+        "native": True,
+        "decimals": 18,
+        # Native CELO: no feeCurrency field on the transaction.
+        "address": "",
+        "coin_id": "celo",
+        "note": "Celo's native token — works with every wallet.",
+    },
+    "CUSD": {
+        "key": "CUSD",
+        "label": "cUSD",
+        "native": False,
+        "decimals": 18,
+        "address": os.getenv("CELO_CUSD_TOKEN", "0x765DE816845861e75A25fCA122bb6898B8B1282a"),
+        "coin_id": "celo-dollar",
+        "note": "18 decimals, so the token address is the fee currency.",
+    },
+    "USDT": {
+        "key": "USDT",
+        "label": "USDT",
+        "native": False,
+        "decimals": 6,
+        "address": os.getenv("CELO_USDT_ADAPTER", "0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72"),
+        "coin_id": "tether",
+        "note": "6 decimals — Celo requires the adapter address.",
+    },
+    "USDC": {
+        "key": "USDC",
+        "label": "USDC",
+        "native": False,
+        "decimals": 6,
+        "address": os.getenv("CELO_USDC_ADAPTER", "0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B"),
+        "coin_id": "usd-coin",
+        "note": "6 decimals — Celo requires the adapter address.",
+    },
+}
+
+# Fee currencies are only meaningful on Celo. XDC has no CIP-64 equivalent, so
+# an XDC-configured room advertises native XDC alone.
+FEE_CURRENCY_SUPPORTED = CHAT_CHAIN_ID == 42220
+
+_CELO_USD_CACHE: dict[str, float] = {"price": 0.0, "expires_at": 0.0}
+_CELO_USD_TTL = 300.0
+
+
+def resolve_fee_currency(key: str | None) -> dict | None:
+    """Look up a fee currency by key (case-insensitive). None when unknown."""
+    if not key:
+        return FEE_CURRENCIES[FEE_CURRENCY_CELO]
+    return FEE_CURRENCIES.get(str(key).strip().upper())
+
+
+def fee_currency_list() -> list:
+    """The fee currencies the UI may offer, CELO first (the default)."""
+    if not FEE_CURRENCY_SUPPORTED:
+        return [dict(FEE_CURRENCIES[FEE_CURRENCY_CELO], supported=False)]
+    return [dict(FEE_CURRENCIES[k], supported=True)
+            for k in (FEE_CURRENCY_CELO, "CUSD", "USDT", "USDC")]
+
+
+def gas_price_wei() -> int | None:
+    """Current gas price from the public RPC. None when unreadable."""
+    cached = _cache_get("gas_price")
+    if cached is not None:
+        return cached
+    result, _ = _rpc("eth_gasPrice", [])
+    price = _hex_to_int(result)
+    if price:
+        _cache_set("gas_price", price)
+        return price
+    return None
+
+
+def _celo_usd_price() -> float:
+    """CELO/USD for the informational estimate.
+
+    Reuses the app's shared market-price helper so there is one price source
+    (already cached upstream). Any failure returns the last known value, or
+    0.0, which the UI renders as "no USD estimate" rather than a wrong number.
+    """
+    now = time.time()
+    if _CELO_USD_CACHE["price"] and _CELO_USD_CACHE["expires_at"] > now:
+        return _CELO_USD_CACHE["price"]
+    try:
+        from blockchain import _get_market_usd_prices  # local import: heavy module
+
+        price = float((_get_market_usd_prices() or {}).get("celo") or 0)
+        if price > 0:
+            _CELO_USD_CACHE["price"] = price
+            _CELO_USD_CACHE["expires_at"] = now + _CELO_USD_TTL
+            return price
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("chatroom: CELO USD price unavailable: %s", exc)
+    return _CELO_USD_CACHE["price"]
+
+
+def _format_small(value: float) -> str:
+    """Trim a small CELO amount to something readable in a one-line notice."""
+    if value <= 0:
+        return "0"
+    if value < 0.000001:
+        return f"{value:.10f}".rstrip("0")
+    if value < 1:
+        return f"{value:.8f}".rstrip("0")
+    return f"{value:.6f}".rstrip("0")
+
+
+def estimate_post_fee(fee_currency: str | None = None, gas_units: int | None = None) -> dict:
+    """Cost of ONE post, priced in CELO, plus the token that will settle it.
+
+    Billed on gas USED, not the tx limit — unused gas is refunded, so quoting
+    the limit overstates the cost ~2x and users notice. A fee currency adds
+    Celo's CIP-64 intrinsic surcharge on top.
+
+    Never raises: an unreadable gas price still returns ``success: True`` with
+    ``estimated: False`` so the notice can say the fee varies instead of showing
+    a wrong figure or an error.
+    """
+    currency = resolve_fee_currency(fee_currency) or FEE_CURRENCIES[FEE_CURRENCY_CELO]
+    units = int(gas_units or POST_GAS_USED)
+    if units <= 0:
+        units = POST_GAS_USED
+    # CIP-64 costs extra intrinsic gas; the user pays it, so the quote includes
+    # it. Native CELO has no surcharge.
+    if not currency["native"]:
+        units += FEE_CURRENCY_INTRINSIC_GAS
+
+    price = gas_price_wei()
+    estimated = price is not None
+    cost_wei = units * (price or 0)
+    cost_celo = cost_wei / 1e18
+    usd_price = _celo_usd_price()
+    usd = cost_celo * usd_price if usd_price > 0 else 0.0
+
+    return {
+        "success": True,
+        "estimated": estimated,
+        # Billed units (gas used + any CIP-64 surcharge). The LIMIT is reported
+        # separately so the two are never confused again.
+        "gas_units": units,
+        "gas_used": units,
+        "gas_limit": POST_GAS_LIMIT,
+        "gas_price_wei": str(price or 0),
+        # The headline number: always CELO, whatever settles the fee.
+        "celo_cost_wei": str(cost_wei),
+        "celo_cost": cost_celo,
+        "celo_cost_formatted": _format_small(cost_celo),
+        "celo_usd_price": usd_price,
+        "usd_cost": usd,
+        "usd_cost_formatted": f"≈ ${usd:.6f}" if usd > 0 else "",
+        # Which token the sender chose to settle it in.
+        "fee_currency": currency["key"],
+        "fee_currency_label": currency["label"],
+        "fee_currency_address": currency["address"],
+        "fee_currency_native": currency["native"],
+        "fee_currency_supported": FEE_CURRENCY_SUPPORTED,
+    }
+
 # ── Unsigned transaction for the browser ─────────────────────────────────────
 
 def encode_post_calldata(kind: int, ref: int, body: str) -> str:
