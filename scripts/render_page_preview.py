@@ -4,7 +4,7 @@ Stubs the Jinja context, url_for and includes so a real browser can measure the
 page at several viewports. Output goes to .agent_tmp/render/ (gitignored).
 
 Usage:
-    python scripts/render_page_preview.py swap savings dashboard lotto
+    python scripts/render_page_preview.py swap savings dashboard minigames
 """
 import os
 import sys
@@ -104,7 +104,7 @@ def render(name):
 
 
 def main():
-    names = sys.argv[1:] or ["swap", "savings", "dashboard", "lotto", "farming",
+    names = sys.argv[1:] or ["swap", "savings", "dashboard", "farming",
                              "xdc_wallet", "minigames", "claim"]
     for name in names:
         try:
