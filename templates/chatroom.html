@@ -94,6 +94,14 @@
         <div class="chat-shell" data-gm-chatroom-root data-gm-chat-manual>
             <div class="gm-chat-pane" data-gm-chat-panel>
                 <div class="gm-chat-messages" role="log" aria-live="polite" data-gm-chat-messages></div>
+                {# Network-fee notice: posting is an on-chain tx the user signs,
+                   so the CELO cost is shown up front. CELO is the headline
+                   figure; the selector only picks the settling token. #}
+                <div class="gm-chat-fee-bar" data-gm-chat-fee-bar hidden>
+                    <span class="gm-chat-fee-icon" aria-hidden="true">⛽</span>
+                    <span class="gm-chat-fee-text" data-gm-chat-fee-text></span>
+                    <select class="gm-chat-fee-select" data-gm-chat-fee-select aria-label="Token used to pay the network fee" hidden></select>
+                </div>
                 <div class="gm-chat-status" data-gm-chat-status></div>
                 <div class="gm-chat-attach-preview" data-gm-chat-attach-preview hidden></div>
                 <form class="gm-chat-form" data-gm-chat-form>
