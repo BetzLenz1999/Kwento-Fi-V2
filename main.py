@@ -561,6 +561,20 @@ except Exception as e:
     logger.error(f"❌ Community Chatroom initialization failed: {e}")
 
 
+# Community Feed (Facebook/Instagram-style posts, HIDDEN by default via
+# community_feed_feature). Registered unconditionally so an admin can turn it on
+# at runtime; every route enforces the flag server-side (fail-closed) — see
+# community_feed/service.is_enabled.
+try:
+    from community_feed import init_community_feed
+    if init_community_feed(app):
+        logger.info("✅ Community Feed blueprint registered")
+    else:
+        logger.error("❌ Community Feed initialization failed")
+except Exception as e:
+    logger.error(f"❌ Community Feed initialization failed: {e}")
+
+
 # Context processor: inject feature visibility into all templates (server-side, no flicker)
 _feature_visibility_cache = {"data": None, "expires_at": 0}
 
@@ -581,11 +595,12 @@ def inject_feature_visibility():
         goodmarket_agent_visible = False
         dapp_connect_visible = False
         paluwagan_visible = True
+        community_feed_visible = False
         if supabase:
             result = safe_supabase_operation(
                 lambda: supabase.table('maintenance_settings')
                     .select('feature_name,is_maintenance')
-                    .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_utility', 'chatroom_feature', 'goodmarket_agent_feature', 'dapp_connect_feature', 'paluwagan_feature'])
+                    .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_utility', 'chatroom_feature', 'goodmarket_agent_feature', 'dapp_connect_feature', 'paluwagan_feature', 'community_feed_feature'])
                     .execute(),
                 operation_name="context processor feature visibility"
             )
@@ -616,6 +631,8 @@ def inject_feature_visibility():
                         dapp_connect_visible = val
                     elif fn == 'paluwagan_feature':
                         paluwagan_visible = val
+                    elif fn == 'community_feed_feature':
+                        community_feed_visible = val
         flags = {"swap_visible": swap_visible, "wallet_visible": wallet_visible,
                  "savings_visible": savings_visible,
                  "topup_visible": topup_visible, "giftcard_visible": giftcard_visible,
@@ -623,7 +640,8 @@ def inject_feature_visibility():
                  "chatroom_visible": chatroom_visible,
                  "goodmarket_agent_visible": goodmarket_agent_visible,
                  "dapp_connect_visible": dapp_connect_visible,
-                 "paluwagan_visible": paluwagan_visible}
+                 "paluwagan_visible": paluwagan_visible,
+                 "community_feed_visible": community_feed_visible}
         _feature_visibility_cache["data"] = flags
         _feature_visibility_cache["expires_at"] = now + 15
         return flags
@@ -633,7 +651,8 @@ def inject_feature_visibility():
                 "chatroom_visible": False,
                 "goodmarket_agent_visible": False,
                 "dapp_connect_visible": False,
-                "paluwagan_visible": True}
+                "paluwagan_visible": True,
+                "community_feed_visible": False}
 
 # Initialize Telegram Task
 from telegram_task import init_telegram_task
