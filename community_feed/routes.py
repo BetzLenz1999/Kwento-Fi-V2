@@ -155,6 +155,23 @@ def api_feed():
     return jsonify(svc.get_feed(viewer=viewer, cursor=cursor, limit=limit))
 
 
+@community_feed_bp.route("/api/users/search", methods=["GET"])
+def api_search_users():
+    """Public member search by username (read-only, guests allowed).
+
+    Same contract as the feed: reading is public, and the response carries
+    usernames only — never a wallet. A guest may search and then open a public
+    profile; reacting/commenting still raises the connect card.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+    result = svc.search_users(
+        request.args.get("q"),
+        limit=request.args.get("limit", type=int),
+    )
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
 # ── Public profile ───────────────────────────────────────────────────────────
 # A member's profile is addressed by USERNAME, never by wallet. The page and
 # every API below strip the wallet in the service layer; the template/bundle
