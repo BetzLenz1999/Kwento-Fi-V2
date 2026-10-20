@@ -35,16 +35,22 @@ _THROTTLE_LOCK = threading.Lock()
 _HITS: dict[str, deque] = defaultdict(deque)
 
 
-def _throttle(key: str, window_seconds: int) -> int:
-    """Returns 0 when allowed, else the seconds the caller must wait."""
+def _throttle(key: str, window_seconds: int, allow: int = 1) -> int:
+    """Returns 0 when allowed, else the seconds the caller must wait.
+
+    ``allow`` is how many hits are permitted inside the window. It defaults to
+    1 (a genuine rate limit) and is raised only for the upload presign, where a
+    single post legitimately needs one request per file plus a poster frame.
+    """
     window = max(1, int(window_seconds))
+    allow = max(1, int(allow))
     key = (key or "anon").lower()
     now = time.time()
     with _THROTTLE_LOCK:
         hits = _HITS[key]
         while hits and hits[0] <= now - window:
             hits.popleft()
-        if hits:
+        if len(hits) >= allow:
             return max(1, int(window - (now - hits[0])))
         hits.append(now)
     return 0
@@ -406,7 +412,8 @@ def api_presign_upload():
         return jsonify({"success": False, "code": "banned",
                         "error": "You cannot post in the community."}), 403
 
-    wait = _throttle(f"upload:{wallet}", 10)
+    wait = _throttle(f"upload:{wallet}", svc.UPLOAD_RATE_LIMIT_SECONDS,
+                     allow=svc.UPLOAD_BURST_ALLOWANCE)
     if wait:
         return jsonify({
             "success": False,
