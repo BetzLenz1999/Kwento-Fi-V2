@@ -1231,26 +1231,17 @@ function detectInjectedWallet(_retryDepth) {
     const btn = document.getElementById('injectedWalletBtn');
     const icon = document.getElementById('injectedWalletIcon');
     if (!title || !desc || !btn) return;
-    const depth = Number(_retryDepth || 0);
-    const maxDepth = _walletDetectionMaxDepth();
     // Hide the Injected Wallet picker entirely on plain mobile
-    // Safari/Chrome (no provider, no dApp-browser UA). Reveal it as
-    // soon as a provider is found or the UA hints a wallet's in-app
-    // browser. Trust Wallet mobile often ships a plain UA and only
-    // announces its provider late, so we must keep polling in a mobile
-    // context instead of bailing — otherwise the late announcement is
-    // never picked up and the card stays hidden ("wallet not detected").
+    // Safari/Chrome (no provider, no dApp-browser UA). Reveal
+    // it as soon as a provider is found or the UA hints a
+    // wallet's in-app browser.
     if (!shouldShowInjectedOption() && !provider) {
         btn.style.display = 'none';
-        if (isLikelyMobileWalletContext() && depth < maxDepth) {
-            _detectWalletTimerId = setTimeout(() => {
-                _detectWalletTimerId = null;
-                detectInjectedWallet(depth + 1);
-            }, 350 + depth * 250);
-        }
         return;
     }
     btn.style.display = 'flex';
+    const depth = Number(_retryDepth || 0);
+    const maxDepth = _walletDetectionMaxDepth();
     if (!provider) {
         title.textContent = 'Injected Wallet';
         if (icon) icon.textContent = '👛';
