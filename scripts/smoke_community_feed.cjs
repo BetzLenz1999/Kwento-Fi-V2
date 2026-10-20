@@ -337,6 +337,47 @@ function feedFetch(handler, feedRows) {
        put.headers['Content-Type'] === 'image/jpeg', JSON.stringify(put.headers));
   }
 
+  // ── 6b. Multi-file: every attachment gets its OWN presign + PUT ───────────
+  // A post may carry up to 4 files. The client must not reuse one presigned URL
+  // for several files (an R2 key is single-object), and the server throttle must
+  // admit the whole burst — a regression here showed "upload failed" from the
+  // second image on while the caption posted fine.
+  {
+    const seen = [];
+    const fetchImpl = (url, o) => {
+      const method = (o && o.method) || 'GET';
+      seen.push({ url, method });
+      if (url === '/community/api/upload/presign') {
+        const n = seen.filter(s => s.url === '/community/api/upload/presign').length;
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true,
+            upload_url: 'https://acct.r2.cloudflarestorage.com/bucket/u/abc/k' + n + '.jpg',
+            method: 'PUT', headers: { 'Content-Type': 'image/jpeg' },
+            key: 'u/abc/k' + n + '.jpg', public_url: 'https://media.example/u/abc/k' + n + '.jpg',
+            media_type: 'image', mime: 'image/jpeg',
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    };
+    const { api } = run({ boot: MEMBER, fetchImpl: feedFetch(fetchImpl) });
+    const entries = [1, 2, 3, 4].map(i => ({
+      contentType: 'image/jpeg', blob: { type: 'image/jpeg', size: 1000, name: 'p' + i + '.jpg' },
+    }));
+    const done = await Promise.all(entries.map(e => api._internals.uploadAttachment(e)));
+    const presigns = seen.filter(s => s.url === '/community/api/upload/presign').length;
+    const puts = seen.filter(s => s.method === 'PUT').length;
+    ok('4 attachments make 4 presign requests', presigns === 4, String(presigns));
+    ok('4 attachments make 4 PUTs to R2', puts === 4, String(puts));
+    ok('every attachment ends in the done state',
+       done.every(e => e.state === 'done'), JSON.stringify(done.map(e => e.state)));
+    ok('each attachment keeps a distinct object key',
+       new Set(done.map(e => e.upload.key)).size === 4,
+       JSON.stringify(done.map(e => e.upload.key)));
+  }
+
   // ── 7. Client-side media type allow-list ──────────────────────────────────
   {
     const { api } = run({ boot: MEMBER });
