@@ -96,6 +96,7 @@ const IDS = [
   'cpAlbumsMore', 'cpTabPosts', 'cpTabAlbum', 'cpPanelPosts', 'cpPanelAlbum',
   'cpMessageCount', 'cpMessageStat', 'cpPostCount', 'cpAlbumCount',
   'cpMediaCount', 'cpLightbox', 'cpLightboxBody',
+  'cpFollowWrap', 'cpFollowerCount', 'cpFollowingCount', 'cpToast',
 ];
 
 function run(opts) {
@@ -173,8 +174,9 @@ function ok(label, condition, extra) {
 }
 
 const MEMBER = {
-  isGuest: false, username: 'betz', viewerUsername: 'viewer',
+  isGuest: false, wallet: '0xviewer', username: 'betz', viewerUsername: 'viewer',
   feedEnabled: true, chatroomEnabled: true, assetVersion: '1',
+  profile: { is_following: false, is_self: false, followers: 4, following: 2 },
 };
 
 const tick = () => new Promise(r => setTimeout(r, 5));
@@ -469,6 +471,85 @@ function makeAlbum(over) {
     ok('a failed posts load reports the error',
        /Could not load posts/.test(store.cpPosts.textContent),
        JSON.stringify(store.cpPosts.textContent));
+  }
+
+  // ── 17. Follow button on the hero ─────────────────────────────────────────
+  {
+    const { api, store, calls } = run({ boot: MEMBER });
+    await tick();
+    const btn = store.cpFollowWrap.querySelector('.cp-follow');
+    ok('a member\'s profile renders a Follow button', !!btn);
+    ok('the button reads "Follow" when not following', btn.textContent === 'Follow');
+    ok('the follower count comes from the boot object',
+       store.cpFollowerCount.textContent === '4', store.cpFollowerCount.textContent);
+
+    const seen = [];
+    const r = run({
+      boot: MEMBER,
+      fetchImpl: function (url, opts) {
+        seen.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(
+          { success: true, following: true, follower_count: 5 }) });
+      },
+    });
+    await tick();
+    await r.api._internals.toggleFollow(r.store.cpFollowWrap.querySelector('.cp-follow'), 'betz');
+    const call = seen.filter(c => /follow/.test(c.url))[0];
+    ok('following POSTs to the username-scoped route',
+       !!call && call.method === 'POST' && call.url === '/community/api/users/betz/follow',
+       JSON.stringify(call));
+    ok('the follower count increments in place',
+       r.store.cpFollowerCount.textContent === '5', r.store.cpFollowerCount.textContent);
+    ok('the button flips to "Following"',
+       r.store.cpFollowWrap.querySelector('.cp-follow').textContent === 'Following');
+  }
+
+  // ── 17b. Your own profile shows NO follow button ─────────────────────────
+  {
+    const { store } = run({
+      boot: Object.assign({}, MEMBER, {
+        profile: { is_following: false, is_self: true, followers: 4, following: 2 } }),
+    });
+    await tick();
+    ok('your own profile renders no Follow button',
+       !store.cpFollowWrap.querySelector('.cp-follow'));
+  }
+
+  // ── 17c. A guest tapping Follow opens the connect card, no request ───────
+  {
+    const seen = [];
+    let gated = 0;
+    const r = run({
+      boot: Object.assign({}, MEMBER, { isGuest: true, wallet: '' }),
+      fetchImpl: function (url, opts) {
+        seen.push(String(url));
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      },
+    });
+    r.sandbox.openGoodMarketGetStarted = function () { gated++; };
+    await tick();
+    const btn = r.store.cpFollowWrap.querySelector('.cp-follow');
+    await r.api._internals.toggleFollow(btn, 'betz');
+    ok('a guest following opens the connect card', gated === 1, String(gated));
+    ok('a guest following sends no follow request',
+       !seen.some(u => /follow/.test(u)), JSON.stringify(seen));
+  }
+
+  // ── 18. Video in a post uses a bounded frame, not full screen ────────────
+  {
+    const { api } = run({ boot: MEMBER });
+    const card = api._internals.buildPostCard(makePost({
+      media: [{ type: 'video', url: 'https://media.example/v.mp4',
+                poster: 'https://media.example/v.jpg', w: 720, h: 900 }],
+    }));
+    const frame = card.querySelector('.cp-video-frame');
+    ok('a video renders inside a frame', !!frame);
+    ok('the frame is a button (tap to expand)', frame && frame.tagName === 'BUTTON');
+    ok('the frame takes its aspect ratio from the clip',
+       frame && frame.style.aspectRatio === '720 / 900', frame ? frame.style.aspectRatio : 'n/a');
+    const video = frame && frame.querySelector('video');
+    ok('the video keeps its controls and poster',
+       video && video.controls === true && video.poster === 'https://media.example/v.jpg');
   }
 
   console.log('');
