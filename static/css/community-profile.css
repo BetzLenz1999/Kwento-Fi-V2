@@ -1,17 +1,19 @@
 /* GoodMarket shared public profile — self-contained styles.
 
-   Palette matches the app's LIGHT "Soft Sunrise" theme (the wallet, savings,
-   learn & earn, profile pages): warm cream canvas, white cards, soft orange
-   accents. A profile is reached from the wallet/feed, so shipping it dark made
-   the app flip light -> dark -> light. Text colours clear WCAG AA (4.5:1) on
-   the cream/white surfaces; the G$ gold carries DARK ink because white on
-   amber fails. Animation is transform/opacity only — no box-shadow or
-   left/top keyframes (they repaint the whole element each frame). */
+   Palette is the app's LIGHT theme on a PURE WHITE canvas (the owner asked for
+   pure white on the community surfaces): white page, white cards, soft orange
+   accents. The canvas used to be warm cream. A card on white keeps its 1px
+   border — that hairline is what separates card from page, not decoration.
+   Text colours clear WCAG AA (4.5:1) on white (the lightest surface, so every
+   pair that passed on cream still passes); the G$ gold carries DARK ink
+   because white on amber fails. Animation is transform/opacity only — no
+   box-shadow or left/top keyframes (they repaint the whole element each
+   frame). */
 
 :root {
-    --cp-bg: #f7f4ef;
+    --cp-bg: #ffffff;
     --cp-card: #ffffff;
-    --cp-card-soft: #fbf6ee;
+    --cp-card-soft: #f7f7f7;
     --cp-border: #e9e2d6;
     --cp-ink: #292524;
     --cp-dim: #6b5d48;
@@ -33,7 +35,6 @@
 body {
     font-family: 'Nunito Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     background: var(--cp-bg);
-    background-image: radial-gradient(circle at 85% 0%, rgba(var(--cp-accent-rgb), 0.10), transparent 40%);
     color: var(--cp-ink);
     min-height: 100dvh;
     overflow-x: clip;
@@ -109,8 +110,27 @@ body {
     font-size: 0.74rem; line-height: 1.5; color: var(--cp-muted);
     margin-top: 0.5rem; max-width: 42ch;
 }
+
+/* Follow button under the name. Filled orange when idle ("Follow"), a quiet
+   outline when already following ("Following"). Hidden by the bundle on your
+   own profile (is_self). */
+.cp-follow-wrap { margin-top: 0.6rem; }
+.cp-follow-wrap:empty { display: none; }
+.cp-follow {
+    font-family: inherit; font-size: 0.85rem; font-weight: 800;
+    color: #fff; background: var(--cp-accent);
+    border: 1px solid var(--cp-accent); border-radius: 999px;
+    padding: 0.5rem 1.6rem; cursor: pointer;
+}
+.cp-follow:hover { background: var(--cp-accent-2, #c2410c); }
+.cp-follow:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 2px; }
+.cp-follow.is-following {
+    color: var(--cp-dim); background: var(--cp-card);
+    border-color: var(--cp-border);
+}
+
 .cp-stats {
-    display: grid; grid-template-columns: repeat(2, 1fr);
+    display: grid; grid-template-columns: repeat(3, 1fr);
     gap: 0.6rem; margin-top: 1.1rem; width: 100%;
 }
 .cp-stat {
@@ -170,10 +190,23 @@ body {
 .cp-post-who span { font-size: 0.72rem; color: var(--cp-muted); }
 
 .cp-media { background: #000; display: flex; flex-direction: column; }
-.cp-media img, .cp-media video {
+.cp-media img {
     width: 100%; max-height: 70dvh; object-fit: contain; display: block; background: #000;
 }
 .cp-media img { cursor: zoom-in; }
+
+/* Video is Instagram-style: a BOUNDED, rounded frame — never the full screen.
+   `contain` (not `cover`) so nothing is cropped. The frame is a button. */
+.cp-media .cp-video-frame {
+    position: relative; display: block; width: 100%; margin: 0.6rem 0;
+    padding: 0; border: none; background: #000; cursor: zoom-in;
+    border-radius: 12px; overflow: hidden;
+    max-height: min(68dvh, 640px); aspect-ratio: 4 / 5;
+}
+.cp-video-frame video {
+    width: 100%; height: 100%; max-height: min(68dvh, 640px);
+    object-fit: contain; display: block; background: #000;
+}
 
 .cp-post-body { padding: 0.7rem 0.9rem 0.85rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .cp-caption {
@@ -251,6 +284,19 @@ body {
     background: rgba(255, 255, 255, 0.18); border: none; border-radius: 50%;
     width: 40px; height: 40px; cursor: pointer;
 }
+
+/* ── Toast ────────────────────────────────────────────────────────────────── */
+.cp-toast {
+    position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
+    z-index: 100001; max-width: min(92vw, 420px);
+    background: var(--cp-card); border: 1px solid var(--cp-border);
+    border-left: 3px solid var(--cp-accent);
+    color: var(--cp-ink); font-size: 0.84rem; line-height: 1.45;
+    border-radius: 12px; padding: 0.7rem 0.95rem;
+}
+.cp-toast[hidden] { display: none; }
+.cp-toast.is-error { border-left-color: var(--cp-danger); }
+.cp-toast.is-ok { border-left-color: var(--cp-ok); }
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 480px) {
