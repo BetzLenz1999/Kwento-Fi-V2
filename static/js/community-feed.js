@@ -1,0 +1,1186 @@
+/* GoodMarket Community Feed — feed rendering, composer, upload, reactions,
+   comments, report, delete.
+
+   Media never passes through Flask: the browser asks for a presigned PUT and
+   uploads straight to Cloudflare R2 (see community_feed/storage.py). That is
+   what keeps a 100MB video from holding one of the app's ~16 gthread slots.
+
+   Security rules kept from the rest of the app:
+   - User-supplied text is written with textContent ONLY, never innerHTML.
+   - Images are re-encoded through a canvas before upload, which also STRIPS
+     EXIF — a phone photo otherwise publishes the user's GPS coordinates.
+   - The reaction count is optimistic for feel, then reconciled with the
+     server's number; a failure rolls both the chip and the count back. */
+
+(function () {
+    'use strict';
+
+    var BOOT = window.GM_COMMUNITY_BOOT || {};
+    var IS_GUEST = !!BOOT.isGuest;
+    var WALLET = BOOT.wallet || '';
+    var USERNAME = BOOT.username || '';
+    var USERNAME_REQUIRED = BOOT.usernameRequired !== false;
+    var REACTIONS = BOOT.reactions || {};
+    var MAX_CAPTION = BOOT.maxCaption || 2200;
+    var MAX_MEDIA = BOOT.maxMedia || 4;
+    var MAX_IMAGE_MB = BOOT.maxImageMb || 10;
+    var MAX_VIDEO_MB = BOOT.maxVideoMb || 100;
+    var STORAGE_READY = !!BOOT.storageReady;
+
+    var LONG_EDGE = 2048;      // downscale target for images
+    var JPEG_QUALITY = 0.85;
+
+    // Fail fast client-side on a type the server will refuse anyway, so the
+    // user is not told "upload failed" after waiting for a large file.
+    var ALLOWED_TYPES = {
+        'image/jpeg': 1, 'image/png': 1, 'image/gif': 1, 'image/webp': 1,
+        'video/mp4': 1, 'video/webm': 1
+    };
+
+    var _feed = [];            // rendered posts, newest first
+    var _nextCursor = null;
+    var _loading = false;
+    var _pending = [];         // composer attachments awaiting upload
+    var _posting = false;
+    var _reactionInFlight = {};  // post_id -> true (serialise per post)
+    var _commentsOpen = {};    // post_id -> true
+    var _commentCache = {};    // post_id -> [comments]
+
+    // ── Small helpers ──────────────────────────────────────────────────────
+
+    function $(id) { return document.getElementById(id); }
+
+    function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = String(text);
+        return node;
+    }
+
+    function esc(text) { return String(text === undefined || text === null ? '' : text); }
+
+    function toast(message, kind) {
+        var node = $('cfToast');
+        if (!node) return;
+        node.textContent = esc(message);
+        node.className = 'cf-toast' + (kind ? ' is-' + kind : '');
+        node.hidden = false;
+        clearTimeout(node._timer);
+        node._timer = setTimeout(function () { node.hidden = true; }, 4200);
+    }
+
+    function timeAgo(iso) {
+        if (!iso) return '';
+        var then = new Date(iso).getTime();
+        if (isNaN(then)) return '';
+        var secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+        if (secs < 60) return 'just now';
+        var mins = Math.floor(secs / 60);
+        if (mins < 60) return mins + 'm ago';
+        var hours = Math.floor(mins / 60);
+        if (hours < 24) return hours + 'h ago';
+        var days = Math.floor(hours / 24);
+        if (days < 7) return days + 'd ago';
+        return new Date(then).toLocaleDateString();
+    }
+
+    function countLabel(n) {
+        n = Number(n) || 0;
+        if (n <= 0) return '';
+        return n > 999 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K' : String(n);
+    }
+
+    // Non-capturing group on purpose: a capturing group shifts String.replace's
+    // callback arguments and silently drops the surrounding text (the chatroom
+    // shipped exactly that bug).
+    var URL_RE = /(https?:\/\/[^\s<]+)/g;
+
+    function linkifyInto(node, text) {
+        var source = String(text === undefined || text === null ? '' : text);
+        var last = 0;
+        var match;
+        URL_RE.lastIndex = 0;
+        while ((match = URL_RE.exec(source)) !== null) {
+            if (match.index > last) {
+                node.appendChild(document.createTextNode(source.slice(last, match.index)));
+            }
+            var href = match[0];
+            var link = document.createElement('a');
+            link.href = href;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer nofollow';
+            link.textContent = href;
+            node.appendChild(link);
+            last = match.index + href.length;
+        }
+        if (last < source.length) {
+            node.appendChild(document.createTextNode(source.slice(last)));
+        }
+    }
+
+    function api(path, options) {
+        var opts = options || {};
+        opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+        opts.credentials = 'same-origin';
+        return fetch(path, opts).then(function (response) {
+            return response.json().catch(function () { return {}; })
+                .then(function (data) {
+                    return { ok: response.ok, status: response.status, data: data };
+                });
+        });
+    }
+
+    function requiresLogin() {
+        toast('Please log in to do that.', 'error');
+        if (typeof window.openGoodMarketGetStarted === 'function') {
+            window.openGoodMarketGetStarted();
+        }
+        return false;
+    }
+
+    // ── Composer: image processing ─────────────────────────────────────────
+
+    function isImage(file) { return /^image\//.test(file.type || ''); }
+
+    function fileToImage(file) {
+        return new Promise(function (resolve, reject) {
+            var url = URL.createObjectURL(file);
+            var img = new Image();
+            img.onload = function () { resolve({ img: img, url: url }); };
+            img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('Could not read that image.')); };
+            img.src = url;
+        });
+    }
+
+    /* Re-encode through a canvas: downscales a huge camera photo AND strips
+       EXIF (including GPS). Animated GIFs are passed through untouched — the
+       canvas would flatten them to a single frame. */
+    function prepareImage(file) {
+        if (file.type === 'image/gif') {
+            return Promise.resolve({ blob: file, width: null, height: null, preview: null, passthrough: true });
+        }
+        return fileToImage(file).then(function (result) {
+            var img = result.img;
+            var scale = Math.min(1, LONG_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+            var width = Math.max(1, Math.round(img.naturalWidth * scale));
+            var height = Math.max(1, Math.round(img.naturalHeight * scale));
+            var canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+            return new Promise(function (resolve) {
+                canvas.toBlob(function (blob) {
+                    URL.revokeObjectURL(result.url);
+                    resolve({
+                        blob: blob || file,
+                        width: width,
+                        height: height,
+                        preview: canvas.toDataURL('image/jpeg', 0.6),
+                        passthrough: false,
+                    });
+                }, 'image/jpeg', JPEG_QUALITY);
+            });
+        }).catch(function () {
+            // A decode failure must not block the upload — send the original.
+            return { blob: file, width: null, height: null, preview: null, passthrough: true };
+        });
+    }
+
+    /* Videos are NOT transcoded (no ffmpeg in this deployment). We read the
+       duration to reject an over-long clip early and grab a poster frame so the
+       feed does not show a black rectangle before playback. */
+    function prepareVideo(file) {
+        return new Promise(function (resolve) {
+            var url = URL.createObjectURL(file);
+            var video = document.createElement('video');
+            video.preload = 'metadata';
+            video.muted = true;
+            var done = false;
+            function finish(payload) {
+                if (done) return;
+                done = true;
+                resolve(payload);
+            }
+            video.onloadeddata = function () {
+                var canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth || 320;
+                canvas.height = video.videoHeight || 240;
+                try {
+                    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                } catch (e) { /* a tainted/blocked frame just means no poster */ }
+                finish({
+                    blob: file,
+                    width: video.videoWidth || null,
+                    height: video.videoHeight || null,
+                    duration: video.duration || null,
+                    poster: canvas.width ? canvas.toDataURL('image/jpeg', 0.7) : null,
+                });
+            };
+            video.onerror = function () {
+                finish({ blob: file, width: null, height: null, duration: null, poster: null });
+            };
+            video.src = url;
+            setTimeout(function () {
+                finish({ blob: file, width: null, height: null, duration: null, poster: null });
+            }, 6000);
+        });
+    }
+
+    // ── Composer: upload ───────────────────────────────────────────────────
+
+    function presign(contentType, bytes) {
+        return api('/community/api/upload/presign', {
+            method: 'POST',
+            body: JSON.stringify({ content_type: contentType, bytes: bytes }),
+        }).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not start the upload.');
+            }
+            return result.data;
+        });
+    }
+
+    function putToR2(item, blob) {
+        return fetch(item.upload_url, {
+            method: item.method || 'PUT',
+            // The Content-Type is SIGNED: sending a different value is a
+            // SignatureDoesNotMatch, so it must be exactly what we got back.
+            headers: item.headers || {},
+            body: blob,
+        }).then(function (response) {
+            if (!response.ok) throw new Error('Upload failed (' + response.status + ')');
+            return true;
+        });
+    }
+
+    function uploadAttachment(entry) {
+        entry.state = 'uploading';
+        renderPreviews();
+        return presign(entry.contentType, entry.blob.size)
+            .then(function (item) {
+                entry.upload = item;
+                return putToR2(item, entry.blob);
+            })
+            .then(function () {
+                entry.state = 'done';
+                renderPreviews();
+                return entry;
+            })
+            .catch(function (error) {
+                entry.state = 'failed';
+                entry.error = error && error.message ? error.message : 'Upload failed.';
+                renderPreviews();
+                throw error;
+            });
+    }
+
+    function addFiles(fileList) {
+        var files = Array.prototype.slice.call(fileList || []);
+        if (!files.length) return;
+        if (!STORAGE_READY) {
+            toast('Media uploads are not configured yet.', 'error');
+            return;
+        }
+        if (!WALLET) { requiresLogin(); return; }
+
+        files.forEach(function (file) {
+            if (_pending.length >= MAX_MEDIA) {
+                toast('You can attach up to ' + MAX_MEDIA + ' files.', 'error');
+                return;
+            }
+            var mime = (file.type || '').split(';')[0].trim().toLowerCase();
+            if (!ALLOWED_TYPES[mime]) {
+                toast('Please choose a JPEG, PNG, GIF, WEBP, MP4 or WEBM file.', 'error');
+                return;
+            }
+            var isVid = /^video\//.test(mime);
+            var limitMb = isVid ? MAX_VIDEO_MB : MAX_IMAGE_MB;
+            if (file.size > limitMb * 1024 * 1024) {
+                toast('That file is too large (max ' + limitMb + 'MB).', 'error');
+                return;
+            }
+            var entry = { file: file, state: 'preparing', contentType: mime, isVideo: isVid };
+            _pending.push(entry);
+            renderPreviews();
+
+            var prepared = isVid ? prepareVideo(file) : prepareImage(file);
+            prepared.then(function (out) {
+                entry.blob = out.blob;
+                entry.width = out.width;
+                entry.height = out.height;
+                entry.duration = out.duration || null;
+                entry.posterDataUrl = out.poster || out.preview || null;
+                if (out.blob && out.blob.type) entry.contentType = out.blob.type;
+                if (!entry.contentType) entry.contentType = isVid ? 'video/mp4' : 'image/jpeg';
+                return uploadAttachment(entry);
+            }).catch(function (error) {
+                entry.state = 'failed';
+                entry.error = (error && error.message) || 'Could not prepare that file.';
+                renderPreviews();
+            }).then(updatePostButton);
+        });
+    }
+
+    function renderPreviews() {
+        var wrap = $('cfPreviews');
+        if (!wrap) return;
+        wrap.textContent = '';
+        if (!_pending.length) { wrap.hidden = true; return; }
+        wrap.hidden = false;
+
+        _pending.forEach(function (entry, index) {
+            var box = el('div', 'cf-preview' + (entry.state === 'done' ? ' is-done' : '')
+                + (entry.state === 'failed' ? ' is-failed' : ''));
+
+            if (entry.posterDataUrl) {
+                var img = document.createElement('img');
+                img.src = entry.posterDataUrl;
+                img.alt = '';
+                box.appendChild(img);
+            } else if (entry.isVideo) {
+                box.appendChild(el('div', 'cf-preview-bar'));
+            }
+
+            var remove = el('button', 'cf-preview-remove', '×');
+            remove.type = 'button';
+            remove.setAttribute('aria-label', 'Remove attachment');
+            remove.onclick = function () {
+                _pending.splice(index, 1);
+                renderPreviews();
+                updatePostButton();
+            };
+            box.appendChild(remove);
+
+            var bar = el('div', 'cf-preview-bar');
+            bar.appendChild(el('i', null, ''));
+            box.appendChild(bar);
+            wrap.appendChild(box);
+        });
+    }
+
+    function setUploadStatus(message, isError) {
+        var node = $('cfUploadStatus');
+        if (!node) return;
+        if (!message) { node.hidden = true; node.textContent = ''; return; }
+        node.hidden = false;
+        node.className = 'cf-upload-status' + (isError ? ' is-error' : '');
+        node.textContent = esc(message);
+    }
+
+    function updateCounter() {
+        var input = $('cfCaption');
+        var node = $('cfCounter');
+        if (!input || !node) return;
+        var length = input.value.length;
+        node.textContent = length + ' / ' + MAX_CAPTION;
+        node.className = 'cf-counter'
+            + (length > MAX_CAPTION ? ' is-over' : (length > MAX_CAPTION * 0.9 ? ' is-near' : ''));
+    }
+
+    // A username is required before posting: a post without one renders as a
+    // wallet address. Kept as a function so the gate can be re-evaluated after
+    // the inline prompt saves a name, without a page reload.
+    function needsUsername() {
+        return USERNAME_REQUIRED && !!WALLET && !USERNAME;
+    }
+
+    function focusUsernameInput() {
+        var field = $('cfUsernameInput');
+        if (!field) return;
+        if (field.focus) field.focus();
+        if (field.scrollIntoView) {
+            try { field.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { /* older browsers */ }
+        }
+    }
+
+    function setUsernameHint(text, isError) {
+        var hint = $('cfUsernameHint');
+        if (!hint) return;
+        hint.textContent = text;
+        hint.className = 'cf-username-hint' + (isError ? ' is-error' : '');
+    }
+
+    // Saves the username through the app-wide endpoint, so the same rules
+    // (3-24 chars, uniqueness, once-per-year edit) apply here and on /wallet.
+    // On success the composer unlocks in place — no reload, so the user does
+    // not lose a caption they already typed.
+    function saveUsername() {
+        var field = $('cfUsernameInput');
+        var button = $('cfUsernameSave');
+        if (!field) return;
+        var value = (field.value || '').trim();
+
+        if (!/^[A-Za-z0-9_]{3,24}$/.test(value)) {
+            setUsernameHint('Use 3-24 letters, numbers or _ (no spaces).', true);
+            if (field.focus) field.focus();
+            return;
+        }
+
+        if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+        setUsernameHint('Saving…', false);
+
+        api('/api/user/username', {
+            method: 'POST',
+            body: JSON.stringify({ username: value }),
+        }).then(function (result) {
+            var data = result.data || {};
+            if (!data.success) {
+                throw new Error(data.error || 'Could not save that username.');
+            }
+            USERNAME = data.username || value;
+            var gate = $('cfUsernameGate');
+            if (gate && gate.parentNode) gate.parentNode.removeChild(gate);
+            toast('Username saved! You can post now.', 'ok');
+            updatePostButton();
+        }).catch(function (error) {
+            if (button) { button.disabled = false; button.textContent = 'Save'; }
+            setUsernameHint((error && error.message) || 'Could not save that username.', true);
+        });
+    }
+
+    function updatePostButton() {
+        var button = $('cfPostBtn');
+        var input = $('cfCaption');
+        if (!button || !input) return;
+        var uploading = _pending.some(function (e) { return e.state === 'uploading' || e.state === 'preparing'; });
+        var failed = _pending.some(function (e) { return e.state === 'failed'; });
+        var hasText = input.value.trim().length > 0;
+        var overLimit = input.value.length > MAX_CAPTION;
+        var canPost = !_posting && !uploading && !failed
+            && !needsUsername()
+            && _pending.length <= MAX_MEDIA
+            && !overLimit
+            && (hasText || _pending.some(function (e) { return e.state === 'done'; }));
+        button.disabled = !canPost;
+        button.textContent = _posting ? 'Posting…' : 'Post';
+    }
+
+    function resetComposer() {
+        _pending = [];
+        var input = $('cfCaption');
+        if (input) input.value = '';
+        var fileInput = $('cfFileInput');
+        if (fileInput) fileInput.value = '';
+        renderPreviews();
+        setUploadStatus('');
+        updateCounter();
+        updatePostButton();
+    }
+
+    function submitPost() {
+        if (!WALLET) { requiresLogin(); return; }
+        if (_posting) return;
+        if (needsUsername()) {
+            // The button is disabled in this state, so this only fires from a
+            // keyboard/console path — point at the prompt instead of failing
+            // later with a server error.
+            focusUsernameInput();
+            toast('Please choose a username first.', 'error');
+            return;
+        }
+        var input = $('cfCaption');
+        var caption = input ? input.value : '';
+
+        var done = _pending.filter(function (e) { return e.state === 'done' && e.upload; });
+        if (_pending.some(function (e) { return e.state !== 'done'; })) {
+            toast('Please wait for the uploads to finish.', 'error');
+            return;
+        }
+        if (!caption.trim() && !done.length) {
+            toast('Please write something or attach a photo/video.', 'error');
+            return;
+        }
+
+        _posting = true;
+        updatePostButton();
+        setUploadStatus('Publishing…', false);
+
+        var media = done.map(function (entry) {
+            return {
+                key: entry.upload.key,
+                media_type: entry.upload.media_type,
+                mime: entry.upload.mime,
+                width: entry.width,
+                height: entry.height,
+                duration: entry.duration,
+                poster_url: null,   // the poster is uploaded as its own object below
+            };
+        });
+
+        // Upload any poster frames first so they become managed objects, then
+        // attach their public URLs to the media descriptors.
+        uploadPosters(done).then(function (posters) {
+            posters.forEach(function (url, index) { media[index].poster_url = url; });
+            return api('/community/api/posts', {
+                method: 'POST',
+                body: JSON.stringify({ caption: caption, media: media }),
+            });
+        }).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not publish your post.');
+            }
+            _posting = false;
+            setUploadStatus('');
+            resetComposer();
+            // Prepend from the local object — no refetch needed.
+            _feed.unshift(result.data.post);
+            renderFeed();
+            toast('Posted!', 'ok');
+        }).catch(function (error) {
+            _posting = false;
+            setUploadStatus('');
+            updatePostButton();
+            toast((error && error.message) || 'Could not publish your post.', 'error');
+        });
+    }
+
+    function uploadPosters(entries) {
+        var jobs = entries.map(function (entry) {
+            if (!entry.posterDataUrl || !entry.isVideo) return Promise.resolve(null);
+            return dataUrlToBlob(entry.posterDataUrl).then(function (blob) {
+                return presign('image/jpeg', blob.size).then(function (item) {
+                    return putToR2(item, blob).then(function () { return item.public_url; });
+                });
+            }).catch(function () { return null; });
+        });
+        return Promise.all(jobs);
+    }
+
+    function dataUrlToBlob(dataUrl) {
+        return fetch(dataUrl).then(function (response) { return response.blob(); });
+    }
+
+    // ── Feed rendering ─────────────────────────────────────────────────────
+
+    function renderFeed() {
+        var container = $('cfFeed');
+        if (!container) return;
+        container.textContent = '';
+        container.setAttribute('aria-busy', 'false');
+
+        if (!_feed.length) {
+            var empty = $('cfEmpty');
+            if (empty) empty.hidden = false;
+            updateLoadMore();
+            return;
+        }
+        var emptyNode = $('cfEmpty');
+        if (emptyNode) emptyNode.hidden = true;
+
+        _feed.forEach(function (post) { container.appendChild(buildCard(post)); });
+        updateLoadMore();
+    }
+
+    function updateLoadMore() {
+        var button = $('cfLoadMore');
+        if (!button) return;
+        button.hidden = !_nextCursor;
+    }
+
+    function buildCard(post) {
+        var card = el('article', 'cf-card');
+        card.setAttribute('data-post-id', post.id);
+
+        // Head
+        var head = el('div', 'cf-card-head');
+        head.appendChild(el('div', 'cf-avatar', (esc(post.username) || 'A')[0].toUpperCase()));
+        var who = el('div', 'cf-card-who');
+        who.appendChild(el('strong', null, post.username));
+        var stamp = timeAgo(post.created_at) + (post.is_edited ? ' · edited' : '');
+        who.appendChild(el('span', null, stamp));
+        head.appendChild(who);
+        if (post.is_mine) {
+            var menu = el('button', 'cf-menu-btn', '⋯');
+            menu.type = 'button';
+            menu.setAttribute('aria-label', 'Post options');
+            menu.onclick = function () { openPostMenu(post, menu); };
+            head.appendChild(menu);
+        }
+        card.appendChild(head);
+
+        // Media
+        if (post.media && post.media.length) {
+            var mediaWrap = el('div', 'cf-media');
+            post.media.forEach(function (item) {
+                if (item.type === 'video') {
+                    var video = document.createElement('video');
+                    video.controls = true;
+                    video.preload = 'metadata';
+                    video.playsInline = true;
+                    if (item.poster) video.poster = item.poster;
+                    video.src = item.url;
+                    mediaWrap.appendChild(video);
+                } else {
+                    var img = document.createElement('img');
+                    img.loading = 'lazy';
+                    img.decoding = 'async';
+                    img.referrerPolicy = 'no-referrer';
+                    img.src = item.url;
+                    img.alt = post.body ? post.body.slice(0, 120) : 'Photo shared by ' + post.username;
+                    img.onclick = function () { openLightbox(item.url); };
+                    mediaWrap.appendChild(img);
+                }
+            });
+            card.appendChild(mediaWrap);
+        }
+
+        var body = el('div', 'cf-card-body');
+
+        // Reaction + comment summary
+        var summary = el('div', 'cf-summary');
+        var left = el('div', 'cf-summary-left');
+        var emoji = post.my_reaction && REACTIONS[post.my_reaction]
+            ? REACTIONS[post.my_reaction] : '👍';
+        var emojiNode = el('span', 'cf-summary-emoji', emoji);
+        emojiNode.setAttribute('aria-hidden', 'true');
+        left.appendChild(emojiNode);
+        var countNode = el('span', 'cf-count', countLabel(post.reaction_count) || '0');
+        // Announce the change without re-reading the whole card.
+        countNode.setAttribute('aria-live', 'polite');
+        left.appendChild(countNode);
+        summary.appendChild(left);
+        summary.appendChild(el('span', null, countLabel(post.comment_count)
+            ? countLabel(post.comment_count) + ' comment' + (post.comment_count === 1 ? '' : 's')
+            : ''));
+        body.appendChild(summary);
+
+        // Caption (media above, caption below — the IG/FB convention)
+        if (post.body) {
+            var caption = el('p', 'cf-caption');
+            linkifyInto(caption, post.body);
+            body.appendChild(caption);
+            requestAnimationFrame(function () {
+                // Clamp only when it actually overflows, and always leave a way
+                // to read the whole thing.
+                if (caption.scrollHeight > caption.clientHeight + 4 && !caption.classList.contains('is-clamped')) {
+                    caption.classList.add('is-clamped');
+                    var more = el('button', 'cf-see-more', 'See more');
+                    more.type = 'button';
+                    more.onclick = function () {
+                        var clamped = caption.classList.toggle('is-clamped');
+                        more.textContent = clamped ? 'See more' : 'See less';
+                    };
+                    caption.insertAdjacentElement('afterend', more);
+                }
+            });
+        }
+
+        // Reaction bar — always visible, one tap.
+        var bar = el('div', 'cf-reactions');
+        bar.setAttribute('role', 'group');
+        bar.setAttribute('aria-label', 'Reactions');
+        Object.keys(REACTIONS).forEach(function (key) {
+            var chip = el('button', 'cf-chip', REACTIONS[key]);
+            chip.type = 'button';
+            // The emoji IS the label text, but aria-label gives screen readers
+            // the word ("React with love") instead of the glyph name.
+            chip.setAttribute('aria-label', 'React with ' + key);
+            chip.setAttribute('aria-pressed', post.my_reaction === key ? 'true' : 'false');
+            chip.onclick = function () { react(post, key); };
+            bar.appendChild(chip);
+        });
+        body.appendChild(bar);
+
+        // Actions
+        var actions = el('div', 'cf-card-actions');
+        var commentBtn = el('button', 'cf-action-btn', '💬 Comment');
+        commentBtn.type = 'button';
+        commentBtn.onclick = function () { toggleComments(post, body); };
+        actions.appendChild(commentBtn);
+
+        var shareBtn = el('button', 'cf-action-btn', '↗ Share');
+        shareBtn.type = 'button';
+        shareBtn.onclick = function () { sharePost(post); };
+        actions.appendChild(shareBtn);
+
+        if (!post.is_mine) {
+            var reportBtn = el('button', 'cf-action-btn', '⚑ Report');
+            reportBtn.type = 'button';
+            reportBtn.onclick = function () { reportPost(post); };
+            actions.appendChild(reportBtn);
+        }
+        body.appendChild(actions);
+
+        card.appendChild(body);
+        return card;
+    }
+
+    function findPost(id) {
+        for (var i = 0; i < _feed.length; i++) {
+            if (String(_feed[i].id) === String(id)) return _feed[i];
+        }
+        return null;
+    }
+
+    function rerenderPost(post) {
+        var card = document.querySelector('[data-post-id="' + post.id + '"]');
+        if (!card || !card.parentNode) { renderFeed(); return; }
+        card.parentNode.replaceChild(buildCard(post), card);
+    }
+
+    // ── Reactions ──────────────────────────────────────────────────────────
+
+    function react(post, key) {
+        if (!WALLET) { requiresLogin(); return; }
+        if (_reactionInFlight[post.id]) return;   // a fast double-tap fires once
+        _reactionInFlight[post.id] = true;
+
+        var previous = post.my_reaction;
+        var previousCount = Number(post.reaction_count) || 0;
+
+        // Optimistic: switch keeps the count, add bumps it, un-react drops it.
+        if (previous === key) {
+            post.my_reaction = null;
+            post.reaction_count = Math.max(0, previousCount - 1);
+        } else if (previous) {
+            post.my_reaction = key;
+        } else {
+            post.my_reaction = key;
+            post.reaction_count = previousCount + 1;
+        }
+        rerenderPost(post);
+
+        var removing = previous === key;
+        var path = '/community/api/posts/' + post.id + '/reaction';
+        var request = removing
+            ? api(path, { method: 'DELETE' })
+            : api(path, { method: 'POST', body: JSON.stringify({ reaction: key }) });
+
+        request.then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not save your reaction.');
+            }
+            // Reconcile with the authoritative count.
+            post.reaction_count = Number(result.data.reaction_count);
+            post.my_reaction = result.data.my_reaction;
+            rerenderPost(post);
+        }).catch(function (error) {
+            // Roll back both the chip and the count.
+            post.my_reaction = previous;
+            post.reaction_count = previousCount;
+            rerenderPost(post);
+            toast((error && error.message) || 'Could not save your reaction.', 'error');
+        }).then(function () {
+            _reactionInFlight[post.id] = false;
+        });
+    }
+
+    // ── Comments ───────────────────────────────────────────────────────────
+
+    function toggleComments(post, body) {
+        var existing = body.querySelector('.cf-comments');
+        if (existing) { existing.remove(); delete _commentsOpen[post.id]; return; }
+        _commentsOpen[post.id] = true;
+
+        var wrap = el('div', 'cf-comments');
+        wrap.setAttribute('aria-label', 'Comments');
+        wrap.appendChild(el('div', 'cf-comment', 'Loading comments…'));
+        body.appendChild(wrap);
+
+        api('/community/api/posts/' + post.id + '/comments').then(function (result) {
+            _commentCache[post.id] = (result.data && result.data.comments) || [];
+            renderComments(post, wrap);
+        }).catch(function () {
+            wrap.textContent = '';
+            wrap.appendChild(el('div', 'cf-comment', 'Could not load comments.'));
+        });
+    }
+
+    function renderComments(post, wrap) {
+        wrap.textContent = '';
+        var comments = _commentCache[post.id] || [];
+        comments.forEach(function (comment) {
+            var row = el('div', 'cf-comment');
+            row.appendChild(el('div', 'cf-comment-avatar', (esc(comment.username) || 'A')[0].toUpperCase()));
+            var bubble = el('div', 'cf-comment-body');
+            bubble.appendChild(el('strong', null, comment.username));
+            bubble.appendChild(document.createTextNode(comment.body));
+            row.appendChild(bubble);
+            if (comment.is_mine) {
+                var remove = el('button', 'cf-action-btn', '×');
+                remove.type = 'button';
+                remove.setAttribute('aria-label', 'Delete comment');
+                remove.onclick = function () { deleteComment(post, comment, wrap); };
+                row.appendChild(remove);
+            }
+            wrap.appendChild(row);
+        });
+
+        if (!WALLET) {
+            wrap.appendChild(el('div', 'cf-comment', 'Log in to comment.'));
+            return;
+        }
+
+        var form = el('div', 'cf-comment-form');
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Write a comment…';
+        input.maxLength = 500;
+        input.setAttribute('aria-label', 'Write a comment');
+        var submit = el('button', null, 'Send');
+        submit.type = 'button';
+        submit.disabled = true;
+        input.oninput = function () { submit.disabled = !input.value.trim(); };
+        input.onkeydown = function (event) {
+            if (event.key === 'Enter' && input.value.trim()) { submit.click(); }
+        };
+        submit.onclick = function () { addComment(post, input, submit, wrap); };
+        form.appendChild(input);
+        form.appendChild(submit);
+        wrap.appendChild(form);
+    }
+
+    function addComment(post, input, submit, wrap) {
+        var body = input.value.trim();
+        if (!body) return;
+        submit.disabled = true;
+        submit.textContent = '…';
+        api('/community/api/posts/' + post.id + '/comments', {
+            method: 'POST',
+            body: JSON.stringify({ body: body }),
+        }).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not post your comment.');
+            }
+            input.value = '';
+            _commentCache[post.id] = (_commentCache[post.id] || []).concat([result.data.comment]);
+            post.comment_count = (Number(post.comment_count) || 0) + 1;
+            renderComments(post, wrap);
+            rerenderPost(post);
+        }).catch(function (error) {
+            toast((error && error.message) || 'Could not post your comment.', 'error');
+        }).then(function () {
+            submit.disabled = false;
+            submit.textContent = 'Send';
+        });
+    }
+
+    function deleteComment(post, comment, wrap) {
+        api('/community/api/comments/' + comment.id, { method: 'DELETE' }).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not delete the comment.');
+            }
+            _commentCache[post.id] = (_commentCache[post.id] || []).filter(function (row) {
+                return String(row.id) !== String(comment.id);
+            });
+            post.comment_count = Math.max(0, (Number(post.comment_count) || 1) - 1);
+            renderComments(post, wrap);
+            rerenderPost(post);
+        }).catch(function (error) {
+            toast((error && error.message) || 'Could not delete the comment.', 'error');
+        });
+    }
+
+    // ── Post menu / edit / delete / report ─────────────────────────────────
+
+    function openPostMenu(post, anchor) {
+        closePostMenu();
+        var menu = el('div', 'cf-menu');
+        menu.id = 'cfPostMenu';
+        menu.setAttribute('role', 'menu');
+
+        var edit = el('button', 'cf-menu-item', '✏️ Edit caption');
+        edit.type = 'button';
+        edit.setAttribute('role', 'menuitem');
+        edit.onclick = function () { closePostMenu(); openEdit(post); };
+        menu.appendChild(edit);
+
+        var remove = el('button', 'cf-menu-item is-danger', '🗑 Delete post');
+        remove.type = 'button';
+        remove.setAttribute('role', 'menuitem');
+        remove.onclick = function () { closePostMenu(); deletePost(post); };
+        menu.appendChild(remove);
+
+        document.body.appendChild(menu);
+        var rect = anchor.getBoundingClientRect();
+        menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+        menu.style.left = Math.max(8, rect.right + window.scrollX - 180) + 'px';
+
+        setTimeout(function () {
+            document.addEventListener('click', _menuOutsideClick, { once: true });
+        }, 0);
+    }
+
+    function _menuOutsideClick(event) {
+        var menu = $('cfPostMenu');
+        if (menu && menu.contains(event.target)) return;
+        closePostMenu();
+    }
+
+    function closePostMenu() {
+        var menu = $('cfPostMenu');
+        if (menu) menu.remove();
+    }
+
+    var _editing = null;
+
+    function openEdit(post) {
+        _editing = post;
+        var modal = $('cfEditModal');
+        var input = $('cfEditCaption');
+        if (!modal || !input) return;
+        input.value = post.body || '';
+        modal.hidden = false;
+        input.focus();
+    }
+
+    function closeEdit() {
+        var modal = $('cfEditModal');
+        if (modal) modal.hidden = true;
+        _editing = null;
+    }
+
+    function saveEdit() {
+        if (!_editing) return;
+        var input = $('cfEditCaption');
+        var button = $('cfEditSaveBtn');
+        var body = input ? input.value : '';
+        if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+        api('/community/api/posts/' + _editing.id, {
+            method: 'PATCH',
+            body: JSON.stringify({ caption: body }),
+        }).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not update the post.');
+            }
+            _editing.body = result.data.body;
+            _editing.is_edited = true;
+            rerenderPost(_editing);
+            closeEdit();
+            toast('Caption updated.', 'ok');
+        }).catch(function (error) {
+            toast((error && error.message) || 'Could not update the post.', 'error');
+        }).then(function () {
+            if (button) { button.disabled = false; button.textContent = 'Save'; }
+        });
+    }
+
+    function deletePost(post) {
+        if (!window.confirm('Delete this post? The photos and videos will be removed too.')) return;
+        api('/community/api/posts/' + post.id, { method: 'DELETE' }).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not delete the post.');
+            }
+            _feed = _feed.filter(function (row) { return String(row.id) !== String(post.id); });
+            renderFeed();
+            toast('Post deleted.', 'ok');
+        }).catch(function (error) {
+            toast((error && error.message) || 'Could not delete the post.', 'error');
+        });
+    }
+
+    function reportPost(post) {
+        if (!WALLET) { requiresLogin(); return; }
+        var reason = window.prompt('Why are you reporting this post? (optional)', '');
+        if (reason === null) return;
+        api('/community/api/report', {
+            method: 'POST',
+            body: JSON.stringify({ post_id: post.id, reason: reason }),
+        }).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not send the report.');
+            }
+            toast('Thanks — our team will review this.', 'ok');
+        }).catch(function (error) {
+            toast((error && error.message) || 'Could not send the report.', 'error');
+        });
+    }
+
+    function sharePost(post) {
+        var url = window.location.origin + '/community#post-' + post.id;
+        var text = post.body ? post.body.slice(0, 120) : 'Check out this post on GoodMarket Community';
+        if (navigator.share) {
+            navigator.share({ title: 'GoodMarket Community', text: text, url: url }).catch(function () {});
+            return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(function () {
+                toast('Link copied.', 'ok');
+            }).catch(function () { toast(url); });
+            return;
+        }
+        window.prompt('Copy this link:', url);
+    }
+
+    // ── Lightbox ───────────────────────────────────────────────────────────
+
+    function openLightbox(url) {
+        var box = $('cfLightbox');
+        var body = $('cfLightboxBody');
+        if (!box || !body) return;
+        body.textContent = '';
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        body.appendChild(img);
+        box.hidden = false;
+    }
+
+    function closeLightbox() {
+        var box = $('cfLightbox');
+        var body = $('cfLightboxBody');
+        if (body) body.textContent = '';
+        if (box) box.hidden = true;
+    }
+
+    // ── Feed loading ───────────────────────────────────────────────────────
+
+    function loadFeed(reset) {
+        if (_loading) return Promise.resolve();
+        _loading = true;
+        var url = '/community/api/feed?limit=10';
+        if (!reset && _nextCursor) url += '&cursor=' + encodeURIComponent(_nextCursor);
+
+        return api(url).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not load the feed.');
+            }
+            _nextCursor = result.data.next_cursor || null;
+            // Guard a malformed payload: a server bug must not break the page.
+            var rows = result.data.posts || [];
+            _feed = reset ? rows : _feed.concat(rows);
+            renderFeed();
+        }).catch(function (error) {
+            var container = $('cfFeed');
+            if (container) {
+                container.textContent = '';
+                container.setAttribute('aria-busy', 'false');
+                container.appendChild(el('p', 'cf-empty',
+                    (error && error.message) || 'Could not load the feed.'));
+            }
+        }).then(function () {
+            _loading = false;
+        });
+    }
+
+    function refresh() { loadFeed(true); }
+
+    function loadMore() {
+        var button = $('cfLoadMore');
+        if (button) { button.disabled = true; button.textContent = 'Loading…'; }
+        loadFeed(false).then(function () {
+            if (button) { button.disabled = false; button.textContent = 'Load more'; }
+        });
+    }
+
+    // ── Wiring ─────────────────────────────────────────────────────────────
+
+    function bind() {
+        var input = $('cfCaption');
+        if (input) {
+            input.addEventListener('input', function () {
+                updateCounter();
+                updatePostButton();
+            });
+            input.addEventListener('keydown', function (event) {
+                if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                    event.preventDefault();
+                    submitPost();
+                }
+            });
+        }
+        var fileInput = $('cfFileInput');
+        if (fileInput) {
+            fileInput.addEventListener('change', function () {
+                addFiles(fileInput.files);
+                fileInput.value = '';
+            });
+        }
+        // Enter saves the username, so the gate is one keystroke to clear.
+        var usernameInput = $('cfUsernameInput');
+        if (usernameInput) {
+            usernameInput.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    saveUsername();
+                }
+            });
+        }
+        // Paste an image straight into the composer.
+        document.addEventListener('paste', function (event) {
+            if (!event.clipboardData || !event.clipboardData.files.length) return;
+            var target = event.target;
+            if (!target || target.id !== 'cfCaption') return;
+            addFiles(event.clipboardData.files);
+        });
+        // Drag & drop onto the composer.
+        var composer = $('cfComposer');
+        if (composer) {
+            ['dragover', 'drop'].forEach(function (name) {
+                composer.addEventListener(name, function (event) {
+                    event.preventDefault();
+                    if (name === 'drop' && event.dataTransfer && event.dataTransfer.files) {
+                        addFiles(event.dataTransfer.files);
+                    }
+                });
+            });
+        }
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') { closeLightbox(); closeEdit(); }
+        });
+        updateCounter();
+        updatePostButton();
+    }
+
+    function init() {
+        if (IS_GUEST) return;
+        bind();
+        loadFeed(true);
+        if (window.location.hash && /^#post-\d+$/.test(window.location.hash)) {
+            var id = window.location.hash.replace('#post-', '');
+            var post = findPost(id);
+            if (post) {
+                var card = document.querySelector('[data-post-id="' + id + '"]');
+                if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center' });
+            }
+        }
+    }
+
+    window.GMCommunity = {
+        init: init,
+        refresh: refresh,
+        loadMore: loadMore,
+        submitPost: submitPost,
+        react: react,
+        toggleComments: toggleComments,
+        openLightbox: openLightbox,
+        closeLightbox: closeLightbox,
+        openEdit: openEdit,
+        closeEdit: closeEdit,
+        saveEdit: saveEdit,
+        deletePost: deletePost,
+        reportPost: reportPost,
+        sharePost: sharePost,
+        addFiles: addFiles,
+        saveUsername: saveUsername,
+        // Exposed for the test harness (drives the real bodies).
+        _internals: {
+            timeAgo: timeAgo,
+            countLabel: countLabel,
+            linkifyInto: linkifyInto,
+            buildCard: buildCard,
+            prepareImage: prepareImage,
+            updatePostButton: updatePostButton,
+            needsUsername: needsUsername,
+            saveUsername: saveUsername,
+            getUsername: function () { return USERNAME; },
+            setUsername: function (value) { USERNAME = value || ''; },
+            presign: presign,
+            putToR2: putToR2,
+            uploadAttachment: uploadAttachment,
+            renderFeed: renderFeed,
+            getFeed: function () { return _feed; },
+            setFeed: function (rows) { _feed = rows; },
+            getPending: function () { return _pending; },
+            setPending: function (rows) { _pending = rows; },
+            getNextCursor: function () { return _nextCursor; },
+            setNextCursor: function (value) { _nextCursor = value; },
+        },
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
