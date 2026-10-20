@@ -953,6 +953,145 @@ function feedFetch(handler, feedRows) {
        injected.textContent === '@<img src=x>', JSON.stringify(injected.textContent));
   }
 
+  // ── 14. Follow pill: another author gets one, your own post does not ──────
+  {
+    const { api } = run({ boot: MEMBER });
+    const other = api._internals.buildCard(makePost({ username: 'pedro', is_mine: false }));
+    const own = api._internals.buildCard(makePost({ username: 'betz', is_mine: true }));
+    ok('another member\'s card carries a Follow button',
+       !!other.querySelector('.cf-follow'));
+    ok('the Follow button reads "Follow" when not following',
+       other.querySelector('.cf-follow').textContent === 'Follow');
+    ok('your own card carries no Follow button',
+       !own.querySelector('.cf-follow'));
+
+    const following = api._internals.buildCard(makePost({
+      username: 'pedro', is_following: true,
+    })).querySelector('.cf-follow');
+    ok('a followed author shows "Following"',
+       following.textContent === 'Following');
+    ok('a followed author is aria-pressed',
+       following.getAttribute('aria-pressed') === 'true');
+  }
+
+  // ── 14b. toggleFollow: POST then flip, rollback on failure ───────────────
+  {
+    const seen = [];
+    const { api } = run({
+      boot: MEMBER,
+      fetchImpl: feedFetch(function (url, opts) {
+        seen.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, following: true, follower_count: 3 }),
+        });
+      }),
+    });
+    const btn = api._internals.buildFollowButton('pedro', false);
+    await api._internals.toggleFollow(btn, 'pedro');
+    const call = seen.filter(c => /users\/pedro\/follow/.test(c.url))[0];
+    ok('following POSTs to the username-scoped follow route',
+       !!call && call.method === 'POST' && call.url === '/community/api/users/pedro/follow',
+       JSON.stringify(call));
+    ok('the button flips to "Following" after success',
+       btn.textContent === 'Following' && btn.classList.contains('is-following'));
+    ok('the request never carries a wallet address',
+       !seen.some(c => /0x/i.test(c.url)), JSON.stringify(seen));
+
+    // Unfollowing DELETEs.
+    const seen2 = [];
+    const r2 = run({
+      boot: MEMBER,
+      fetchImpl: feedFetch(function (url, opts) {
+        seen2.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+        return Promise.resolve({
+          ok: true, json: () => Promise.resolve({ success: true, following: false }),
+        });
+      }),
+    });
+    const btn2 = r2.api._internals.buildFollowButton('pedro', true);
+    await r2.api._internals.toggleFollow(btn2, 'pedro');
+    const call2 = seen2.filter(c => /users\/pedro\/follow/.test(c.url))[0];
+    ok('unfollowing DELETEs the follow route',
+       !!call2 && call2.method === 'DELETE', JSON.stringify(call2));
+    ok('the button flips back to "Follow"',
+       btn2.textContent === 'Follow' && !btn2.classList.contains('is-following'));
+  }
+
+  // ── 14c. A failed follow rolls the button back ───────────────────────────
+  {
+    const { api } = run({
+      boot: MEMBER,
+      fetchImpl: feedFetch(function () {
+        return Promise.resolve({
+          ok: false, json: () => Promise.resolve({ success: false, error: 'nope' }),
+        });
+      }),
+    });
+    const btn = api._internals.buildFollowButton('pedro', false);
+    await api._internals.toggleFollow(btn, 'pedro');
+    ok('a failed follow rolls back to "Follow"',
+       btn.textContent === 'Follow' && !btn.classList.contains('is-following'),
+       btn.textContent);
+  }
+
+  // ── 14d. A guest tap raises the connect card and issues no request ───────
+  {
+    const seen = [];
+    let gated = 0;
+    const { api, sandbox } = run({
+      boot: GUEST,
+      fetchImpl: feedFetch(function (url) { seen.push(String(url)); return Promise.resolve({ ok: true, json: () => Promise.resolve({}) }); }),
+    });
+    sandbox.openGoodMarketGetStarted = function () { gated++; };
+    const btn = api._internals.buildFollowButton('pedro', false);
+    await api._internals.toggleFollow(btn, 'pedro');
+    ok('a guest following opens the connect card', gated === 1, String(gated));
+    ok('a guest following posts no follow request',
+       !seen.some(u => /follow/.test(u)), JSON.stringify(seen));
+  }
+
+  // ── 15. Video is Instagram-style: a bounded frame, not full screen ───────
+  {
+    const { api } = run({ boot: MEMBER });
+    const card = api._internals.buildCard(makePost({
+      media: [{ type: 'video', url: 'https://media.example/v.mp4',
+                poster: 'https://media.example/v.jpg', w: 1080, h: 1350 }],
+    }));
+    const frame = card.querySelector('.cf-video-frame');
+    ok('a video renders inside a frame', !!frame);
+    ok('the frame is a button (tap to expand)', frame && frame.tagName === 'BUTTON');
+    ok('the frame takes its aspect ratio from the clip',
+       frame && frame.style.aspectRatio === '1080 / 1350', frame ? frame.style.aspectRatio : 'n/a');
+    const video = frame && frame.querySelector('video');
+    ok('the video keeps its controls', video && video.controls === true);
+    ok('the video still has the stored poster',
+       video && video.poster === 'https://media.example/v.jpg');
+  }
+
+  // ── 15b. Tapping a video frame opens the lightbox with a <video> ─────────
+  {
+    const { api, store } = run({ boot: MEMBER });
+    const card = api._internals.buildCard(makePost({
+      media: [{ type: 'video', url: 'https://media.example/v.mp4' }],
+    }));
+    card.querySelector('.cf-video-frame').onclick();
+    ok('the lightbox opens', store.cfLightbox.hidden === false);
+    ok('the lightbox holds a playable video',
+       !!store.cfLightboxBody.querySelector('video'));
+  }
+
+  // ── 15c. An unknown clip size falls back to the IG portrait ratio ────────
+  {
+    const { api } = run({ boot: MEMBER });
+    const card = api._internals.buildCard(makePost({
+      media: [{ type: 'video', url: 'https://media.example/v.mp4' }],
+    }));
+    const frame = card.querySelector('.cf-video-frame');
+    ok('a clip with no reported size leaves the CSS default ratio',
+       !frame.style.aspectRatio, JSON.stringify(frame.style.aspectRatio));
+  }
+
   console.log('');
   if (failures) {
     console.error(failures + ' CHECK(S) FAILED');
