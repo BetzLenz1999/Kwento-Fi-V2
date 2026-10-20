@@ -58,6 +58,16 @@ ISOBMFF_BRANDS_MP4 = (b"isom", b"iso2", b"mp41", b"mp42", b"avc1", b"dash", b"mm
 ISOBMFF_BRANDS_MOV = (b"qt  ", b"moov")
 
 
+def _is_webp(head: bytes) -> bool:
+    """RIFF container whose form type is WEBP.
+
+    WEBP cannot be a prefix match: the RIFF header carries a length at 4..8
+    before the ``WEBP`` form type, so ``startswith`` never works. The form-type
+    check also keeps RIFF/AVI and RIFF/WAV out of the image allow-list.
+    """
+    return len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP"
+
+
 # ── Configuration ────────────────────────────────────────────────────────────
 
 def _env(name: str, default: str = "") -> str:
@@ -447,6 +457,8 @@ def sniff_media_type(head: bytes) -> str | None:
     for magic, _mime in VIDEO_MAGIC:
         if head.startswith(magic):
             return "video"
+    if _is_webp(head):
+        return "image"
     # ISO base media file format (MP4 / MOV): "....ftyp<brand>"
     if len(head) >= 12 and head[4:8] == b"ftyp":
         brand = head[8:12]
@@ -468,6 +480,8 @@ def sniff_mime(head: bytes) -> str | None:
     for magic, mime in VIDEO_MAGIC:
         if head.startswith(magic):
             return mime
+    if _is_webp(head):
+        return "image/webp"
     if len(head) >= 12 and head[4:8] == b"ftyp":
         if head[8:12] in ISOBMFF_BRANDS_MOV:
             return "video/quicktime"
