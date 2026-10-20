@@ -24,7 +24,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#f7f1e8">
+    <meta name="theme-color" content="#ffffff">
     <title>{% block title %}{% if profile %}@{{ profile.username }}{% else %}Member not found{% endif %} — GoodMarket Community{% endblock %}</title>
     <meta name="description" content="Public GoodMarket community profile — posts, photos and videos shared by this member.">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
@@ -73,11 +73,13 @@
         {% with guest_card_icon='👤',
                 guest_card_kicker='Community profile',
                 guest_card_title='See who is in the community',
-                guest_card_body='Connect or create a free GoodMarket wallet to view member profiles, their posts and their photo albums — email + PIN, no app to install.' %}
+                guest_card_body='Profiles are public — browse member posts and albums freely. Connect or create a free GoodMarket wallet to react, comment and share your own. Email + PIN, no app to install.' %}
             {% include "_guest_connect_card.html" %}
         {% endwith %}
     </div>
-    {% elif not profile %}
+    {% endif %}
+
+    {% if not profile %}
     <section class="cp-card cp-missing">
         <div class="cp-avatar cp-avatar-missing" aria-hidden="true">🔎</div>
         <h1>Member not found</h1>
@@ -93,11 +95,18 @@
         <p class="cp-joined">
             {% if profile.joined_at %}Member since {{ profile.joined_at[:10] }}{% else %}GoodMarket member{% endif %}
         </p>
+        {# Follow button. Built by the bundle (it needs the viewer's own
+           is_following / is_self from the boot object); the wrap is the
+           mount point, so nothing is rendered for a guest's own profile or
+           for the member looking at themselves. #}
+        <div class="cp-follow-wrap" id="cpFollowWrap"></div>
         <p class="cp-privacy">
             This public profile never shows a wallet address, balance, or private activity.
         </p>
         <div class="cp-stats">
             <div class="cp-stat"><span class="cp-number" id="cpPostCount">{{ profile.post_count|default(0) }}</span><span class="cp-label">Posts</span></div>
+            <div class="cp-stat"><span class="cp-number" id="cpFollowerCount">{{ profile.followers|default(0) }}</span><span class="cp-label">Followers</span></div>
+            <div class="cp-stat"><span class="cp-number" id="cpFollowingCount">{{ profile.following|default(0) }}</span><span class="cp-label">Following</span></div>
             <div class="cp-stat"><span class="cp-number" id="cpAlbumCount">{{ profile.album_count|default(0) }}</span><span class="cp-label">Albums</span></div>
             <div class="cp-stat"><span class="cp-number" id="cpMediaCount">{{ profile.media_count|default(0) }}</span><span class="cp-label">Photos &amp; videos</span></div>
             {# Starts hidden and is revealed by the bundle only once the chatroom
@@ -150,15 +159,24 @@
     <div class="cp-lightbox-body" id="cpLightboxBody"></div>
 </div>
 
+<div class="cp-toast" id="cpToast" role="status" aria-live="polite" hidden></div>
+
 {# ── Boot config ────────────────────────────────────────────────────────────
    MUST come BEFORE the bundle: the script snapshots this object at parse time
    (the documented GM_*_BOOT ordering landmine). #}
 <script>
 window.GM_PROFILE_BOOT = {
     isGuest: {{ 'true' if is_guest else 'false' }},
+    wallet: {{ (wallet or '')|tojson }},
     username: {{ (profile.username if profile else (username or ''))|tojson }},
     viewerUsername: {{ (viewer_username or '')|tojson }},
     feedEnabled: true,
+    profile: {
+        is_following: {{ 'true' if profile and profile.is_following else 'false' }},
+        is_self: {{ 'true' if profile and profile.is_self else 'false' }},
+        followers: {{ (profile.followers if profile else 0)|default(0) }},
+        following: {{ (profile.following if profile else 0)|default(0) }}
+    },
     assetVersion: {{ ASSET_VERSION|tojson }}
 };
 </script>
@@ -176,9 +194,11 @@ window.GM_PROFILE_BOOT = {
 <script src="{{ url_for('static', filename='js/get-started.js', v=ASSET_VERSION) }}"></script>
 {% set get_started_boot = {'return_to': request.path if request else '/community'} %}
 {% include "_get_started_modal.html" %}
-{% else %}
-<script src="{{ url_for('static', filename='js/community-profile.js', v=ASSET_VERSION) }}"></script>
 {% endif %}
+
+{# Loaded for BOTH guest and member: profiles are public, and this bundle is
+   what renders the posts and albums. It signs nothing, so it needs no ethers. #}
+<script src="{{ url_for('static', filename='js/community-profile.js', v=ASSET_VERSION) }}"></script>
 
 </body>
 </html>
