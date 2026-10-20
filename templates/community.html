@@ -52,10 +52,16 @@
         <span>GoodMarket <strong>Community</strong></span>
     </a>
     <div class="cf-nav-right">
-        {% if not is_guest %}
+        {% if is_guest %}
+        <!-- Persistent connect entry point so closing the modal doesn't
+             strand a guest — same flow as the homepage. Without it the only
+             way in is the connect card, and a guest who scrolls past it has
+             nothing left to tap. -->
+        <button type="button" class="gs-nav-cta" onclick="openGoodMarketGetStarted()">Get Started</button>
+        {% else %}
         <button type="button" class="cf-nav-btn" id="cfRefreshBtn" onclick="GMCommunity.refresh()">↻ Refresh</button>
-        {% endif %}
         <a class="cf-nav-btn" href="/wallet">Wallet</a>
+        {% endif %}
     </div>
 </header>
 
@@ -212,7 +218,17 @@ window.GM_COMMUNITY_BOOT = {
 
 {% if is_guest %}
 {# The connect modal needs the WC bridge + in-app wallet, exactly like the
-   homepage, so the guest can actually create/log in from here. #}
+   homepage, so the guest can actually create/log in from here.
+
+   ethers MUST load first: `GMLocalWallet.create()` / `unlockWithKeystore()`
+   call `_assertEthers()` and throw "ethers.js is not loaded on this page."
+   without it, and `showLocalWalletPanel()` bails out early — so "Create
+   GoodMarket Wallet" and "Log in with email + PIN" were both dead ends for
+   guests. The member branch deliberately loads NO ethers (the feed signs
+   nothing); this tag is inside the guest branch only. #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
+        integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
