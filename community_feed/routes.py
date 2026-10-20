@@ -191,11 +191,12 @@ def community_feed_profile(username: str):
 
     wallet = _session_wallet()
     viewer = svc.get_username(wallet) if wallet else None
-    result = svc.get_public_profile(username)
+    result = svc.get_public_profile(username, viewer=wallet)
     profile = result.get("profile") if result.get("success") else None
     return render_template(
         "community_profile.html",
         profile=profile,
+        wallet=wallet,
         username=svc.normalize_username(username),
         viewer_username=viewer,
         is_guest=not bool(wallet),
@@ -209,8 +210,27 @@ def community_feed_profile(username: str):
 def api_profile(username: str):
     if not svc.is_enabled():
         return _disabled_response()
-    result = svc.get_public_profile(username)
+    result = svc.get_public_profile(username, viewer=_session_wallet())
     return jsonify(result), (200 if result.get("success") else 404)
+
+
+@community_feed_bp.route("/api/users/<username>/follow", methods=["POST"])
+def api_follow(username: str):
+    """Follow a member. A write, so a guest gets the auth refusal (the browser
+    also raises the connect card). Idempotent: re-following is a success."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    result = svc.follow_user(_session_wallet(), username)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@community_feed_bp.route("/api/users/<username>/follow", methods=["DELETE"])
+def api_unfollow(username: str):
+    """Stop following a member. Idempotent, like the follow."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    result = svc.unfollow_user(_session_wallet(), username)
+    return jsonify(result), (200 if result.get("success") else 400)
 
 
 @community_feed_bp.route("/api/profile/<username>/posts", methods=["GET"])
