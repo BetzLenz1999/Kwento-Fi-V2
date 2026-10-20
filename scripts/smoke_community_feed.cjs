@@ -169,6 +169,7 @@ function run(opts) {
   sandbox.prompt = () => '';
   sandbox.confirm = () => true;
   sandbox.location = { origin: 'https://goodmarketph.live', hash: '' };
+  if (opts.XMLHttpRequest) sandbox.XMLHttpRequest = opts.XMLHttpRequest;
 
   vm.createContext(sandbox);
   vm.runInContext(SRC, sandbox);
@@ -376,6 +377,126 @@ function feedFetch(handler, feedRows) {
     ok('each attachment keeps a distinct object key',
        new Set(done.map(e => e.upload.key)).size === 4,
        JSON.stringify(done.map(e => e.upload.key)));
+  }
+
+  // ── 6c. Progress: the PUT goes through XHR so bytes-sent is reportable ────
+  // fetch() cannot report upload progress, so a 100MB video showed a frozen
+  // tile and no "uploading" cue — the "did it even start?" symptom. The real
+  // body must build an XHR, keep the SIGNED headers, and surface fractions.
+  {
+    const xhrLog = { opened: null, headers: {}, sent: null };
+    function FakeXHR() {
+      this.upload = {};
+      this.status = 0;
+      this._listeners = {};
+      this.open = (method, url) => { xhrLog.opened = { method, url }; };
+      this.setRequestHeader = (k, v) => { xhrLog.headers[k] = v; };
+      this.send = (blob) => {
+        xhrLog.sent = blob;
+        // Emulate the browser reporting a half-sent body, then a clean 200.
+        if (this.upload.onprogress) {
+          this.upload.onprogress({ lengthComputable: true, loaded: 50, total: 100 });
+        }
+        this.status = 200;
+        if (this.onload) this.onload();
+      };
+    }
+    const { api, store } = run({
+      boot: MEMBER,
+      XMLHttpRequest: FakeXHR,
+      fetchImpl: feedFetch((url) => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true,
+          upload_url: 'https://acct.r2.cloudflarestorage.com/bucket/u/abc/key.jpg',
+          method: 'PUT', headers: { 'Content-Type': 'image/jpeg' },
+          key: 'u/abc/key.jpg', public_url: 'https://media.example/u/abc/key.jpg',
+          media_type: 'image', mime: 'image/jpeg',
+        }),
+      })),
+    });
+
+    const fractions = [];
+    const item = await api._internals.presign('image/jpeg', 100);
+    await api._internals.putToR2(item, 'BLOB', f => fractions.push(f));
+    ok('the PUT is issued as an XHR (progress is reportable)',
+       xhrLog.opened && xhrLog.opened.method === 'PUT', JSON.stringify(xhrLog.opened));
+    ok('the XHR targets the presigned R2 URL',
+       !!xhrLog.opened && xhrLog.opened.url.startsWith('https://acct.r2.cloudflarestorage.com'),
+       JSON.stringify(xhrLog.opened));
+    ok('the SIGNED Content-Type is still sent verbatim',
+       xhrLog.headers['Content-Type'] === 'image/jpeg', JSON.stringify(xhrLog.headers));
+    ok('the progress callback receives a byte fraction',
+       fractions.length === 1 && fractions[0] === 0.5, JSON.stringify(fractions));
+
+    // The live status line and the tile bar must actually move.
+    const entry = { contentType: 'image/jpeg', blob: { type: 'image/jpeg', size: 100 } };
+    api._internals.setPending([entry]);
+    await api._internals.uploadAttachment(entry);
+    ok('a finished attachment ends done with a full progress value',
+       entry.state === 'done' && entry.progress === 1, JSON.stringify(entry.state));
+    ok('a done tile paints a full progress bar',
+       entry._fill && entry._fill.style.width === '100%', JSON.stringify(entry._fill && entry._fill.style));
+  }
+
+  // ── 6d. A failed PUT clears the spinner and reports the error line ────────
+  {
+    function FailingXHR() {
+      this.upload = {};
+      this.status = 500;
+      this.open = () => {};
+      this.setRequestHeader = () => {};
+      this.send = () => { if (this.onload) this.onload(); };
+    }
+    const { api, store } = run({
+      boot: MEMBER,
+      XMLHttpRequest: FailingXHR,
+      fetchImpl: feedFetch(() => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true,
+          upload_url: 'https://acct.r2.cloudflarestorage.com/x',
+          method: 'PUT', headers: { 'Content-Type': 'image/jpeg' },
+          key: 'u/abc/key.jpg', public_url: 'https://media.example/u/abc/key.jpg',
+          media_type: 'image', mime: 'image/jpeg',
+        }),
+      })),
+    });
+    const entry = { contentType: 'image/jpeg', blob: { type: 'image/jpeg', size: 100 } };
+    api._internals.setPending([entry]);
+    let threw = false;
+    try { await api._internals.uploadAttachment(entry); } catch (e) { threw = true; }
+    ok('a non-2xx PUT rejects', threw === true);
+    ok('the failed attachment is marked failed', entry.state === 'failed', entry.state);
+    ok('the status line reports the failure',
+       store.cfUploadStatus.hidden === false
+       && /Upload failed/i.test(store.cfUploadStatus.textContent || ''),
+       store.cfUploadStatus.textContent);
+    ok('the failure line is styled as an error, not busy',
+       store.cfUploadStatus.className.indexOf('is-error') !== -1,
+       store.cfUploadStatus.className);
+  }
+
+  // ── 6e. "Uploading…" is shown on the Post button while a PUT is in flight ─
+  {
+    const { api, store } = run({ boot: MEMBER });
+    store.cfCaption.value = 'Look at this';
+    api._internals.setPending([{ state: 'uploading', progress: 0.4, isVideo: false }]);
+    api._internals.updatePostButton();
+    ok('the Post button reads "Uploading…" during an upload',
+       store.cfPostBtn.textContent === 'Uploading…', store.cfPostBtn.textContent);
+    ok('the Post button is disabled while uploading',
+       store.cfPostBtn.disabled === true);
+
+    // A preparing file gets its own "Processing…" line.
+    api._internals.setPending([{ state: 'preparing', isVideo: true, progress: 0 }]);
+    api._internals.updateUploadStatus();
+    ok('a preparing video shows a Processing line',
+       /Processing video/i.test(store.cfUploadStatus.textContent || ''),
+       store.cfUploadStatus.textContent);
+    ok('the Processing line is styled as busy',
+       store.cfUploadStatus.className.indexOf('is-busy') !== -1,
+       store.cfUploadStatus.className);
   }
 
   // ── 7. Client-side media type allow-list ──────────────────────────────────
