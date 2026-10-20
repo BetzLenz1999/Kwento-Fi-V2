@@ -16,7 +16,6 @@
     'use strict';
 
     var BOOT = window.GM_COMMUNITY_BOOT || {};
-    var IS_GUEST = !!BOOT.isGuest;
     var WALLET = BOOT.wallet || '';
     var USERNAME = BOOT.username || '';
     var USERNAME_REQUIRED = BOOT.usernameRequired !== false;
@@ -787,7 +786,12 @@
         var actions = el('div', 'cf-card-actions');
         var commentBtn = el('button', 'cf-action-btn', '💬 Comment');
         commentBtn.type = 'button';
-        commentBtn.onclick = function () { toggleComments(post, body); };
+        // Reading a post is public; joining the thread is not. A guest gets the
+        // shared connect card instead of an empty comment box.
+        commentBtn.onclick = function () {
+            if (!WALLET) { requiresLogin(); return; }
+            toggleComments(post, body);
+        };
         actions.appendChild(commentBtn);
 
         var shareBtn = el('button', 'cf-action-btn', '↗ Share');
@@ -1225,7 +1229,9 @@
     }
 
     function init() {
-        if (IS_GUEST) return;
+        // Guests read the feed too — reading is public, only writing is gated.
+        // The composer is absent from a guest's DOM, so bind()'s null-checks
+        // make that half a no-op; the feed wiring is what matters here.
         bind();
         loadFeed(true);
         if (window.location.hash && /^#post-\d+$/.test(window.location.hash)) {
