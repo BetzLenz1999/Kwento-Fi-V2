@@ -142,8 +142,25 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             }
             return { provider: browserProvider, signer };
         }
-        const ep = await _vAwaitEthProvider();
-        if (!ep) throw new Error('No Web3 wallet detected. Open this page in MiniPay, Privy, or WalletConnect.');
+        // Same signer routing as every other wallet flow: Privy logins use the
+        // Privy provider, a WalletConnect login uses the WC session, and a
+        // genuine injected login uses the injected provider. This resolver used
+        // to go straight to the injected provider, so a WalletConnect user
+        // (whose in-app browser injects nothing) was told "No Web3 wallet
+        // detected" even though their WC session was live.
+        let ep = null;
+        if (IS_PRIVY_LOGIN) {
+            ep = await _walletGetPrivyProviderIfPreferred({ promptLogin: true, timeoutMs: 10000 });
+        }
+        if (!ep && await _gmShouldUseWcSession()) {
+            ep = await _walletGetWcProviderIfPreferred();
+        }
+        if (!ep) ep = await _vAwaitEthProvider();
+        // Last resort: an injected provider was never found, but a stored WC
+        // session may still be able to sign (legacy logins that predate
+        // login_method persistence).
+        if (!ep) ep = await _walletGetWcProviderIfPreferred();
+        if (!ep) throw new Error('No wallet detected. Please connect your GoodMarket wallet via MetaMask, Trust Wallet, MiniPay, or WalletConnect.');
         const chainHex = await ep.request({ method: 'eth_chainId' });
         if (parseInt(chainHex, 16) !== 42220) {
             try {
@@ -314,7 +331,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             await refreshGdRaffle();
         } catch (err) {
             console.error('[G$ Raffle] join error', err);
-            setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.toFriendlyMessage(err) : (err && err.message ? err.message : err)));
+            setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.format(err) : (err && err.message ? err.message : err)));
             await refreshGdRaffle();
         }
     }
@@ -337,7 +354,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             await refreshGdRaffle();
         } catch (err) {
             console.error('[G$ Raffle] refund error', err);
-            setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.toFriendlyMessage(err) : (err && err.message ? err.message : err)));
+            setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.format(err) : (err && err.message ? err.message : err)));
             await refreshGdRaffle();
         }
     }
@@ -358,7 +375,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             await refreshGdRaffle();
         } catch (err) {
             console.error('[G$ Raffle] withdraw error', err);
-            setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.toFriendlyMessage(err) : (err && err.message ? err.message : err)));
+            setRaffleAlert('error', '❌ ' + (window.GMTxError ? GMTxError.format(err) : (err && err.message ? err.message : err)));
             await refreshGdRaffle();
         }
     }
@@ -787,6 +804,19 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         return (_isTrustWalletUA() || hasTrustInjection) && touchMobile;
     }
 
+    // Any mobile dApp browser, not just a self-identifying Trust Wallet build.
+    // Trust Wallet's in-app browser frequently ships a plain Chrome/Safari UA
+    // and exposes no `window.trustwallet` alias, so _isTrustWalletMobileContext()
+    // is false there even though the provider still injects late (~1.2-2.5s).
+    // Keying the wait budget on Trust-specific signals alone dropped those users
+    // to the 800ms desktop budget and produced a spurious "No Web3 wallet
+    // detected" — the reported G$ Raffle failure. Mirrors get-started.js's
+    // isLikelyMobileWalletContext().
+    function _isLikelyMobileWalletContext() {
+        const ua = (navigator.userAgent || '').toLowerCase();
+        return /android|iphone|ipad|ipod|minipay|metamask|trust|trustwallet/.test(ua);
+    }
+
     function _pickTrustWallet(candidates) {
         return candidates.find(p => p && (p.isTrust || p.isTrustWallet)) || null;
     }
@@ -973,8 +1003,14 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             return await _walletGetPrivyProviderIfPreferred({ promptLogin: true, timeoutMs: 10000 });
         }
 
-        // Keep the longer wait strictly for Trust Wallet mobile.
-        const trustBudget = _isTrustWalletMobileContext() ? 4200 : 800;
+        // Keep the longer wait for mobile dApp browsers. Trust Wallet is the
+        // most variable, but any mobile wallet can inject late — including
+        // Trust builds that ship a generic UA and so do NOT match
+        // _isTrustWalletMobileContext(). Desktop extensions inject
+        // synchronously, so they keep the short budget.
+        const trustBudget = _isTrustWalletMobileContext()
+            ? 4200
+            : (_isLikelyMobileWalletContext() ? 2500 : 800);
         const budget = typeof timeoutMs === 'number' ? timeoutMs : trustBudget;
         const stepMs = 120;
         const start = Date.now();
