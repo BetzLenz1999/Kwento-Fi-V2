@@ -200,11 +200,28 @@ function makeAlbum(over) {
 }
 
 (async function main() {
-  // ── 1. Guest guard ────────────────────────────────────────────────────────
+  // ── 1. A guest READS the profile (public), and never writes ──────────────
   {
-    const { api, calls } = run({ boot: { isGuest: true, username: '' } });
+    const { api, store, calls } = run({
+      boot: { isGuest: true, username: 'betz', feedEnabled: true },
+      fetchImpl: function (url) {
+        if (String(url).indexOf('/posts') !== -1) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({
+            success: true, posts: [makePost({ body: 'public' })],
+            next_cursor: null, has_more: false }) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(
+          { success: true, message_count: 2 }) });
+      },
+    });
     await tick();
-    ok('a guest fetches nothing', calls.length === 0, JSON.stringify(calls));
+    // Profiles are public: the bundle loads the same data for a guest.
+    ok('a guest loads the profile posts',
+       calls.some(c => /\/posts/.test(c)), JSON.stringify(calls));
+    ok('a guest renders the posts it fetched',
+       !!store.cpPosts.querySelector('.cp-post'));
+    ok('the profile view exposes no write affordance',
+       !store.cpPosts.querySelector('form, input, button'));
   }
 
   // ── 2. Posts load on init ─────────────────────────────────────────────────
