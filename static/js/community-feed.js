@@ -1,4 +1,3 @@
-
 /* GoodMarket Community Feed — feed rendering, composer, upload, reactions,
    comments, report, delete.
 
@@ -241,36 +240,80 @@
         });
     }
 
-    function putToR2(item, blob) {
-        return fetch(item.upload_url, {
-            method: item.method || 'PUT',
-            // The Content-Type is SIGNED: sending a different value is a
-            // SignatureDoesNotMatch, so it must be exactly what we got back.
-            headers: item.headers || {},
-            body: blob,
-        }).then(function (response) {
-            if (!response.ok) throw new Error('Upload failed (' + response.status + ')');
-            return true;
+    /* fetch() cannot report upload progress, and a 100MB video with a dead
+       progress bar is exactly the "did it even work?" moment. XHR's
+       upload.onprogress gives real bytes-sent fractions, so the tile and the
+       status line move while the PUT is in flight. fetch stays as the fallback
+       for an environment without XHR. */
+    function putToR2(item, blob, onProgress) {
+        var headers = item.headers || {};
+        var method = item.method || 'PUT';
+
+        if (typeof XMLHttpRequest === 'undefined') {
+            return fetch(item.upload_url, {
+                method: method,
+                // The Content-Type is SIGNED: sending a different value is a
+                // SignatureDoesNotMatch, so it must be exactly what we got back.
+                headers: headers,
+                body: blob,
+            }).then(function (response) {
+                if (!response.ok) throw new Error('Upload failed (' + response.status + ')');
+                return true;
+            });
+        }
+
+        return new Promise(function (resolve, reject) {
+            var xhr = new XMLHttpRequest();
+            xhr.open(method, item.upload_url, true);
+            Object.keys(headers).forEach(function (name) {
+                try { xhr.setRequestHeader(name, headers[name]); }
+                catch (e) { /* a header the browser reserves is already set */ }
+            });
+            if (xhr.upload && onProgress) {
+                xhr.upload.onprogress = function (event) {
+                    if (!event.lengthComputable || !event.total) return;
+                    onProgress(Math.min(1, event.loaded / event.total));
+                };
+            }
+            xhr.onload = function () {
+                if (xhr.status >= 200 && xhr.status < 300) resolve(true);
+                else reject(new Error('Upload failed (' + xhr.status + ')'));
+            };
+            xhr.onerror = function () { reject(new Error('Upload failed (network error)')); };
+            xhr.ontimeout = function () { reject(new Error('Upload failed (timed out)')); };
+            xhr.send(blob);
         });
     }
 
     function uploadAttachment(entry) {
         entry.state = 'uploading';
+        entry.progress = 0;
         renderPreviews();
+        updateUploadStatus();
         return presign(entry.contentType, entry.blob.size)
             .then(function (item) {
                 entry.upload = item;
-                return putToR2(item, entry.blob);
+                return putToR2(item, entry.blob, function (fraction) {
+                    entry.progress = fraction;
+                    if (entry._fill) {
+                        entry._fill.style.width = Math.round(fraction * 100) + '%';
+                    }
+                    var pct = Math.round(fraction * 100);
+                    if (pct !== entry._pct) { entry._pct = pct; updateUploadStatus(); }
+                });
             })
             .then(function () {
                 entry.state = 'done';
+                entry.progress = 1;
                 renderPreviews();
+                updateUploadStatus();
                 return entry;
             })
             .catch(function (error) {
                 entry.state = 'failed';
                 entry.error = error && error.message ? error.message : 'Upload failed.';
                 renderPreviews();
+                updateUploadStatus();
                 throw error;
             });
     }
@@ -300,9 +343,11 @@
                 toast('That file is too large (max ' + limitMb + 'MB).', 'error');
                 return;
             }
-            var entry = { file: file, state: 'preparing', contentType: mime, isVideo: isVid };
+            var entry = { file: file, state: 'preparing', contentType: mime, isVideo: isVid, progress: 0 };
             _pending.push(entry);
             renderPreviews();
+            updateUploadStatus();
+            updatePostButton();   // flips the button to "Uploading…" right away
 
             var prepared = isVid ? prepareVideo(file) : prepareImage(file);
             prepared.then(function (out) {
@@ -318,6 +363,7 @@
                 entry.state = 'failed';
                 entry.error = (error && error.message) || 'Could not prepare that file.';
                 renderPreviews();
+                updateUploadStatus();
             }).then(updatePostButton);
         });
     }
@@ -330,8 +376,10 @@
         wrap.hidden = false;
 
         _pending.forEach(function (entry, index) {
+            var busy = entry.state === 'preparing' || entry.state === 'uploading';
             var box = el('div', 'cf-preview' + (entry.state === 'done' ? ' is-done' : '')
-                + (entry.state === 'failed' ? ' is-failed' : ''));
+                + (entry.state === 'failed' ? ' is-failed' : '')
+                + (busy ? ' is-busy' : ''));
 
             if (entry.posterDataUrl) {
                 var img = document.createElement('img');
@@ -342,29 +390,71 @@
                 box.appendChild(el('div', 'cf-preview-bar'));
             }
 
+            // A tile with no poster yet (or a video still being read) would sit
+            // as a black square, which reads as "nothing happened".
+            if (busy) {
+                box.appendChild(el('div', 'cf-preview-spinner'));
+            }
+
             var remove = el('button', 'cf-preview-remove', '×');
             remove.type = 'button';
             remove.setAttribute('aria-label', 'Remove attachment');
             remove.onclick = function () {
                 _pending.splice(index, 1);
                 renderPreviews();
+                updateUploadStatus();
                 updatePostButton();
             };
             box.appendChild(remove);
 
             var bar = el('div', 'cf-preview-bar');
-            bar.appendChild(el('i', null, ''));
+            var fill = el('i', null, '');
+            // The overlay + a real width % read as "working" on a slow phone;
+            // the indeterminate shimmer keeps a preparing tile from looking
+            // frozen while the canvas/decoder runs.
+            fill.style.width = entry.state === 'done' ? '100%'
+                : (entry.state === 'uploading' ? Math.round((entry.progress || 0) * 100) + '%' : '0');
+            entry._fill = fill;
+            bar.appendChild(fill);
             box.appendChild(bar);
             wrap.appendChild(box);
         });
     }
 
+    /* One live line under the tiles so the user is never guessing: which file
+       is being processed, what percentage has actually left the device, or that
+       the post itself is publishing. */
+    function updateUploadStatus() {
+        if (_posting) return;   // "Publishing…" owns the line
+        var busy = _pending.filter(function (e) {
+            return e.state === 'preparing' || e.state === 'uploading';
+        });
+        var failed = _pending.filter(function (e) { return e.state === 'failed'; });
+        if (busy.length) {
+            var entry = busy[0];
+            if (entry.state === 'preparing') {
+                setUploadStatus('Processing ' + (entry.isVideo ? 'video' : 'image') + '…', false);
+            } else {
+                var pct = Math.round((entry.progress || 0) * 100);
+                setUploadStatus('Uploading… ' + pct + '%', false);
+            }
+            return;
+        }
+        if (failed.length) {
+            setUploadStatus(failed[0].error || 'Upload failed.', true);
+            return;
+        }
+        setUploadStatus('', false);
+    }
+
     function setUploadStatus(message, isError) {
         var node = $('cfUploadStatus');
         if (!node) return;
-        if (!message) { node.hidden = true; node.textContent = ''; return; }
+        if (!message) { node.hidden = true; node.textContent = ''; node.className = 'cf-upload-status'; return; }
         node.hidden = false;
-        node.className = 'cf-upload-status' + (isError ? ' is-error' : '');
+        // A busy line ("Uploading… 42%") gets the spinner via CSS ::before, so
+        // the text stays a single textContent write (never innerHTML).
+        node.className = 'cf-upload-status' + (isError ? ' is-error' : ' is-busy');
         node.textContent = esc(message);
     }
 
@@ -453,7 +543,9 @@
             && !overLimit
             && (hasText || _pending.some(function (e) { return e.state === 'done'; }));
         button.disabled = !canPost;
-        button.textContent = _posting ? 'Posting…' : 'Post';
+        // Say WHY the button is dead: "Uploading…" answers the user's "did it
+        // even start?" far better than a disabled button with no explanation.
+        button.textContent = _posting ? 'Posting…' : (uploading ? 'Uploading…' : 'Post');
     }
 
     function resetComposer() {
@@ -582,14 +674,23 @@
         var card = el('article', 'cf-card');
         card.setAttribute('data-post-id', post.id);
 
-        // Head
+        // Head. The avatar + name link to the member's PUBLIC PROFILE
+        // (`/community/u/<username>`), where their posts and album live. The
+        // link carries only the username — a profile is never addressed by
+        // wallet, and the address never reaches the browser.
         var head = el('div', 'cf-card-head');
-        head.appendChild(el('div', 'cf-avatar', (esc(post.username) || 'A')[0].toUpperCase()));
+        var profile = el('a', 'cf-profile-link');
+        profile.href = '/community/u/' + encodeURIComponent(
+            String(post.username || '').replace(/^@/, ''));
+        profile.title = 'View @' + post.username + "'s profile";
+        profile.setAttribute('aria-label', 'View @' + post.username + "'s profile");
+        profile.appendChild(el('div', 'cf-avatar', (esc(post.username) || 'A')[0].toUpperCase()));
         var who = el('div', 'cf-card-who');
         who.appendChild(el('strong', null, post.username));
         var stamp = timeAgo(post.created_at) + (post.is_edited ? ' · edited' : '');
         who.appendChild(el('span', null, stamp));
-        head.appendChild(who);
+        profile.appendChild(who);
+        head.appendChild(profile);
         if (post.is_mine) {
             var menu = el('button', 'cf-menu-btn', '⋯');
             menu.type = 'button';
@@ -1169,6 +1270,8 @@
             presign: presign,
             putToR2: putToR2,
             uploadAttachment: uploadAttachment,
+            updateUploadStatus: updateUploadStatus,
+            renderPreviews: renderPreviews,
             renderFeed: renderFeed,
             getFeed: function () { return _feed; },
             setFeed: function (rows) { _feed = rows; },
