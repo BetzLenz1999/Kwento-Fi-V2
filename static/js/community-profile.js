@@ -1,0 +1,463 @@
+/* GoodMarket shared public profile — a member's posts + media ALBUM.
+
+   Used by BOTH the Community Feed profile (`/community/u/<username>`) and the
+   chatroom profile (`/chatroom/u/<username>`), so there is one implementation.
+
+   Security rules kept from the rest of the app:
+   - User-supplied text is written with textContent ONLY, never innerHTML.
+   - The wallet address is never fetched, never rendered, never stored: the
+     page is addressed by USERNAME and the server strips the wallet.
+   - Each stat comes from its feature's OWN endpoint (posts/albums from the
+     Community Feed, messages from the chatroom), so no module reads another's
+     tables. A feature that is OFF simply contributes no stat.
+
+   The album is a member's POSTS THAT CARRY MEDIA: the caption is the album
+   title and the images/videos are its items. Nothing new is uploaded — this is
+   already-posted, already-moderated media. */
+
+(function () {
+    'use strict';
+
+    var BOOT = window.GM_PROFILE_BOOT || {};
+    var USERNAME = BOOT.username || '';
+    var FEED_ENABLED = BOOT.feedEnabled !== false;
+
+    var _posts = [];
+    var _postsCursor = null;
+    var _postsLoading = false;
+    var _albums = [];
+    var _albumsCursor = null;
+    var _albumsLoading = false;
+    var _albumLoaded = false;
+
+    // ── Small helpers ──────────────────────────────────────────────────────
+
+    function $(id) { return document.getElementById(id); }
+
+    function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = String(text);
+        return node;
+    }
+
+    function api(path, options) {
+        var opts = options || {};
+        opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+        opts.credentials = 'same-origin';
+        return fetch(path, opts).then(function (response) {
+            return response.json().catch(function () { return {}; })
+                .then(function (data) {
+                    return { ok: response.ok, status: response.status, data: data };
+                });
+        });
+    }
+
+    function timeAgo(iso) {
+        if (!iso) return '';
+        var then = new Date(iso).getTime();
+        if (isNaN(then)) return '';
+        var secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+        if (secs < 60) return 'just now';
+        var mins = Math.floor(secs / 60);
+        if (mins < 60) return mins + 'm ago';
+        var hours = Math.floor(mins / 60);
+        if (hours < 24) return hours + 'h ago';
+        var days = Math.floor(hours / 24);
+        if (days < 7) return days + 'd ago';
+        return new Date(then).toLocaleDateString();
+    }
+
+    function countLabel(n) {
+        n = Number(n) || 0;
+        if (n <= 0) return '';
+        return n > 999 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K' : String(n);
+    }
+
+    // Non-capturing group on purpose: a capturing group shifts String.replace's
+    // callback arguments and silently drops the surrounding text (the chatroom
+    // shipped exactly that bug).
+    var URL_RE = /(https?:\/\/[^\s<]+)/g;
+
+    function linkifyInto(node, text) {
+        var source = String(text === undefined || text === null ? '' : text);
+        var last = 0;
+        var match;
+        URL_RE.lastIndex = 0;
+        while ((match = URL_RE.exec(source)) !== null) {
+            if (match.index > last) {
+                node.appendChild(document.createTextNode(source.slice(last, match.index)));
+            }
+            var href = match[0];
+            var link = document.createElement('a');
+            link.href = href;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer nofollow';
+            link.textContent = href;
+            node.appendChild(link);
+            last = match.index + href.length;
+        }
+        if (last < source.length) {
+            node.appendChild(document.createTextNode(source.slice(last)));
+        }
+    }
+
+    // ── Posts ──────────────────────────────────────────────────────────────
+
+    function buildPostCard(post) {
+        var card = el('article', 'cp-card cp-post');
+        card.setAttribute('data-post-id', post.id);
+
+        var head = el('div', 'cp-post-head');
+        head.appendChild(el('div', 'cp-avatar cp-avatar-sm',
+            (String(post.username || 'A'))[0].toUpperCase()));
+        var who = el('div', 'cp-post-who');
+        who.appendChild(el('strong', null, post.username || 'Community member'));
+        who.appendChild(el('span', null, timeAgo(post.created_at)
+            + (post.is_edited ? ' · edited' : '')));
+        head.appendChild(who);
+        card.appendChild(head);
+
+        if (post.media && post.media.length) {
+            var mediaWrap = el('div', 'cp-media');
+            post.media.forEach(function (item) {
+                if (item.type === 'video') {
+                    var video = document.createElement('video');
+                    video.controls = true;
+                    video.preload = 'metadata';
+                    video.playsInline = true;
+                    if (item.poster) video.poster = item.poster;
+                    video.src = item.url;
+                    mediaWrap.appendChild(video);
+                } else {
+                    var img = document.createElement('img');
+                    img.loading = 'lazy';
+                    img.decoding = 'async';
+                    img.referrerPolicy = 'no-referrer';
+                    img.src = item.url;
+                    img.alt = post.body ? post.body.slice(0, 120) : 'Photo shared by ' + post.username;
+                    img.onclick = function () { openLightbox(item.url); };
+                    mediaWrap.appendChild(img);
+                }
+            });
+            card.appendChild(mediaWrap);
+        }
+
+        var body = el('div', 'cp-post-body');
+        if (post.body) {
+            var caption = el('p', 'cp-caption');
+            linkifyInto(caption, post.body);
+            body.appendChild(caption);
+        }
+        var meta = el('div', 'cp-post-meta');
+        meta.appendChild(el('span', null, (countLabel(post.reaction_count) || '0') + ' reactions'));
+        meta.appendChild(el('span', null, (countLabel(post.comment_count) || '0') + ' comments'));
+        body.appendChild(meta);
+
+        // A feed post links back to its place in the feed (the feed renders the
+        // interactive card; the profile view is read-only).
+        var link = el('a', 'cp-post-link', 'View in feed →');
+        link.href = '/community#post-' + post.id;
+        body.appendChild(link);
+        card.appendChild(body);
+        return card;
+    }
+
+    function renderPosts() {
+        var container = $('cpPosts');
+        if (!container) return;
+        container.textContent = '';
+        container.setAttribute('aria-busy', 'false');
+
+        var empty = $('cpPostsEmpty');
+        if (!_posts.length) {
+            if (empty) empty.hidden = false;
+            updatePostsMore();
+            return;
+        }
+        if (empty) empty.hidden = true;
+        _posts.forEach(function (post) { container.appendChild(buildPostCard(post)); });
+        updatePostsMore();
+    }
+
+    function updatePostsMore() {
+        var button = $('cpPostsMore');
+        if (button) button.hidden = !_postsCursor;
+    }
+
+    function loadPosts(reset) {
+        if (_postsLoading || !USERNAME || !FEED_ENABLED) {
+            if (!FEED_ENABLED) renderPostsUnavailable();
+            return Promise.resolve();
+        }
+        _postsLoading = true;
+        var url = '/community/api/profile/' + encodeURIComponent(USERNAME) + '/posts?limit=10';
+        if (!reset && _postsCursor) url += '&cursor=' + encodeURIComponent(_postsCursor);
+
+        return api(url).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not load posts.');
+            }
+            _postsCursor = result.data.next_cursor || null;
+            var rows = result.data.posts || [];
+            _posts = reset ? rows : _posts.concat(rows);
+            renderPosts();
+        }).catch(function (error) {
+            var container = $('cpPosts');
+            if (container) {
+                container.textContent = '';
+                container.setAttribute('aria-busy', 'false');
+                container.appendChild(el('p', 'cp-empty',
+                    (error && error.message) || 'Could not load posts.'));
+            }
+        }).then(function () {
+            _postsLoading = false;
+        });
+    }
+
+    function renderPostsUnavailable() {
+        var container = $('cpPosts');
+        if (!container) return;
+        container.textContent = '';
+        container.setAttribute('aria-busy', 'false');
+        container.appendChild(el('p', 'cp-empty', 'Posts are not available right now.'));
+    }
+
+    function loadMorePosts() {
+        var button = $('cpPostsMore');
+        if (button) { button.disabled = true; button.textContent = 'Loading…'; }
+        loadPosts(false).then(function () {
+            if (button) { button.disabled = false; button.textContent = 'Load more posts'; }
+        });
+    }
+
+    // ── Album ──────────────────────────────────────────────────────────────
+
+    function buildAlbumCard(album) {
+        var card = el('article', 'cp-album');
+        card.setAttribute('data-album-id', album.post_id);
+
+        var head = el('div', 'cp-album-head');
+        var title = el('strong', 'cp-album-title');
+        title.textContent = album.caption ? album.caption : 'Untitled album';
+        head.appendChild(title);
+        head.appendChild(el('span', 'cp-album-count',
+            album.item_count + ' item' + (album.item_count === 1 ? '' : 's')));
+        card.appendChild(head);
+
+        var grid = el('div', 'cp-album-grid');
+        (album.items || []).forEach(function (item) {
+            var tile = el('button', 'cp-album-tile');
+            tile.type = 'button';
+            tile.setAttribute('aria-label', item.type === 'video'
+                ? 'Play video' : 'View photo');
+            if (item.type === 'video') {
+                var video = document.createElement('video');
+                video.preload = 'metadata';
+                video.muted = true;
+                video.playsInline = true;
+                if (item.poster) video.poster = item.poster;
+                video.src = item.url;
+                tile.appendChild(video);
+                tile.appendChild(el('span', 'cp-album-badge', '▶'));
+            } else {
+                var img = document.createElement('img');
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                img.referrerPolicy = 'no-referrer';
+                img.src = item.url;
+                img.alt = album.caption ? album.caption.slice(0, 120) : 'Photo';
+                tile.appendChild(img);
+            }
+            tile.onclick = function () { openLightbox(item.url, item.type); };
+            grid.appendChild(tile);
+        });
+        card.appendChild(grid);
+        return card;
+    }
+
+    function renderAlbums() {
+        var container = $('cpAlbums');
+        if (!container) return;
+        container.textContent = '';
+        container.setAttribute('aria-busy', 'false');
+
+        var empty = $('cpAlbumsEmpty');
+        if (!_albums.length) {
+            if (empty) empty.hidden = false;
+            updateAlbumsMore();
+            return;
+        }
+        if (empty) empty.hidden = true;
+        _albums.forEach(function (album) { container.appendChild(buildAlbumCard(album)); });
+        updateAlbumsMore();
+    }
+
+    function updateAlbumsMore() {
+        var button = $('cpAlbumsMore');
+        if (button) button.hidden = !_albumsCursor;
+    }
+
+    function loadAlbums(reset) {
+        if (_albumsLoading || !USERNAME || !FEED_ENABLED) return Promise.resolve();
+        _albumsLoading = true;
+        var url = '/community/api/profile/' + encodeURIComponent(USERNAME) + '/album?limit=10';
+        if (!reset && _albumsCursor) url += '&cursor=' + encodeURIComponent(_albumsCursor);
+
+        return api(url).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not load the album.');
+            }
+            _albumsCursor = result.data.next_cursor || null;
+            var rows = result.data.albums || [];
+            _albums = reset ? rows : _albums.concat(rows);
+            renderAlbums();
+        }).catch(function (error) {
+            var container = $('cpAlbums');
+            if (container) {
+                container.textContent = '';
+                container.setAttribute('aria-busy', 'false');
+                container.appendChild(el('p', 'cp-empty',
+                    (error && error.message) || 'Could not load the album.'));
+            }
+        }).then(function () {
+            _albumsLoading = false;
+        });
+    }
+
+    function loadMoreAlbums() {
+        var button = $('cpAlbumsMore');
+        if (button) { button.disabled = true; button.textContent = 'Loading…'; }
+        loadAlbums(false).then(function () {
+            if (button) { button.disabled = false; button.textContent = 'Load more albums'; }
+        });
+    }
+
+    // ── Tabs ───────────────────────────────────────────────────────────────
+
+    function showTab(name) {
+        var isAlbum = name === 'album';
+        var postsTab = $('cpTabPosts');
+        var albumTab = $('cpTabAlbum');
+        var postsPanel = $('cpPanelPosts');
+        var albumPanel = $('cpPanelAlbum');
+
+        if (postsTab) {
+            postsTab.classList.toggle('is-active', !isAlbum);
+            postsTab.setAttribute('aria-selected', isAlbum ? 'false' : 'true');
+        }
+        if (albumTab) {
+            albumTab.classList.toggle('is-active', isAlbum);
+            albumTab.setAttribute('aria-selected', isAlbum ? 'true' : 'false');
+        }
+        if (postsPanel) postsPanel.hidden = isAlbum;
+        if (albumPanel) albumPanel.hidden = !isAlbum;
+
+        // The album is only fetched the first time it is opened, so a profile
+        // view does not pay for a media query nobody asked for.
+        if (isAlbum && !_albumLoaded) {
+            _albumLoaded = true;
+            loadAlbums(true);
+        }
+    }
+
+    // ── Stats ──────────────────────────────────────────────────────────────
+
+    function setText(id, value) {
+        var node = $(id);
+        if (node) node.textContent = String(value);
+    }
+
+    /* Public message count comes from the CHATROOM's own endpoint — the feed
+       never reads the chatroom's tables or its feature flag (and vice versa).
+       The stat starts hidden and is revealed only when the chatroom confirms
+       the count, so a chatroom that is OFF shows no misleading zero. */
+    function loadMessageCount() {
+        if (!USERNAME) return;
+        var stat = $('cpMessageStat');
+        api('/chatroom/api/profile/' + encodeURIComponent(USERNAME)).then(function (result) {
+            if (result.data && result.data.success) {
+                setText('cpMessageCount', countLabel(result.data.message_count) || '0');
+                if (stat) stat.hidden = false;
+            }
+        }).catch(function () {
+            // Chatroom unavailable: leave the stat hidden.
+        });
+    }
+
+    // ── Lightbox ───────────────────────────────────────────────────────────
+
+    function openLightbox(url, kind) {
+        var box = $('cpLightbox');
+        var body = $('cpLightboxBody');
+        if (!box || !body) return;
+        body.textContent = '';
+        if (kind === 'video') {
+            var video = document.createElement('video');
+            video.controls = true;
+            video.autoplay = true;
+            video.playsInline = true;
+            video.src = url;
+            body.appendChild(video);
+        } else {
+            var img = document.createElement('img');
+            img.src = url;
+            img.alt = '';
+            body.appendChild(img);
+        }
+        box.hidden = false;
+    }
+
+    function closeLightbox() {
+        var box = $('cpLightbox');
+        var body = $('cpLightboxBody');
+        if (body) body.textContent = '';
+        if (box) box.hidden = true;
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────
+
+    function init() {
+        // Guests read profiles too — profiles are public, only writing is
+        // gated (and this view is read-only: media + a link back to the feed).
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') closeLightbox();
+        });
+        loadPosts(true);
+        loadMessageCount();
+    }
+
+    window.GMProfile = {
+        init: init,
+        showTab: showTab,
+        loadMorePosts: loadMorePosts,
+        loadMoreAlbums: loadMoreAlbums,
+        openLightbox: openLightbox,
+        closeLightbox: closeLightbox,
+        // Exposed for the test harness (drives the real bodies).
+        _internals: {
+            timeAgo: timeAgo,
+            countLabel: countLabel,
+            linkifyInto: linkifyInto,
+            buildPostCard: buildPostCard,
+            buildAlbumCard: buildAlbumCard,
+            renderPosts: renderPosts,
+            renderAlbums: renderAlbums,
+            loadPosts: loadPosts,
+            loadAlbums: loadAlbums,
+            loadMessageCount: loadMessageCount,
+            getPosts: function () { return _posts; },
+            setPosts: function (rows) { _posts = rows; },
+            getAlbums: function () { return _albums; },
+            setAlbums: function (rows) { _albums = rows; },
+            setPostsCursor: function (v) { _postsCursor = v; },
+            setAlbumsCursor: function (v) { _albumsCursor = v; },
+        },
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
