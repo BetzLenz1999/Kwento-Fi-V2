@@ -1,4 +1,3 @@
-
 """GoodMarket Community Feed — business logic.
 
 A chronological, Facebook/Instagram-style feed of user posts: a caption plus
@@ -527,6 +526,251 @@ def get_post(post_id: int, viewer: str | None = None) -> dict:
     reactions = _reactions_for_posts(supabase, [row.get("id")], viewer)
     return {"success": True,
             "post": _public_post(row, media, viewer, reactions.get(row.get("id")))}
+
+
+# ── Public profile / per-user views ──────────────────────────────────────────
+# A profile is addressed by USERNAME, never by wallet. The username is resolved
+# to its owner wallet server-side (the wallet is the ownership key for the
+# queries below) and that wallet is NEVER placed in a response — the same rule
+# as `_public_post`. These views are therefore wallet-leak-proof by
+# construction: there is no code path that copies a wallet into the output.
+
+# Same rule as the app-wide `POST /api/user/username` gate and the chatroom.
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,24}$")
+
+
+def normalize_username(username: str | None) -> str | None:
+    """Strip a leading ``@`` and reject anything that is not a username."""
+    name = (username or "").strip().lstrip("@")
+    if not _USERNAME_RE.fullmatch(name):
+        return None
+    return name
+
+
+def wallet_for_username(username: str | None) -> str | None:
+    """Resolve a public username to its owner wallet (server-side only)."""
+    name = normalize_username(username)
+    if not name:
+        return None
+    supabase = _get_supabase()
+    if not supabase:
+        return None
+    try:
+        result = (
+            supabase.table("user_data")
+            .select("wallet_address")
+            .ilike("username", name)
+            .limit(1)
+            .execute()
+        )
+        rows = _rows(result)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: profile wallet lookup failed: %s", exc)
+        return None
+    if not rows:
+        return None
+    return (rows[0].get("wallet_address") or "").strip() or None
+
+
+def _count(supabase, table: str, filters: list[tuple[str, str, object]]) -> int:
+    """Bounded row count. Falls back to len(rows) when the client gives no count.
+
+    ``filters`` are ``(op, column, value)`` triples; ``op`` is ``"eq"`` or
+    ``"ilike"``. The wallet is matched with ``ilike`` because sessions carry
+    checksummed addresses while rows are stored lowercase (the documented
+    case-mismatch bug class).
+    """
+    try:
+        query = supabase.table(table).select("id", count="exact")
+        for op, column, value in filters:
+            query = getattr(query, op)(column, value)
+        result = query.limit(1000).execute()
+        count = getattr(result, "count", None)
+        if count is None:
+            count = len(_rows(result))
+        return int(count)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: count on %s failed: %s", table, exc)
+        return 0
+
+
+def get_public_profile(username: str | None) -> dict:
+    """Username-scoped public profile: identity + feed activity counts.
+
+    Contains NO wallet, balance or private activity. ``post_count`` /
+    ``album_count`` / ``media_count`` come from the feed's own tables; the
+    public message count is owned by the chatroom and is hydrated by the page
+    from the chatroom's own endpoint, so neither module reads the other's data.
+    """
+    name = normalize_username(username)
+    if not name:
+        return {"success": False, "error": "Member not found", "code": "not_found"}
+
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "code": "db"}
+
+    wallet = wallet_for_username(name)
+    if not wallet:
+        return {"success": False, "error": "Member not found", "code": "not_found"}
+
+    joined_at = None
+    try:
+        result = (
+            supabase.table("user_data")
+            .select("username,created_at")
+            .ilike("wallet_address", wallet)
+            .limit(1)
+            .execute()
+        )
+        rows = _rows(result)
+        if rows:
+            joined_at = rows[0].get("created_at")
+            name = (rows[0].get("username") or name).strip() or name
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: profile identity read failed: %s", exc)
+
+    post_count = _count(
+        supabase, "community_feed_posts",
+        [("ilike", "wallet_address", wallet),
+         ("eq", "is_deleted", False),
+         ("eq", "is_hidden", False)])
+
+    album_count = 0
+    media_count = 0
+    try:
+        posts = (
+            supabase.table("community_feed_posts")
+            .select("id")
+            .ilike("wallet_address", wallet)
+            .eq("is_deleted", False)
+            .eq("is_hidden", False)
+            .order("id", desc=True)
+            .limit(200)
+            .execute()
+        )
+        ids = [r.get("id") for r in _rows(posts) if r.get("id") is not None]
+        media = _media_for_posts(supabase, ids)
+        media_count = sum(len(items) for items in media.values())
+        album_count = sum(1 for items in media.values() if items)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: profile album count failed: %s", exc)
+
+    return {
+        "success": True,
+        "profile": {
+            "username": name,
+            "joined_at": joined_at,
+            "post_count": post_count,
+            "album_count": album_count,
+            "media_count": media_count,
+        },
+    }
+
+
+def get_user_posts(username: str | None, viewer: str | None = None,
+                   cursor: int | None = None, limit: int | None = None) -> dict:
+    """One keyset page of a member's visible posts, newest first."""
+    name = normalize_username(username)
+    if not name:
+        return {"success": False, "error": "Member not found",
+                "code": "not_found", "posts": []}
+    wallet = wallet_for_username(name)
+    if not wallet:
+        return {"success": False, "error": "Member not found",
+                "code": "not_found", "posts": []}
+    return get_feed(viewer=viewer, cursor=cursor, limit=limit, author=wallet)
+
+
+def get_user_album(username: str | None, viewer: str | None = None,
+                   cursor: int | None = None, limit: int | None = None) -> dict:
+    """A member's uploaded media, grouped into ALBUMS.
+
+    An album is a POST that carries media — its caption is the album title and
+    its images/videos are the album's items (``community_feed_media`` has no
+    per-file caption by design, see the proposal §4.2). This needs no new table
+    and no new upload flow: everything here is already-posted, already-moderated
+    media. Pages by the post's id (keyset), like the main feed.
+    """
+    name = normalize_username(username)
+    if not name:
+        return {"success": False, "error": "Member not found",
+                "code": "not_found", "albums": []}
+    wallet = wallet_for_username(name)
+    if not wallet:
+        return {"success": False, "error": "Member not found",
+                "code": "not_found", "albums": []}
+
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable",
+                "code": "db", "albums": []}
+
+    try:
+        size = int(limit or DEFAULT_PAGE_SIZE)
+    except (TypeError, ValueError):
+        size = DEFAULT_PAGE_SIZE
+    size = max(1, min(MAX_PAGE_SIZE, size))
+
+    try:
+        query = (
+            supabase.table("community_feed_posts")
+            .select("id,wallet_address,username,body,created_at,edited_at")
+            .ilike("wallet_address", wallet)
+            .eq("is_deleted", False)
+            .eq("is_hidden", False)
+        )
+        if cursor:
+            query = query.lt("id", int(cursor))
+        # Fetch extra rows because caption-only posts are dropped below.
+        result = query.order("id", desc=True).limit(size * 3 + 1).execute()
+        rows = _rows(result)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: album query failed: %s", exc)
+        return {"success": False, "error": "Could not load the album",
+                "code": "db", "albums": []}
+
+    media = _media_for_posts(supabase, [r.get("id") for r in rows
+                                        if r.get("id") is not None])
+    albums = []
+    for row in rows:
+        items = media.get(row.get("id")) or []
+        if not items:
+            continue
+        albums.append({
+            "post_id": row.get("id"),
+            "username": row.get("username") or ANON_LABEL,
+            "caption": row.get("body") or "",
+            "created_at": row.get("created_at"),
+            "item_count": len(items),
+            "has_video": any(i.get("type") == "video" for i in items),
+            "cover": next((i for i in items if i.get("type") == "image"),
+                          items[0]),
+            "items": items,
+        })
+
+    # The scan is bounded at `size * 3 + 1` posts, so a short read means we saw
+    # every remaining post (no more pages). A page that filled up needs the
+    # cursor to continue after the LAST POST SCANNED — not after the last album
+    # kept, or a run of caption-only posts would be re-fetched forever.
+    scanned_all = len(rows) <= size * 3
+    if len(albums) > size:
+        albums = albums[:size]
+        next_cursor = albums[-1]["post_id"]
+        has_more = True
+    elif scanned_all:
+        next_cursor = None
+        has_more = False
+    else:
+        next_cursor = rows[-1].get("id") if rows else None
+        has_more = next_cursor is not None
+
+    return {
+        "success": True,
+        "albums": albums,
+        "next_cursor": next_cursor,
+        "has_more": bool(has_more),
+    }
 
 
 # ── Writes ───────────────────────────────────────────────────────────────────
