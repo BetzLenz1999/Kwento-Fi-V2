@@ -553,6 +553,87 @@ def normalize_username(username: str | None) -> str | None:
     return name
 
 
+# Public member search. A user may type a partial name, so the term is
+# normalised to a safe subset and the WILDCARD is added server-side: a raw
+# `%`/`_` from the client would otherwise widen the match (PostgREST `ilike`
+# treats both as wildcards), turning a search box into a table scan.
+SEARCH_MIN_CHARS = 2
+SEARCH_LIMIT = 12
+_SEARCH_TERM_RE = re.compile(r"[^A-Za-z0-9_]")
+
+
+def normalize_search_term(term: str | None) -> str | None:
+    """Strip to the characters a username can contain; None when too short."""
+    cleaned = _SEARCH_TERM_RE.sub("", (term or "").strip().lstrip("@"))
+    if len(cleaned) < SEARCH_MIN_CHARS:
+        return None
+    return cleaned[:24]
+
+
+def _like_pattern(term: str) -> str:
+    """Wrap a search term for PostgREST ``ilike``, escaping LIKE metacharacters.
+
+    ``_`` IS a legal username character, so it cannot be stripped like ``%`` —
+    but it is also a single-character wildcard, so a raw term would match names
+    the user never asked for. Escaping it (SQL LIKE's default escape is ``\\``)
+    keeps the search literal.
+    """
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def search_users(term: str | None, limit: int | None = None) -> dict:
+    """Public member search by username.
+
+    Returns usernames only — the wallet is the ownership key and is dropped
+    here, exactly like the feed and profile responses, so the search box can
+    never become an address oracle. LIKE metacharacters in the caller's term are
+    escaped before the server adds its own wildcards.
+    """
+    cleaned = normalize_search_term(term)
+    if not cleaned:
+        return {"success": True, "users": [], "term": (term or "").strip()}
+
+    try:
+        size = int(limit or SEARCH_LIMIT)
+    except (TypeError, ValueError):
+        size = SEARCH_LIMIT
+    size = max(1, min(SEARCH_LIMIT, size))
+
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable",
+                "users": [], "term": cleaned}
+
+    try:
+        result = (
+            supabase.table("user_data")
+            .select("username")
+            .ilike("username", _like_pattern(cleaned))
+            .order("username")
+            .limit(size)
+            .execute()
+        )
+        rows = _rows(result)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: user search failed: %s", exc)
+        return {"success": False, "error": "Could not search members",
+                "users": [], "term": cleaned}
+
+    users = []
+    seen = set()
+    for row in rows:
+        username = (row.get("username") or "").strip()
+        key = username.lower()
+        # A row may carry no username (legacy) or the same name twice; the
+        # public view is a set of names, never a list of accounts.
+        if not username or key in seen:
+            continue
+        seen.add(key)
+        users.append({"username": username})
+    return {"success": True, "users": users, "term": cleaned}
+
+
 def wallet_for_username(username: str | None) -> str | None:
     """Resolve a public username to its owner wallet (server-side only)."""
     name = normalize_username(username)
