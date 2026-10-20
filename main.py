@@ -233,7 +233,11 @@ _CSP_DIRECTIVES = (
     "https://studio.squidrouter.com https://app.squidrouter.com "
     "https://*.squidrouter.com "
     "https://auth.privy.io https://*.privy.io",
-    "media-src 'self' data: blob:",
+    # <video>/<audio> are governed by media-src, NOT img-src. The R2 public
+    # domain is an https origin, so without `https:` here a feed video uploads
+    # and posts fine but renders as an empty, unplayable player. Images were
+    # unaffected because img-src already allows https:.
+    "media-src 'self' data: blob: https:",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "object-src 'none'",
