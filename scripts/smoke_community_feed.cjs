@@ -106,10 +106,12 @@ function makeDom() {
       set innerHTML(v) { if (v === '') { this.children = []; this.childNodes = []; } },
       get innerHTML() { return ''; },
       // Real DOM semantics: textContent aggregates descendants, so a caption
-      // built with createTextNode + appendChild reports its full text.
+      // built with createTextNode + appendChild reports its full text. Assigning
+      // textContent clears the children, so a later appendChild must still show
+      // up here — hence `_text` is a PREFIX, not a replacement.
       get textContent() {
-        if (this._text !== undefined) return this._text;
-        return this.childNodes.map(c => c.textContent).join('');
+        const own = this._text === undefined ? '' : this._text;
+        return own + this.childNodes.map(c => c.textContent).join('');
       },
       set textContent(v) {
         this._text = v === null || v === undefined ? '' : String(v);
@@ -129,16 +131,20 @@ function run(opts) {
    'cfUploadStatus', 'cfFeed', 'cfEmpty', 'cfLoadMore', 'cfToast',
    'cfLightbox', 'cfLightboxBody', 'cfEditModal', 'cfEditCaption',
    'cfEditSaveBtn', 'cfComposer',
-   'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint'
+   'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
+   'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
+   'cfSheetEarn', 'cfSheetOverlay'
   ].forEach(id => {
     const node = dom.mk(
       id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
+        || id === 'cfSearchInput'
         ? 'textarea' : 'div');
     node.id = id;
     registry[id] = node;
   });
   registry.cfPreviews.hidden = true;
   registry.cfUsernameInput.value = '';
+  registry.cfSearchInput.value = '';
 
   const doc = {
     readyState: 'complete',
@@ -191,12 +197,27 @@ const MEMBER = {
   username: 'betz', usernameRequired: true,
   loginMethod: 'local', maxCaption: 2200, maxMedia: 4,
   maxImageMb: 10, maxVideoMb: 100, storageReady: true,
+  // The same destination list the template emits (GM_COMMUNITY_BOOT.nav).
+  nav: [
+    { id: 'feed', icon: '🏠', label: 'Feed', href: '/community', guestOk: true },
+    { id: 'search', icon: '🔍', label: 'Search', action: 'search', guestOk: true },
+    { id: 'earn', icon: '💰', label: 'Earn', action: 'earn', guestOk: false },
+    { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/#topup', guestOk: false },
+    { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet', guestOk: false },
+  ],
   reactions: { like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢', angry: '😡' },
 };
 
 // Same as MEMBER but with no username yet — the gate must block posting.
 const NO_USERNAME = Object.assign({}, MEMBER, {
   username: '', usernameRequired: true,
+});
+
+// A signed-out visitor: no wallet, no username, and the connect hook is what
+// every write destination must reach.
+const GUEST = Object.assign({}, MEMBER, {
+  isGuest: true, wallet: '', username: '',
+  usernameRequired: false, loginMethod: '',
 });
 
 function makePost(over) {
@@ -779,6 +800,157 @@ function feedFetch(handler, feedRows) {
        taken.store.cfUsernameHint.textContent);
     ok('the Save button is re-enabled after a failure',
        taken.store.cfUsernameSave.disabled === false);
+  }
+
+  // ── 13. Bottom nav: destinations, guest gate, active item ─────────────────
+  {
+    const { api, store, sandbox } = run({ boot: MEMBER });
+    const items = store.cfBottomNav.children;
+    ok('the bottom nav renders every destination', items.length === 5,
+       JSON.stringify(items.length));
+    const labels = items.map(n => n.querySelector('.cf-nav-label').textContent);
+    ok('the nav carries Feed, Search, Earn, Buy Airtime and Your Wallet',
+       JSON.stringify(labels) ===
+       JSON.stringify(['Feed', 'Search', 'Earn', 'Buy Airtime', 'Your Wallet']),
+       JSON.stringify(labels));
+    ok('the feed item is the active one',
+       items[0].className.split(/\s+/).includes('is-active'));
+
+    // Buy Airtime links to the Reloadly store's top-up tab.
+    const airtime = items.filter(n => /Buy Airtime/.test(n.textContent))[0];
+    ok('Buy Airtime links to the Reloadly top-up tab',
+       airtime.href === '/reloadly/#topup', airtime.href);
+    // Your Wallet links to the wallet page.
+    const wallet = items.filter(n => /Your Wallet/.test(n.textContent))[0];
+    ok('Your Wallet links to /wallet', wallet.href === '/wallet', wallet.href);
+
+    // Earn opens the sheet for a member…
+    api.closeSheet();
+    api.openSheet();
+    ok('Earn opens the sheet', store.cfSheetEarn.className.includes('open'));
+    ok('opening the sheet also shows the overlay',
+       store.cfSheetOverlay.className.includes('open'));
+    // The sheet also locks the page scroll behind it.
+    ok('opening the sheet locks the page scroll',
+       sandbox.document.body.classList.contains('cf-modal-open'));
+    api.closeSheet();
+    ok('closing the sheet hides it again',
+       !store.cfSheetEarn.className.includes('open'));
+    ok('closing the sheet unlocks the page scroll',
+       !sandbox.document.body.classList.contains('cf-modal-open'));
+
+    // …and Search opens the read-only member search for a member too.
+    store.cfSearchBar.hidden = true;
+    api.openSearch();
+    ok('Search opens the member search bar', store.cfSearchBar.hidden === false);
+    api.closeSearch();
+    ok('closing search hides the bar', store.cfSearchBar.hidden === true);
+  }
+
+  // ── 13b. The nav is gated for a guest, exactly like the write actions ─────
+  {
+    let connectCalls = 0;
+    const { api, store, sandbox } = run({
+      boot: GUEST,
+      fetchImpl: feedFetch(() => Promise.resolve({
+        ok: true, json: () => Promise.resolve({ success: true }) })),
+    });
+    // The shared connect card is a global hook the bundle calls; count the
+    // calls exactly like the write-gate block above.
+    sandbox.window.openGoodMarketGetStarted = function () { connectCalls++; };
+    await tick();
+
+    ok('a guest still gets the whole nav (reading is public)',
+       store.cfBottomNav.children.length === 5);
+
+    const items = store.cfBottomNav.children;
+    const earn = items.filter(n => /Earn/.test(n.textContent))[0];
+    const airtime = items.filter(n => /Buy Airtime/.test(n.textContent))[0];
+    const search = items.filter(n => /Search/.test(n.textContent))[0];
+    const feed = items.filter(n => /Feed/.test(n.textContent))[0];
+
+    // Earn is a signed-in destination: a guest tap raises the connect card and
+    // must NOT open the sheet.
+    api.closeSheet();
+    earn.onclick({ preventDefault() {} });
+    ok('a guest tapping Earn never opens the sheet',
+       !store.cfSheetEarn.className.includes('open'));
+    ok('a guest tapping Earn opens the connect card', connectCalls === 1,
+       String(connectCalls));
+
+    // Buy Airtime is also signed-in only: the tap is swallowed and the card
+    // shows, so the guest is never dropped on a page they cannot use.
+    let airtimeNavigated = false;
+    airtime.onclick({ preventDefault() { airtimeNavigated = true; } });
+    ok('a guest tapping Buy Airtime opens the connect card',
+       connectCalls === 2, String(connectCalls));
+    ok('a guest tapping Buy Airtime is not navigated away', airtimeNavigated);
+
+    // Reading stays public: Search and Feed are NOT gated for a guest.
+    api.closeSearch();
+    search.onclick({ preventDefault() {} });
+    ok('a guest may open the member search', store.cfSearchBar.hidden === false);
+    ok('the read-only Search tap raised no connect card', connectCalls === 2,
+       String(connectCalls));
+    feed.onclick({ preventDefault() {} });
+    ok('the read-only Feed tap raised no connect card', connectCalls === 2,
+       String(connectCalls));
+  }
+
+  // ── 13c. Member search: min length, results, and text-not-markup ─────────
+  {
+    const seen = [];
+    const { api, store } = run({
+      boot: MEMBER,
+      fetchImpl: feedFetch(function (url) {
+        seen.push(String(url));
+        if (String(url).indexOf('/community/api/users/search') === 0) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              success: true,
+              users: [{ username: 'betz' }, { username: 'betz_2' }],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      }),
+    });
+
+    // A one-character term is refused before any request.
+    store.cfSearchInput.value = 'b';
+    api._internals.runSearch('b');
+    await tick();
+    ok('a one-character search makes no request',
+       !seen.some(u => /users\/search/.test(u)), JSON.stringify(seen));
+    ok('the short-term hint is shown',
+       /at least 2/.test(store.cfSearchResults.textContent || ''),
+       store.cfSearchResults.textContent);
+
+    api._internals.runSearch('bet');
+    await tick();
+    ok('a valid term queries the search endpoint',
+       seen.some(u => /users\/search\?q=bet/.test(u)), JSON.stringify(seen));
+    const rows = store.cfSearchResults.children;
+    ok('the results render one row per member', rows.length === 2,
+       JSON.stringify(rows.length));
+    ok('a result links to the public profile by USERNAME',
+       rows[0].href === '/community/u/betz', rows[0].href);
+    ok('a result shows the @handle, never a wallet',
+       rows[0].textContent.indexOf('@betz') !== -1, rows[0].textContent);
+    ok('no wallet address is rendered in the results',
+       !/0x/i.test(store.cfSearchResults.textContent || ''));
+
+    // An empty result set renders the "no members" hint, not a broken list.
+    api._internals.renderSearchResults([]);
+    ok('an empty result set explains itself',
+       /No members found/.test(store.cfSearchResults.textContent || ''));
+
+    // A username is written as TEXT: markup cannot be injected through it.
+    api._internals.renderSearchResults([{ username: '<img src=x>' }]);
+    const injected = store.cfSearchResults.querySelector('.cf-search-name');
+    ok('a username is rendered as TEXT, never markup',
+       injected.textContent === '@<img src=x>', JSON.stringify(injected.textContent));
   }
 
   console.log('');
