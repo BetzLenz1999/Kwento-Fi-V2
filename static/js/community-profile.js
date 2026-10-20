@@ -74,6 +74,26 @@
         return n > 999 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K' : String(n);
     }
 
+    // Follow is a write, so a guest is sent to the shared connect flow instead
+    // of silently failing — the same contract as the feed page.
+    function requiresLogin() {
+        toast('Please log in to do that.', 'error');
+        if (typeof window.openGoodMarketGetStarted === 'function') {
+            window.openGoodMarketGetStarted();
+        }
+        return false;
+    }
+
+    function toast(message, kind) {
+        var node = $('cpToast');
+        if (!node) return;
+        node.textContent = message;
+        node.className = 'cp-toast' + (kind ? ' is-' + kind : '');
+        node.hidden = false;
+        if (node._timer) clearTimeout(node._timer);
+        node._timer = setTimeout(function () { node.hidden = true; }, 2600);
+    }
+
     // Non-capturing group on purpose: a capturing group shifts String.replace's
     // callback arguments and silently drops the surrounding text (the chatroom
     // shipped exactly that bug).
@@ -104,6 +124,92 @@
 
     // ── Posts ──────────────────────────────────────────────────────────────
 
+    // ── Follow ─────────────────────────────────────────────────────────────
+    // The profile hero's follow button. A write, so a guest gets the shared
+    // connect card; your own profile never shows it. Counts are public; the
+    // follow graph is never returned.
+
+    function followButton() {
+        var host = $('cpFollowWrap');
+        if (!host) return;
+        host.textContent = '';
+        var profile = BOOT.profile || {};
+        // Re-sync the counts from the boot object: the template renders them
+        // for no-JS, but the API value is authoritative (it is computed with
+        // the viewer in mind) and keeps the hero correct after a follow.
+        var followerEl = $('cpFollowerCount');
+        if (followerEl && typeof profile.followers === 'number') {
+            followerEl.textContent = String(profile.followers);
+        }
+        var followingEl = $('cpFollowingCount');
+        if (followingEl && typeof profile.following === 'number') {
+            followingEl.textContent = String(profile.following);
+        }
+        if (profile.is_self || !USERNAME) return;
+        var btn = el('button', 'cp-follow' + (profile.is_following ? ' is-following' : ''),
+            profile.is_following ? 'Following' : 'Follow');
+        btn.type = 'button';
+        btn.id = 'cpFollowBtn';
+        btn.setAttribute('aria-pressed', profile.is_following ? 'true' : 'false');
+        btn.setAttribute('aria-label',
+            (profile.is_following ? 'Unfollow @' : 'Follow @') + USERNAME);
+        btn.onclick = function () { toggleFollow(btn); };
+        host.appendChild(btn);
+    }
+
+    function toggleFollow(btn) {
+        if (!BOOT.wallet) { requiresLogin(); return Promise.resolve(); }
+        var following = btn.classList.contains('is-following');
+        setFollowButton(btn, !following);
+        return api('/community/api/users/' + encodeURIComponent(USERNAME) + '/follow', {
+            method: following ? 'DELETE' : 'POST',
+        }).then(function (result) {
+            if (!result.ok || !result.data || result.data.success === false) {
+                setFollowButton(btn, following);
+                toast((result.data && result.data.error) || 'Could not update follow.',
+                    'error');
+                return;
+            }
+            setFollowButton(btn, !!result.data.following);
+            var count = $('cpFollowerCount');
+            if (count && typeof result.data.follower_count === 'number') {
+                count.textContent = String(result.data.follower_count);
+            }
+        }).catch(function () {
+            setFollowButton(btn, following);
+            toast('Could not update follow.', 'error');
+        });
+    }
+
+    function setFollowButton(btn, following) {
+        btn.classList.toggle('is-following', following);
+        btn.textContent = following ? 'Following' : 'Follow';
+        btn.setAttribute('aria-pressed', following ? 'true' : 'false');
+        btn.setAttribute('aria-label',
+            (following ? 'Unfollow @' : 'Follow @') + USERNAME);
+    }
+
+    // A video is shown Instagram-style: a BOUNDED, rounded frame with
+    // `object-fit: contain` so nothing is cropped; tapping opens the lightbox.
+    function buildVideoFrame(item, username) {
+        var frame = el('button', 'cp-video-frame');
+        frame.type = 'button';
+        frame.setAttribute('aria-label', 'Play video by ' + (username || 'this member'));
+        if (item.w && item.h) {
+            frame.style.aspectRatio = item.w + ' / ' + item.h;
+        }
+        var video = document.createElement('video');
+        video.controls = true;
+        video.preload = 'metadata';
+        video.playsInline = true;
+        if (item.poster) video.poster = item.poster;
+        video.src = item.url;
+        video.onclick = function (event) { event.stopPropagation(); };
+        frame.appendChild(video);
+        frame.onclick = function () { openLightbox(item.url, 'video'); };
+        return frame;
+    }
+
     function buildPostCard(post) {
         var card = el('article', 'cp-card cp-post');
         card.setAttribute('data-post-id', post.id);
@@ -122,13 +228,7 @@
             var mediaWrap = el('div', 'cp-media');
             post.media.forEach(function (item) {
                 if (item.type === 'video') {
-                    var video = document.createElement('video');
-                    video.controls = true;
-                    video.preload = 'metadata';
-                    video.playsInline = true;
-                    if (item.poster) video.poster = item.poster;
-                    video.src = item.url;
-                    mediaWrap.appendChild(video);
+                    mediaWrap.appendChild(buildVideoFrame(item, post.username));
                 } else {
                     var img = document.createElement('img');
                     img.loading = 'lazy';
@@ -423,6 +523,7 @@
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape') closeLightbox();
         });
+        followButton();
         loadPosts(true);
         loadMessageCount();
     }
@@ -441,6 +542,10 @@
             linkifyInto: linkifyInto,
             buildPostCard: buildPostCard,
             buildAlbumCard: buildAlbumCard,
+            buildVideoFrame: buildVideoFrame,
+            followButton: followButton,
+            toggleFollow: toggleFollow,
+            setFollowButton: setFollowButton,
             renderPosts: renderPosts,
             renderAlbums: renderAlbums,
             loadPosts: loadPosts,
