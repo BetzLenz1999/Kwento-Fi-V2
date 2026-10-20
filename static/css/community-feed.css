@@ -201,15 +201,42 @@ body {
     position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
     background: rgba(0, 0, 0, 0.5);
 }
-.cf-preview-bar > i { display: block; height: 100%; width: 0; background: var(--cf-gold); }
+.cf-preview-bar > i {
+    display: block; height: 100%; width: 0;
+    background: var(--cf-gold);
+    transition: width 0.15s linear;
+}
 .cf-preview.is-done .cf-preview-bar > i { background: var(--cf-ok); }
 .cf-preview.is-failed .cf-preview-bar > i { background: var(--cf-danger); }
+
+/* A tile that is still being prepared/uploaded must not look like a black
+   rectangle: an overlay spinner says "working" even before a poster exists. */
+.cf-preview.is-busy { opacity: 0.85; }
+.cf-preview-spinner {
+    position: absolute; inset: 0; margin: auto;
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    animation: cfSpin 0.8s linear infinite;
+    pointer-events: none;
+}
+@keyframes cfSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .cf-upload-status {
     font-size: 0.78rem; color: var(--cf-dim);
     display: flex; align-items: center; gap: 0.4rem;
 }
 .cf-upload-status.is-error { color: var(--cf-danger); }
+/* The busy line ("Uploading… 42%") carries its own spinner so the wait is
+   visible even if the tiles are scrolled out of view. */
+.cf-upload-status.is-busy::before {
+    content: '';
+    flex: 0 0 auto;
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--cf-border);
+    border-top-color: var(--cf-accent);
+    animation: cfSpin 0.8s linear infinite;
+}
 
 /* ── Post card ────────────────────────────────────────────────────────────── */
 .cf-feed { display: flex; flex-direction: column; gap: 1rem; }
@@ -435,4 +462,9 @@ body {
     .cf-chip { transition: none; }
     .cf-chip:active { transform: none; }
     .cf-toast { animation: none; }
+    /* The spinner still has to READ as "working" without spinning: hold a
+       static ring so the busy state stays visible. */
+    .cf-preview-spinner,
+    .cf-upload-status.is-busy::before { animation: none; }
+    .cf-preview-bar > i { transition: none; }
 }
