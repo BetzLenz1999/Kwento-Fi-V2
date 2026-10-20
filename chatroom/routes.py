@@ -104,7 +104,13 @@ def chatroom_home():
 
 @chatroom_bp.route("/u/<username>")
 def chatroom_member_profile(username: str):
-    """Public-by-username profile, reachable from a chat message."""
+    """Public-by-username profile, reachable from a chat message.
+
+    The page is shared with the Community Feed (same template, same bundle):
+    the feed owns the rich profile view and the chatroom contributes only its
+    own public message count through the JSON endpoint below. The chatroom
+    therefore still reads none of the feed's tables.
+    """
     wallet = _session_wallet()
     if not wallet:
         return redirect("/")
@@ -112,9 +118,41 @@ def chatroom_member_profile(username: str):
         return redirect("/wallet")
 
     result = svc.get_public_profile(username)
+    profile = result.get("profile") if result.get("success") else None
+    return render_template("chatroom_profile.html",
+                           profile=profile,
+                           username=(username or "").strip().lstrip("@") or None,
+                           is_guest=False,
+                           viewer_username=svc.get_username(wallet),
+                           login_method=session.get("login_method", ""),
+                           walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", "")), \
+        (200 if profile else 404)
+
+
+@chatroom_bp.route("/api/profile/<username>")
+def api_public_profile(username: str):
+    """The chatroom's own contribution to a public profile.
+
+    Returns ONLY the public message count, keyed by username — no wallet, no
+    balance, no private activity. The profile page hydrates its other stats
+    from the Community Feed's own endpoints, so this module stays isolated
+    from the feed's tables.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+
+    result = svc.get_public_profile(username)
     if not result.get("success"):
-        return render_template("chatroom_profile.html", profile=None), 404
-    return render_template("chatroom_profile.html", profile=result["profile"])
+        status = 404 if result.get("code") == "not_found" else 400
+        return jsonify({"success": False, "error": result.get("error", "Member not found")}), status
+
+    profile = result["profile"]
+    return jsonify({
+        "success": True,
+        "username": profile.get("username"),
+        "joined_at": profile.get("joined_at"),
+        "message_count": profile.get("message_count", 0),
+    })
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
