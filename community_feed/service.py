@@ -1,3 +1,4 @@
+
 """Community Feed — HTTP routes.
 
 Blueprint ``community_feed`` at ``/community``. A chronological feed of user
