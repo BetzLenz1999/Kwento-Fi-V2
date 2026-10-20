@@ -1,0 +1,184 @@
+{# Shared public member profile — Community Feed + Chatroom.
+
+   One page for a member's public presence: who they are, their posts, and an
+   ALBUM of the photos/videos they uploaded. Reachable from a community feed
+   card (`/community/u/<username>`) and from a chatroom message
+   (`/chatroom/u/<username>` — `chatroom_profile.html` extends this template and
+   only swaps the back-link).
+
+   Privacy contract (pinned by tests): a profile shows a USERNAME, a join date
+   and public activity counts — never a wallet address, balance or private
+   activity. The wallet is resolved from the username server-side and is never
+   placed in the HTML or in any JSON response the page reads.
+
+   Stats are hydrated from each feature's OWN endpoints, so the feed and the
+   chatroom never read each other's tables:
+     - posts / albums : /community/api/profile/<u>/posts|album   (Community Feed)
+     - messages       : /chatroom/api/profile/<u>                (Chatroom)
+
+   Guests may view (same rule as the feed): they get the shared connect card
+   and a persistent nav CTA. The theme follows the app's light "Soft Sunrise"
+   palette so a profile does not flip dark→light when reached from the wallet. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f7f1e8">
+    <title>{% block title %}{% if profile %}@{{ profile.username }}{% else %}Member not found{% endif %} — GoodMarket Community{% endblock %}</title>
+    <meta name="description" content="Public GoodMarket community profile — posts, photos and videos shared by this member.">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/goodmarket-icon.png', v=ASSET_VERSION) }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/community-profile.css', v=ASSET_VERSION) }}">
+    {% if is_guest %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
+    {% endif %}
+
+    {# Device-only layout rules (not design tokens): the notch inset on the
+       sticky nav and a phone-width nav row. #}
+    <style>
+        .cp-nav { padding-top: env(safe-area-inset-top, 0px); }
+        body { overflow-x: clip; }
+        @media (max-width: 480px) {
+            .cp-nav { gap: 0.4rem; padding-left: 0.7rem; padding-right: 0.7rem; }
+            .cp-nav-right { flex-shrink: 0; }
+            .cp-brand span:not(.cp-brand-mark) { font-size: 0.9rem; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="cp-nav">
+    <a class="cp-brand" href="/wallet">
+        <span class="cp-brand-mark" aria-hidden="true">🌐</span>
+        <span>GoodMarket <strong>Community</strong></span>
+    </a>
+    <div class="cp-nav-right">
+        {% block nav_back %}
+        <a class="cp-nav-btn" href="/community">← Feed</a>
+        {% endblock %}
+        {% if is_guest %}
+        <button type="button" class="gs-nav-cta" onclick="openGoodMarketGetStarted()">Get Started</button>
+        {% endif %}
+    </div>
+</header>
+
+<main class="cp-wrap">
+
+    {% if is_guest %}
+    <div class="cp-guest">
+        {% with guest_card_icon='👤',
+                guest_card_kicker='Community profile',
+                guest_card_title='See who is in the community',
+                guest_card_body='Connect or create a free GoodMarket wallet to view member profiles, their posts and their photo albums — email + PIN, no app to install.' %}
+            {% include "_guest_connect_card.html" %}
+        {% endwith %}
+    </div>
+    {% elif not profile %}
+    <section class="cp-card cp-missing">
+        <div class="cp-avatar cp-avatar-missing" aria-hidden="true">🔎</div>
+        <h1>Member not found</h1>
+        <p class="cp-missing-copy">This username does not have a public GoodMarket community profile.</p>
+        <a class="cp-cta" href="/community">Back to the community feed</a>
+    </section>
+    {% else %}
+
+    <section class="cp-card cp-hero" aria-labelledby="cpProfileName">
+        <div class="cp-avatar" aria-hidden="true">{{ (profile.username or 'A')[0]|upper }}</div>
+        <h1 id="cpProfileName">@{{ profile.username }}</h1>
+        <p class="cp-sub">GoodMarket community member</p>
+        <p class="cp-joined">
+            {% if profile.joined_at %}Member since {{ profile.joined_at[:10] }}{% else %}GoodMarket member{% endif %}
+        </p>
+        <p class="cp-privacy">
+            This public profile never shows a wallet address, balance, or private activity.
+        </p>
+        <div class="cp-stats">
+            <div class="cp-stat"><span class="cp-number" id="cpPostCount">{{ profile.post_count|default(0) }}</span><span class="cp-label">Posts</span></div>
+            <div class="cp-stat"><span class="cp-number" id="cpAlbumCount">{{ profile.album_count|default(0) }}</span><span class="cp-label">Albums</span></div>
+            <div class="cp-stat"><span class="cp-number" id="cpMediaCount">{{ profile.media_count|default(0) }}</span><span class="cp-label">Photos &amp; videos</span></div>
+            {# Starts hidden and is revealed by the bundle only once the chatroom
+               itself confirms it is enabled — so the feed never needs to read
+               the chatroom's flag, and a disabled chatroom shows no fake zero. #}
+            <div class="cp-stat" id="cpMessageStat" hidden><span class="cp-number" id="cpMessageCount">—</span><span class="cp-label">Public messages</span></div>
+        </div>
+    </section>
+
+    <div class="cp-tabs" role="tablist" aria-label="Profile sections">
+        <button type="button" class="cp-tab is-active" id="cpTabPosts" role="tab"
+                aria-selected="true" aria-controls="cpPanelPosts"
+                onclick="GMProfile.showTab('posts')">Posts</button>
+        <button type="button" class="cp-tab" id="cpTabAlbum" role="tab"
+                aria-selected="false" aria-controls="cpPanelAlbum"
+                onclick="GMProfile.showTab('album')">Album</button>
+    </div>
+
+    <section class="cp-panel" id="cpPanelPosts" role="tabpanel" aria-labelledby="cpTabPosts">
+        <div class="cp-posts" id="cpPosts" aria-live="polite" aria-busy="true">
+            <div class="cp-skeleton" aria-hidden="true"></div>
+            <div class="cp-skeleton" aria-hidden="true"></div>
+        </div>
+        <div class="cp-foot">
+            <button type="button" class="cp-load-more" id="cpPostsMore"
+                    onclick="GMProfile.loadMorePosts()" hidden>Load more posts</button>
+            <p class="cp-empty" id="cpPostsEmpty" hidden>No posts yet.</p>
+        </div>
+    </section>
+
+    <section class="cp-panel" id="cpPanelAlbum" role="tabpanel" aria-labelledby="cpTabAlbum" hidden>
+        <div class="cp-albums" id="cpAlbums" aria-live="polite" aria-busy="true">
+            <div class="cp-skeleton" aria-hidden="true"></div>
+        </div>
+        <div class="cp-foot">
+            <button type="button" class="cp-load-more" id="cpAlbumsMore"
+                    onclick="GMProfile.loadMoreAlbums()" hidden>Load more albums</button>
+            <p class="cp-empty" id="cpAlbumsEmpty" hidden>No photos or videos yet.</p>
+        </div>
+    </section>
+
+    {% endif %}
+</main>
+
+{# Read-only lightbox for media. #}
+<div class="cp-lightbox" id="cpLightbox" hidden role="dialog" aria-modal="true"
+     aria-label="Media viewer" onclick="GMProfile.closeLightbox()">
+    <button type="button" class="cp-lightbox-close" aria-label="Close"
+            onclick="GMProfile.closeLightbox()">×</button>
+    <div class="cp-lightbox-body" id="cpLightboxBody"></div>
+</div>
+
+{# ── Boot config ────────────────────────────────────────────────────────────
+   MUST come BEFORE the bundle: the script snapshots this object at parse time
+   (the documented GM_*_BOOT ordering landmine). #}
+<script>
+window.GM_PROFILE_BOOT = {
+    isGuest: {{ 'true' if is_guest else 'false' }},
+    username: {{ (profile.username if profile else (username or ''))|tojson }},
+    viewerUsername: {{ (viewer_username or '')|tojson }},
+    feedEnabled: true,
+    assetVersion: {{ ASSET_VERSION|tojson }}
+};
+</script>
+
+{% if is_guest %}
+{# The connect modal needs the WC bridge + in-app wallet, exactly like the feed
+   page. ethers MUST load first (`GMLocalWallet.create()` / `unlockWithKeystore()`
+   call `_assertEthers()` and `showLocalWalletPanel()` bails without it). #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
+        integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/get-started.js', v=ASSET_VERSION) }}"></script>
+{% set get_started_boot = {'return_to': request.path if request else '/community'} %}
+{% include "_get_started_modal.html" %}
+{% else %}
+<script src="{{ url_for('static', filename='js/community-profile.js', v=ASSET_VERSION) }}"></script>
+{% endif %}
+
+</body>
+</html>
