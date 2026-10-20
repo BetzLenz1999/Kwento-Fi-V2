@@ -1,3 +1,4 @@
+
 """GoodMarket Community Feed — business logic.
 
 A chronological, Facebook/Instagram-style feed of user posts: a caption plus
