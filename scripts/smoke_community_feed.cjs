@@ -511,13 +511,77 @@ function feedFetch(handler, feedRows) {
        api._internals.getPending().length === 0);
   }
 
-  // ── 8. Guest guard ────────────────────────────────────────────────────────
+  // ── 8. Guest: reads the feed, but every write raises the connect card ─────
   {
-    const { api } = run({ boot: { isGuest: true, wallet: '', reactions: {} } });
-    api.submitPost();
-    ok('a guest cannot post', api._internals.getFeed().length === 0);
-    api.addFiles([{ type: 'image/jpeg', size: 10, name: 'a.jpg' }]);
+    const seen = [];
+    let connectCalls = 0;
+    // A bespoke fetchImpl (not feedFetch) so EVERY url is recorded — feedFetch
+    // answers the feed internally and would never surface it in `seen`.
+    const { api, store, sandbox } = run({
+      // storageReady: true so addFiles reaches the WALLET gate rather than
+      // stopping at the (unrelated) "uploads not configured" guard.
+      boot: { isGuest: true, wallet: '', storageReady: true, reactions: {} },
+      fetchImpl: function (url) {
+        seen.push(String(url));
+        if (String(url).indexOf('/community/api/feed') === 0) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({
+            success: true, posts: [makePost({ id: 7, body: 'public post' })],
+            next_cursor: null, has_more: false }) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      },
+    });
+    sandbox.window.openGoodMarketGetStarted = function () { connectCalls++; };
+    await tick();
+
+    // Reading is public: the guest's init() loads the feed like a member's.
+    ok('a guest fetches the feed',
+       seen.some(u => u.indexOf('/community/api/feed') === 0), JSON.stringify(seen));
+    ok('a guest renders the posts it fetched',
+       api._internals.getFeed().length === 1);
+    ok('the cards are really in the DOM',
+       !!store.cfFeed.querySelector('[data-post-id="7"]'));
+
+    // Writing is gated, and the gate is the shared connect card. Reset the
+    // counter per action so one assertion cannot mask another's failure.
+    function gate(label, fn) {
+      const before = connectCalls;
+      fn();
+      ok(label, connectCalls === before + 1, String(connectCalls));
+    }
+
+    gate('posting as a guest opens the connect card', function () {
+      api.submitPost();
+    });
+    ok('a guest cannot post', api._internals.getFeed().length === 1);
+    gate('queueing an upload as a guest opens the connect card', function () {
+      api.addFiles([{ type: 'image/jpeg', size: 10, name: 'a.jpg' }]);
+    });
     ok('a guest cannot queue an upload', api._internals.getPending().length === 0);
+    gate('reacting as a guest opens the connect card', function () {
+      api.react(makePost({ id: 7 }), 'like');
+    });
+    // Report is driven through the real card button (the user's actual path)
+    // rather than an internal export, so the test cannot drift from the UI.
+    const reportCard = api._internals.buildCard(makePost({ id: 9 }));
+    const reportBtn = reportCard.querySelector('.cf-card-actions').children
+      .filter(b => /Report/.test(b.textContent))[0];
+    gate('reporting as a guest opens the connect card', function () {
+      reportBtn.onclick();
+    });
+    ok('a gated report posts nothing',
+       !seen.some(u => /\/api\/report/.test(u)), JSON.stringify(seen));
+
+    // Comment is gated BEFORE the network: a guest must not even fetch the
+    // thread, or they would see a comment box they cannot use.
+    const card = api._internals.buildCard(makePost({ id: 8 }));
+    const commentBtn = card.querySelector('.cf-card-actions').children
+      .filter(b => /Comment/.test(b.textContent))[0];
+    gate('the comment button opens the connect card for a guest', function () {
+      commentBtn.onclick();
+    });
+    ok('a gated comment fetches no thread',
+       !seen.some(u => /comments/.test(u)), JSON.stringify(seen));
   }
 
   // ── 9. buildCard renders the caption as TEXT, never markup ────────────────
