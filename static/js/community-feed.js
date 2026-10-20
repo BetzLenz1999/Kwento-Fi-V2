@@ -669,6 +669,81 @@
         button.hidden = !_nextCursor;
     }
 
+    // ── Follow ─────────────────────────────────────────────────────────────
+    // A follow is a WRITE, so a guest gets the shared connect card and issues
+    // no request — the same contract as react/comment. The server stores the
+    // edge by WALLET, resolved from the username; the browser only ever names
+    // a username and only ever receives counts.
+
+    function buildFollowButton(username, isFollowing) {
+        var btn = el('button', 'cf-follow' + (isFollowing ? ' is-following' : ''),
+            isFollowing ? 'Following' : 'Follow');
+        btn.type = 'button';
+        btn.setAttribute('data-follow', username);
+        btn.setAttribute('aria-pressed', isFollowing ? 'true' : 'false');
+        btn.setAttribute('aria-label',
+            (isFollowing ? 'Unfollow @' : 'Follow @') + username);
+        btn.onclick = function () { toggleFollow(btn, username); };
+        return btn;
+    }
+
+    function toggleFollow(btn, username) {
+        if (!WALLET) { requiresLogin(); return Promise.resolve(); }
+        var following = btn.classList.contains('is-following');
+        // Optimistic flip so the tap feels instant; rolled back on failure.
+        setFollowButton(btn, !following);
+        return api('/community/api/users/' + encodeURIComponent(username) + '/follow', {
+            method: following ? 'DELETE' : 'POST',
+        }).then(function (result) {
+            if (!result.ok || !result.data || result.data.success === false) {
+                setFollowButton(btn, following);
+                toast((result.data && result.data.error) || 'Could not update follow.',
+                    'error');
+                return;
+            }
+            setFollowButton(btn, !!result.data.following);
+        }).catch(function () {
+            setFollowButton(btn, following);
+            toast('Could not update follow.', 'error');
+        });
+    }
+
+    function setFollowButton(btn, following) {
+        btn.classList.toggle('is-following', following);
+        btn.textContent = following ? 'Following' : 'Follow';
+        btn.setAttribute('aria-pressed', following ? 'true' : 'false');
+        var name = btn.getAttribute('data-follow') || '';
+        btn.setAttribute('aria-label',
+            (following ? 'Unfollow @' : 'Follow @') + name);
+    }
+
+    // ── Media ──────────────────────────────────────────────────────────────
+    // A video is shown Instagram-style: a BOUNDED, rounded frame (never the
+    // full screen) with `object-fit: contain`, so nothing is ever cropped. The
+    // frame is a button that opens the lightbox for the full-size view.
+
+    function buildVideoFrame(item, username) {
+        var frame = el('button', 'cf-video-frame');
+        frame.type = 'button';
+        frame.setAttribute('aria-label', 'Play video by ' + (username || 'this member'));
+        // Match the frame to the clip when the uploader reported its size, so
+        // there are no letterbox bars; fall back to the IG portrait default.
+        if (item.w && item.h) {
+            frame.style.aspectRatio = item.w + ' / ' + item.h;
+        }
+        var video = document.createElement('video');
+        video.controls = true;
+        video.preload = 'metadata';
+        video.playsInline = true;
+        if (item.poster) video.poster = item.poster;
+        video.src = item.url;
+        // The controls need the taps; the frame handles the rest.
+        video.onclick = function (event) { event.stopPropagation(); };
+        frame.appendChild(video);
+        frame.onclick = function () { openLightbox(item.url, 'video'); };
+        return frame;
+    }
+
     function buildCard(post) {
         var card = el('article', 'cf-card');
         card.setAttribute('data-post-id', post.id);
@@ -690,6 +765,12 @@
         who.appendChild(el('span', null, stamp));
         profile.appendChild(who);
         head.appendChild(profile);
+        // Follow pill: only for ANOTHER member's post. Your own post never
+        // offers it (you cannot follow yourself) and a guest never gets a
+        // working one — the tap raises the shared connect card instead.
+        if (!post.is_mine && post.username) {
+            head.appendChild(buildFollowButton(post.username, post.is_following));
+        }
         if (post.is_mine) {
             var menu = el('button', 'cf-menu-btn', '⋯');
             menu.type = 'button';
@@ -704,13 +785,7 @@
             var mediaWrap = el('div', 'cf-media');
             post.media.forEach(function (item) {
                 if (item.type === 'video') {
-                    var video = document.createElement('video');
-                    video.controls = true;
-                    video.preload = 'metadata';
-                    video.playsInline = true;
-                    if (item.poster) video.poster = item.poster;
-                    video.src = item.url;
-                    mediaWrap.appendChild(video);
+                    mediaWrap.appendChild(buildVideoFrame(item, post.username));
                 } else {
                     var img = document.createElement('img');
                     img.loading = 'lazy';
@@ -1110,15 +1185,25 @@
 
     // ── Lightbox ───────────────────────────────────────────────────────────
 
-    function openLightbox(url) {
+    function openLightbox(url, kind) {
         var box = $('cfLightbox');
         var body = $('cfLightboxBody');
         if (!box || !body) return;
         body.textContent = '';
-        var img = document.createElement('img');
-        img.src = url;
-        img.alt = '';
-        body.appendChild(img);
+        if (kind === 'video') {
+            // The full-size view of a bounded in-feed frame.
+            var video = document.createElement('video');
+            video.controls = true;
+            video.autoplay = true;
+            video.playsInline = true;
+            video.src = url;
+            body.appendChild(video);
+        } else {
+            var img = document.createElement('img');
+            img.src = url;
+            img.alt = '';
+            body.appendChild(img);
+        }
         box.hidden = false;
     }
 
@@ -1434,6 +1519,10 @@
             linkifyInto: linkifyInto,
             buildCard: buildCard,
             buildNavItem: buildNavItem,
+            buildFollowButton: buildFollowButton,
+            buildVideoFrame: buildVideoFrame,
+            toggleFollow: toggleFollow,
+            setFollowButton: setFollowButton,
             renderNav: renderNav,
             runSearch: runSearch,
             renderSearchResults: renderSearchResults,
