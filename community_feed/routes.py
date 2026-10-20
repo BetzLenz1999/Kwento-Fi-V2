@@ -149,6 +149,69 @@ def api_feed():
     return jsonify(svc.get_feed(viewer=viewer, cursor=cursor, limit=limit))
 
 
+# ── Public profile ───────────────────────────────────────────────────────────
+# A member's profile is addressed by USERNAME, never by wallet. The page and
+# every API below strip the wallet in the service layer; the template/bundle
+# only ever sees a username.
+
+@community_feed_bp.route("/u/<username>")
+def community_feed_profile(username: str):
+    """Public profile for a member: their posts + their media albums.
+
+    Guests may view, exactly like the feed itself (the shared connect card is
+    rendered for them). A username with no member behind it renders the
+    not-found state with a 404, so a link never lands on a broken page.
+    """
+    if not svc.is_enabled():
+        wallet = _session_wallet()
+        return redirect("/wallet" if wallet else "/")
+
+    wallet = _session_wallet()
+    viewer = svc.get_username(wallet) if wallet else None
+    result = svc.get_public_profile(username)
+    profile = result.get("profile") if result.get("success") else None
+    return render_template(
+        "community_profile.html",
+        profile=profile,
+        username=svc.normalize_username(username),
+        viewer_username=viewer,
+        is_guest=not bool(wallet),
+        display_name=svc.display_name(wallet) if wallet else None,
+        login_method=session.get("login_method", ""),
+        walletconnect_project_id=os.getenv("WALLETCONNECT_PROJECT_ID", ""),
+    ), (200 if profile else 404)
+
+
+@community_feed_bp.route("/api/profile/<username>", methods=["GET"])
+def api_profile(username: str):
+    if not svc.is_enabled():
+        return _disabled_response()
+    result = svc.get_public_profile(username)
+    return jsonify(result), (200 if result.get("success") else 404)
+
+
+@community_feed_bp.route("/api/profile/<username>/posts", methods=["GET"])
+def api_profile_posts(username: str):
+    if not svc.is_enabled():
+        return _disabled_response()
+    result = svc.get_user_posts(
+        username, viewer=_session_wallet(),
+        cursor=request.args.get("cursor", type=int),
+        limit=request.args.get("limit", type=int))
+    return jsonify(result), (200 if result.get("success") else 404)
+
+
+@community_feed_bp.route("/api/profile/<username>/album", methods=["GET"])
+def api_profile_album(username: str):
+    if not svc.is_enabled():
+        return _disabled_response()
+    result = svc.get_user_album(
+        username, viewer=_session_wallet(),
+        cursor=request.args.get("cursor", type=int),
+        limit=request.args.get("limit", type=int))
+    return jsonify(result), (200 if result.get("success") else 404)
+
+
 @community_feed_bp.route("/api/posts/<int:post_id>", methods=["GET"])
 def api_get_post(post_id: int):
     if not svc.is_enabled():
