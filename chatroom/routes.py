@@ -121,6 +121,7 @@ def chatroom_member_profile(username: str):
     profile = result.get("profile") if result.get("success") else None
     return render_template("chatroom_profile.html",
                            profile=profile,
+                           wallet=wallet,
                            username=(username or "").strip().lstrip("@") or None,
                            is_guest=False,
                            viewer_username=svc.get_username(wallet),
