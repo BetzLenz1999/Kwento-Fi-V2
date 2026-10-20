@@ -1,0 +1,229 @@
+{# GoodMarket Community Feed — Facebook/Instagram-style posts with media.
+
+   Guests may read the feed; they get the shared connect card
+   (`_guest_connect_card.html`, whose button calls the public
+   `window.openGoodMarketGetStarted()` entry point) and are bounced into the
+   same create / log-in flow as the rest of the app.
+
+   Media bytes live in Cloudflare R2. The browser uploads them directly with a
+   presigned PUT (built in the feed bundle) — no bytes pass through Flask,
+   because with gthread + 4 workers a proxied video would hold one of ~16
+   slots for the whole upload.
+
+   User-supplied text is ALWAYS written with textContent, never innerHTML. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoodMarket Community - GoodMarket</title>
+    <meta name="description" content="Share your daily life with the GoodMarket community — post photos and videos, react and comment. A community app for G$ users.">
+    <meta name="theme-color" content="#0B0F2A">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/community-feed.css', v=ASSET_VERSION) }}">
+
+    {# Page-level layout only. The feed's look lives in community-feed.css; this
+       block carries the two things that depend on the device/viewport rather
+       than the design system: the notch inset on the sticky header, and keeping
+       the header row from widening the document on a narrow phone (the same
+       class of overflow the audit found on /send-link). #}
+    <style>
+        .cf-nav {
+            padding-top: env(safe-area-inset-top, 0px);
+        }
+        body {
+            overflow-x: clip;
+        }
+        @media (max-width: 480px) {
+            .cf-nav { gap: 0.4rem; padding-left: 0.7rem; padding-right: 0.7rem; }
+            .cf-nav-right { flex-shrink: 0; }
+            .cf-brand span:not(.cf-brand-mark) { font-size: 0.92rem; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="cf-nav">
+    <a class="cf-brand" href="/wallet">
+        <span class="cf-brand-mark" aria-hidden="true">🌐</span>
+        <span>GoodMarket <strong>Community</strong></span>
+    </a>
+    <div class="cf-nav-right">
+        {% if not is_guest %}
+        <button type="button" class="cf-nav-btn" id="cfRefreshBtn" onclick="GMCommunity.refresh()">↻ Refresh</button>
+        {% endif %}
+        <a class="cf-nav-btn" href="/wallet">Wallet</a>
+    </div>
+</header>
+
+<main class="cf-wrap">
+
+    {% if is_guest %}
+    <div class="cf-guest">
+        {% with guest_card_icon='📸',
+                guest_card_kicker='Community Feed',
+                guest_card_title='Share your daily life',
+                guest_card_body='Post photos and videos, react and comment. Connect or create a free GoodMarket wallet to join — email + PIN, no app to install.' %}
+            {% include "_guest_connect_card.html" %}
+        {% endwith %}
+    </div>
+    {% else %}
+
+    <!-- ── Composer ─────────────────────────────────────────────────────── -->
+    <section class="cf-composer" id="cfComposer" aria-labelledby="cfComposerTitle">
+        <h2 class="cf-sr-only" id="cfComposerTitle">Create a post</h2>
+        <div class="cf-composer-head">
+            {# `display_name` falls back to a shortened wallet address, which
+               contradicts the username gate below. Show the username or a
+               neutral label — never an address, not even your own. #}
+            <div class="cf-avatar" aria-hidden="true">{{ (username or 'You')[0]|upper }}</div>
+            <div class="cf-composer-who">
+                <strong>{{ username or 'You' }}</strong>
+                <span>Sharing publicly</span>
+            </div>
+        </div>
+
+        <label class="cf-sr-only" for="cfCaption">Caption</label>
+        <textarea id="cfCaption" class="cf-caption-input" rows="2"
+                  placeholder="What's on your mind?"
+                  maxlength="{{ max_caption }}"></textarea>
+
+        {# Username gate. Shown only when the signed-in wallet has no username
+           yet — the composer stays visible so the user can see what they are
+           about to unlock, but posting is blocked until a name is chosen. #}
+        {% if username_required and not username %}
+        <div class="cf-username-gate" id="cfUsernameGate">
+            <p class="cf-username-lead">
+                <strong>Pick a username to start posting.</strong>
+                Posts show your username, never your wallet address.
+            </p>
+            <div class="cf-username-row">
+                <span class="cf-username-at" aria-hidden="true">@</span>
+                <label class="cf-sr-only" for="cfUsernameInput">Username</label>
+                <input type="text" id="cfUsernameInput" class="cf-username-input"
+                       placeholder="yourname" maxlength="24" autocomplete="username"
+                       spellcheck="false" inputmode="text">
+                <button type="button" class="cf-username-save" id="cfUsernameSave"
+                        onclick="GMCommunity.saveUsername()">Save</button>
+            </div>
+            <p class="cf-username-hint" id="cfUsernameHint">
+                Letters, numbers and _ — 3 to 24 characters.
+            </p>
+        </div>
+        {% endif %}
+
+        <div class="cf-previews" id="cfPreviews" hidden></div>
+
+        <div class="cf-upload-status" id="cfUploadStatus" role="status" aria-live="polite" hidden></div>
+
+        <div class="cf-composer-foot">
+            <div class="cf-composer-actions">
+                <label class="cf-file-btn" for="cfFileInput">
+                    <span aria-hidden="true">🖼</span> Photo / Video
+                </label>
+                <input type="file" id="cfFileInput" class="cf-sr-only"
+                       accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm"
+                       multiple>
+            </div>
+            <div class="cf-composer-right">
+                <span class="cf-counter" id="cfCounter">0 / {{ max_caption }}</span>
+                <button type="button" class="cf-post-btn" id="cfPostBtn"
+                        onclick="GMCommunity.submitPost()" disabled>Post</button>
+            </div>
+        </div>
+        <p class="cf-composer-hint" id="cfComposerHint">
+            Up to {{ max_media }} files · images to {{ max_image_mb }}MB, video to {{ max_video_mb }}MB.
+            Post only content you own.
+        </p>
+        {% if not storage_ready %}
+        <p class="cf-warn">Media uploads are not configured on this deployment yet — you can still post text.</p>
+        {% endif %}
+    </section>
+
+    <!-- ── Feed ─────────────────────────────────────────────────────────── -->
+    <section id="cfFeed" class="cf-feed" aria-live="polite" aria-busy="true">
+        <div class="cf-skeleton" aria-hidden="true"></div>
+        <div class="cf-skeleton" aria-hidden="true"></div>
+    </section>
+
+    <div class="cf-feed-foot">
+        <button type="button" class="cf-load-more" id="cfLoadMore"
+                onclick="GMCommunity.loadMore()" hidden>Load more</button>
+        <p class="cf-empty" id="cfEmpty" hidden>
+            No posts yet. Be the first to share something!
+        </p>
+    </div>
+
+    {% endif %}
+</main>
+
+{# Read-only lightbox for media. #}
+<div class="cf-lightbox" id="cfLightbox" hidden role="dialog" aria-modal="true"
+     aria-label="Media viewer" onclick="GMCommunity.closeLightbox()">
+    <button type="button" class="cf-lightbox-close" aria-label="Close"
+            onclick="GMCommunity.closeLightbox()">×</button>
+    <div class="cf-lightbox-body" id="cfLightboxBody"></div>
+</div>
+
+{# Caption edit modal. #}
+<div class="cf-modal" id="cfEditModal" hidden role="dialog" aria-modal="true"
+     aria-labelledby="cfEditTitle">
+    <div class="cf-modal-card">
+        <h3 id="cfEditTitle">Edit caption</h3>
+        <label class="cf-sr-only" for="cfEditCaption">Caption</label>
+        <textarea id="cfEditCaption" class="cf-caption-input" rows="3"
+                  maxlength="{{ max_caption }}"></textarea>
+        <div class="cf-modal-foot">
+            <button type="button" class="cf-btn-ghost" onclick="GMCommunity.closeEdit()">Cancel</button>
+            <button type="button" class="cf-post-btn" id="cfEditSaveBtn"
+                    onclick="GMCommunity.saveEdit()">Save</button>
+        </div>
+    </div>
+</div>
+
+<div class="cf-toast" id="cfToast" role="status" aria-live="polite" hidden></div>
+
+{# ── Boot config ────────────────────────────────────────────────────────────
+   MUST come BEFORE the bundle: the script snapshots this object at parse time
+   (the documented GM_*_BOOT ordering landmine). #}
+<script>
+window.GM_COMMUNITY_BOOT = {
+    isGuest: {{ 'true' if is_guest else 'false' }},
+    wallet: {{ (wallet or '')|tojson }},
+    username: {{ (username or '')|tojson }},
+    usernameRequired: {{ 'true' if username_required else 'false' }},
+    loginMethod: {{ (login_method or '')|tojson }},
+    walletConnectProjectId: {{ (walletconnect_project_id or '')|tojson }},
+    assetVersion: {{ ASSET_VERSION|tojson }},
+    maxCaption: {{ max_caption }},
+    maxMedia: {{ max_media }},
+    maxImageMb: {{ max_image_mb }},
+    maxVideoMb: {{ max_video_mb }},
+    storageReady: {{ 'true' if storage_ready else 'false' }},
+    reactions: {
+        like: '👍', love: '❤️', haha: '😂',
+        wow: '😮', sad: '😢', angry: '😡'
+    }
+};
+</script>
+
+{% if is_guest %}
+{# The connect modal needs the WC bridge + in-app wallet, exactly like the
+   homepage, so the guest can actually create/log in from here. #}
+<script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/get-started.js', v=ASSET_VERSION) }}"></script>
+{% set get_started_boot = {'return_to': '/community'} %}
+{% include "_get_started_modal.html" %}
+{% else %}
+<script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
+{% endif %}
+
+</body>
+</html>
