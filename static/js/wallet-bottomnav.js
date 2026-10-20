@@ -107,3 +107,41 @@ function openBottomSheet(id) {
                 document.addEventListener('DOMContentLoaded', check);
             } else { check(); }
         })();
+
+        // ── Community Feed nav entry — injected from JS ────────────────────
+        // Same reason as the paluwagan entry above: wallet.html is served
+        // no-cache on a hard 200 KB budget, so this row is built here. It is
+        // only added when the admin feature flag reports the feed visible, and
+        // it is DARK by default (the flag row is seeded hidden).
+        (function _injectCommunityFeedNav() {
+            function build() {
+                var sheet = document.getElementById('bnSheetEarn');
+                if (!sheet || document.getElementById('bnCommunityFeedEntry')) return;
+                var anchor = document.getElementById('bnPaluwaganEntry');
+                var item = document.createElement('div');
+                item.className = 'bn-sheet-item';
+                item.id = 'bnCommunityFeedEntry';
+                item.innerHTML =
+                    '<div class="bn-sheet-circle" style="background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#1f1300;">&#128248;</div>' +
+                    '<div class="bn-sheet-name">Community Feed</div>';
+                item.addEventListener('click', function () {
+                    bnGo(function () { navigateWithFeedback('/community', 'Opening Community Feed\u2026'); });
+                });
+                if (anchor && anchor.parentNode === sheet) {
+                    anchor.insertAdjacentElement('afterend', item);
+                } else {
+                    sheet.appendChild(item);
+                }
+            }
+            function check() {
+                var boot = window.GM_WALLET_BOOT || {};
+                if (boot.communityFeedVisible === true) { build(); return; }
+                if (boot.communityFeedVisible === false) return;
+                fetch('/api/feature-visibility').then(function (r) { return r.json(); }).then(function (d) {
+                    if (d && d.community_feed_visible === true) build();
+                }).catch(function () { /* leave hidden on a failed probe */ });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', check);
+            } else { check(); }
+        })();
