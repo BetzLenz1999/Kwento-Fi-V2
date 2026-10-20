@@ -1,0 +1,418 @@
+/* GoodMarket Community Feed — self-contained styles.
+   Kept out of the template so community.html stays small and cacheable.
+
+   Palette matches the wallet/chatroom dark theme. Text colours are chosen to
+   clear WCAG AA (4.5:1) on the dark canvas; the gold chips carry DARK text
+   because white on amber fails. Animation is transform/opacity only — no
+   box-shadow or left/top keyframes (they repaint the whole element each frame). */
+
+:root {
+    --cf-bg: #0B0F2A;
+    --cf-bg2: #130D35;
+    --cf-card: rgba(255, 255, 255, 0.05);
+    --cf-card-solid: #171233;
+    --cf-border: rgba(255, 255, 255, 0.1);
+    --cf-ink: #f1f5f9;
+    --cf-dim: rgba(226, 232, 240, 0.62);
+    --cf-accent: #7c3aed;
+    --cf-accent-2: #a78bfa;
+    --cf-gold: #fbbf24;
+    --cf-gold-deep: #f59e0b;
+    --cf-gold-ink: #1f1300;
+    --cf-danger: #f87171;
+    --cf-ok: #34d399;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+    font-family: 'Sora', system-ui, -apple-system, sans-serif;
+    background:
+        radial-gradient(circle at 12% 6%, rgba(124, 58, 237, 0.18), transparent 44%),
+        radial-gradient(circle at 88% 14%, rgba(52, 211, 153, 0.10), transparent 42%),
+        var(--cf-bg);
+    color: var(--cf-ink);
+    min-height: 100dvh;
+    overflow-x: clip;
+}
+
+.cf-sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ── Nav ──────────────────────────────────────────────────────────────────── */
+.cf-nav {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: rgba(11, 15, 42, 0.92);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border-bottom: 1px solid var(--cf-border);
+}
+.cf-brand {
+    display: flex; align-items: center; gap: 0.5rem;
+    color: var(--cf-ink); text-decoration: none;
+    font-size: 0.95rem; font-weight: 600; min-width: 0;
+}
+.cf-brand strong { color: var(--cf-accent-2); }
+.cf-brand-mark { font-size: 1.15rem; }
+.cf-nav-right { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.cf-nav-btn {
+    font-family: inherit; font-size: 0.8rem; font-weight: 700;
+    color: var(--cf-ink); background: var(--cf-card);
+    border: 1px solid var(--cf-border); border-radius: 999px;
+    padding: 0.42rem 0.85rem; text-decoration: none; cursor: pointer;
+}
+.cf-nav-btn:hover { border-color: var(--cf-accent-2); }
+
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.cf-wrap {
+    width: 100%; max-width: 620px; margin: 0 auto;
+    padding: 1rem 0.85rem 4.5rem;
+    display: flex; flex-direction: column; gap: 1rem;
+}
+.cf-guest { padding-top: 1rem; }
+
+/* ── Composer ─────────────────────────────────────────────────────────────── */
+.cf-composer {
+    background: var(--cf-card); border: 1px solid var(--cf-border);
+    border-radius: 16px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.7rem;
+}
+.cf-composer-head { display: flex; align-items: center; gap: 0.6rem; }
+.cf-avatar {
+    width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+    display: grid; place-items: center; font-weight: 800; font-size: 0.95rem;
+    background: linear-gradient(135deg, var(--cf-accent), #4c1d95);
+    color: #fff;
+}
+.cf-composer-who { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.cf-composer-who strong { font-size: 0.9rem; }
+.cf-composer-who span { font-size: 0.72rem; color: var(--cf-dim); }
+
+.cf-caption-input {
+    font-family: inherit; font-size: 0.95rem; line-height: 1.5;
+    color: var(--cf-ink); background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--cf-border); border-radius: 12px;
+    padding: 0.7rem 0.8rem; width: 100%; resize: vertical;
+    min-height: 62px; max-height: 220px;
+}
+.cf-caption-input::placeholder { color: rgba(226, 232, 240, 0.42); }
+.cf-caption-input:focus { outline: 2px solid var(--cf-accent-2); outline-offset: 1px; }
+
+.cf-composer-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.6rem; flex-wrap: wrap;
+}
+.cf-composer-actions { display: flex; align-items: center; gap: 0.5rem; }
+.cf-composer-right { display: flex; align-items: center; gap: 0.7rem; margin-left: auto; }
+.cf-file-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    font-size: 0.8rem; font-weight: 700; cursor: pointer;
+    color: var(--cf-ink); background: var(--cf-card);
+    border: 1px solid var(--cf-border); border-radius: 999px;
+    padding: 0.45rem 0.8rem;
+}
+.cf-file-btn:hover { border-color: var(--cf-accent-2); }
+.cf-counter { font-size: 0.75rem; color: var(--cf-dim); font-variant-numeric: tabular-nums; }
+.cf-counter.is-near { color: var(--cf-gold); }
+.cf-counter.is-over { color: var(--cf-danger); }
+
+.cf-post-btn {
+    font-family: inherit; font-size: 0.85rem; font-weight: 800;
+    color: var(--cf-gold-ink);
+    background: linear-gradient(135deg, var(--cf-gold), var(--cf-gold-deep));
+    border: none; border-radius: 999px; padding: 0.55rem 1.3rem; cursor: pointer;
+}
+.cf-post-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.cf-post-btn:focus-visible { outline: 2px solid var(--cf-accent-2); outline-offset: 2px; }
+
+.cf-composer-hint { font-size: 0.72rem; color: var(--cf-dim); line-height: 1.45; }
+.cf-warn {
+    font-size: 0.76rem; color: var(--cf-gold); line-height: 1.45;
+    border-left: 3px solid var(--cf-gold); padding-left: 0.6rem;
+}
+
+/* ── Username gate ────────────────────────────────────────────────────────── */
+/* Shown only when the signed-in wallet has no username. Gold accent (the
+   brand's "do this now" colour) so it reads as the next step, not an error. */
+.cf-username-gate {
+    border: 1px solid rgba(251, 191, 36, 0.35);
+    background: rgba(251, 191, 36, 0.08);
+    border-radius: 12px;
+    padding: 0.7rem 0.75rem;
+    display: flex; flex-direction: column; gap: 0.5rem;
+}
+.cf-username-lead { font-size: 0.8rem; color: var(--cf-ink); line-height: 1.5; }
+.cf-username-row { display: flex; align-items: stretch; gap: 0.4rem; }
+.cf-username-at {
+    display: flex; align-items: center; padding: 0 0.15rem 0 0.5rem;
+    color: var(--cf-gold); font-weight: 700;
+}
+.cf-username-input {
+    flex: 1 1 auto; min-width: 0;
+    background: var(--cf-card-solid);
+    border: 1px solid var(--cf-border);
+    border-radius: 10px;
+    color: var(--cf-ink);
+    font-family: inherit; font-size: 0.9rem;
+    padding: 0.5rem 0.6rem;
+}
+.cf-username-input:focus-visible { outline: 2px solid var(--cf-accent-2); outline-offset: 1px; }
+.cf-username-save {
+    flex: 0 0 auto;
+    background: linear-gradient(135deg, var(--cf-gold), var(--cf-gold-deep));
+    color: var(--cf-gold-ink);
+    border: none; border-radius: 10px; cursor: pointer;
+    font-family: inherit; font-weight: 700; font-size: 0.82rem;
+    padding: 0.5rem 0.9rem;
+}
+.cf-username-save:disabled { opacity: 0.6; cursor: not-allowed; }
+.cf-username-save:focus-visible { outline: 2px solid var(--cf-accent-2); outline-offset: 2px; }
+.cf-username-hint { font-size: 0.7rem; color: var(--cf-dim); line-height: 1.4; }
+.cf-username-hint.is-error { color: var(--cf-danger); }
+
+/* ── Upload previews ──────────────────────────────────────────────────────── */
+.cf-previews { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.cf-preview {
+    position: relative; width: 78px; height: 78px; border-radius: 10px;
+    overflow: hidden; border: 1px solid var(--cf-border); background: #000;
+}
+.cf-preview img, .cf-preview video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cf-preview-remove {
+    position: absolute; top: 3px; right: 3px;
+    width: 22px; height: 22px; border-radius: 50%; border: none; cursor: pointer;
+    background: rgba(0, 0, 0, 0.72); color: #fff; font-size: 0.8rem; line-height: 1;
+    display: grid; place-items: center;
+}
+.cf-preview-bar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+    background: rgba(0, 0, 0, 0.5);
+}
+.cf-preview-bar > i { display: block; height: 100%; width: 0; background: var(--cf-gold); }
+.cf-preview.is-done .cf-preview-bar > i { background: var(--cf-ok); }
+.cf-preview.is-failed .cf-preview-bar > i { background: var(--cf-danger); }
+
+.cf-upload-status {
+    font-size: 0.78rem; color: var(--cf-dim);
+    display: flex; align-items: center; gap: 0.4rem;
+}
+.cf-upload-status.is-error { color: var(--cf-danger); }
+
+/* ── Post card ────────────────────────────────────────────────────────────── */
+.cf-feed { display: flex; flex-direction: column; gap: 1rem; }
+.cf-card {
+    background: var(--cf-card); border: 1px solid var(--cf-border);
+    border-radius: 16px; overflow: hidden;
+}
+.cf-card-head {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.75rem 0.9rem 0.6rem;
+}
+.cf-card-who { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; flex: 1; }
+.cf-card-who strong { font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-card-who span { font-size: 0.72rem; color: var(--cf-dim); }
+.cf-menu-btn {
+    font-family: inherit; font-size: 1.1rem; line-height: 1;
+    color: var(--cf-dim); background: transparent; border: none;
+    padding: 0.25rem 0.5rem; cursor: pointer; border-radius: 8px;
+}
+.cf-menu-btn:hover { background: var(--cf-card); color: var(--cf-ink); }
+
+.cf-media { background: #000; display: flex; flex-direction: column; }
+.cf-media img, .cf-media video {
+    width: 100%; max-height: 70dvh; object-fit: contain; display: block;
+    background: #000;
+}
+.cf-media img { cursor: zoom-in; }
+
+.cf-card-body { padding: 0.7rem 0.9rem 0.85rem; display: flex; flex-direction: column; gap: 0.55rem; }
+
+/* Reaction summary line (read-only) */
+.cf-summary {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.6rem; font-size: 0.78rem; color: var(--cf-dim);
+}
+.cf-summary-left { display: flex; align-items: center; gap: 0.35rem; }
+.cf-summary-emoji { font-size: 0.95rem; }
+.cf-count { font-variant-numeric: tabular-nums; }
+
+/* Caption */
+.cf-caption {
+    font-size: 0.92rem; line-height: 1.55; white-space: pre-wrap;
+    overflow-wrap: anywhere; color: var(--cf-ink);
+}
+.cf-caption.is-clamped {
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.cf-see-more {
+    font-family: inherit; font-size: 0.78rem; font-weight: 700;
+    color: var(--cf-accent-2); background: none; border: none;
+    padding: 0; cursor: pointer; align-self: flex-start;
+}
+.cf-meta { font-size: 0.72rem; color: var(--cf-dim); }
+
+/* Reaction bar — the six chips are ALWAYS visible (not behind a long-press):
+   a hidden gesture is undiscoverable on a cheap Android phone. */
+.cf-reactions {
+    display: flex; align-items: center; gap: 0.3rem;
+    border-top: 1px solid var(--cf-border); padding-top: 0.6rem;
+    flex-wrap: wrap;
+}
+.cf-chip {
+    font-family: inherit; font-size: 1.05rem; line-height: 1;
+    background: transparent; border: 1px solid transparent;
+    border-radius: 999px; padding: 0.3rem 0.5rem; cursor: pointer;
+    transition: transform 0.12s ease, background-color 0.12s ease;
+}
+.cf-chip:hover { background: var(--cf-card); }
+.cf-chip:active { transform: scale(1.22); }
+.cf-chip[aria-pressed="true"] {
+    background: linear-gradient(135deg, var(--cf-gold), var(--cf-gold-deep));
+    border-color: var(--cf-gold);
+}
+.cf-chip:focus-visible { outline: 2px solid var(--cf-accent-2); outline-offset: 2px; }
+
+.cf-card-actions {
+    display: flex; align-items: center; gap: 0.4rem;
+    border-top: 1px solid var(--cf-border); padding-top: 0.6rem; margin-top: 0.1rem;
+}
+.cf-action-btn {
+    font-family: inherit; font-size: 0.8rem; font-weight: 700;
+    color: var(--cf-dim); background: transparent; border: none;
+    padding: 0.4rem 0.6rem; border-radius: 8px; cursor: pointer;
+}
+.cf-action-btn:hover { background: var(--cf-card); color: var(--cf-ink); }
+
+/* Comments */
+.cf-comments { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.4rem; }
+.cf-comment { display: flex; gap: 0.5rem; align-items: flex-start; }
+.cf-comment-avatar {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    display: grid; place-items: center; font-size: 0.68rem; font-weight: 800;
+    background: rgba(124, 58, 237, 0.32); color: #fff;
+}
+.cf-comment-body {
+    background: rgba(0, 0, 0, 0.2); border-radius: 10px;
+    padding: 0.42rem 0.6rem; font-size: 0.84rem; line-height: 1.45;
+    overflow-wrap: anywhere; white-space: pre-wrap; flex: 1;
+}
+.cf-comment-body strong { display: block; font-size: 0.76rem; color: var(--cf-accent-2); }
+.cf-comment-form { display: flex; gap: 0.45rem; margin-top: 0.35rem; }
+.cf-comment-form input {
+    font-family: inherit; font-size: 0.85rem; flex: 1;
+    color: var(--cf-ink); background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--cf-border); border-radius: 999px;
+    padding: 0.45rem 0.75rem;
+}
+.cf-comment-form button {
+    font-family: inherit; font-size: 0.78rem; font-weight: 800;
+    color: var(--cf-gold-ink); background: var(--cf-gold);
+    border: none; border-radius: 999px; padding: 0.45rem 0.9rem; cursor: pointer;
+}
+.cf-comment-form button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Skeletons / empty / load more ────────────────────────────────────────── */
+.cf-skeleton {
+    height: 240px; border-radius: 16px;
+    background: linear-gradient(100deg, var(--cf-card) 30%, rgba(255,255,255,0.09) 50%, var(--cf-card) 70%);
+    background-size: 220% 100%;
+    animation: cfShimmer 1.4s linear infinite;
+}
+@keyframes cfShimmer { from { background-position: 140% 0; } to { background-position: -40% 0; } }
+
+.cf-feed-foot { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; }
+.cf-load-more {
+    font-family: inherit; font-size: 0.85rem; font-weight: 700;
+    color: var(--cf-ink); background: var(--cf-card);
+    border: 1px solid var(--cf-border); border-radius: 999px;
+    padding: 0.6rem 1.4rem; cursor: pointer;
+}
+.cf-load-more:disabled { opacity: 0.5; cursor: wait; }
+.cf-empty { font-size: 0.88rem; color: var(--cf-dim); text-align: center; padding: 1.5rem 0; }
+
+/* ── Lightbox ─────────────────────────────────────────────────────────────── */
+.cf-lightbox {
+    position: fixed; inset: 0; z-index: 100000;
+    background: rgba(4, 6, 18, 0.94);
+    display: grid; place-items: center; padding: 1rem;
+}
+.cf-lightbox[hidden] { display: none; }
+.cf-lightbox-body img, .cf-lightbox-body video {
+    max-width: 96vw; max-height: 88dvh; border-radius: 10px;
+}
+.cf-lightbox-close {
+    position: absolute; top: 0.7rem; right: 0.9rem;
+    font-size: 1.6rem; line-height: 1; color: #fff;
+    background: rgba(255, 255, 255, 0.14); border: none; border-radius: 50%;
+    width: 40px; height: 40px; cursor: pointer;
+}
+
+/* ── Edit modal ───────────────────────────────────────────────────────────── */
+.cf-modal {
+    position: fixed; inset: 0; z-index: 99990;
+    background: rgba(4, 6, 18, 0.72);
+    display: grid; place-items: center; padding: 1rem;
+}
+.cf-modal[hidden] { display: none; }
+.cf-modal-card {
+    width: 100%; max-width: 460px; background: var(--cf-card-solid);
+    border: 1px solid var(--cf-border); border-radius: 16px;
+    padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;
+}
+.cf-modal-card h3 { font-size: 1rem; }
+.cf-modal-foot { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.cf-btn-ghost {
+    font-family: inherit; font-size: 0.85rem; font-weight: 700;
+    color: var(--cf-ink); background: transparent;
+    border: 1px solid var(--cf-border); border-radius: 999px;
+    padding: 0.55rem 1.1rem; cursor: pointer;
+}
+
+/* ── Post options menu ────────────────────────────────────────────────────── */
+.cf-menu {
+    position: absolute; z-index: 99995; min-width: 180px;
+    background: var(--cf-card-solid); border: 1px solid var(--cf-border);
+    border-radius: 12px; padding: 0.3rem; display: flex; flex-direction: column;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+.cf-menu-item {
+    font-family: inherit; font-size: 0.85rem; text-align: left;
+    color: var(--cf-ink); background: transparent; border: none;
+    border-radius: 8px; padding: 0.55rem 0.7rem; cursor: pointer;
+}
+.cf-menu-item:hover { background: var(--cf-card); }
+.cf-menu-item.is-danger { color: var(--cf-danger); }
+
+/* ── Toast ────────────────────────────────────────────────────────────────── */
+.cf-toast {
+    position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
+    z-index: 100001; max-width: min(92vw, 420px);
+    background: var(--cf-card-solid); border: 1px solid var(--cf-border);
+    border-left: 3px solid var(--cf-accent-2);
+    color: var(--cf-ink); font-size: 0.84rem; line-height: 1.45;
+    border-radius: 12px; padding: 0.7rem 0.95rem;
+    animation: cfToastIn 0.18s ease-out;
+}
+.cf-toast[hidden] { display: none; }
+.cf-toast.is-error { border-left-color: var(--cf-danger); }
+.cf-toast.is-ok { border-left-color: var(--cf-ok); }
+@keyframes cfToastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+    .cf-wrap { padding: 0.75rem 0.6rem 4.5rem; }
+    .cf-brand span:not(.cf-brand-mark) { font-size: 0.85rem; }
+    .cf-composer-foot { align-items: flex-start; }
+    .cf-composer-right { width: 100%; justify-content: space-between; margin-left: 0; }
+    .cf-preview { width: 68px; height: 68px; }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    .cf-skeleton { animation: none; }
+    .cf-chip { transition: none; }
+    .cf-chip:active { transform: none; }
+    .cf-toast { animation: none; }
+}
