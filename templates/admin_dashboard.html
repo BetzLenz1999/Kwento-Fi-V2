@@ -852,6 +852,12 @@
                         <span>Chatroom Moderation</span>
                     </a>
                 </li>
+                <li class="menu-item">
+                    <a class="menu-link" onclick="showSection('community-feed-moderation-section')">
+                        <span class="menu-icon">📸</span>
+                        <span>Community Feed</span>
+                    </a>
+                </li>
             </ul>
         </aside>
 
@@ -2422,10 +2428,24 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                             </div>
                         </div>
                         <div style="display: flex; align-items: center; gap: 0.75rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 10px; flex: 1; min-width: 200px;">
+                            <span style="font-size: 1.5rem;">📸</span>
+                            <div>
+                                <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 0.25rem;">Community Feed (/community)</div>
+                                <span id="community-feed-status-badge" style="padding: 0.3rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem;"></span>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.75rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 10px; flex: 1; min-width: 200px;">
                             <span style="font-size: 1.5rem;">🔗</span>
                             <div>
                                 <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 0.25rem;">Connect a dApp</div>
                                 <span id="dapp-status-badge" style="padding: 0.3rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem;"></span>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.75rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 10px; flex: 1; min-width: 200px;">
+                            <span style="font-size: 1.5rem;">🤝</span>
+                            <div>
+                                <div style="font-weight: 600; color: #f1f5f9; margin-bottom: 0.25rem;">Community Savings (/paluwagan)</div>
+                                <span id="paluwagan-status-badge" style="padding: 0.3rem 0.75rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem;"></span>
                             </div>
                         </div>
                     </div>
@@ -2646,6 +2666,24 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                         💾 Save Community Savings Setting
                     </button>
                     <div id="paluwagan-visibility-result" style="margin-top: 1rem; display: none;"></div>
+                </div>
+
+                <div class="content-box">
+                    <h2 style="margin-bottom: 1rem;">📸 Community Feed</h2>
+                    <div style="margin-bottom: 0.75rem; padding: 0.75rem 1rem; background: rgba(167,139,250,0.10); border-radius: 8px; border-left: 3px solid #a78bfa; font-size: 0.88rem; color: rgba(241,245,249,0.85);">
+                        A Facebook/Instagram-style feed where users post their daily life with photos and videos. Media is stored in <strong>Cloudflare R2</strong> (set the <span style="font-family:monospace;">R2_*</span> environment variables) and only metadata lives in Supabase. Posts are signed by the user's own wallet — the server never holds a key for this feature. Run <span style="font-family:monospace;">sql/community_feed.sql</span> first. <strong>Hidden by default.</strong>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Visibility</label>
+                        <select id="community-feed-visibility-select" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
+                            <option value="false" selected>🚫 Hidden — the feed and its nav entry are not rendered</option>
+                            <option value="true">✅ Visible — Community Feed shown in the wallet Earn sheet</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="saveFeatureVisibility('community_feed_feature', 'community-feed-visibility-select', 'community-feed-visibility-result')" style="width: 100%; padding: 0.9rem; font-size: 1rem;">
+                        💾 Save Community Feed Setting
+                    </button>
+                    <div id="community-feed-visibility-result" style="margin-top: 1rem; display: none;"></div>
                 </div>
             </section>
 
@@ -3169,6 +3207,53 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 </div>
             </section>
 
+            <section id="community-feed-moderation-section" class="section">
+                <div class="page-header">
+                    <h1 class="page-title">📸 Community Feed</h1>
+                    <p style="color: rgba(241,245,249,0.7);">Review reported posts, hide or delete them, and block abusive wallets. Deleting a post also removes its photos/videos from Cloudflare R2. The feed itself is toggled from <strong>Feature Visibility → Community Feed</strong>.</p>
+                </div>
+
+                <div id="cfAdminStats" class="stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1rem;">
+                    <p style="color:rgba(241,245,249,0.6);">Loading…</p>
+                </div>
+
+                <div class="admin-card" style="margin-bottom:1rem;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.8rem;margin-bottom:0.8rem;">
+                        <h3 style="margin:0;color:#f1f5f9;">🚩 Reported Posts</h3>
+                        <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;">
+                            <select id="cfReportStatusFilter" onchange="loadCommunityFeedReports()"
+                                    style="background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.5rem 0.8rem;border-radius:8px;">
+                                <option value="open">Open</option>
+                                <option value="resolved">Resolved</option>
+                                <option value="dismissed">Dismissed</option>
+                                <option value="all">All</option>
+                            </select>
+                            <button class="btn" onclick="loadCommunityFeedReports()"
+                                    style="background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.5);color:#86efac;padding:0.4rem 0.9rem;border-radius:8px;cursor:pointer;font-weight:700;">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div id="cfReportsList" style="display:flex;flex-direction:column;gap:0.6rem;">
+                        <p style="color:rgba(241,245,249,0.6);">Loading…</p>
+                    </div>
+                </div>
+
+                <div class="admin-card">
+                    <h3 style="margin:0 0 0.8rem;color:#f1f5f9;">🚫 Banned Wallets</h3>
+                    <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+                        <input id="cfBanWallet" type="text" placeholder="0x wallet address"
+                               style="flex:1;min-width:240px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem 0.8rem;border-radius:8px;" />
+                        <input id="cfBanReason" type="text" placeholder="Reason (optional)"
+                               style="flex:1;min-width:180px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem 0.8rem;border-radius:8px;" />
+                        <button class="btn" onclick="banCommunityFeedWallet()"
+                                style="background:#ef4444;color:#fff;padding:0.6rem 1.1rem;border:none;border-radius:8px;cursor:pointer;font-weight:700;">
+                            Ban Wallet
+                        </button>
+                    </div>
+                </div>
+            </section>
+
             <section id="local-wallet-verification-section" class="section">
                 <div class="page-header">
                     <h1 class="page-title">🪪 Local Wallet Verification</h1>
@@ -3443,10 +3528,124 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     loadChatroomReports();
                     loadChatroomBans();
                     break;
+                case 'community-feed-moderation':
+                    loadCommunityFeedReports();
+                    break;
                 case 'local-wallet-verification':
                     loadLocalWalletVerification();
                     break;
             }
+        }
+
+        // ── Community Feed moderation ──────────────────────────────────
+        function _escCommunityFeed(value) {
+            const d = document.createElement('div');
+            d.textContent = value == null ? '' : String(value);
+            return d.innerHTML;
+        }
+
+        function _communityFeedTime(value) {
+            if (!value) return '—';
+            try { return new Date(value).toLocaleString(); } catch (e) { return String(value); }
+        }
+
+        async function loadCommunityFeedReports() {
+            const list = document.getElementById('cfReportsList');
+            const stats = document.getElementById('cfAdminStats');
+            if (list) list.innerHTML = '<p style="color:rgba(241,245,249,0.6);">Loading…</p>';
+            const status = (document.getElementById('cfReportStatusFilter') || {}).value || 'open';
+            try {
+                const res = await fetch('/community/api/admin/overview?status=' + encodeURIComponent(status), { credentials: 'same-origin' });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'Could not load reports.');
+
+                if (stats) {
+                    const s = data.stats || {};
+                    const storage = data.storage_ready
+                        ? '<span style="color:#86efac;">R2 configured</span>'
+                        : '<span style="color:#fca5a5;">R2 NOT configured</span>';
+                    stats.innerHTML =
+                        '<div class="stat-card"><div class="stat-value">' + (s.posts || 0) + '</div><div class="stat-label">Posts</div></div>' +
+                        '<div class="stat-card"><div class="stat-value">' + (s.open_reports || 0) + '</div><div class="stat-label">Open reports</div></div>' +
+                        '<div class="stat-card"><div class="stat-value">' + (s.bans || 0) + '</div><div class="stat-label">Banned wallets</div></div>' +
+                        '<div class="stat-card"><div class="stat-value" style="font-size:0.95rem;">' + storage + '</div><div class="stat-label">Media storage</div></div>';
+                }
+
+                if (!list) return;
+                const reports = data.reports || [];
+                if (!reports.length) {
+                    list.innerHTML = '<p style="color:rgba(241,245,249,0.6);">No ' + _escCommunityFeed(status) + ' reports.</p>';
+                    return;
+                }
+                list.innerHTML = '';
+                reports.forEach(function (r) {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.7rem 0.9rem;';
+                    const reason = r.reason ? _escCommunityFeed(r.reason) : '<em>no reason given</em>';
+                    row.innerHTML =
+                        '<div style="display:flex;justify-content:space-between;gap:0.6rem;flex-wrap:wrap;">' +
+                        '<strong style="color:#f1f5f9;">Post #' + _escCommunityFeed(r.post_id) + '</strong>' +
+                        '<span style="color:rgba(241,245,249,0.6);font-size:0.8rem;">' + _communityFeedTime(r.created_at) + ' · ' + _escCommunityFeed(r.status) + '</span>' +
+                        '</div>' +
+                        '<div style="color:rgba(241,245,249,0.8);font-size:0.85rem;margin:0.35rem 0;">' + reason + '</div>' +
+                        '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">' +
+                        '<a class="btn" href="/community#post-' + _escCommunityFeed(r.post_id) + '" target="_blank" rel="noopener" style="background:rgba(59,130,246,0.2);border:1px solid rgba(59,130,246,0.5);color:#93c5fd;padding:0.35rem 0.8rem;border-radius:8px;text-decoration:none;font-size:0.8rem;">Open post</a>' +
+                        '<button class="btn" onclick="hideCommunityFeedPost(' + Number(r.post_id) + ')" style="background:rgba(245,158,11,0.2);border:1px solid rgba(245,158,11,0.5);color:#fcd34d;padding:0.35rem 0.8rem;border-radius:8px;cursor:pointer;font-size:0.8rem;font-weight:700;">Hide</button>' +
+                        '<button class="btn" onclick="deleteCommunityFeedPost(' + Number(r.post_id) + ')" style="background:#ef4444;color:#fff;padding:0.35rem 0.8rem;border:none;border-radius:8px;cursor:pointer;font-size:0.8rem;font-weight:700;">Delete + purge media</button>' +
+                        '</div>';
+                    list.appendChild(row);
+                });
+            } catch (e) {
+                if (list) list.innerHTML = '<p style="color:#fca5a5;">' + _escCommunityFeed(e.message) + '</p>';
+            }
+        }
+
+        async function hideCommunityFeedPost(postId) {
+            if (!confirm('Hide post #' + postId + ' from the feed?')) return;
+            try {
+                const res = await fetch('/community/api/admin/posts/' + postId + '/hide', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hidden: true })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'Could not hide the post.');
+                alert('Post hidden.');
+                loadCommunityFeedReports();
+            } catch (e) { alert(e.message); }
+        }
+
+        async function deleteCommunityFeedPost(postId) {
+            if (!confirm('Delete post #' + postId + ' and permanently remove its photos/videos from R2?')) return;
+            try {
+                const res = await fetch('/community/api/admin/posts/' + postId, {
+                    method: 'DELETE', credentials: 'same-origin'
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'Could not delete the post.');
+                alert('Post deleted. ' + (data.deleted_objects || 0) + ' media file(s) removed from R2.');
+                loadCommunityFeedReports();
+            } catch (e) { alert(e.message); }
+        }
+
+        async function banCommunityFeedWallet() {
+            const wallet = (document.getElementById('cfBanWallet') || {}).value || '';
+            const reason = (document.getElementById('cfBanReason') || {}).value || '';
+            if (!wallet.trim()) { alert('Enter a wallet address.'); return; }
+            if (!confirm('Ban this wallet from posting in the Community Feed?')) return;
+            try {
+                const res = await fetch('/community/api/admin/bans', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallet: wallet.trim(), banned: true, reason: reason })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'Could not ban the wallet.');
+                document.getElementById('cfBanWallet').value = '';
+                document.getElementById('cfBanReason').value = '';
+                alert('Wallet banned.');
+                loadCommunityFeedReports();
+            } catch (e) { alert(e.message); }
         }
 
         // ── Local Wallet Verification ──────────────────────────────────
@@ -4131,6 +4330,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 _applyVisibilityBadge('chatroom-status-badge', data.chatroom_visible);
                 _applyVisibilityBadge('dapp-status-badge', data.dapp_connect_visible);
                 _applyVisibilityBadge('paluwagan-status-badge', data.paluwagan_visible);
+                _applyVisibilityBadge('community-feed-status-badge', data.community_feed_visible);
 
                 document.getElementById('swap-visibility-select').value = data.swap_visible !== false ? 'true' : 'false';
                 document.getElementById('wallet-visibility-select').value = data.wallet_visible !== false ? 'true' : 'false';
@@ -4145,6 +4345,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 document.getElementById('agent-visibility-select').value = data.goodmarket_agent_visible === true ? 'true' : 'false';
                 document.getElementById('dapp-visibility-select').value = data.dapp_connect_visible === true ? 'true' : 'false';
                 document.getElementById('paluwagan-visibility-select').value = data.paluwagan_visible !== false ? 'true' : 'false';
+                document.getElementById('community-feed-visibility-select').value = data.community_feed_visible === true ? 'true' : 'false';
             } catch (e) {
                 statusDiv.innerHTML = '<p style="color:#ef4444;">❌ Failed to load settings</p>';
             }
@@ -4180,7 +4381,8 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                         chatroom_feature: 'Community Chatroom',
                         goodmarket_agent_feature: 'GoodMarket Agent',
                         dapp_connect_feature: 'Connect a dApp',
-                        paluwagan_feature: 'Community Savings (Paluwagan)'
+                        paluwagan_feature: 'Community Savings (Paluwagan)',
+                        community_feed_feature: 'Community Feed'
                     };
                     const featureLabel = labelMap[feature] || feature;
                     resultDiv.textContent = visible
