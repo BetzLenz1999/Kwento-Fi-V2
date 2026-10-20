@@ -1169,6 +1169,164 @@
         });
     }
 
+    // ── Bottom nav / member search / Earn sheet ────────────────────────────
+    // The bar is built from `BOOT.nav` so the destination list lives in ONE
+    // place (the template's GM_COMMUNITY_BOOT). A destination marked `guestOk`
+    // is read-only (the feed, member search); every other one raises the shared
+    // connect card for a guest, exactly like the write actions above. Labels and
+    // usernames are written with textContent — user data never reaches markup.
+
+    var NAV = (BOOT.nav && BOOT.nav.length) ? BOOT.nav : [];
+    var SEARCH_MIN = 2;
+    var _searchTimer = null;
+    var _searchSeq = 0;
+
+    function buildNavItem(item) {
+        var isLink = !!item.href;
+        var node = document.createElement(isLink ? 'a' : 'button');
+        node.className = 'cf-nav-item' + (item.id === 'feed' ? ' is-active' : '');
+        node.setAttribute('data-nav', item.id || '');
+        if (isLink) node.href = item.href;
+        else node.type = 'button';
+        var icon = el('span', 'cf-nav-icon', item.icon || '');
+        icon.setAttribute('aria-hidden', 'true');
+        node.appendChild(icon);
+        node.appendChild(el('span', 'cf-nav-label', item.label || ''));
+        node.onclick = function (event) {
+            if (item.action === 'search') {
+                if (event && event.preventDefault) event.preventDefault();
+                openSearch();
+                return;
+            }
+            if (item.action === 'earn') {
+                if (event && event.preventDefault) event.preventDefault();
+                if (!WALLET) { requiresLogin(); return; }
+                openSheet();
+                return;
+            }
+            // A plain link. A guest may follow it only when it is read-only.
+            if (!item.guestOk && !WALLET) {
+                if (event && event.preventDefault) event.preventDefault();
+                requiresLogin();
+            }
+        };
+        return node;
+    }
+
+    function renderNav() {
+        var bar = $('cfBottomNav');
+        if (!bar) return;
+        bar.textContent = '';
+        NAV.forEach(function (item) { bar.appendChild(buildNavItem(item)); });
+    }
+
+    function openSearch() {
+        var bar = $('cfSearchBar');
+        if (!bar) return;
+        bar.hidden = false;
+        var input = $('cfSearchInput');
+        if (input && input.focus) input.focus();
+    }
+
+    function closeSearch() {
+        var bar = $('cfSearchBar');
+        if (bar) bar.hidden = true;
+        var input = $('cfSearchInput');
+        if (input) input.value = '';
+        var results = $('cfSearchResults');
+        if (results) results.textContent = '';
+        if (_searchTimer) { clearTimeout(_searchTimer); _searchTimer = null; }
+    }
+
+    function searchInput() {
+        if (_searchTimer) clearTimeout(_searchTimer);
+        _searchTimer = setTimeout(function () {
+            var input = $('cfSearchInput');
+            runSearch(input ? input.value : '');
+        }, 220);
+    }
+
+    function searchKeydown(event) {
+        if (event && event.key === 'Escape') closeSearch();
+    }
+
+    function runSearch(term) {
+        var cleaned = String(term === undefined || term === null ? '' : term).trim();
+        var results = $('cfSearchResults');
+        if (cleaned.length < SEARCH_MIN) {
+            if (results) {
+                results.textContent = '';
+                results.appendChild(el('p', 'cf-search-hint',
+                    'Type at least ' + SEARCH_MIN + ' characters to search members.'));
+            }
+            return Promise.resolve();
+        }
+        // Sequence guard: a slow early response must not overwrite a newer one.
+        var seq = ++_searchSeq;
+        return api('/community/api/users/search?q=' + encodeURIComponent(cleaned))
+            .then(function (result) {
+                if (seq !== _searchSeq) return;
+                renderSearchResults((result.data && result.data.users) || []);
+            })
+            .catch(function () {
+                if (seq !== _searchSeq) return;
+                renderSearchResults(null);
+            });
+    }
+
+    function renderSearchResults(users) {
+        var results = $('cfSearchResults');
+        if (!results) return;
+        results.textContent = '';
+        if (users === null) {
+            results.appendChild(el('p', 'cf-search-hint',
+                'Could not search right now. Please try again.'));
+            return;
+        }
+        if (!users.length) {
+            results.appendChild(el('p', 'cf-search-hint', 'No members found.'));
+            return;
+        }
+        users.forEach(function (user) {
+            var name = esc(user && user.username).trim();
+            if (!name) return;
+            var row = document.createElement('a');
+            row.className = 'cf-search-result';
+            row.href = '/community/u/' + encodeURIComponent(name);
+            row.setAttribute('role', 'option');
+            row.appendChild(el('span', 'cf-search-avatar', name[0].toUpperCase()));
+            row.appendChild(el('span', 'cf-search-name', '@' + name));
+            results.appendChild(row);
+        });
+    }
+
+    function openSheet() {
+        var sheet = $('cfSheetEarn');
+        if (!sheet) return;
+        var overlay = $('cfSheetOverlay');
+        if (overlay) overlay.classList.add('open');
+        sheet.classList.add('open');
+        document.body.classList.add('cf-modal-open');
+    }
+
+    function closeSheet() {
+        var sheet = $('cfSheetEarn');
+        if (sheet) sheet.classList.remove('open');
+        var overlay = $('cfSheetOverlay');
+        if (overlay) overlay.classList.remove('open');
+        document.body.classList.remove('cf-modal-open');
+    }
+
+    function sheetGo(href, message) {
+        closeSheet();
+        if (!href) return;
+        // The sheet's destinations are all signed-in features, so a guest that
+        // reached here (a stale DOM, a console call) still gets the connect card.
+        if (!WALLET) { requiresLogin(); return; }
+        if (message) toast(message, 'ok');
+        setTimeout(function () { window.location.href = href; }, 180);
+    }
+
     // ── Wiring ─────────────────────────────────────────────────────────────
 
     function bind() {
@@ -1222,7 +1380,7 @@
             });
         }
         document.addEventListener('keydown', function (event) {
-            if (event.key === 'Escape') { closeLightbox(); closeEdit(); }
+            if (event.key === 'Escape') { closeLightbox(); closeEdit(); closeSheet(); closeSearch(); }
         });
         updateCounter();
         updatePostButton();
@@ -1233,6 +1391,7 @@
         // The composer is absent from a guest's DOM, so bind()'s null-checks
         // make that half a no-op; the feed wiring is what matters here.
         bind();
+        renderNav();
         loadFeed(true);
         if (window.location.hash && /^#post-\d+$/.test(window.location.hash)) {
             var id = window.location.hash.replace('#post-', '');
@@ -1261,12 +1420,23 @@
         sharePost: sharePost,
         addFiles: addFiles,
         saveUsername: saveUsername,
+        openSearch: openSearch,
+        closeSearch: closeSearch,
+        searchInput: searchInput,
+        searchKeydown: searchKeydown,
+        openSheet: openSheet,
+        closeSheet: closeSheet,
+        sheetGo: sheetGo,
         // Exposed for the test harness (drives the real bodies).
         _internals: {
             timeAgo: timeAgo,
             countLabel: countLabel,
             linkifyInto: linkifyInto,
             buildCard: buildCard,
+            buildNavItem: buildNavItem,
+            renderNav: renderNav,
+            runSearch: runSearch,
+            renderSearchResults: renderSearchResults,
             prepareImage: prepareImage,
             updatePostButton: updatePostButton,
             needsUsername: needsUsername,
