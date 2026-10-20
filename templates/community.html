@@ -62,8 +62,33 @@
         <button type="button" class="gs-nav-cta" onclick="openGoodMarketGetStarted()">Get Started</button>
         {% else %}
         <button type="button" class="cf-nav-btn" id="cfRefreshBtn" onclick="GMCommunity.refresh()">↻ Refresh</button>
-        <a class="cf-nav-btn" href="/wallet">Wallet</a>
+        <a class="cf-nav-btn" href="/wallet">Your Wallet</a>
         {% endif %}
+    </div>
+
+    {# ── Member search ──────────────────────────────────────────────────────
+       Read-only, so guests get it too: the bar is toggled from the bottom nav
+       (and the nav CTA for members) and a signed-out visitor can still find and
+       open a public profile. Results link to `/community/u/<username>`; the
+       endpoint returns usernames only, never a wallet.
+
+       It lives INSIDE the sticky header so the two stick as one unit — as a
+       sibling it would need a hard-coded `top:` offset equal to the header's
+       height, which drifts the moment the header's padding changes. #}
+    <div class="cf-search" id="cfSearchBar" hidden role="search">
+        <label class="cf-sr-only" for="cfSearchInput">Search members</label>
+        <div class="cf-search-row">
+            <span class="cf-search-icon" aria-hidden="true">🔍</span>
+            <input type="search" id="cfSearchInput" class="cf-search-input"
+                   placeholder="Search members by username" autocomplete="off"
+                   spellcheck="false" maxlength="24"
+                   oninput="GMCommunity.searchInput()"
+                   onkeydown="GMCommunity.searchKeydown(event)">
+            <button type="button" class="cf-search-close" aria-label="Close search"
+                    onclick="GMCommunity.closeSearch()">×</button>
+        </div>
+        <div class="cf-search-results" id="cfSearchResults" role="listbox"
+             aria-label="Member search results"></div>
     </div>
 </header>
 
@@ -73,8 +98,8 @@
     <div class="cf-guest">
         {% with guest_card_icon='📸',
                 guest_card_kicker='Community Feed',
-                guest_card_title='Share your daily life',
-                guest_card_body='Post photos and videos, react and comment. Connect or create a free GoodMarket wallet to join — email + PIN, no app to install.' %}
+                guest_card_title='Join the conversation',
+                guest_card_body='Browse the community freely — reading is open to everyone. Connect or create a free GoodMarket wallet to react, comment and share your own photos and videos. Email + PIN, no app to install.' %}
             {% include "_guest_connect_card.html" %}
         {% endwith %}
     </div>
@@ -150,8 +175,13 @@
         <p class="cf-warn">Media uploads are not configured on this deployment yet — you can still post text.</p>
         {% endif %}
     </section>
+    {% endif %}
 
-    <!-- ── Feed ─────────────────────────────────────────────────────────── -->
+    <!-- ── Feed ────────────────────────────────────────────────────────────
+         Outside the is_guest branch on purpose: reading is PUBLIC. A guest
+         gets the same cards a member does. Only writing is gated — the JS
+         raises the shared connect card on react/comment, and the server
+         still rejects every unauthenticated write with a 401. -->
     <section id="cfFeed" class="cf-feed" aria-live="polite" aria-busy="true">
         <div class="cf-skeleton" aria-hidden="true"></div>
         <div class="cf-skeleton" aria-hidden="true"></div>
@@ -161,12 +191,68 @@
         <button type="button" class="cf-load-more" id="cfLoadMore"
                 onclick="GMCommunity.loadMore()" hidden>Load more</button>
         <p class="cf-empty" id="cfEmpty" hidden>
-            No posts yet. Be the first to share something!
+            {% if is_guest %}No posts yet.{% else %}No posts yet. Be the first to share something!{% endif %}
         </p>
     </div>
-
-    {% endif %}
 </main>
+
+{# ── Community bottom navigation ────────────────────────────────────────────
+   The same thumb-reachable bar the wallet uses, carrying the four community
+   destinations: the feed itself, member search (read-only, so guests get it
+   too), Buy Airtime (the Reloadly store) and Your Wallet. Earn opens a sheet
+   with the community's own earn destinations — see #cfSheetEarn.
+
+   A guest tapping Earn gets the shared connect card: the destinations behind
+   it are all signed-in features. #}
+<div class="cf-sheet-overlay" id="cfSheetOverlay" onclick="GMCommunity.closeSheet()"></div>
+
+<div class="cf-sheet" id="cfSheetEarn" role="dialog" aria-label="More ways to earn G$">
+    <div class="cf-sheet-handle"></div>
+    <div class="cf-sheet-title">💰 More Ways To Earn G$</div>
+    <div class="cf-sheet-grid">
+        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/minigames', 'Opening Play &amp; Earn…')">
+            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#f59e0b,#e11d48);color:#fff;">🎮</span>
+            <span class="cf-sheet-name">Play &amp; Earn</span>
+        </button>
+        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/learn-earn?from=community', 'Opening Learn &amp; Earn…')">
+            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;">📚</span>
+            <span class="cf-sheet-name">Learn &amp; Earn</span>
+        </button>
+        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/savings', 'Opening Savings…')">
+            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#0e7490,#155e75);color:#fff;">🏦</span>
+            <span class="cf-sheet-name">Savings</span>
+        </button>
+        {% if community_feed_visible %}
+        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/community', 'Opening Community Feed…')">
+            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;">📸</span>
+            <span class="cf-sheet-name">Community Feed</span>
+        </button>
+        {% endif %}
+        {% if chatroom_visible %}
+        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/chatroom', 'Opening Community Chat…')">
+            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#22c55e,#166534);color:#fff;">💬</span>
+            <span class="cf-sheet-name">Community Chat</span>
+        </button>
+        {% endif %}
+        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/farming', 'Opening Chicken Farming…')">
+            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#facc15,#f97316);color:#241300;">🐔</span>
+            <span class="cf-sheet-name">Farming</span>
+        </button>
+        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/p2p', 'Opening P2P Trading…')">
+            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;">🤝</span>
+            <span class="cf-sheet-name">P2P Trade</span>
+        </button>
+        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/trustpilot-task', 'Opening Trustpilot Review…')">
+            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#00b67a,#005128);color:#fff;">⭐</span>
+            <span class="cf-sheet-name">Trustpilot Review</span>
+        </button>
+    </div>
+</div>
+
+{# The nav is built in the bundle from `GM_COMMUNITY_BOOT.nav` (emitted in the
+   boot object below) so the destination list lives in ONE place. Labels are
+   written with textContent — user-supplied data never reaches it. #}
+<nav class="cf-bottom-nav" id="cfBottomNav" aria-label="Community navigation"></nav>
 
 {# Read-only lightbox for media. #}
 <div class="cf-lightbox" id="cfLightbox" hidden role="dialog" aria-modal="true"
@@ -211,6 +297,17 @@ window.GM_COMMUNITY_BOOT = {
     maxImageMb: {{ max_image_mb }},
     maxVideoMb: {{ max_video_mb }},
     storageReady: {{ 'true' if storage_ready else 'false' }},
+    // Destination list for the bottom nav. ONE source of truth: the bar is
+    // built from this object, so a new destination is added here only.
+    // `guestOk` marks a destination a signed-out visitor may reach (reading is
+    // public); a `!guestOk` tap raises the shared connect card instead.
+    nav: [
+        { id: 'feed',   icon: '🏠', label: 'Feed',        href: '/community',  guestOk: true },
+        { id: 'search', icon: '🔍', label: 'Search',      action: 'search',    guestOk: true },
+        { id: 'earn',   icon: '💰', label: 'Earn',        action: 'earn',      guestOk: false },
+        { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/#topup', guestOk: false },
+        { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet',     guestOk: false }
+    ],
     reactions: {
         like: '👍', love: '❤️', haha: '😂',
         wow: '😮', sad: '😢', angry: '😡'
@@ -235,6 +332,10 @@ window.GM_COMMUNITY_BOOT = {
 <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/get-started.js', v=ASSET_VERSION) }}"></script>
+{# The feed bundle loads for guests too: reading is public, and the bundle is
+   what renders the cards and raises the connect card on a gated write. It
+   signs nothing, so it needs no ethers of its own. #}
+<script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
 {% set get_started_boot = {'return_to': '/community'} %}
 {% include "_get_started_modal.html" %}
 {% else %}
