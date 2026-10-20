@@ -47,6 +47,11 @@ UPLOAD_BURST_ALLOWANCE = max(1, MAX_MEDIA_PER_POST) * 2
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 30
 
+# Follow-to-follow. A cap on how many accounts one wallet may follow, so a
+# scripted account cannot mint an unbounded edge table. The follower side is
+# unbounded on purpose (popularity is not a bug).
+FOLLOW_LIMIT = int(os.getenv("COMMUNITY_FOLLOW_LIMIT", "5000"))
+
 # A public post must carry a real username. Without this gate a user who never
 # picked one publishes a shortened wallet address, which looks like spam and
 # partly undoes the "the browser never sees an address" rule. Enforced in the
@@ -362,11 +367,13 @@ def verify_uploaded_object(plan: dict, head: dict | None,
 # ── Public shaping ───────────────────────────────────────────────────────────
 
 def _public_post(row: dict, media: list[dict], viewer: str | None,
-                 my_reaction: str | None = None) -> dict:
+                 my_reaction: str | None = None,
+                 is_following: bool = False) -> dict:
     """Shape a post for the browser.
 
     The wallet address is dropped and ownership is reduced to ``is_mine`` — a
-    boolean — so a feed response can never leak an address.
+    boolean — so a feed response can never leak an address. ``is_following``
+    likewise reduces the follow graph to a per-author boolean the viewer owns.
     """
     owner = (row.get("wallet_address") or "").lower()
     return {
@@ -378,6 +385,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         "comment_count": int(row.get("comment_count") or 0),
         "my_reaction": my_reaction,
         "is_mine": bool(viewer) and owner == viewer.lower(),
+        "is_following": bool(is_following),
         "is_edited": bool(row.get("edited_at")),
         "created_at": row.get("created_at"),
         "edited_at": row.get("edited_at"),
@@ -455,6 +463,167 @@ def _reactions_for_posts(supabase, post_ids: list[int],
         return {}
 
 
+def _follow_states(supabase, wallets: list[str],
+                   viewer: str | None) -> set[str]:
+    """Which of these author wallets the viewer follows, in ONE batched query.
+
+    Returns the set of followed wallets (lowercase). One query per feed page,
+    never one per card — the N+1 that a per-card `is_following` would cause.
+    """
+    if not wallets or not viewer:
+        return set()
+    wanted = sorted({(w or "").lower() for w in wallets if w})
+    if not wanted:
+        return set()
+    try:
+        result = (
+            supabase.table("community_feed_follows")
+            .select("followee_wallet")
+            .in_("followee_wallet", wanted)
+            .ilike("follower_wallet", viewer)
+            .execute()
+        )
+        return {
+            (row.get("followee_wallet") or "").lower()
+            for row in _rows(result)
+            if row.get("followee_wallet")
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: follow batch failed: %s", exc)
+        return set()
+
+
+def followers_count(wallet: str | None) -> int:
+    """How many wallets follow this one. 0 when the wallet is empty."""
+    if not wallet:
+        return 0
+    supabase = _get_supabase()
+    if not supabase:
+        return 0
+    return _count(supabase, "community_feed_follows",
+                  [("ilike", "followee_wallet", wallet)])
+
+
+def following_count(wallet: str | None) -> int:
+    """How many wallets this one follows."""
+    if not wallet:
+        return 0
+    supabase = _get_supabase()
+    if not supabase:
+        return 0
+    return _count(supabase, "community_feed_follows",
+                  [("ilike", "follower_wallet", wallet)])
+
+
+def _is_following(supabase, follower: str, followee: str) -> bool:
+    """Whether ``follower`` already follows ``followee`` (both wallets)."""
+    try:
+        result = (
+            supabase.table("community_feed_follows")
+            .select("follower_wallet")
+            .ilike("follower_wallet", follower)
+            .ilike("followee_wallet", followee)
+            .limit(1)
+            .execute()
+        )
+        return bool(_rows(result))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: follow lookup failed: %s", exc)
+        return False
+
+
+def follow_user(wallet: str | None, username: str | None) -> dict:
+    """Follow the member behind ``username``.
+
+    The client names a USERNAME only; the wallet is resolved server-side and is
+    never echoed back. Idempotent: following an already-followed member is a
+    SUCCESS, so a double-tap converges instead of surfacing an error. Refuses a
+    self-follow, a banned follower and a following-count over FOLLOW_LIMIT.
+    """
+    if not wallet:
+        return {"success": False, "error": "Not authenticated", "code": "auth"}
+    if is_banned(wallet):
+        return {"success": False, "error": "You cannot follow in the community.",
+                "code": "banned"}
+
+    target = wallet_for_username(username)
+    if not target:
+        return {"success": False, "error": "Member not found",
+                "code": "not_found"}
+    follower = wallet.lower()
+    followee = target.lower()
+    if follower == followee:
+        return {"success": False, "error": "You cannot follow yourself.",
+                "code": "self"}
+
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "code": "db"}
+
+    if _is_following(supabase, follower, followee):
+        # Idempotent success — the state the caller asked for already holds.
+        return {"success": True, "following": True,
+                "follower_count": followers_count(followee)}
+
+    if following_count(follower) >= FOLLOW_LIMIT:
+        return {"success": False, "error": "You are following too many members.",
+                "code": "limit"}
+
+    try:
+        supabase.table("community_feed_follows").insert({
+            "follower_wallet": follower,
+            "followee_wallet": followee,
+        }).execute()
+    except Exception as exc:  # noqa: BLE001
+        # A unique violation means a concurrent insert won the race; the caller
+        # wanted to follow, and the member IS now followed — treat it as success
+        # rather than reporting a failure for a state that already holds.
+        logger.warning("community_feed: follow insert failed: %s", exc)
+
+    return {"success": True, "following": True,
+            "follower_count": followers_count(followee)}
+
+
+def unfollow_user(wallet: str | None, username: str | None) -> dict:
+    """Stop following the member behind ``username``. Idempotent."""
+    if not wallet:
+        return {"success": False, "error": "Not authenticated", "code": "auth"}
+
+    target = wallet_for_username(username)
+    if not target:
+        return {"success": False, "error": "Member not found",
+                "code": "not_found"}
+
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "code": "db"}
+
+    try:
+        supabase.table("community_feed_follows").delete().ilike(
+            "follower_wallet", wallet).ilike(
+            "followee_wallet", target).execute()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: unfollow delete failed: %s", exc)
+        return {"success": False, "error": "Could not update your follows",
+                "code": "db"}
+
+    return {"success": True, "following": False,
+            "follower_count": followers_count(target)}
+
+
+def get_follow_counts(username: str | None) -> dict:
+    """Public follower/following counts for a member's profile."""
+    target = wallet_for_username(username)
+    if not target:
+        return {"success": False, "error": "Member not found",
+                "code": "not_found"}
+    return {
+        "success": True,
+        "followers": followers_count(target),
+        "following": following_count(target),
+    }
+
+
 def get_feed(viewer: str | None = None, cursor: int | None = None,
              limit: int | None = None, author: str | None = None) -> dict:
     """One keyset page of visible posts, newest first.
@@ -495,10 +664,17 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
     post_ids = [r.get("id") for r in rows if r.get("id") is not None]
     media = _media_for_posts(supabase, post_ids)
     reactions = _reactions_for_posts(supabase, post_ids, viewer)
+    # ONE batched query for "which of these authors does the viewer follow",
+    # never one per card.
+    followed = _follow_states(
+        supabase, [r.get("wallet_address") for r in rows], viewer)
 
     posts = [
-        _public_post(row, media.get(row.get("id"), []), viewer,
-                     reactions.get(row.get("id")))
+        _public_post(
+            row, media.get(row.get("id"), []), viewer,
+            reactions.get(row.get("id")),
+            is_following=(row.get("wallet_address") or "").lower() in followed,
+        )
         for row in rows
     ]
     return {
@@ -681,13 +857,18 @@ def _count(supabase, table: str, filters: list[tuple[str, str, object]]) -> int:
         return 0
 
 
-def get_public_profile(username: str | None) -> dict:
+def get_public_profile(username: str | None,
+                       viewer: str | None = None) -> dict:
     """Username-scoped public profile: identity + feed activity counts.
 
     Contains NO wallet, balance or private activity. ``post_count`` /
     ``album_count`` / ``media_count`` come from the feed's own tables; the
     public message count is owned by the chatroom and is hydrated by the page
     from the chatroom's own endpoint, so neither module reads the other's data.
+
+    ``viewer`` (a wallet, or None for a guest) only decides the viewer's OWN
+    ``is_following`` / ``is_self`` booleans — it never changes what is exposed
+    about the member.
     """
     name = normalize_username(username)
     if not name:
@@ -743,6 +924,12 @@ def get_public_profile(username: str | None) -> dict:
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_feed: profile album count failed: %s", exc)
 
+    followers = followers_count(wallet)
+    following = following_count(wallet)
+    is_self = bool(viewer) and viewer.lower() == wallet.lower()
+    is_following = bool(viewer) and not is_self and _is_following(
+        supabase, viewer.lower(), wallet.lower())
+
     return {
         "success": True,
         "profile": {
@@ -751,6 +938,10 @@ def get_public_profile(username: str | None) -> dict:
             "post_count": post_count,
             "album_count": album_count,
             "media_count": media_count,
+            "followers": followers,
+            "following": following,
+            "is_following": is_following,
+            "is_self": is_self,
         },
     }
 
