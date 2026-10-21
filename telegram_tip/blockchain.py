@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # on receipts). Polling several nodes for the receipt prevents a confirmed tip
 # from being reported as "not yet confirmed" just because one node is slow.
 _DEFAULT_CELO_FALLBACKS = "https://forno.celo.org,https://rpc.ankr.com/celo,https://celo.drpc.org"
-_DEFAULT_XDC_FALLBACKS = "https://earpc.xinfin.network,https://rpc.xinfin.network"
+_DEFAULT_XDC_FALLBACKS = "https://erpc.xinfin.network,https://rpc.xinfin.network"
 # How long to keep polling for a receipt before reporting submitted_unconfirmed.
 _RECEIPT_TIMEOUT_SEC = float(os.getenv("TIP_RECEIPT_TIMEOUT_SEC", "120") or "120")
 _RECEIPT_POLL_SEC = float(os.getenv("TIP_RECEIPT_POLL_SEC", "2.5") or "2.5")
