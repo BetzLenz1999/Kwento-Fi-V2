@@ -273,6 +273,7 @@
 <script>
     window.GM_GET_STARTED_BOOT = {
         returnTo: {{ _gs_boot.get('return_to', '')|default('', true)|tojson }},
+        postLoginPath: {{ POST_LOGIN_PATH|default('/community', true)|tojson }},
         wcSidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(false) else 'false' }},
         projectId: {{ walletconnect_project_id|default('', true)|tojson }},
         wcBundleUrl: {{ url_for('static', filename='js/wc-bundle.js', v=ASSET_VERSION)|tojson }},
@@ -444,7 +445,7 @@
                             ? ('✅ Privy login verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting…')
                             : '✅ Privy login verified. Redirecting…';
                         window.showWalletStatus?.('walletConnectStatus', okMsg, verifyData && verifyData.referral_warning ? 'warning' : 'success');
-                        const redirectTo = (verifyData && verifyData.redirect_to) || '/wallet';
+                        const redirectTo = (verifyData && verifyData.redirect_to) || (window.GM_GET_STARTED_BOOT && window.GM_GET_STARTED_BOOT.postLoginPath) || '/community';
                         try { sessionStorage.setItem('verified', 'true'); } catch (_) {}
                         window.GMPrivyLoginStarted = false;
                         setTimeout(() => { window.location.assign(redirectTo); }, verifyData && verifyData.referral_warning ? 2400 : 900);
