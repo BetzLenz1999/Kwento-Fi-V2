@@ -218,8 +218,9 @@
 {# ── Community bottom navigation ────────────────────────────────────────────
    The same thumb-reachable bar the wallet uses, carrying the four community
    destinations: the feed itself, member search (read-only, so guests get it
-   too), Buy Airtime (the Reloadly store) and Your Wallet. Earn opens a sheet
-   with the community's own earn destinations — see #cfSheetEarn.
+   too), Buy Airtime (the Reloadly store, opened in the in-page modal above)
+   and Your Wallet. Earn opens a sheet with the community's own earn
+   destinations — see #cfSheetEarn.
 
    A guest tapping Earn gets the shared connect card: the destinations behind
    it are all signed-in features. #}
@@ -265,6 +266,44 @@
             <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#00b67a,#005128);color:#fff;">⭐</span>
             <span class="cf-sheet-name">Trustpilot Review</span>
         </button>
+    </div>
+</div>
+
+{# ── Buy Airtime modal ──────────────────────────────────────────────────────
+   The Reloadly store (`/reloadly/?embed=1#topup`) rendered INSIDE the feed
+   instead of navigating away, the same way the wallet's G$ Raffle and Daily
+   Task open in place. The store page hides its own back-to-wallet chrome when
+   `embed=1`, so this dialog supplies the title and the close control.
+
+   The iframe's src is NOT set here: `openAirtime()` copies `data-src` on first
+   open, so the store's catalog scripts never load for a member who never taps
+   the button. `scale: 0.8` shrinks the store's own desktop-width layout to fit
+   the dialog so the whole catalogue is visible without horizontal scrolling. #}
+<div class="cf-airtime-modal" id="cfAirtimeModal" hidden role="dialog" aria-modal="true"
+     aria-labelledby="cfAirtimeTitle">
+    <div class="cf-airtime-overlay" onclick="GMCommunity.closeAirtime()"></div>
+    <div class="cf-airtime-card">
+        <div class="cf-airtime-head">
+            <div>
+                <div class="cf-airtime-kicker">Mobile Top-Up</div>
+                <h3 id="cfAirtimeTitle">📱 Buy Airtime</h3>
+            </div>
+            <div class="cf-airtime-actions">
+                {# Escape hatch. Some signing paths only work top-level: an injected
+                   wallet (MiniPay / Trust) may not expose `window.ethereum` to a
+                   frame, and Privy opens its own popups. `target="_top"` also
+                   escapes in the case where the feed itself is framed. #}
+                <a class="cf-airtime-expand" href="/reloadly/#topup" target="_top"
+                   rel="noopener">Open full page ↗</a>
+                <button type="button" class="cf-airtime-close" aria-label="Close Buy Airtime"
+                        onclick="GMCommunity.closeAirtime()">×</button>
+            </div>
+        </div>
+        <div class="cf-airtime-body">
+            <iframe id="cfAirtimeFrame" title="Buy Airtime — GoodMarket Store"
+                    data-src="/reloadly/?embed=1#topup"
+                    loading="lazy" referrerpolicy="no-referrer"></iframe>
+        </div>
     </div>
 </div>
 
@@ -333,7 +372,7 @@ window.GM_COMMUNITY_BOOT = {
         { id: 'feed',   icon: '🏠', label: 'Feed',        href: '/community',  guestOk: true },
         { id: 'search', icon: '🔍', label: 'Search',      action: 'search',    guestOk: true },
         { id: 'earn',   icon: '💰', label: 'Earn',        action: 'earn',      guestOk: false },
-        { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/#topup', guestOk: false },
+        { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
         { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet',     guestOk: false }
     ],
     reactions: {
