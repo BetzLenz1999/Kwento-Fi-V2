@@ -18,14 +18,12 @@
     var BOOT = window.GM_COMMUNITY_BOOT || {};
     var WALLET = BOOT.wallet || '';
     var USERNAME = BOOT.username || '';
-    var AVATAR_URL = BOOT.avatarUrl || '';
     var USERNAME_REQUIRED = BOOT.usernameRequired !== false;
     var REACTIONS = BOOT.reactions || {};
     var MAX_CAPTION = BOOT.maxCaption || 2200;
     var MAX_MEDIA = BOOT.maxMedia || 4;
     var MAX_IMAGE_MB = BOOT.maxImageMb || 10;
     var MAX_VIDEO_MB = BOOT.maxVideoMb || 100;
-    var MAX_AVATAR_MB = BOOT.maxAvatarMb || 5;
     var STORAGE_READY = !!BOOT.storageReady;
 
     var LONG_EDGE = 2048;      // downscale target for images
@@ -59,36 +57,6 @@
     }
 
     function esc(text) { return String(text === undefined || text === null ? '' : text); }
-
-    /* ── Avatars ──────────────────────────────────────────────────────────
-       A member's profile picture is a PUBLIC R2 URL that arrives on every feed
-       response (never a wallet). `avatarNode` renders the picture when there is
-       one and falls back to the username's initial — the same element shape in
-       both cases, so the CSS ring is identical with or without a photo. */
-    function avatarNode(url, username, className) {
-        var node = el('span', className || 'cf-avatar');
-        node.setAttribute('aria-hidden', 'true');
-        renderAvatarInto(node, url, username);
-        return node;
-    }
-
-    function renderAvatarInto(node, url, username) {
-        if (!node) return;
-        node.textContent = '';
-        var src = esc(url).trim();
-        if (src) {
-            var img = document.createElement('img');
-            img.className = 'cf-avatar-img';
-            img.src = src;
-            img.alt = '';
-            img.loading = 'lazy';
-            img.decoding = 'async';
-            img.referrerPolicy = 'no-referrer';
-            node.appendChild(img);
-            return;
-        }
-        node.textContent = (esc(username) || 'A')[0].toUpperCase();
-    }
 
     function toast(message, kind) {
         var node = $('cfToast');
@@ -560,22 +528,6 @@
         });
     }
 
-    // ── Profile picture (avatar) ───────────────────────────────────────────
-    // The upload + modal live in the SHARED `community-avatar.js` (loaded by
-    // both this page and the public profile, so the picture has one owner).
-    // This bundle only RENDERS avatars and repaints its own cards when the
-    // shared module reports a change.
-
-    function onAvatarChanged(url) {
-        AVATAR_URL = url || '';
-        // Repaint the viewer's own cards so the new picture shows without a
-        // full feed refetch. Other members' cards are untouched.
-        _feed.forEach(function (post) {
-            if (post.is_mine) post.avatar_url = AVATAR_URL || null;
-        });
-        renderFeed();
-    }
-
     function updatePostButton() {
         var button = $('cfPostBtn');
         var input = $('cfCaption');
@@ -806,11 +758,7 @@
             String(post.username || '').replace(/^@/, ''));
         profile.title = 'View @' + post.username + "'s profile";
         profile.setAttribute('aria-label', 'View @' + post.username + "'s profile");
-        // Facebook-style circular picture: the member's uploaded photo when
-        // there is one, their initial otherwise. `cf-avatar-ring` draws the
-        // gradient ring around it.
-        profile.appendChild(avatarNode(post.avatar_url, post.username,
-            'cf-avatar cf-avatar-ring'));
+        profile.appendChild(el('div', 'cf-avatar', (esc(post.username) || 'A')[0].toUpperCase()));
         var who = el('div', 'cf-card-who');
         who.appendChild(el('strong', null, post.username));
         var stamp = timeAgo(post.created_at) + (post.is_edited ? ' · edited' : '');
@@ -1024,8 +972,7 @@
         var comments = _commentCache[post.id] || [];
         comments.forEach(function (comment) {
             var row = el('div', 'cf-comment');
-            row.appendChild(avatarNode(comment.avatar_url, comment.username,
-                'cf-comment-avatar'));
+            row.appendChild(el('div', 'cf-comment-avatar', (esc(comment.username) || 'A')[0].toUpperCase()));
             var bubble = el('div', 'cf-comment-body');
             bubble.appendChild(el('strong', null, comment.username));
             bubble.appendChild(document.createTextNode(comment.body));
@@ -1432,8 +1379,7 @@
             row.className = 'cf-search-result';
             row.href = '/community/u/' + encodeURIComponent(name);
             row.setAttribute('role', 'option');
-            row.appendChild(avatarNode(user && user.avatar_url, name,
-                'cf-search-avatar'));
+            row.appendChild(el('span', 'cf-search-avatar', name[0].toUpperCase()));
             row.appendChild(el('span', 'cf-search-name', '@' + name));
             results.appendChild(row);
         });
@@ -1489,18 +1435,6 @@
                 fileInput.value = '';
             });
         }
-        var avatarInput = $('cfAvatarInput');
-        if (avatarInput && window.GMCommunityAvatar) {
-            avatarInput.addEventListener('change', function () {
-                window.GMCommunityAvatar.pickFile(avatarInput.files);
-                avatarInput.value = '';
-            });
-        }
-        // The shared avatar module owns the modal + upload; the feed only needs
-        // to repaint its own cards when the picture changes.
-        if (window.GMCommunityAvatar) {
-            window.GMCommunityAvatar.onChange(onAvatarChanged);
-        }
         // Enter saves the username, so the gate is one keystroke to clear.
         var usernameInput = $('cfUsernameInput');
         if (usernameInput) {
@@ -1531,10 +1465,7 @@
             });
         }
         document.addEventListener('keydown', function (event) {
-            if (event.key === 'Escape') {
-                closeLightbox(); closeEdit(); closeSheet(); closeSearch();
-                if (window.GMCommunityAvatar) window.GMCommunityAvatar.close();
-            }
+            if (event.key === 'Escape') { closeLightbox(); closeEdit(); closeSheet(); closeSearch(); }
         });
         updateCounter();
         updatePostButton();
@@ -1574,15 +1505,6 @@
         sharePost: sharePost,
         addFiles: addFiles,
         saveUsername: saveUsername,
-        openAvatarModal: function () {
-            if (window.GMCommunityAvatar) window.GMCommunityAvatar.open();
-        },
-        closeAvatarModal: function () {
-            if (window.GMCommunityAvatar) window.GMCommunityAvatar.close();
-        },
-        removeAvatar: function () {
-            if (window.GMCommunityAvatar) window.GMCommunityAvatar.remove();
-        },
         openSearch: openSearch,
         closeSearch: closeSearch,
         searchInput: searchInput,
@@ -1599,11 +1521,6 @@
             buildNavItem: buildNavItem,
             buildFollowButton: buildFollowButton,
             buildVideoFrame: buildVideoFrame,
-            avatarNode: avatarNode,
-            renderAvatarInto: renderAvatarInto,
-            onAvatarChanged: onAvatarChanged,
-            getAvatarUrl: function () { return AVATAR_URL; },
-            setAvatarUrl: function (value) { AVATAR_URL = value || ''; },
             toggleFollow: toggleFollow,
             setFollowButton: setFollowButton,
             renderNav: renderNav,
