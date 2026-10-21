@@ -1422,6 +1422,17 @@
                 openSheet();
                 return;
             }
+            if (item.action === 'airtime') {
+                // Buy Airtime opens the Reloadly store in the in-page modal
+                // instead of navigating: a member stays in the feed, exactly
+                // like the wallet's Raffle / Daily Task dialogs. The href is
+                // kept so the item is still a real link (middle-click, and a
+                // no-JS fallback to the store page).
+                if (event && event.preventDefault) event.preventDefault();
+                if (!WALLET) { requiresLogin(); return; }
+                openAirtime();
+                return;
+            }
             // A plain link. A guest may follow it only when it is read-only.
             if (!item.guestOk && !WALLET) {
                 if (event && event.preventDefault) event.preventDefault();
@@ -1556,6 +1567,38 @@
         setTimeout(function () { window.location.href = href; }, 180);
     }
 
+    /* ── Buy Airtime modal ──────────────────────────────────────────────────
+       The Reloadly store in an iframe, so a member never leaves the feed (the
+       owner's ask: same in-place behaviour as the wallet's Raffle / Daily Task).
+       `src` is copied from `data-src` on the FIRST open only, so the store's
+       catalog scripts do not load for someone who never taps the button. The
+       frame is left mounted on close — reloading it on every open would refetch
+       the whole store, and the store keeps the member's country/operator choice
+       while they read the feed. */
+    var _airtimeOpened = false;
+
+    function openAirtime() {
+        var modal = $('cfAirtimeModal');
+        if (!modal) return;
+        var frame = $('cfAirtimeFrame');
+        if (frame && !_airtimeOpened) {
+            var src = frame.getAttribute('data-src');
+            if (src) frame.src = src;
+            _airtimeOpened = true;
+        }
+        modal.hidden = false;
+        document.body.classList.add('cf-modal-open');
+    }
+
+    function closeAirtime() {
+        var modal = $('cfAirtimeModal');
+        if (modal) modal.hidden = true;
+        // Only release the scroll lock when no other dialog wants it.
+        var sheet = $('cfSheetEarn');
+        var sheetOpen = sheet && sheet.classList.contains('open');
+        if (!sheetOpen) document.body.classList.remove('cf-modal-open');
+    }
+
     // ── Wiring ─────────────────────────────────────────────────────────────
 
     function bind() {
@@ -1623,6 +1666,7 @@
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape') {
                 closeLightbox(); closeEdit(); closeSheet(); closeSearch();
+                closeAirtime();
                 if (window.GMCommunityAvatar) window.GMCommunityAvatar.close();
             }
         });
@@ -1680,6 +1724,8 @@
         openSheet: openSheet,
         closeSheet: closeSheet,
         sheetGo: sheetGo,
+        openAirtime: openAirtime,
+        closeAirtime: closeAirtime,
         // Exposed for the test harness (drives the real bodies).
         _internals: {
             timeAgo: timeAgo,
