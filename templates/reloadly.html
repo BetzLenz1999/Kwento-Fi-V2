@@ -627,8 +627,32 @@
     </script>
     <!-- Shared Get Started modal styles (guest connect flow). -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
+    {% if is_embed %}
+    {# `?embed=1`: the store is inside the community feed's Buy Airtime modal.
+       The dialog already supplies a title and a close button, so the store's
+       own chrome would duplicate it. `body.gm-embed` hides that chrome; the
+       catalogue, checkout and payment modal are untouched, so a purchase made
+       here behaves exactly like one made on the standalone page. #}
+    <style>
+        body.gm-embed .top-bar { display: none; }
+        body.gm-embed .tab-content { padding: 14px; }
+        body.gm-embed { min-height: auto; }
+        .gm-embed-blocked {
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 12px; text-align: center;
+            min-height: 60vh; padding: 24px;
+        }
+        .gm-embed-blocked h2 { font-size: 17px; color: #fff; }
+        .gm-embed-blocked p { font-size: 13px; color: #aaa; line-height: 1.6; max-width: 420px; }
+        .gm-embed-blocked a {
+            display: inline-block; padding: 11px 22px; border-radius: 8px;
+            background: linear-gradient(135deg, #5c6bc0, #7986cb);
+            color: #fff; font-weight: 600; font-size: 14px; text-decoration: none;
+        }
+    </style>
+    {% endif %}
 </head>
-<body>
+<body class="{% if is_embed %}gm-embed{% endif %}">
 <script>window.GM_RELOADLY_GUEST = {% if is_guest %}true{% else %}false{% endif %};</script>
 
 <div class="top-bar">
@@ -642,6 +666,18 @@
     <button type="button" class="gs-nav-cta" onclick="openGoodMarketGetStarted()">Get Started</button>
     {% endif %}
 </div>
+
+{% if is_embed and embed_blocked %}
+{# Unverified wallet inside the modal. A top-level redirect to /wallet would
+   load the whole wallet page into the dialog, so the store renders the notice
+   in place and the CTA escapes the frame (`target="_top"`). #}
+<div class="gm-embed-blocked">
+    <div style="font-size:44px">🪪</div>
+    <h2>Face verification needed</h2>
+    <p>Buying airtime requires a face-verified GoodDollar wallet. Finish verification in the wallet, then reopen this window.</p>
+    <a href="/wallet?fv_required=1" target="_top">Verify in Wallet</a>
+</div>
+{% else %}
 
 {% if is_guest %}
 <div class="tab-content active" style="display:block">
@@ -821,6 +857,7 @@
         <div id="orderList"><div class="loading"><i class="fas fa-spinner"></i></div></div>
     </div>
 </div>
+{% endif %}
 {% endif %}
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
