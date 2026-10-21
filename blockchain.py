@@ -2266,7 +2266,7 @@ def _build_xdc_rpc_urls() -> list:
     # read, which MetaMask surfaces as a red "Insufficient funds" fee row plus
     # a blocking "Review alerts" button on the XDC claim.
     urls.extend([
-        "https://earpc.xinfin.network",
+        "https://erpc.xinfin.network",
         "https://rpc.ankr.com/xdc",
         "https://erpc.xdcrpc.com",
         "https://rpc.xdcrpc.com",
@@ -2686,7 +2686,7 @@ def get_xdc_transfer_history(wallet_address: str, limit: int = 30) -> list:
                     "tx_hash":   tx.get("hash", ""),
                     "block":     int(tx.get("blockNumber", 0)),
                     "timestamp": tx.get("timeStamp", ""),
-                    "explorer_url": f"https://explorer.xinfin.network/txs/{tx.get('hash', '')}",
+                    "explorer_url": f"https://xdcscan.io/tx/{tx.get('hash', '')}",
                 })
             except Exception:
                 continue
