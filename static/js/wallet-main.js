@@ -4725,6 +4725,15 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         const XDC_RPC_BANNER_FIXED_KEY = 'gmXdcRpcRepairDone_v1';
         const XDC_RPC_BANNER_THROTTLE_MS = 24 * 60 * 60 * 1000; // 1 nag / day
 
+        // The manual fallback when the one-tap update does not stick. A wallet
+        // that already has XDC Network keeps its user-chosen default RPC: EIP-1193
+        // forbids changing it silently and there is no method to set it, so
+        // wallet_addEthereumChain only APPENDS our URLs. The user must pick the
+        // healthy entry as the DEFAULT — "set the RPC URL" alone sends them to the
+        // wrong field (the RPC field is already filled, so the old host wins).
+        // Plain text: the banner and in-modal repair statuses write via textContent.
+        const XDC_MANUAL_RPC_STEPS_TEXT = 'In MetaMask: Settings → Networks → XDC Network → ⋯ Edit → Default RPC URL → https://erpc.xinfin.network (tap “Add RPC URL” if it is not listed), then Save.';
+
         function _xdcBannerEl() { return document.getElementById('xdcRpcRepairBanner'); }
         function _xdcBannerStatusEl() { return document.getElementById('xdcRpcRepairStatus'); }
 
@@ -4816,13 +4825,16 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                     _xdcBannerSetStatus('✅ XDC network updated. You can claim now.', '#34d399');
                     setTimeout(_hideXdcRpcBanner, 4000);
                 } else {
-                    _xdcBannerSetStatus('Network updated, but your wallet still reads slowly. Please retry, or remove and re-add XDC Network.', '#fcd34d');
+                    // The append-only update did not change the wallet's default
+                    // RPC — tell the user the exact field to change rather than a
+                    // generic "retry".
+                    _xdcBannerSetStatus('The network update did not take effect — your wallet may still use the old default RPC. ' + XDC_MANUAL_RPC_STEPS_TEXT + ' If it still fails, remove and re-add XDC Network.', '#fcd34d');
                 }
             } catch (err) {
                 if (err && err.code === 4001) {
                     _xdcBannerSetStatus('Update cancelled. You can tap “Fix XDC network” again anytime.', '#fcd34d');
                 } else {
-                    _xdcBannerSetStatus('Could not update the network automatically. In your wallet: Settings → Networks → XDC Network → set the RPC URL to https://erpc.xinfin.network', '#f87171');
+                    _xdcBannerSetStatus('Could not update the network automatically. ' + XDC_MANUAL_RPC_STEPS_TEXT, '#f87171');
                 }
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = '🔧 Fix XDC network'; }
@@ -4889,7 +4901,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                         if (err && err.code === 4001) {
                             setFixStatus('Update cancelled. You can tap “Fix XDC network” again anytime.', '#fcd34d');
                         } else {
-                            setFixStatus('Could not update the network automatically. In your wallet: Settings → Networks → XDC Network → set the RPC URL to https://erpc.xinfin.network', '#f87171');
+                            setFixStatus('Could not update the network automatically. ' + XDC_MANUAL_RPC_STEPS_TEXT, '#f87171');
                         }
                         resetBtn();
                     }
@@ -7475,7 +7487,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 // get past it, since the wallet UI itself does not explain it.
                 if (network === 'xdc') {
                     appendStatusLine(
-                        '📲 Confirm the transaction in your wallet. If MetaMask shows a red <strong>Network fee</strong> row and a <strong>“⚠ Review alerts”</strong> button instead of Confirm, your wallet could not validate the XDC fee/balance — that is a wallet RPC problem, not a funds problem (the button cannot be tapped past it). Fix it by setting your XDC Network RPC URL to <strong>https://erpc.xinfin.network</strong> (Settings → Networks → XDC Network → RPC URL), then retry the claim.',
+                        '📲 Confirm the transaction in your wallet. If MetaMask shows a red <strong>Network fee</strong> row and a <strong>“⚠ Review alerts”</strong> button instead of Confirm, your wallet could not validate the XDC fee/balance — that is a wallet RPC problem, not a funds problem (the button cannot be tapped past it). Fix it by setting your XDC Network <strong>Default RPC URL</strong> to <strong>https://erpc.xinfin.network</strong> (Settings → Networks → XDC Network → ⋯ Edit → Default RPC URL), then retry the claim.',
                         'var(--text-dim)'
                     );
                 }
@@ -7506,11 +7518,11 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 if (_isUserRejectedError(err)) {
                     msg = `${network.toUpperCase()} transaction cancelled.`;
                 } else if (network === 'xdc' && _isWalletRpcUnreachableError(err)) {
-                    msg = "Your wallet's XDC RPC endpoint is offline. Open your wallet's XDC Network settings and set the RPC URL to <strong>https://erpc.xinfin.network</strong> (or remove &amp; re-add XDC Network), then retry.";
+                    msg = "Your wallet's XDC RPC endpoint is offline. In MetaMask: Settings → Networks → XDC Network → ⋯ Edit → <strong>Default RPC URL</strong> → <strong>https://erpc.xinfin.network</strong> (tap “Add RPC URL” if it is not listed), then Save. If it still fails, remove &amp; re-add XDC Network, then retry.";
                 } else if (_isRpcHtmlError(err)) {
                     msg = `${network.toUpperCase()} network is temporarily busy. Please retry in 30–60 seconds.`;
                 } else if (network === 'xdc' && _isNetworkFeeUnavailableError(err)) {
-                    msg = "Your wallet could not work out the XDC network fee. Open your wallet's XDC Network settings and set the RPC URL to <strong>https://erpc.xinfin.network</strong> (or remove &amp; re-add XDC Network), then retry.";
+                    msg = "Your wallet could not work out the XDC network fee. In MetaMask: Settings → Networks → XDC Network → ⋯ Edit → <strong>Default RPC URL</strong> → <strong>https://erpc.xinfin.network</strong> (tap “Add RPC URL” if it is not listed), then Save. If it still fails, remove &amp; re-add XDC Network, then retry.";
                 } else if (err && err.__simulationBlock) {
                     msg = raw;
                 } else if (window.GMTxError && GMTxError.format) {
