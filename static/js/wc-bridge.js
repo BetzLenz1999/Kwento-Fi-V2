@@ -75,7 +75,7 @@
         "0x32": { // XDC Network Mainnet
             name: "XDC Network",
             chainId: 50,
-            rpc: "https://earpc.xinfin.network",
+            rpc: "https://erpc.xinfin.network",
             nativeCurrency: {
                 name: "XDC",
                 symbol: "XDC",
