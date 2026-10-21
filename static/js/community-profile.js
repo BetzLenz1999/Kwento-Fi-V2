@@ -210,34 +210,13 @@
         return frame;
     }
 
-    // A member's profile picture, or their initial. Same element shape as the
-    // feed's `cf-avatar`, so both views read as one product.
-    function avatarNode(url, username, className) {
-        var node = el('span', className || 'cp-avatar cp-avatar-sm');
-        node.setAttribute('aria-hidden', 'true');
-        var src = String(url === undefined || url === null ? '' : url).trim();
-        if (src) {
-            var img = document.createElement('img');
-            img.className = 'cp-avatar-img';
-            img.src = src;
-            img.alt = '';
-            img.loading = 'lazy';
-            img.decoding = 'async';
-            img.referrerPolicy = 'no-referrer';
-            node.appendChild(img);
-        } else {
-            node.textContent = (String(username || 'A'))[0].toUpperCase();
-        }
-        return node;
-    }
-
     function buildPostCard(post) {
         var card = el('article', 'cp-card cp-post');
         card.setAttribute('data-post-id', post.id);
 
         var head = el('div', 'cp-post-head');
-        head.appendChild(avatarNode(post.avatar_url, post.username,
-            'cp-avatar cp-avatar-sm'));
+        head.appendChild(el('div', 'cp-avatar cp-avatar-sm',
+            (String(post.username || 'A'))[0].toUpperCase()));
         var who = el('div', 'cp-post-who');
         who.appendChild(el('strong', null, post.username || 'Community member'));
         who.appendChild(el('span', null, timeAgo(post.created_at)
@@ -564,7 +543,6 @@
             buildPostCard: buildPostCard,
             buildAlbumCard: buildAlbumCard,
             buildVideoFrame: buildVideoFrame,
-            avatarNode: avatarNode,
             followButton: followButton,
             toggleFollow: toggleFollow,
             setFollowButton: setFollowButton,
