@@ -24,6 +24,8 @@ from collaboration_automation import (
 # Server-side resolution of the /swap deep-link tab state (see the module docstring).
 # Kept in lockstep with autoSelectSwapTab() in static/js/swap-reserve.js.
 from swap_tab_state import resolve_swap_tab_state
+# Where create / login / wallet-connect land (default /community).
+from config import get_post_login_path
 
 # Initialize notification service
 notification_service = NotificationService()
@@ -1655,9 +1657,9 @@ def set_feature_visibility():
 @routes.route("/")
 def index():
     """Main homepage with Connect Wallet style"""
-    # If already logged in, redirect to wallet
+    # If already logged in, land on the configured post-login page (community feed).
     if session.get("verified") and session.get("wallet"):
-        return redirect("/wallet")
+        return redirect(get_post_login_path())
     wc_project_id = os.environ.get("WALLETCONNECT_PROJECT_ID", "")
     enable_privy_login = _is_privy_login_enabled()
     privy_app_id = os.environ.get("PRIVY_APP_ID", "") if enable_privy_login else ""
@@ -1837,7 +1839,7 @@ def verify_ubi():
                 'message': 'Identity verification successful!',
                 'wallet': wallet_address,
                 'ubi_verified': True,
-                'redirect_to': '/wallet'
+                'redirect_to': get_post_login_path()
             })
 
     except Exception as e:
@@ -2217,7 +2219,7 @@ def local_wallet_login():
 
         analytics.track_user_session(address)
         logger.info(f"✅ Local wallet login: hash:{email_hash[:8]}… → {_mask_wallet(address)}")
-        return jsonify({"success": True, "wallet": address, "redirect_to": "/wallet"})
+        return jsonify({"success": True, "wallet": address, "redirect_to": get_post_login_path()})
     except Exception as e:
         logger.exception("Local wallet login error")
         return jsonify({"success": False, "error": "Login failed"}), 500
