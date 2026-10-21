@@ -133,7 +133,7 @@ function run(opts) {
    'cfEditSaveBtn', 'cfComposer',
    'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
    'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
-   'cfSheetEarn', 'cfSheetOverlay'
+   'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame'
   ].forEach(id => {
     const node = dom.mk(
       id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
@@ -145,6 +145,10 @@ function run(opts) {
   registry.cfPreviews.hidden = true;
   registry.cfUsernameInput.value = '';
   registry.cfSearchInput.value = '';
+  // The Buy Airtime iframe ships with the modal: `hidden` until opened, and
+  // its src parked on data-src so the store never loads until a tap.
+  registry.cfAirtimeModal.hidden = true;
+  registry.cfAirtimeFrame.setAttribute('data-src', '/reloadly/?embed=1#topup');
 
   const doc = {
     readyState: 'complete',
@@ -202,7 +206,7 @@ const MEMBER = {
     { id: 'feed', icon: '🏠', label: 'Feed', href: '/community', guestOk: true },
     { id: 'search', icon: '🔍', label: 'Search', action: 'search', guestOk: true },
     { id: 'earn', icon: '💰', label: 'Earn', action: 'earn', guestOk: false },
-    { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/#topup', guestOk: false },
+    { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
     { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet', guestOk: false },
   ],
   reactions: { like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢', angry: '😡' },
@@ -947,10 +951,11 @@ function feedFetch(handler, feedRows) {
     ok('the feed item is the active one',
        items[0].className.split(/\s+/).includes('is-active'));
 
-    // Buy Airtime links to the Reloadly store's top-up tab.
+    // Buy Airtime links to the Reloadly store's top-up tab (and opens the
+    // in-page modal for a member — see 13d).
     const airtime = items.filter(n => /Buy Airtime/.test(n.textContent))[0];
-    ok('Buy Airtime links to the Reloadly top-up tab',
-       airtime.href === '/reloadly/#topup', airtime.href);
+    ok('Buy Airtime links to the embedded Reloadly top-up tab',
+       airtime.href === '/reloadly/?embed=1#topup', airtime.href);
     // Your Wallet links to the wallet page.
     const wallet = items.filter(n => /Your Wallet/.test(n.textContent))[0];
     ok('Your Wallet links to /wallet', wallet.href === '/wallet', wallet.href);
@@ -1010,12 +1015,18 @@ function feedFetch(handler, feedRows) {
        String(connectCalls));
 
     // Buy Airtime is also signed-in only: the tap is swallowed and the card
-    // shows, so the guest is never dropped on a page they cannot use.
+    // shows, so the guest is never dropped on a page they cannot use — and the
+    // store's modal must NOT open.
     let airtimeNavigated = false;
+    api.closeAirtime();
     airtime.onclick({ preventDefault() { airtimeNavigated = true; } });
     ok('a guest tapping Buy Airtime opens the connect card',
        connectCalls === 2, String(connectCalls));
     ok('a guest tapping Buy Airtime is not navigated away', airtimeNavigated);
+    ok('a guest tapping Buy Airtime never opens the store modal',
+       store.cfAirtimeModal.hidden === true);
+    ok('a guest tapping Buy Airtime never loads the store iframe',
+       !store.cfAirtimeFrame.src, String(store.cfAirtimeFrame.src));
 
     // Reading stays public: Search and Feed are NOT gated for a guest.
     api.closeSearch();
@@ -1082,6 +1093,46 @@ function feedFetch(handler, feedRows) {
     const injected = store.cfSearchResults.querySelector('.cf-search-name');
     ok('a username is rendered as TEXT, never markup',
        injected.textContent === '@<img src=x>', JSON.stringify(injected.textContent));
+  }
+
+  // ── 13d. Buy Airtime opens the Reloadly store IN the feed, not a page load ─
+  {
+    const { api, store, sandbox } = run({ boot: MEMBER });
+    const items = store.cfBottomNav.children;
+    const airtime = items.filter(n => /Buy Airtime/.test(n.textContent))[0];
+
+    ok('the store modal starts hidden', store.cfAirtimeModal.hidden === true);
+    ok('the store iframe ships with no src (lazy load)',
+       !store.cfAirtimeFrame.src, String(store.cfAirtimeFrame.src));
+
+    // A member tap opens the modal and loads the store ONCE.
+    let navigated = false;
+    airtime.onclick({ preventDefault() { navigated = true; } });
+    ok('a member tapping Buy Airtime is not navigated away', navigated);
+    ok('a member tapping Buy Airtime opens the store modal',
+       store.cfAirtimeModal.hidden === false);
+    ok('the store iframe loads the embedded top-up URL',
+       store.cfAirtimeFrame.src === '/reloadly/?embed=1#topup',
+       String(store.cfAirtimeFrame.src));
+    ok('opening the store locks the page scroll',
+       sandbox.document.body.classList.contains('cf-modal-open'));
+
+    // A second open must not reload the store (the src is set once).
+    store.cfAirtimeFrame.src = 'sentinel';
+    api.closeAirtime();
+    ok('closing the store hides the modal', store.cfAirtimeModal.hidden === true);
+    ok('closing the store unlocks the page scroll',
+       !sandbox.document.body.classList.contains('cf-modal-open'));
+    airtime.onclick({ preventDefault() {} });
+    ok('reopening the store does not reload the iframe',
+       store.cfAirtimeFrame.src === 'sentinel', String(store.cfAirtimeFrame.src));
+    api.closeAirtime();
+
+    // The href is still a real link, so a no-JS/middle-click still reaches the
+    // standalone store page.
+    ok('the Buy Airtime item is still an anchor',
+       airtime.tagName === 'A' && airtime.href === '/reloadly/?embed=1#topup',
+       airtime.tagName + ' ' + airtime.href);
   }
 
   // ── 14. Follow pill: another author gets one, your own post does not ──────
