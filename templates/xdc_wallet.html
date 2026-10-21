@@ -532,7 +532,7 @@
                 dappDescription: "Manage XDC and G$ tokens",
                 chainHex: "0x32",
                 chainId: 50,
-                rpcUrl: "https://earpc.xinfin.network",
+                rpcUrl: "https://erpc.xinfin.network",
                 assetVersion: "{{ ASSET_VERSION }}",
             });
         }
@@ -646,7 +646,7 @@
                     <div style="margin-bottom:0.8rem;">③ Enter the following network details:</div>
                     <div style="background: #fbfaf8; border: 1px solid #e9e2d6; border-radius: 8px; padding: 0.75rem 1rem; font-family: monospace; font-size: 0.8rem; color: #0e7490; line-height: 2;">
                         Network Name: <strong>XDC Network</strong><br>
-                        RPC URL: <strong>https://earpc.xinfin.network</strong><br>
+                        RPC URL: <strong>https://erpc.xinfin.network</strong><br>
                         Chain ID: <strong>50</strong><br>
                         Currency Symbol: <strong>XDC</strong><br>
                         Block Explorer: <strong>https://xdcscan.com</strong>
@@ -695,7 +695,7 @@
             <div class="warn-box" id="noWalletWarn" style="display:none;">
                 <span id="noWalletText">⚠️ No Web3 wallet detected. Install MetaMask or open this page inside a Web3 browser, then add the XDC Network.</span>
                 <div style="margin-top:8px; font-size:0.78rem; color:rgba(251,191,36,0.7);">
-                    XDC Network RPC: <code style="color:#b45309;">https://earpc.xinfin.network</code> · Chain ID: <code style="color:#b45309;">50</code>
+                    XDC Network RPC: <code style="color:#b45309;">https://erpc.xinfin.network</code> · Chain ID: <code style="color:#b45309;">50</code>
                 </div>
             </div>
 
@@ -848,7 +848,7 @@
                     <li>Block time: ~2 seconds</li>
                     <li>Very low transaction fees</li>
                     <li>EVM-compatible (supports MetaMask)</li>
-                    <li>Explorer: <a href="https://explorer.xinfin.network" target="_blank" rel="noopener" style="color:#0369a1;">explorer.xinfin.network</a></li>
+                    <li>Explorer: <a href="https://xdcscan.com" target="_blank" rel="noopener" style="color:#0369a1;">xdcscan.com</a></li>
                 </ul>
             </div>
         </div>
@@ -1282,7 +1282,7 @@
                 const isInjected = ep && !ep.isWalletConnect && !ep.isGoodMarketWcBridge;
                 if (isInjected) return new ethers.BrowserProvider(ep);
             }
-            return new ethers.JsonRpcProvider('https://earpc.xinfin.network');
+            return new ethers.JsonRpcProvider('https://erpc.xinfin.network');
         }
 
         // Returns a wei-denominated gas reserve for the bridgeTo() call (and
@@ -2101,7 +2101,7 @@
                             params: [{
                                 chainId: XDC_CHAIN_ID_HEX,
                                 chainName: 'XDC Network',
-                                rpcUrls: ['https://earpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
+                                rpcUrls: ['https://erpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
                                 nativeCurrency: { name: 'XDC', symbol: 'XDC', decimals: 18 },
                                 blockExplorerUrls: ['https://xdcscan.com']
                             }]
@@ -2233,7 +2233,7 @@
 
                 showAlert(alertId, 'alert-success',
                     `✅ Transaction sent!<br>
-                    <a class="tx-link" href="https://explorer.xinfin.network/txs/${txHash}" target="_blank" rel="noopener">
+                    <a class="tx-link" href="https://xdcscan.com/tx/${txHash}" target="_blank" rel="noopener">
                         View on XDC Explorer ↗ ${txHash.substring(0,10)}...${txHash.slice(-8)}
                     </a>`
                 );
@@ -2442,7 +2442,7 @@
                                     params: [{
                                         chainId: XDC_CHAIN_ID_HEX,
                                         chainName: 'XDC Network',
-                                        rpcUrls: ['https://earpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
+                                        rpcUrls: ['https://erpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
                                         nativeCurrency: { name: 'XDC', symbol: 'XDC', decimals: 18 },
                                         blockExplorerUrls: ['https://xdcscan.com']
                                     }]
@@ -2622,7 +2622,7 @@
                                 params: [{
                                     chainId: XDC_CHAIN_ID_HEX,
                                     chainName: 'XDC Network',
-                                    rpcUrls: ['https://earpc.xinfin.network', 'https://rpc.ankr.com/xdc'],
+                                    rpcUrls: ['https://erpc.xinfin.network', 'https://rpc.ankr.com/xdc'],
                                     nativeCurrency: { name: 'XDC', symbol: 'XDC', decimals: 18 },
                                     blockExplorerUrls: ['https://xdcscan.com']
                                 }]
@@ -2666,7 +2666,7 @@
                                 params: [{
                                     chainId: XDC_CHAIN_ID_HEX,
                                     chainName: 'XDC Network',
-                                    rpcUrls: ['https://earpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
+                                    rpcUrls: ['https://erpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
                                     nativeCurrency: { name: 'XDC', symbol: 'XDC', decimals: 18 },
                                     blockExplorerUrls: ['https://xdcscan.com']
                                 }]
@@ -2738,7 +2738,7 @@
                 );
 
                 const XDC_RPC_URLS = [
-                    'https://earpc.xinfin.network',
+                    'https://erpc.xinfin.network',
                     'https://rpc.ankr.com/xdc',
                     'https://erpc.xdcrpc.com'
                 ];
