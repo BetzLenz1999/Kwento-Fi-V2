@@ -1657,6 +1657,20 @@ function _wcLoadSdk() {
 
 const _wcSidecarEnabled = !!(window.GM_GET_STARTED_BOOT || {}).wcSidecarEnabled;
 
+// Pre-QR stage budgets (ms) for the in-browser SignClient fallback. On a slow
+// mobile connection the SDK bundle download plus the relay WebSocket
+// handshake (sdk_init) can legitimately take far longer than the old 20s, and
+// the relay round-trip that returns the pairing URI (connect) longer than the
+// old 15s — so the old budgets aborted with a false "relay did not respond"
+// error before the barcode ever rendered. Keep these generous. They only
+// bound the pre-QR stages; the user-driven scan/approve wait is unbounded and
+// must never be timeboxed. The error copy derives its seconds from these
+// values so the message can never drift from the real budget.
+const WC_FALLBACK_TIMEOUT_MS = Object.freeze({
+    sdk_init: 60000,
+    connect: 45000
+});
+
 // Wake the user's wallet app to the foreground after a WalletConnect
 // request has been initiated. WalletConnect v2 expects the dApp to
 // do this manually (the @walletconnect/modal SDK does the same trick
@@ -1718,6 +1732,19 @@ function _wcGetClient() {
 function _wcSetLoading(active) {
     const loader = document.getElementById('wcLoading');
     if (loader) loader.hidden = !active;
+    // The slow-connection notice timer lives on the node so this helper stays
+    // self-contained (it is also exercised standalone by the node harness).
+    if (loader) clearTimeout(loader._wcSlowNoticeTimer);
+    if (!active || !loader) return;
+    // The SDK download + relay handshake can legitimately run long on a slow
+    // connection. Swap the sub-line after a while so the extended wait reads
+    // as "still working" instead of a frozen screen.
+    loader._wcSlowNoticeTimer = setTimeout(function () {
+        loader._wcSlowNoticeTimer = null;
+        if (typeof loader.querySelector !== 'function') return;
+        const sub = loader.querySelector('.wc-loading-sub');
+        if (sub) sub.textContent = 'Still working — slow connections can take a little longer. Please keep this screen open.';
+    }, 12000);
 }
 
 function drawWalletConnectQr(uri) {
@@ -1928,7 +1955,7 @@ async function connectWalletConnect() {
     }
     try {
         showWalletStatus('walletConnectStatus', '⏳ Processing barcode and URI code…', 'info');
-        const client = await _wcWithTimeout(_wcGetClient(), 20000, 'sdk_init');
+        const client = await _wcWithTimeout(_wcGetClient(), WC_FALLBACK_TIMEOUT_MS.sdk_init, 'sdk_init');
         showWalletStatus('walletConnectStatus', '⏳ Processing barcode and URI code…', 'info');
         // Request both Celo (42220) and XDC (50) in optionalNamespaces so
         // the session supports cross-chain signing on the XDC wallet page.
@@ -1945,7 +1972,7 @@ async function connectWalletConnect() {
                     events: ['chainChanged', 'accountsChanged']
                 }
             }
-        }), 15000, 'connect');
+        }), WC_FALLBACK_TIMEOUT_MS.connect, 'connect');
         if (result.uri) {
             drawWalletConnectQr(result.uri);
             // Add a one-tap deep link to the mobile wallet for users
@@ -2059,9 +2086,9 @@ async function connectWalletConnect() {
         });
         let friendly;
         if (err && err._wcStage === 'sdk_init') {
-            friendly = '❌ WalletConnect relay did not respond within 20s. Your network may be blocking relay.walletconnect.com (WebSocket / wss:// traffic). Try a different network (mobile data vs. Wi-Fi).';
+            friendly = '❌ WalletConnect relay did not respond within ' + Math.round(WC_FALLBACK_TIMEOUT_MS.sdk_init / 1000) + 's. Your network may be blocking relay.walletconnect.com (WebSocket / wss:// traffic). Try a different network (mobile data vs. Wi-Fi).';
         } else if (err && err._wcStage === 'connect') {
-            friendly = '❌ WalletConnect session could not be generated within 15s. Please try again.';
+            friendly = '❌ WalletConnect session could not be generated within ' + Math.round(WC_FALLBACK_TIMEOUT_MS.connect / 1000) + 's. Please try again.';
         } else if (rejected) {
             friendly = '❌ Request rejected by wallet. ' + emsg;
         } else {
