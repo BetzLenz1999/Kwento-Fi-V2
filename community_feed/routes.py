@@ -110,6 +110,7 @@ def community_feed_home():
         is_guest=not bool(wallet),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
+        avatar_url=svc.get_avatar_url(wallet) if wallet else None,
         username_required=svc.REQUIRE_USERNAME,
         login_method=session.get("login_method", ""),
         walletconnect_project_id=os.getenv("WALLETCONNECT_PROJECT_ID", ""),
@@ -117,6 +118,7 @@ def community_feed_home():
         max_media=svc.MAX_MEDIA_PER_POST,
         max_image_mb=svc.MAX_IMAGE_MB,
         max_video_mb=svc.MAX_VIDEO_MB,
+        max_avatar_mb=svc.MAX_AVATAR_MB,
         storage_ready=storage.storage_available(),
     )
 
@@ -135,6 +137,7 @@ def api_state():
         "wallet": wallet,
         "username": username,
         "display_name": svc.display_name(wallet) if wallet else None,
+        "avatar_url": svc.get_avatar_url(wallet) if wallet else None,
         "needs_username": bool(wallet) and svc.REQUIRE_USERNAME and not username,
         "is_admin": bool(_admin_wallet()),
         "is_banned": svc.is_banned(wallet) if wallet else False,
@@ -203,6 +206,8 @@ def community_feed_profile(username: str):
         display_name=svc.display_name(wallet) if wallet else None,
         login_method=session.get("login_method", ""),
         walletconnect_project_id=os.getenv("WALLETCONNECT_PROJECT_ID", ""),
+        max_avatar_mb=svc.MAX_AVATAR_MB,
+        storage_ready=storage.storage_available(),
     ), (200 if profile else 404)
 
 
@@ -429,6 +434,75 @@ def api_report():
     status = 200 if result.get("success") else (
         404 if result.get("code") == "not_found" else 400)
     return jsonify(result), status
+
+
+# ── Profile picture (avatar) ─────────────────────────────────────────────────
+
+@community_feed_bp.route("/api/avatar/presign", methods=["POST"])
+def api_presign_avatar():
+    """Hand the browser a signed PUT for a profile picture (images only).
+
+    Same browser -> R2 flow as a post's media, with its own (tighter) image cap
+    and its own throttle key, so a burst of avatar uploads cannot exhaust the
+    post-media allowance.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    if svc.is_banned(wallet):
+        return jsonify({"success": False, "code": "banned",
+                        "error": "You cannot post in the community."}), 403
+
+    wait = _throttle(f"avatar:{wallet}", svc.AVATAR_RATE_LIMIT_SECONDS)
+    if wait:
+        return jsonify({
+            "success": False,
+            "code": "rate_limited",
+            "error": "Please wait before uploading a new picture.",
+            "retry_after": wait,
+        }), 429
+
+    body = _json_body()
+    result = storage.sign_avatar_upload(
+        wallet, body.get("content_type"), body.get("bytes"))
+    if not result.get("success"):
+        status = 503 if result.get("code") == "storage_unconfigured" else 400
+        return jsonify(result), status
+    return jsonify(result)
+
+
+@community_feed_bp.route("/api/avatar", methods=["POST"])
+def api_set_avatar():
+    """Save a profile picture from an already-uploaded, verified object.
+
+    The object is re-verified server-side (the browser uploaded it directly), so
+    a client-supplied URL is never trusted.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+
+    ok, error, clean = storage.verify_avatar(wallet, _json_body())
+    if not ok:
+        return jsonify({"success": False, "code": "avatar", "error": error}), 400
+    result = svc.set_avatar(wallet, clean)
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@community_feed_bp.route("/api/avatar", methods=["DELETE"])
+def api_clear_avatar():
+    """Remove the signed-in member's profile picture."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    result = svc.clear_avatar(wallet)
+    return jsonify(result), (200 if result.get("success") else 400)
 
 
 # ── Upload ───────────────────────────────────────────────────────────────────
