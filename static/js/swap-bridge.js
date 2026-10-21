@@ -979,7 +979,7 @@ async function ensureXDCNetwork(ep) {
                     params: [{
                         chainId: XDC_CHAIN_ID_HEX,
                         chainName: 'XDC Network',
-                        rpcUrls: ['https://earpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
+                        rpcUrls: ['https://erpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
                         nativeCurrency: { name: 'XDC', symbol: 'XDC', decimals: 18 },
                         blockExplorerUrls: ['https://xdcscan.com']
                     }]
@@ -1056,7 +1056,7 @@ async function _xdcReadProvider() {
             }
         } catch (_) { /* fall through to public RPC */ }
     }
-    return new ethers.JsonRpcProvider('https://earpc.xinfin.network');
+    return new ethers.JsonRpcProvider('https://erpc.xinfin.network');
 }
 
 async function _estimateXdcBridgeGasReserveWei(provider, fromAddr, amountWei, feeWei, needsApprove) {
