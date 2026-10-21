@@ -98,6 +98,33 @@ body {
     display: grid; place-items: center; font-weight: 800; font-size: 0.95rem;
     background: linear-gradient(135deg, #f97316, #ea580c);
     color: #fff;
+    position: relative; overflow: hidden;
+}
+/* A member's uploaded profile picture. `object-fit: cover` keeps it circular
+   and fills the ring without distortion. */
+.cf-avatar-img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    border-radius: 50%;
+}
+/* Facebook-style ring: a soft gradient halo around the picture, so a card
+   header reads as an avatar at a glance even before the photo loads. */
+.cf-avatar-ring {
+    box-shadow: 0 0 0 2px var(--cf-card), 0 0 0 3.5px rgba(var(--cf-accent-rgb), 0.55);
+}
+/* The composer avatar is a BUTTON (tap to change the picture) with a small
+   camera badge, so the affordance is discoverable without a label. */
+.cf-avatar-btn {
+    position: relative; flex-shrink: 0; padding: 0; border: none;
+    background: none; cursor: pointer; border-radius: 50%;
+    line-height: 0;
+}
+.cf-avatar-btn:focus-visible { outline: 2px solid var(--cf-accent); outline-offset: 3px; }
+.cf-avatar-badge {
+    position: absolute; right: -2px; bottom: -2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 0.6rem;
+    background: var(--cf-accent); color: #fff;
+    border: 2px solid var(--cf-card);
 }
 .cf-composer-who { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
 .cf-composer-who strong { font-size: 0.9rem; }
@@ -240,14 +267,14 @@ body {
 }
 
 /* ── Post card ────────────────────────────────────────────────────────────── */
-.cf-feed { display: flex; flex-direction: column; gap: 1rem; }
+.cf-feed { display: flex; flex-direction: column; gap: 1.1rem; }
 .cf-card {
     background: var(--cf-card); border: 1px solid var(--cf-border);
-    border-radius: 16px; overflow: hidden; box-shadow: var(--cf-shadow);
+    border-radius: 20px; overflow: hidden; box-shadow: var(--cf-shadow);
 }
 .cf-card-head {
-    display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.75rem 0.9rem 0.6rem;
+    display: flex; align-items: center; gap: 0.7rem;
+    padding: 0.85rem 1rem 0.7rem;
 }
 .cf-card-who { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; flex: 1; }
 .cf-card-who strong { font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -281,10 +308,10 @@ body {
     color: var(--cf-dim); border-color: var(--cf-border); background: var(--cf-soft);
 }
 
-.cf-media { background: #000; display: flex; flex-direction: column; }
+.cf-media { background: #0b0b0b; display: flex; flex-direction: column; }
 .cf-media img {
     width: 100%; max-height: 70dvh; object-fit: contain; display: block;
-    background: #000;
+    background: #0b0b0b;
 }
 .cf-media img { cursor: zoom-in; }
 
@@ -330,36 +357,41 @@ body {
 .cf-meta { font-size: 0.72rem; color: var(--cf-dim); }
 
 /* Reaction bar — the six chips are ALWAYS visible (not behind a long-press):
-   a hidden gesture is undiscoverable on a cheap Android phone. */
+   a hidden gesture is undiscoverable on a cheap Android phone. The row sits on
+   a soft track so it reads as a toolbar, and the pressed chip lifts out of it
+   in G$ gold. */
 .cf-reactions {
-    display: flex; align-items: center; gap: 0.3rem;
-    border-top: 1px solid var(--cf-border); padding-top: 0.6rem;
+    display: flex; align-items: center; gap: 0.25rem;
+    border-top: 1px solid var(--cf-border); padding-top: 0.55rem;
     flex-wrap: wrap;
 }
 .cf-chip {
-    font-family: inherit; font-size: 1.05rem; line-height: 1;
-    background: transparent; border: 1px solid transparent;
-    border-radius: 999px; padding: 0.3rem 0.5rem; cursor: pointer;
+    font-family: inherit; font-size: 1.15rem; line-height: 1;
+    background: var(--cf-field); border: 1px solid transparent;
+    border-radius: 999px; padding: 0.34rem 0.6rem; cursor: pointer;
     transition: transform 0.12s ease, background-color 0.12s ease;
 }
-.cf-chip:hover { background: var(--cf-card); }
+.cf-chip:hover { background: var(--cf-soft); }
 .cf-chip:active { transform: scale(1.22); }
 .cf-chip[aria-pressed="true"] {
     background: linear-gradient(135deg, var(--cf-gold), var(--cf-gold-deep));
-    border-color: var(--cf-gold);
+    border-color: var(--cf-gold-deep);
+    transform: scale(1.06);
 }
 .cf-chip:focus-visible { outline: 2px solid var(--cf-accent-2); outline-offset: 2px; }
 
 .cf-card-actions {
-    display: flex; align-items: center; gap: 0.4rem;
-    border-top: 1px solid var(--cf-border); padding-top: 0.6rem; margin-top: 0.1rem;
+    display: flex; align-items: center; gap: 0.25rem;
+    border-top: 1px solid var(--cf-border); padding-top: 0.55rem; margin-top: 0.1rem;
 }
 .cf-action-btn {
-    font-family: inherit; font-size: 0.8rem; font-weight: 700;
+    font-family: inherit; font-size: 0.82rem; font-weight: 700;
     color: var(--cf-dim); background: transparent; border: none;
-    padding: 0.4rem 0.6rem; border-radius: 8px; cursor: pointer;
+    padding: 0.45rem 0.7rem; border-radius: 10px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 0.3rem;
 }
-.cf-action-btn:hover { background: var(--cf-card); color: var(--cf-ink); }
+.cf-action-btn:hover { background: var(--cf-field); color: var(--cf-ink); }
+.cf-action-btn:focus-visible { outline: 2px solid var(--cf-accent); outline-offset: 1px; }
 
 /* Comments */
 .cf-comments { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.4rem; }
@@ -368,7 +400,9 @@ body {
     width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
     display: grid; place-items: center; font-size: 0.68rem; font-weight: 800;
     background: linear-gradient(135deg, var(--cf-gold), var(--cf-gold-deep)); color: var(--cf-gold-ink);
+    overflow: hidden;
 }
+.cf-comment-avatar .cf-avatar-img { border-radius: 50%; }
 .cf-comment-body {
     background: var(--cf-field); border: 1px solid var(--cf-border); border-radius: 10px;
     padding: 0.42rem 0.6rem; font-size: 0.84rem; line-height: 1.45;
@@ -445,6 +479,19 @@ body {
     border: 1px solid var(--cf-border); border-radius: 999px;
     padding: 0.55rem 1.1rem; cursor: pointer;
 }
+
+/* ── Profile picture modal ────────────────────────────────────────────────── */
+.cf-avatar-preview {
+    width: 110px; height: 110px; border-radius: 50%; margin: 0.25rem auto 0;
+    display: grid; place-items: center; overflow: hidden;
+    font-weight: 800; font-size: 2.6rem; color: #fff;
+    background: linear-gradient(135deg, #f97316, #ea580c);
+    box-shadow: 0 0 0 3px var(--cf-card), 0 0 0 5px rgba(var(--cf-accent-rgb), 0.5);
+}
+.cf-avatar-preview .cf-avatar-img { border-radius: 50%; }
+.cf-avatar-status { font-size: 0.82rem; color: var(--cf-dim); text-align: center; min-height: 1.1em; }
+.cf-avatar-status.is-error { color: var(--cf-danger); }
+.cf-avatar-hint { font-size: 0.75rem; line-height: 1.5; color: var(--cf-muted); text-align: center; }
 
 /* ── Post options menu ────────────────────────────────────────────────────── */
 .cf-menu {
@@ -648,6 +695,7 @@ body.cf-modal-open { overflow: hidden; }
     display: grid; place-items: center;
     font-weight: 800; font-size: 0.85rem;
     background: linear-gradient(135deg, #f97316, #ea580c); color: #fff;
+    overflow: hidden;
 }
 .cf-search-name { font-size: 0.88rem; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .cf-search-hint { font-size: 0.8rem; color: var(--cf-dim); padding: 0.4rem 0.2rem; }
