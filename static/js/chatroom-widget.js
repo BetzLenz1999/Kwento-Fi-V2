@@ -157,14 +157,14 @@
     celoChainId: 42220,
     xdcChainId: 50,
     celoRpc: 'https://forno.celo.org',
-    xdcRpc: 'https://earpc.xinfin.network'
+    xdcRpc: 'https://erpc.xinfin.network'
   };
   var CHAIN_META = {
     celo: { hex: '0xa4ec', id: 42220, name: 'Celo Mainnet', symbol: 'CELO',
             rpc: 'https://forno.celo.org', explorer: 'https://celoscan.io/tx/',
             fallbackGasPrice: 500000000000n },
     xdc: { hex: '0x32', id: 50, name: 'XDC Network', symbol: 'XDC',
-           rpc: 'https://earpc.xinfin.network', explorer: 'https://xdcscan.io/tx/',
+           rpc: 'https://erpc.xinfin.network', explorer: 'https://xdcscan.io/tx/',
            fallbackGasPrice: 25000000000n }
   };
   // Explicit gas is load-bearing: without it the wallet has to estimate the
