@@ -79,6 +79,11 @@
         <label class="cf-sr-only" for="cfSearchInput">Search members</label>
         <div class="cf-search-row">
             <span class="cf-search-icon" aria-hidden="true">🔍</span>
+            {# The `@` is HARDCODED, not typed: a member searches a username, so
+               the prefix is part of the field's chrome. The input holds only the
+               name, which is what the server matches — with or without a stored
+               `@` on the row. #}
+            <span class="cf-search-at" aria-hidden="true">@</span>
             <input type="search" id="cfSearchInput" class="cf-search-input"
                    placeholder="Search members by username" autocomplete="off"
                    spellcheck="false" maxlength="24"
@@ -109,10 +114,24 @@
     <section class="cf-composer" id="cfComposer" aria-labelledby="cfComposerTitle">
         <h2 class="cf-sr-only" id="cfComposerTitle">Create a post</h2>
         <div class="cf-composer-head">
-            {# `display_name` falls back to a shortened wallet address, which
+            {# Profile picture. Tapping the ring opens the picture modal, so a
+               member can upload/change/remove their picture without leaving the
+               feed. The initial-letter fallback is used until a picture exists.
+               `display_name` falls back to a shortened wallet address, which
                contradicts the username gate below. Show the username or a
                neutral label — never an address, not even your own. #}
-            <div class="cf-avatar" aria-hidden="true">{{ (username or 'You')[0]|upper }}</div>
+            <button type="button" class="cf-avatar-btn" id="cfAvatarBtn"
+                    onclick="GMCommunity.openAvatarModal()"
+                    aria-label="Change your profile picture">
+                <span class="cf-avatar" id="cfComposerAvatar" aria-hidden="true">
+                    {%- if avatar_url -%}
+                    <img class="cf-avatar-img" src="{{ avatar_url }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                    {%- else -%}
+                    {{ (username or 'You')[0]|upper }}
+                    {%- endif -%}
+                </span>
+                <span class="cf-avatar-badge" aria-hidden="true">📷</span>
+            </button>
             <div class="cf-composer-who">
                 <strong>{{ username or 'You' }}</strong>
                 <span>Sharing publicly</span>
@@ -278,6 +297,13 @@
     </div>
 </div>
 
+{# Profile picture modal. Shared with the public profile page (one
+   implementation). The picture is uploaded straight to R2 with a presigned PUT,
+   exactly like post media, then referenced through POST /community/api/avatar. #}
+{% with avatar_url=avatar_url, username=username, max_avatar_mb=max_avatar_mb %}
+    {% include "_community_avatar_modal.html" %}
+{% endwith %}
+
 <div class="cf-toast" id="cfToast" role="status" aria-live="polite" hidden></div>
 
 {# ── Boot config ────────────────────────────────────────────────────────────
@@ -288,6 +314,7 @@ window.GM_COMMUNITY_BOOT = {
     isGuest: {{ 'true' if is_guest else 'false' }},
     wallet: {{ (wallet or '')|tojson }},
     username: {{ (username or '')|tojson }},
+    avatarUrl: {{ (avatar_url or '')|tojson }},
     usernameRequired: {{ 'true' if username_required else 'false' }},
     loginMethod: {{ (login_method or '')|tojson }},
     walletConnectProjectId: {{ (walletconnect_project_id or '')|tojson }},
@@ -296,6 +323,7 @@ window.GM_COMMUNITY_BOOT = {
     maxMedia: {{ max_media }},
     maxImageMb: {{ max_image_mb }},
     maxVideoMb: {{ max_video_mb }},
+    maxAvatarMb: {{ max_avatar_mb }},
     storageReady: {{ 'true' if storage_ready else 'false' }},
     // Destination list for the bottom nav. ONE source of truth: the bar is
     // built from this object, so a new destination is added here only.
@@ -335,12 +363,14 @@ window.GM_COMMUNITY_BOOT = {
 {# The feed bundle loads for guests too: reading is public, and the bundle is
    what renders the cards and raises the connect card on a gated write. It
    signs nothing, so it needs no ethers of its own. #}
+<script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
 {% set get_started_boot = {'return_to': '/community'} %}
 {% include "_get_started_modal.html" %}
 {% else %}
 <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
 {% endif %}
 
