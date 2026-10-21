@@ -68,7 +68,7 @@
             id: 50,
             label: 'XDC Network',
             rpcs: [
-                'https://earpc.xinfin.network',
+                'https://erpc.xinfin.network',
                 'https://rpc.ankr.com/xdc',
                 'https://erpc.xdcrpc.com'
             ]
