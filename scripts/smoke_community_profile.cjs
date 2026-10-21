@@ -334,6 +334,24 @@ function makeAlbum(over) {
        link ? link.href : 'missing');
   }
 
+  // ── 4e. The author's profile picture (or their initial) ───────────────────
+  {
+    const { api } = run({ boot: MEMBER });
+    const withPic = api._internals.buildPostCard(makePost({
+      username: 'betz', avatar_url: 'https://media.example/u/deadbeef/pic.jpg',
+    }));
+    const img = withPic.querySelector('.cp-avatar-img');
+    ok('a member with a picture shows the photo',
+       !!img && img.src === 'https://media.example/u/deadbeef/pic.jpg',
+       img ? img.src : 'no img');
+    const withoutPic = api._internals.buildPostCard(makePost({ username: 'betz' }));
+    const initial = withoutPic.querySelector('.cp-avatar');
+    ok('a member without a picture falls back to the initial',
+       !!initial && initial.textContent === 'B', initial ? initial.textContent : 'none');
+    ok('the fallback renders no <img>',
+       !withoutPic.querySelector('.cp-avatar-img'));
+  }
+
   // ── 5. Album is lazy-loaded on the first tab open ─────────────────────────
   {
     const { api, calls, store } = run({
