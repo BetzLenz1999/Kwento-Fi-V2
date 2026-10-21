@@ -93,6 +93,14 @@ VIDEO_MIME_TYPES = {
 }
 ALLOWED_MIME_TYPES = {**IMAGE_MIME_TYPES, **VIDEO_MIME_TYPES}
 
+# Profile pictures are IMAGES ONLY (no video, no SVG — it can carry script) and
+# get their own, tighter size cap: an avatar is rendered small on every card, so
+# a 10MB upload would only cost storage and mobile data for no visible gain.
+AVATAR_MIME_TYPES = dict(IMAGE_MIME_TYPES)
+MAX_AVATAR_MB = int(os.getenv("COMMUNITY_MAX_AVATAR_MB", "5"))
+MAX_AVATAR_BYTES = MAX_AVATAR_MB * 1024 * 1024
+AVATAR_RATE_LIMIT_SECONDS = int(os.getenv("COMMUNITY_AVATAR_RATE_LIMIT_SECONDS", "10"))
+
 # Control characters (including zero-width/line-separator tricks) are stripped
 # so a caption can never smuggle invisible content into the rendered feed. The
 # newline is deliberately NOT in this class — line breaks are legitimate
@@ -317,6 +325,36 @@ def plan_upload(content_type: str | None, declared_bytes: int | None = None
     }
 
 
+def plan_avatar_upload(content_type: str | None, declared_bytes: int | None = None
+                       ) -> tuple[bool, str, dict]:
+    """Validate a requested PROFILE PICTURE upload and describe it.
+
+    Same shape as ``plan_upload`` but restricted to images and bounded by the
+    tighter avatar cap. A profile picture is never a video, so accepting one
+    here would only let a user publish a clip that every card then fails to
+    render.
+    """
+    mime = (content_type or "").split(";")[0].strip().lower()
+    if mime not in AVATAR_MIME_TYPES:
+        return False, (
+            "Unsupported image type. Please upload a JPEG, PNG, GIF or WEBP "
+            "image."
+        ), {}
+    if declared_bytes is not None:
+        try:
+            declared = int(declared_bytes)
+        except (TypeError, ValueError):
+            declared = 0
+        if declared > MAX_AVATAR_BYTES:
+            return False, f"Image is too large (max {MAX_AVATAR_MB}MB)", {}
+    return True, "", {
+        "media_type": "image",
+        "mime": mime,
+        "ext": AVATAR_MIME_TYPES[mime],
+        "max_bytes": MAX_AVATAR_BYTES,
+    }
+
+
 def verify_uploaded_object(plan: dict, head: dict | None,
                            magic: bytes | None = None) -> tuple[bool, str, dict]:
     """Confirm an object the browser uploaded is what we asked for.
@@ -368,18 +406,22 @@ def verify_uploaded_object(plan: dict, head: dict | None,
 
 def _public_post(row: dict, media: list[dict], viewer: str | None,
                  my_reaction: str | None = None,
-                 is_following: bool = False) -> dict:
+                 is_following: bool = False,
+                 avatar_url: str | None = None) -> dict:
     """Shape a post for the browser.
 
     The wallet address is dropped and ownership is reduced to ``is_mine`` — a
     boolean — so a feed response can never leak an address. ``is_following``
     likewise reduces the follow graph to a per-author boolean the viewer owns.
+    ``avatar_url`` is a PUBLIC R2 URL (never a wallet) so a card can show the
+    author's profile picture.
     """
     owner = (row.get("wallet_address") or "").lower()
     return {
         "id": row.get("id"),
         "username": row.get("username") or ANON_LABEL,
         "body": row.get("body") or "",
+        "avatar_url": avatar_url or None,
         "media": media,
         "reaction_count": int(row.get("reaction_count") or 0),
         "comment_count": int(row.get("comment_count") or 0),
@@ -404,15 +446,59 @@ def _public_media(row: dict) -> dict:
     }
 
 
-def _public_comment(row: dict, viewer: str | None) -> dict:
+def _public_comment(row: dict, viewer: str | None,
+                    avatar_url: str | None = None) -> dict:
     owner = (row.get("wallet_address") or "").lower()
     return {
         "id": row.get("id"),
         "username": row.get("username") or ANON_LABEL,
         "body": row.get("body") or "",
+        "avatar_url": avatar_url or None,
         "is_mine": bool(viewer) and owner == viewer.lower(),
         "created_at": row.get("created_at"),
     }
+
+
+def _avatars_for_wallets(supabase, wallets: list[str]) -> dict[str, str]:
+    """Public avatar URL per wallet, in ONE batched query.
+
+    Returns ``{lowercased_wallet: public_url}``. The wallet is the lookup KEY
+    only — it is never copied into the returned value, so a feed response can
+    carry an avatar without carrying an address (the same rule as
+    ``_public_post``). A wallet with no avatar simply has no entry.
+    """
+    wanted = sorted({(w or "").lower() for w in wallets if w})
+    if not wanted:
+        return {}
+    try:
+        result = (
+            supabase.table("community_feed_avatars")
+            .select("wallet_address,public_url")
+            .in_("wallet_address", wanted)
+            .execute()
+        )
+        out: dict[str, str] = {}
+        for row in _rows(result):
+            wallet = (row.get("wallet_address") or "").lower()
+            url = (row.get("public_url") or "").strip()
+            if wallet and url:
+                out[wallet] = url
+        return out
+    except Exception as exc:  # noqa: BLE001
+        # A missing avatar table (migration not yet run) must not break the
+        # feed: avatars are decoration, posts are the product.
+        logger.warning("community_feed: avatar batch failed: %s", exc)
+        return {}
+
+
+def get_avatar_url(wallet: str | None) -> str | None:
+    """One member's public avatar URL, or None. Never returns the wallet."""
+    if not wallet:
+        return None
+    supabase = _get_supabase()
+    if not supabase:
+        return None
+    return _avatars_for_wallets(supabase, [wallet]).get((wallet or "").lower())
 
 
 # ── Feed reads ───────────────────────────────────────────────────────────────
@@ -668,12 +754,16 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
     # never one per card.
     followed = _follow_states(
         supabase, [r.get("wallet_address") for r in rows], viewer)
+    # ONE batched query for the authors' profile pictures, likewise per page.
+    avatars = _avatars_for_wallets(
+        supabase, [r.get("wallet_address") for r in rows])
 
     posts = [
         _public_post(
             row, media.get(row.get("id"), []), viewer,
             reactions.get(row.get("id")),
             is_following=(row.get("wallet_address") or "").lower() in followed,
+            avatar_url=avatars.get((row.get("wallet_address") or "").lower()),
         )
         for row in rows
     ]
@@ -706,8 +796,12 @@ def get_post(post_id: int, viewer: str | None = None) -> dict:
     row = rows[0]
     media = _media_for_posts(supabase, [row.get("id")]).get(row.get("id"), [])
     reactions = _reactions_for_posts(supabase, [row.get("id")], viewer)
+    avatar = _avatars_for_wallets(
+        supabase, [row.get("wallet_address")]).get(
+            (row.get("wallet_address") or "").lower())
     return {"success": True,
-            "post": _public_post(row, media, viewer, reactions.get(row.get("id")))}
+            "post": _public_post(row, media, viewer, reactions.get(row.get("id")),
+                                 avatar_url=avatar)}
 
 
 # ── Public profile / per-user views ──────────────────────────────────────────
@@ -784,7 +878,7 @@ def search_users(term: str | None, limit: int | None = None) -> dict:
     try:
         result = (
             supabase.table("user_data")
-            .select("username")
+            .select("username,wallet_address")
             .ilike("username", _like_pattern(cleaned))
             .order("username")
             .limit(size)
@@ -796,6 +890,12 @@ def search_users(term: str | None, limit: int | None = None) -> dict:
         return {"success": False, "error": "Could not search members",
                 "users": [], "term": cleaned}
 
+    # ONE batched avatar lookup for the matched members. The wallet is used as
+    # the lookup KEY only and is dropped from the result, like every other feed
+    # response — the search box must never become an address oracle.
+    avatars = _avatars_for_wallets(
+        supabase, [row.get("wallet_address") for row in rows])
+
     users = []
     seen = set()
     for row in rows:
@@ -806,7 +906,10 @@ def search_users(term: str | None, limit: int | None = None) -> dict:
         if not username or key in seen:
             continue
         seen.add(key)
-        users.append({"username": username})
+        users.append({
+            "username": username,
+            "avatar_url": avatars.get((row.get("wallet_address") or "").lower()),
+        })
     return {"success": True, "users": users, "term": cleaned}
 
 
@@ -941,11 +1044,13 @@ def get_public_profile(username: str | None,
     is_self = bool(viewer) and viewer.lower() == wallet.lower()
     is_following = bool(viewer) and not is_self and _is_following(
         supabase, viewer.lower(), wallet.lower())
+    avatar = _avatars_for_wallets(supabase, [wallet]).get(wallet.lower())
 
     return {
         "success": True,
         "profile": {
             "username": name,
+            "avatar_url": avatar,
             "joined_at": joined_at,
             "post_count": post_count,
             "album_count": album_count,
@@ -1149,8 +1254,117 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict]) -> di
 
     post_row = rows[0]
     inserted = _record_media(supabase, post_row["id"], media_items)
-    post = _public_post(post_row, [_public_media(r) for r in inserted], wallet)
+    avatar = _avatars_for_wallets(supabase, [wallet]).get((wallet or "").lower())
+    post = _public_post(post_row, [_public_media(r) for r in inserted], wallet,
+                        avatar_url=avatar)
     return {"success": True, "post": post}
+
+
+# ── Profile pictures (avatars) ───────────────────────────────────────────────
+# One picture per wallet, stored in community_feed_avatars. A new upload
+# REPLACES the old row and hard-deletes the replaced R2 object on the same path,
+# so a member never accumulates pictures (and never leaves orphans in the
+# bucket). The picture is PUBLIC — that is the point of a profile picture — but
+# the WALLET is still never sent to the browser: the response carries only the
+# public URL, exactly like a post.
+
+def set_avatar(wallet: str, avatar: dict) -> dict:
+    """Store a member's profile picture from an already-verified descriptor.
+
+    ``avatar`` must have come through ``storage.verify_avatar`` — this function
+    does not talk to R2 to validate bytes and never trusts a client URL. The
+    previous picture's object is purged after the row is replaced.
+    """
+    if not wallet:
+        return {"success": False, "error": "Not authenticated", "code": "auth"}
+    if is_banned(wallet):
+        return {"success": False, "error": "You cannot post in the community.",
+                "code": "banned"}
+
+    key = (avatar or {}).get("key")
+    public_url = (avatar or {}).get("public_url")
+    if not key or not public_url:
+        return {"success": False, "error": "Invalid upload reference.",
+                "code": "avatar"}
+
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "code": "db"}
+
+    lower_wallet = (wallet or "").lower()
+    previous = _avatar_key(supabase, lower_wallet)
+
+    payload = {
+        "wallet_address": lower_wallet,
+        "username": get_username(wallet),
+        "r2_key": key,
+        "public_url": public_url,
+        "mime": (avatar or {}).get("mime"),
+        "bytes": (avatar or {}).get("bytes"),
+        "updated_at": _now().isoformat(),
+    }
+    try:
+        result = supabase.table("community_feed_avatars").upsert(
+            payload, on_conflict="wallet_address").execute()
+        rows = _rows(result)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: avatar upsert failed: %s", exc)
+        return {"success": False, "error": "Could not save your profile picture",
+                "code": "db"}
+    if not rows:
+        return {"success": False, "error": "Could not save your profile picture",
+                "code": "db"}
+
+    # Purge the REPLACED object (not the new one). Best-effort: the row is
+    # already the source of truth, so a storage hiccup must not fail the save.
+    if previous and previous != key:
+        _purge_objects([previous])
+
+    return {"success": True, "avatar_url": public_url}
+
+
+def clear_avatar(wallet: str) -> dict:
+    """Remove a member's profile picture and purge its object."""
+    if not wallet:
+        return {"success": False, "error": "Not authenticated", "code": "auth"}
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "code": "db"}
+
+    lower_wallet = (wallet or "").lower()
+    previous = _avatar_key(supabase, lower_wallet)
+    try:
+        supabase.table("community_feed_avatars").delete().eq(
+            "wallet_address", lower_wallet).execute()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: avatar delete failed: %s", exc)
+        return {"success": False, "error": "Could not remove your profile picture",
+                "code": "db"}
+
+    if previous:
+        _purge_objects([previous])
+    return {"success": True, "avatar_url": None}
+
+
+def _avatar_key(supabase, lower_wallet: str) -> str | None:
+    """The stored R2 key for a wallet's current picture, or None."""
+    if not lower_wallet:
+        return None
+    try:
+        result = (
+            supabase.table("community_feed_avatars")
+            .select("r2_key")
+            .eq("wallet_address", lower_wallet)
+            .limit(1)
+            .execute()
+        )
+        rows = _rows(result)
+        if not rows:
+            return None
+        return (rows[0].get("r2_key") or "").strip() or None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: avatar key lookup failed: %s", exc)
+        return None
 
 
 def update_caption(wallet: str, post_id: int, caption: str | None) -> dict:
@@ -1500,7 +1714,9 @@ def add_comment(wallet: str, post_id: int, body: str) -> dict:
                 "code": "db"}
 
     _bump_comment_count(supabase, post_id, +1)
-    return {"success": True, "comment": _public_comment(rows[0], wallet)}
+    avatar = _avatars_for_wallets(supabase, [wallet]).get((wallet or "").lower())
+    return {"success": True,
+            "comment": _public_comment(rows[0], wallet, avatar_url=avatar)}
 
 
 def _bump_comment_count(supabase, post_id: int, delta: int) -> None:
@@ -1539,8 +1755,15 @@ def get_comments(post_id: int, viewer: str | None = None, limit: int = 50) -> di
     except Exception as exc:  # noqa: BLE001
         logger.error("community_feed: comment list failed: %s", exc)
         return {"success": False, "error": "Could not load comments", "comments": []}
+    avatars = _avatars_for_wallets(
+        supabase, [r.get("wallet_address") for r in rows])
     return {"success": True,
-            "comments": [_public_comment(r, viewer) for r in rows]}
+            "comments": [
+                _public_comment(r, viewer,
+                                avatar_url=avatars.get(
+                                    (r.get("wallet_address") or "").lower()))
+                for r in rows
+            ]}
 
 
 def delete_comment(wallet: str, comment_id: int) -> dict:
