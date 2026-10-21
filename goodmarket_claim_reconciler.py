@@ -86,7 +86,7 @@ _CELO_RPC = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
 # erpc.xinfin.network has been returning 502s; default to a known-good public
 # endpoint. The XDC client below also prefers blockchain.get_xdc_rpc() which
 # fails over across several providers.
-_XDC_RPC = os.getenv("XDC_RPC_URL", "https://earpc.xinfin.network")
+_XDC_RPC = os.getenv("XDC_RPC_URL", "https://erpc.xinfin.network")
 
 # RPC request timeout (seconds). receipts on Celo are usually <1s; XDC's
 # public RPC occasionally returns HTML errors and we want to fail fast.
