@@ -89,7 +89,23 @@
     {% else %}
 
     <section class="cp-card cp-hero" aria-labelledby="cpProfileName">
-        <div class="cp-avatar" aria-hidden="true">{{ (profile.username or 'A')[0]|upper }}</div>
+        {# Profile picture. The member's uploaded photo when there is one, their
+           initial otherwise. The owner also gets a button to change it; the
+           shared avatar module (`community-avatar.js`) binds it, so this page
+           and the feed card read the SAME row and can never disagree. #}
+        <div class="cp-avatar-wrap">
+            <div class="cp-avatar" id="cpProfileAvatar" aria-hidden="true">
+                {%- if profile.avatar_url -%}
+                <img class="cp-avatar-img" src="{{ profile.avatar_url }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                {%- else -%}
+                {{ (profile.username or 'A')[0]|upper }}
+                {%- endif -%}
+            </div>
+            {% if profile.is_self %}
+            <button type="button" class="cp-avatar-edit" id="cpAvatarEdit"
+                    aria-label="Change your profile picture">📷</button>
+            {% endif %}
+        </div>
         <h1 id="cpProfileName">@{{ profile.username }}</h1>
         <p class="cp-sub">GoodMarket community member</p>
         <p class="cp-joined">
@@ -161,6 +177,15 @@
 
 <div class="cp-toast" id="cpToast" role="status" aria-live="polite" hidden></div>
 
+{# The shared profile-picture modal, for the profile's OWNER. `GMCommunityAvatar`
+   (loaded below) binds `#cpAvatarEdit` and the file input. #}
+{% if profile and profile.is_self %}
+{% with avatar_url=profile.avatar_url, username=profile.username,
+        max_avatar_mb=(max_avatar_mb|default(5)) %}
+    {% include "_community_avatar_modal.html" %}
+{% endwith %}
+{% endif %}
+
 {# ── Boot config ────────────────────────────────────────────────────────────
    MUST come BEFORE the bundle: the script snapshots this object at parse time
    (the documented GM_*_BOOT ordering landmine). #}
@@ -170,6 +195,9 @@ window.GM_PROFILE_BOOT = {
     wallet: {{ (wallet or '')|tojson }},
     username: {{ (profile.username if profile else (username or ''))|tojson }},
     viewerUsername: {{ (viewer_username or '')|tojson }},
+    avatarUrl: {{ (profile.avatar_url if profile and profile.avatar_url else '')|tojson }},
+    maxAvatarMb: {{ max_avatar_mb|default(5) }},
+    storageReady: {{ 'true' if storage_ready else 'false' }},
     feedEnabled: true,
     profile: {
         is_following: {{ 'true' if profile and profile.is_following else 'false' }},
@@ -197,7 +225,10 @@ window.GM_PROFILE_BOOT = {
 {% endif %}
 
 {# Loaded for BOTH guest and member: profiles are public, and this bundle is
-   what renders the posts and albums. It signs nothing, so it needs no ethers. #}
+   what renders the posts and albums. It signs nothing, so it needs no ethers.
+   The shared avatar module comes FIRST: the profile bundle only renders; the
+   module owns the picture upload for the profile's owner. #}
+<script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-profile.js', v=ASSET_VERSION) }}"></script>
 
 </body>
