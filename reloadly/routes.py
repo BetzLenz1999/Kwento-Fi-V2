@@ -156,6 +156,14 @@ def reloadly_home():
     # can be bought without a connect (every checkout/signing path is session
     # based), so allowing the view exposes no action.
     is_guest = not (wallet and verified)
+    # `?embed=1` renders the store for the community feed's Buy Airtime modal.
+    # Same page, two differences: the store's own back-to-wallet chrome is
+    # dropped (the modal supplies the title and close control), and the FV gate
+    # must NOT redirect — a top-level redirect inside the frame would load the
+    # whole wallet page into a small dialog. Embed instead renders an inline
+    # notice that links out to the verification flow.
+    is_embed = (request.args.get("embed") or "").strip() == "1"
+    embed_blocked = False
     if is_guest:
         wallet = ""
     else:
@@ -164,7 +172,9 @@ def reloadly_home():
         from human_verification import human_verification_redirect
         fv_gate = human_verification_redirect(wallet)
         if fv_gate:
-            return fv_gate
+            if not is_embed:
+                return fv_gate
+            embed_blocked = True
 
     import os
     gd_price = get_gd_usd_price()
@@ -175,6 +185,8 @@ def reloadly_home():
         "reloadly.html",
         wallet=wallet,
         is_guest=is_guest,
+        is_embed=is_embed,
+        embed_blocked=embed_blocked,
         gd_price=gd_price,
         is_sandbox=reloadly_client.is_sandbox,
         merchant_address=os.getenv("MERCHANT_ADDRESS", ""),
