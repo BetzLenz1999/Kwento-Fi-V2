@@ -18,12 +18,14 @@
     var BOOT = window.GM_COMMUNITY_BOOT || {};
     var WALLET = BOOT.wallet || '';
     var USERNAME = BOOT.username || '';
+    var AVATAR_URL = BOOT.avatarUrl || '';
     var USERNAME_REQUIRED = BOOT.usernameRequired !== false;
     var REACTIONS = BOOT.reactions || {};
     var MAX_CAPTION = BOOT.maxCaption || 2200;
     var MAX_MEDIA = BOOT.maxMedia || 4;
     var MAX_IMAGE_MB = BOOT.maxImageMb || 10;
     var MAX_VIDEO_MB = BOOT.maxVideoMb || 100;
+    var MAX_AVATAR_MB = BOOT.maxAvatarMb || 5;
     var STORAGE_READY = !!BOOT.storageReady;
 
     var LONG_EDGE = 2048;      // downscale target for images
@@ -57,6 +59,87 @@
     }
 
     function esc(text) { return String(text === undefined || text === null ? '' : text); }
+
+    /* ── Avatars ──────────────────────────────────────────────────────────
+       A member's profile picture is a PUBLIC R2 URL that arrives on every feed
+       response (never a wallet). `avatarNode` renders the picture when there is
+       one and falls back to the username's initial — the same element shape in
+       both cases, so the CSS ring is identical with or without a photo. */
+    function avatarNode(url, username, className) {
+        var node = el('span', className || 'cf-avatar');
+        node.setAttribute('aria-hidden', 'true');
+        renderAvatarInto(node, url, username);
+        return node;
+    }
+
+    function renderAvatarInto(node, url, username) {
+        if (!node) return;
+        node.textContent = '';
+        var src = esc(url).trim();
+        if (src) {
+            var img = document.createElement('img');
+            img.className = 'cf-avatar-img';
+            img.src = src;
+            img.alt = '';
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            img.referrerPolicy = 'no-referrer';
+            node.appendChild(img);
+            return;
+        }
+        node.textContent = (esc(username) || 'A')[0].toUpperCase();
+    }
+
+    /* ── Reaction summary ─────────────────────────────────────────────────
+       The stacked emoji row a social feed shows above the caption: the
+       reactions a post actually received, most-used first, then a trailing
+       "+N" when more kinds were used than fit. Falls back to a single 👍 when
+       the server sent no breakdown (an old row, or a table that was not yet
+       migrated) so the summary never renders an empty gap.
+
+       The breakdown is DECORATION. The number beside it is always
+       `reaction_count`, the authoritative total — so a bounded breakdown scan
+       can never make the headline count wrong. */
+    var SUMMARY_EMOJI_MAX = 3;
+
+    function summaryEmojiKeys(post) {
+        var breakdown = post && post.reaction_breakdown;
+        var keys = [];
+        if (breakdown && typeof breakdown === 'object') {
+            Object.keys(breakdown).forEach(function (key) {
+                var count = Number(breakdown[key]) || 0;
+                if (count > 0 && REACTIONS[key]) keys.push(key);
+            });
+        }
+        // Most-used first; ties keep REACTIONS order, which is stable.
+        keys.sort(function (a, b) {
+            var diff = (Number(breakdown[b]) || 0) - (Number(breakdown[a]) || 0);
+            return diff !== 0 ? diff
+                : Object.keys(REACTIONS).indexOf(a) - Object.keys(REACTIONS).indexOf(b);
+        });
+        // The viewer's own reaction always leads: it is the one they care
+        // about, and a post with a single reaction must show that reaction
+        // rather than a stranger's more popular one.
+        var mine = post && post.my_reaction;
+        if (mine && REACTIONS[mine]) {
+            keys = keys.filter(function (key) { return key !== mine; });
+            keys.unshift(mine);
+        }
+        if (!keys.length) keys.push('like');
+        return keys;
+    }
+
+    function buildSummaryEmojis(post) {
+        var wrap = el('span', 'cf-summary-emojis');
+        wrap.setAttribute('aria-hidden', 'true');
+        var keys = summaryEmojiKeys(post);
+        keys.slice(0, SUMMARY_EMOJI_MAX).forEach(function (key) {
+            wrap.appendChild(el('span', 'cf-summary-emoji', REACTIONS[key]));
+        });
+        var extra = keys.length - SUMMARY_EMOJI_MAX;
+        if (extra > 0) wrap.appendChild(el('span', 'cf-summary-more', '+' + extra));
+        return wrap;
+    }
 
     function toast(message, kind) {
         var node = $('cfToast');
@@ -528,6 +611,22 @@
         });
     }
 
+    // ── Profile picture (avatar) ───────────────────────────────────────────
+    // The upload + modal live in the SHARED `community-avatar.js` (loaded by
+    // both this page and the public profile, so the picture has one owner).
+    // This bundle only RENDERS avatars and repaints its own cards when the
+    // shared module reports a change.
+
+    function onAvatarChanged(url) {
+        AVATAR_URL = url || '';
+        // Repaint the viewer's own cards so the new picture shows without a
+        // full feed refetch. Other members' cards are untouched.
+        _feed.forEach(function (post) {
+            if (post.is_mine) post.avatar_url = AVATAR_URL || null;
+        });
+        renderFeed();
+    }
+
     function updatePostButton() {
         var button = $('cfPostBtn');
         var input = $('cfCaption');
@@ -758,7 +857,11 @@
             String(post.username || '').replace(/^@/, ''));
         profile.title = 'View @' + post.username + "'s profile";
         profile.setAttribute('aria-label', 'View @' + post.username + "'s profile");
-        profile.appendChild(el('div', 'cf-avatar', (esc(post.username) || 'A')[0].toUpperCase()));
+        // Facebook-style circular picture: the member's uploaded photo when
+        // there is one, their initial otherwise. `cf-avatar-ring` draws the
+        // gradient ring around it.
+        profile.appendChild(avatarNode(post.avatar_url, post.username,
+            'cf-avatar cf-avatar-ring'));
         var who = el('div', 'cf-card-who');
         who.appendChild(el('strong', null, post.username));
         var stamp = timeAgo(post.created_at) + (post.is_edited ? ' · edited' : '');
@@ -805,11 +908,7 @@
         // Reaction + comment summary
         var summary = el('div', 'cf-summary');
         var left = el('div', 'cf-summary-left');
-        var emoji = post.my_reaction && REACTIONS[post.my_reaction]
-            ? REACTIONS[post.my_reaction] : '👍';
-        var emojiNode = el('span', 'cf-summary-emoji', emoji);
-        emojiNode.setAttribute('aria-hidden', 'true');
-        left.appendChild(emojiNode);
+        left.appendChild(buildSummaryEmojis(post));
         var countNode = el('span', 'cf-count', countLabel(post.reaction_count) || '0');
         // Announce the change without re-reading the whole card.
         countNode.setAttribute('aria-live', 'polite');
@@ -908,6 +1007,7 @@
 
         var previous = post.my_reaction;
         var previousCount = Number(post.reaction_count) || 0;
+        var previousBreakdown = cloneBreakdown(post.reaction_breakdown);
 
         // Optimistic: switch keeps the count, add bumps it, un-react drops it.
         if (previous === key) {
@@ -919,6 +1019,10 @@
             post.my_reaction = key;
             post.reaction_count = previousCount + 1;
         }
+        // Keep the stacked summary in step with the optimistic count so the
+        // emoji row does not jump when the server's tally arrives.
+        post.reaction_breakdown = optimisticBreakdown(
+            previousBreakdown, previous, post.my_reaction);
         rerenderPost(post);
 
         var removing = previous === key;
@@ -931,19 +1035,47 @@
             if (!result.data || !result.data.success) {
                 throw new Error((result.data && result.data.error) || 'Could not save your reaction.');
             }
-            // Reconcile with the authoritative count.
+            // Reconcile with the authoritative count and the server's tally.
             post.reaction_count = Number(result.data.reaction_count);
             post.my_reaction = result.data.my_reaction;
+            if (result.data.reaction_breakdown) {
+                post.reaction_breakdown = result.data.reaction_breakdown;
+            }
             rerenderPost(post);
         }).catch(function (error) {
-            // Roll back both the chip and the count.
+            // Roll back the chip, the count and the summary together.
             post.my_reaction = previous;
             post.reaction_count = previousCount;
+            post.reaction_breakdown = previousBreakdown;
             rerenderPost(post);
             toast((error && error.message) || 'Could not save your reaction.', 'error');
         }).then(function () {
             _reactionInFlight[post.id] = false;
         });
+    }
+
+    function cloneBreakdown(raw) {
+        var out = {};
+        if (raw && typeof raw === 'object') {
+            Object.keys(raw).forEach(function (key) {
+                var count = Number(raw[key]) || 0;
+                if (count > 0) out[key] = count;
+            });
+        }
+        return out;
+    }
+
+    // Move one reaction from `from` to `to` without touching the headline
+    // count: a switch is a decrement plus an increment, an add is an increment,
+    // and removing is a decrement. `to` is null when the viewer un-reacted.
+    function optimisticBreakdown(breakdown, from, to) {
+        var out = cloneBreakdown(breakdown);
+        if (from && out[from]) {
+            out[from] -= 1;
+            if (out[from] <= 0) delete out[from];
+        }
+        if (to) out[to] = (out[to] || 0) + 1;
+        return out;
     }
 
     // ── Comments ───────────────────────────────────────────────────────────
@@ -972,7 +1104,8 @@
         var comments = _commentCache[post.id] || [];
         comments.forEach(function (comment) {
             var row = el('div', 'cf-comment');
-            row.appendChild(el('div', 'cf-comment-avatar', (esc(comment.username) || 'A')[0].toUpperCase()));
+            row.appendChild(avatarNode(comment.avatar_url, comment.username,
+                'cf-comment-avatar'));
             var bubble = el('div', 'cf-comment-body');
             bubble.appendChild(el('strong', null, comment.username));
             bubble.appendChild(document.createTextNode(comment.body));
@@ -1324,9 +1457,14 @@
     }
 
     function searchInput() {
+        var input = $('cfSearchInput');
+        // The `@` is drawn beside the field, so a typed or pasted one would
+        // show `@@betz`. Drop it from the field itself; the search still works.
+        if (input && /^\s*@/.test(input.value || '')) {
+            input.value = String(input.value).replace(/^\s*@+/, '');
+        }
         if (_searchTimer) clearTimeout(_searchTimer);
         _searchTimer = setTimeout(function () {
-            var input = $('cfSearchInput');
             runSearch(input ? input.value : '');
         }, 220);
     }
@@ -1336,7 +1474,11 @@
     }
 
     function runSearch(term) {
-        var cleaned = String(term === undefined || term === null ? '' : term).trim();
+        // The `@` is chrome (see the template), but a member may still paste or
+        // type one. Strip it here so the request is the same either way — the
+        // server matches a username with or without a stored `@`.
+        var cleaned = String(term === undefined || term === null ? '' : term)
+            .trim().replace(/^@+/, '');
         var results = $('cfSearchResults');
         if (cleaned.length < SEARCH_MIN) {
             if (results) {
@@ -1373,13 +1515,15 @@
             return;
         }
         users.forEach(function (user) {
-            var name = esc(user && user.username).trim();
+            // Strip a stored `@` (a legacy row) — the row draws its own prefix.
+            var name = esc(user && user.username).trim().replace(/^@+/, '');
             if (!name) return;
             var row = document.createElement('a');
             row.className = 'cf-search-result';
             row.href = '/community/u/' + encodeURIComponent(name);
             row.setAttribute('role', 'option');
-            row.appendChild(el('span', 'cf-search-avatar', name[0].toUpperCase()));
+            row.appendChild(avatarNode(user && user.avatar_url, name,
+                'cf-search-avatar'));
             row.appendChild(el('span', 'cf-search-name', '@' + name));
             results.appendChild(row);
         });
@@ -1435,6 +1579,18 @@
                 fileInput.value = '';
             });
         }
+        var avatarInput = $('cfAvatarInput');
+        if (avatarInput && window.GMCommunityAvatar) {
+            avatarInput.addEventListener('change', function () {
+                window.GMCommunityAvatar.pickFile(avatarInput.files);
+                avatarInput.value = '';
+            });
+        }
+        // The shared avatar module owns the modal + upload; the feed only needs
+        // to repaint its own cards when the picture changes.
+        if (window.GMCommunityAvatar) {
+            window.GMCommunityAvatar.onChange(onAvatarChanged);
+        }
         // Enter saves the username, so the gate is one keystroke to clear.
         var usernameInput = $('cfUsernameInput');
         if (usernameInput) {
@@ -1465,7 +1621,10 @@
             });
         }
         document.addEventListener('keydown', function (event) {
-            if (event.key === 'Escape') { closeLightbox(); closeEdit(); closeSheet(); closeSearch(); }
+            if (event.key === 'Escape') {
+                closeLightbox(); closeEdit(); closeSheet(); closeSearch();
+                if (window.GMCommunityAvatar) window.GMCommunityAvatar.close();
+            }
         });
         updateCounter();
         updatePostButton();
@@ -1505,6 +1664,15 @@
         sharePost: sharePost,
         addFiles: addFiles,
         saveUsername: saveUsername,
+        openAvatarModal: function () {
+            if (window.GMCommunityAvatar) window.GMCommunityAvatar.open();
+        },
+        closeAvatarModal: function () {
+            if (window.GMCommunityAvatar) window.GMCommunityAvatar.close();
+        },
+        removeAvatar: function () {
+            if (window.GMCommunityAvatar) window.GMCommunityAvatar.remove();
+        },
         openSearch: openSearch,
         closeSearch: closeSearch,
         searchInput: searchInput,
@@ -1521,6 +1689,11 @@
             buildNavItem: buildNavItem,
             buildFollowButton: buildFollowButton,
             buildVideoFrame: buildVideoFrame,
+            avatarNode: avatarNode,
+            renderAvatarInto: renderAvatarInto,
+            onAvatarChanged: onAvatarChanged,
+            getAvatarUrl: function () { return AVATAR_URL; },
+            setAvatarUrl: function (value) { AVATAR_URL = value || ''; },
             toggleFollow: toggleFollow,
             setFollowButton: setFollowButton,
             renderNav: renderNav,
