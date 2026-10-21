@@ -76,7 +76,7 @@ TOKENS = {
         "native": False,
         "address": os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c"),
         "explorer": "https://xdcscan.io/tx/",
-        "rpc": os.getenv("XDC_RPC_URL", "https://earpc.xinfin.network"),
+        "rpc": os.getenv("XDC_RPC_URL", "https://erpc.xinfin.network"),
     },
     "XDC": {
         "label": "XDC",
@@ -86,7 +86,7 @@ TOKENS = {
         "native": True,
         "address": "",
         "explorer": "https://xdcscan.io/tx/",
-        "rpc": os.getenv("XDC_RPC_URL", "https://earpc.xinfin.network"),
+        "rpc": os.getenv("XDC_RPC_URL", "https://erpc.xinfin.network"),
     },
 }
 
