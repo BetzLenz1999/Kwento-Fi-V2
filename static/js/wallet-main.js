@@ -3693,7 +3693,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     const AI_BOOT = window.GM_WALLET_BOOT || {};
     const AI_XDC_CHAIN_ID    = Number(AI_BOOT.xdcChainId) || 50;
     const AI_XDC_CHAIN_HEX   = '0x32';
-    const AI_XDC_RPC         = 'https://earpc.xinfin.network';
+    const AI_XDC_RPC         = 'https://erpc.xinfin.network';
     const AI_CELO_CHAIN_ID   = Number(AI_BOOT.celoChainId) || 42220;
     const AI_BRIDGE_CONTRACT = AI_BOOT.bridgeContract || '0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5';
     const AI_CELO_GD_TOKEN   = AI_BOOT.celoGdTokenContract || '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A';
@@ -3775,7 +3775,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     const AI_XDC_NETWORK_PARAMS = {
         chainId: AI_XDC_CHAIN_HEX,
         chainName: 'XDC Network',
-        rpcUrls: ['https://earpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
+        rpcUrls: ['https://erpc.xinfin.network', 'https://rpc.ankr.com/xdc', 'https://erpc.xdcrpc.com'],
         nativeCurrency: { name: 'XDC', symbol: 'XDC', decimals: 18 },
         blockExplorerUrls: ['https://xdcscan.com']
     };
@@ -4421,7 +4421,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         // own balance read, which MetaMask surfaces as a red "Insufficient
         // funds" fee row plus a blocking "Review alerts" button.
         const XDC_RPC_URLS = [
-            'https://earpc.xinfin.network',
+            'https://erpc.xinfin.network',
             'https://rpc.ankr.com/xdc',
             'https://erpc.xdcrpc.com',
             'https://rpc.xdcrpc.com',
@@ -4822,10 +4822,78 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 if (err && err.code === 4001) {
                     _xdcBannerSetStatus('Update cancelled. You can tap “Fix XDC network” again anytime.', '#fcd34d');
                 } else {
-                    _xdcBannerSetStatus('Could not update the network automatically. In your wallet: Settings → Networks → XDC Network → set the RPC URL to https://earpc.xinfin.network', '#f87171');
+                    _xdcBannerSetStatus('Could not update the network automatically. In your wallet: Settings → Networks → XDC Network → set the RPC URL to https://erpc.xinfin.network', '#f87171');
                 }
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = '🔧 Fix XDC network'; }
+            }
+        }
+
+        // The claim modal's XDC failure copy tells the user to edit their
+        // wallet's network settings by hand, but the banner button that does
+        // it automatically sits in the page body — behind the modal overlay
+        // (z-index 200), so it is unreachable exactly when it is needed. This
+        // renders the same one-tap repair INSIDE the claim modal: one tap, the
+        // wallet shows its network-update approval, then the user retries
+        // without leaving the sheet.
+        //
+        // Injected and WalletConnect wallets both route
+        // wallet_addEthereumChain to a real approval prompt — EIP-1193 forbids
+        // changing a network silently. The in-app GoodMarket wallet is skipped:
+        // its XDC reads fan out over our own RPC list, so
+        // wallet_addEthereumChain is a no-op there and the failure has a
+        // different cause.
+        function _offerXdcRpcRepairInClaimModal() {
+            if (typeof LOGIN_METHOD !== 'undefined' && (LOGIN_METHOD || '').toLowerCase() === 'local') return;
+            const wrap = document.getElementById('ubiClaimStatus') || document.body;
+            const existing = document.getElementById('xdcClaimRpcFixCard');
+            if (existing) existing.remove();
+            const card = document.createElement('div');
+            card.id = 'xdcClaimRpcFixCard';
+            card.style.cssText = 'margin-top:0.8rem;padding:0.95rem 1.1rem;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.45);border-radius:12px;color:#fcd34d;font-size:0.86rem;line-height:1.5;text-align:left;';
+            card.innerHTML =
+                '<div style="font-weight:700;color:#fbbf24;margin-bottom:0.35rem;">🔧 Fix it in one tap</div>' +
+                '<div style="margin-bottom:0.65rem;">Tap below and your wallet will ask you to approve an update to your <strong>XDC Network</strong> RPC. Approve it once, then retry the claim — no need to edit settings by hand.</div>' +
+                '<button type="button" id="xdcClaimRpcFixBtn" style="background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:var(--primary-button-text);border:none;border-radius:40px;padding:0.6rem 1.3rem;font-family:inherit;font-size:0.85rem;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(var(--accent-rgb),0.28);">🔧 Fix XDC network</button>' +
+                '<div id="xdcClaimRpcFixStatus" style="margin-top:0.6rem;font-size:0.78rem;line-height:1.45;color:var(--text-dim);" aria-live="polite"></div>';
+            wrap.appendChild(card);
+            const fixBtn = card.querySelector('#xdcClaimRpcFixBtn');
+            const fixStatus = card.querySelector('#xdcClaimRpcFixStatus');
+            const setFixStatus = (text, color) => {
+                if (!fixStatus) return;
+                fixStatus.textContent = text || '';
+                fixStatus.style.color = color || 'var(--text-dim)';
+            };
+            const resetBtn = () => {
+                if (!fixBtn) return;
+                fixBtn.disabled = false;
+                fixBtn.textContent = '🔧 Fix XDC network';
+            };
+            if (fixBtn) {
+                fixBtn.addEventListener('click', async () => {
+                    fixBtn.disabled = true;
+                    fixBtn.textContent = '🔧 Updating…';
+                    setFixStatus('Waiting for your wallet to confirm the network update…', 'var(--text-dim)');
+                    try {
+                        // provider/from are block-scoped inside the claim's try,
+                        // so re-resolve the signing provider here.
+                        const { provider } = await getClaimProviderAndFrom();
+                        await _promptAddHealthyXdcRpc(provider);
+                        // The body banner re-probes on its own schedule; stamp
+                        // the fixed flag so it stops nagging about a network
+                        // the user just repaired from inside the sheet.
+                        try { localStorage.setItem(XDC_RPC_BANNER_FIXED_KEY, '1'); } catch (_) {}
+                        setFixStatus('✅ XDC network updated. Tap “Retry XDC Claim” to claim now.', '#34d399');
+                        fixBtn.textContent = '✅ Updated';
+                    } catch (err) {
+                        if (err && err.code === 4001) {
+                            setFixStatus('Update cancelled. You can tap “Fix XDC network” again anytime.', '#fcd34d');
+                        } else {
+                            setFixStatus('Could not update the network automatically. In your wallet: Settings → Networks → XDC Network → set the RPC URL to https://erpc.xinfin.network', '#f87171');
+                        }
+                        resetBtn();
+                    }
+                });
             }
         }
 
@@ -4837,6 +4905,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         window.repairXdcRpcNow = repairXdcRpcNow;
         window.dismissXdcRpcBanner = dismissXdcRpcBanner;
         window.checkXdcRpcHealthProactively = checkXdcRpcHealthProactively;
+        window._offerXdcRpcRepairInClaimModal = _offerXdcRpcRepairInClaimModal;
 
         // Lenient JSON fetch: tries res.json() and only flags the error as
         // an HTML/upstream issue when the body is genuinely unparseable
@@ -7406,7 +7475,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 // get past it, since the wallet UI itself does not explain it.
                 if (network === 'xdc') {
                     appendStatusLine(
-                        '📲 Confirm the transaction in your wallet. If MetaMask shows a red <strong>Network fee</strong> row and a <strong>“⚠ Review alerts”</strong> button instead of Confirm, your wallet could not validate the XDC fee/balance — that is a wallet RPC problem, not a funds problem (the button cannot be tapped past it). Fix it by setting your XDC Network RPC URL to <strong>https://earpc.xinfin.network</strong> (Settings → Networks → XDC Network → RPC URL), then retry the claim.',
+                        '📲 Confirm the transaction in your wallet. If MetaMask shows a red <strong>Network fee</strong> row and a <strong>“⚠ Review alerts”</strong> button instead of Confirm, your wallet could not validate the XDC fee/balance — that is a wallet RPC problem, not a funds problem (the button cannot be tapped past it). Fix it by setting your XDC Network RPC URL to <strong>https://erpc.xinfin.network</strong> (Settings → Networks → XDC Network → RPC URL), then retry the claim.',
                         'var(--text-dim)'
                     );
                 }
@@ -7428,14 +7497,20 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             } catch (err) {
                 const raw = (err && (err.shortMessage || err.message)) || `${network.toUpperCase()} claim failed`;
                 let msg;
+                // Both the offline-RPC and the fee-estimate failures mean the
+                // wallet's OWN XDC node could not answer, so they get the same
+                // one-tap repair rather than manual settings instructions.
+                const xdcWalletRpcBroken = network === 'xdc'
+                    && !_isUserRejectedError(err)
+                    && (_isWalletRpcUnreachableError(err) || _isNetworkFeeUnavailableError(err));
                 if (_isUserRejectedError(err)) {
                     msg = `${network.toUpperCase()} transaction cancelled.`;
                 } else if (network === 'xdc' && _isWalletRpcUnreachableError(err)) {
-                    msg = "Your wallet's XDC RPC endpoint is offline. Open your wallet's XDC Network settings and set the RPC URL to <strong>https://earpc.xinfin.network</strong> (or remove &amp; re-add XDC Network), then retry.";
+                    msg = "Your wallet's XDC RPC endpoint is offline. Open your wallet's XDC Network settings and set the RPC URL to <strong>https://erpc.xinfin.network</strong> (or remove &amp; re-add XDC Network), then retry.";
                 } else if (_isRpcHtmlError(err)) {
                     msg = `${network.toUpperCase()} network is temporarily busy. Please retry in 30–60 seconds.`;
                 } else if (network === 'xdc' && _isNetworkFeeUnavailableError(err)) {
-                    msg = "Your wallet could not work out the XDC network fee. Open your wallet's XDC Network settings and set the RPC URL to <strong>https://earpc.xinfin.network</strong> (or remove &amp; re-add XDC Network), then retry.";
+                    msg = "Your wallet could not work out the XDC network fee. Open your wallet's XDC Network settings and set the RPC URL to <strong>https://erpc.xinfin.network</strong> (or remove &amp; re-add XDC Network), then retry.";
                 } else if (err && err.__simulationBlock) {
                     msg = raw;
                 } else if (window.GMTxError && GMTxError.format) {
@@ -7449,6 +7524,9 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 // Mirror the Celo failure path: offer whichever other network is
                 // still claimable, so a broken XDC route is not a dead end.
                 if (network !== 'fuse') _offerAlternateClaimNetwork(network);
+                // Append last: setStatus() rewrites the status HTML, so the
+                // repair card must come after every status write.
+                if (xdcWalletRpcBroken) _offerXdcRpcRepairInClaimModal();
             }
         }
 
