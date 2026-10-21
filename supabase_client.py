@@ -129,6 +129,91 @@ def get_supabase_admin_client():
 
     return _supabase_admin
 
+
+# ─── Second Supabase project (feature split) ───────────────────────────────
+#
+# A separate Supabase project can host a self-contained feature so its rows
+# stop counting against the primary project's free-tier DB size. The
+# local-wallet accounts (`local_wallet_accounts`) are the first tenant: the
+# table has no foreign keys into any other table, so it can live in its own
+# project without a cross-project join.
+#
+# Configure the split with:
+#   SUPABASE_URL2, SUPABASE_ANON_KEY2, SUPABASE_SERVICE_ROLE_KEY2
+#
+# When these are unset the helpers return ``None`` and callers fall back to
+# the primary project, so an un-configured deployment keeps working exactly
+# as before (and a fresh deployment can migrate later without a code change).
+
+_SUPABASE_URL2 = os.getenv("SUPABASE_URL2")
+_SUPABASE_KEY2 = os.getenv("SUPABASE_ANON_KEY2")
+_SUPABASE_SERVICE_ROLE_KEY2 = os.getenv("SUPABASE_SERVICE_ROLE_KEY2")
+
+_supabase2: Optional[Client] = None
+_supabase2_initialised = False
+_supabase_admin2: Optional[Client] = None
+_supabase_admin2_initialised = False
+
+
+def is_supabase2_configured() -> bool:
+    """True when the second Supabase project is configured (URL + a key)."""
+    return bool(
+        _SUPABASE_URL2
+        and _SUPABASE_URL2 != "your-supabase-url"
+        and (_SUPABASE_KEY2 or _SUPABASE_SERVICE_ROLE_KEY2)
+    )
+
+
+def get_supabase_client2():
+    """Anon client for the second Supabase project (or ``None``)."""
+    global _supabase2, _supabase2_initialised
+
+    if _supabase2_initialised:
+        return _supabase2
+
+    if not is_supabase2_configured() or not _SUPABASE_KEY2:
+        _supabase2_initialised = True
+        return None
+
+    try:
+        _supabase2 = create_client(_SUPABASE_URL2, _SUPABASE_KEY2)
+        logger.info("✅ Supabase project-2 (anon) client initialised")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("❌ Supabase project-2 client init failed: %s", exc)
+        _supabase2 = None
+    finally:
+        _supabase2_initialised = True
+
+    return _supabase2
+
+
+def get_supabase_admin_client2():
+    """Service-role client for the second Supabase project (or ``None``).
+
+    Service role is preferred for ``local_wallet_accounts`` reads/writes: the
+    table has RLS enabled with no policies, so the anon client cannot see it.
+    """
+    global _supabase_admin2, _supabase_admin2_initialised
+
+    if _supabase_admin2_initialised:
+        return _supabase_admin2
+
+    if not is_supabase2_configured() or not _SUPABASE_SERVICE_ROLE_KEY2:
+        _supabase_admin2_initialised = True
+        return None
+
+    try:
+        _supabase_admin2 = create_client(_SUPABASE_URL2, _SUPABASE_SERVICE_ROLE_KEY2)
+        logger.info("✅ Supabase project-2 admin (service-role) client initialised")
+    except Exception as exc:  # noqa: BLE001
+        logger.error("❌ Supabase project-2 admin client init failed: %s", exc)
+        _supabase_admin2 = None
+    finally:
+        _supabase_admin2_initialised = True
+
+    return _supabase_admin2
+
+
 # SQL COMMANDS TO RUN IN YOUR SUPABASE SQL EDITOR:
 # Copy and run these commands one by one in your Supabase SQL Editor
 
