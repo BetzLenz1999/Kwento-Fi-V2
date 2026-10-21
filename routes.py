@@ -2,7 +2,7 @@ from env_utils import get_env_decimal, get_env_float, get_env_int
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for, make_response
 from blockchain import has_recent_ubi_claim, GOODDOLLAR_CONTRACTS
 from analytics_service import analytics
-from supabase_client import get_supabase_client, get_supabase_admin_client, safe_supabase_operation, supabase_logger, log_admin_action, is_admin
+from supabase_client import get_supabase_client, get_supabase_admin_client, get_supabase_client2, get_supabase_admin_client2, safe_supabase_operation, supabase_logger, log_admin_action, is_admin
 from notifications_service import NotificationService
 from web3 import Web3
 import json
@@ -1873,11 +1873,23 @@ def _mask_email(email: str) -> str:
         return "***"
 
 def _local_wallet_table(admin_only=True):
-    admin_client = get_supabase_admin_client()
-    client = admin_client or get_supabase_client()
+    """Table handle for local_wallet_accounts.
+
+    Prefers the SECOND Supabase project (``SUPABASE_URL2`` /
+    ``SUPABASE_SERVICE_ROLE_KEY2``) when configured, so local-wallet accounts
+    live in their own project and stop counting against the primary project's
+    free-tier DB size. Falls back to the primary project when the split is not
+    configured, so an un-migrated deployment keeps working unchanged.
+    """
+    # Any project-2 client wins over any primary client: falling back to the
+    # primary project while the split is configured would silently read/write
+    # the wrong database (split-brain accounts) instead of failing loudly.
+    admin_client = get_supabase_admin_client2() or get_supabase_client2()
+    if admin_client is None:
+        admin_client = get_supabase_admin_client() or get_supabase_client()
     if admin_only and admin_client is None:
         logger.warning("⚠️ local_wallet_accounts accessed without service-role key")
-    return client.table("local_wallet_accounts") if client else None
+    return admin_client.table("local_wallet_accounts") if admin_client else None
 
 def _build_local_wallet_login_message(address, keystore_json):
     """The message the user signs to prove key ownership. Binding the keystore
