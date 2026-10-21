@@ -17,6 +17,7 @@ from reloadly import init_reloadly
 from savings import init_savings
 from farming import init_farming
 from ai_agent import init_ai_agent
+from config import get_post_login_path
 
 
 from functools import wraps
@@ -149,6 +150,16 @@ logger.info(f"Asset version (cache-buster): {ASSET_VERSION}")
 def _inject_asset_version():
     """Expose ASSET_VERSION to all Jinja templates for cache-busting."""
     return {'ASSET_VERSION': ASSET_VERSION}
+
+
+@app.context_processor
+def _inject_post_login_path():
+    """Expose the post-login landing path (config.POST_LOGIN_PATH) to templates.
+
+    The shared Get Started modal reads it into ``GM_GET_STARTED_BOOT`` so its
+    client-side redirect fallbacks agree with the backend's ``redirect_to``.
+    """
+    return {'POST_LOGIN_PATH': get_post_login_path()}
 
 
 @app.after_request
@@ -1758,7 +1769,7 @@ def session_status():
         'authenticated': bool(wallet and verified),
         'wallet': wallet if wallet and verified else None,
         'login_method': session.get('login_method') if wallet and verified else None,
-        'redirect_to': '/wallet' if wallet and verified else None,
+        'redirect_to': get_post_login_path() if wallet and verified else None,
     })
 
 @app.route('/api/debug/session', methods=['GET'])
@@ -1822,7 +1833,7 @@ def verify_identity():
                 'message': 'Already verified!',
                 'wallet': wallet_address,
                 'already_verified': True,
-                'redirect_to': '/wallet'
+                'redirect_to': get_post_login_path()
             })
 
         # Verify signature to prove wallet ownership
@@ -1988,7 +1999,7 @@ def verify_identity():
             'message': 'Identity verification successful!',
             'wallet': wallet_address,
             'ubi_verified': True,
-            'redirect_to': '/wallet'
+            'redirect_to': get_post_login_path()
         }
         if referral_warning:
             response_data['referral_warning'] = referral_warning
