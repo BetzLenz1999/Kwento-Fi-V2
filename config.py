@@ -75,6 +75,23 @@ DAILY_TASK_CONTRACT_ADDRESS = os.getenv(
     '0x3cC19de5b06Ce73C35Cf1D5ab3c6Cc3583dFe11f'
 )
 
+# ============================
+# Post-login landing
+# ============================
+# Where a freshly created, logged-in or wallet-connected user is sent once the
+# "Get Started" flow succeeds. Single source of truth shared by the backend
+# ``redirect_to`` responses (main.py / routes.py) and the client-side fallbacks
+# in static/js/get-started.js (via POST_LOGIN_PATH in the template context).
+# A guest who started on a specific feature page still returns THERE — the
+# return-to target wins over this default.
+POST_LOGIN_PATH = (os.getenv('POST_LOGIN_PATH') or '/community').strip() or '/community'
+
+
+def get_post_login_path():
+    """Path a user lands on after create / login / wallet connect."""
+    return POST_LOGIN_PATH
+
+
 # Use production domain for external links (referrals, shares, etc.)
 # Use local domain for internal API calls
 def get_share_url_base():
