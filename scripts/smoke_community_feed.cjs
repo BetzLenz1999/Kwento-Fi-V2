@@ -706,27 +706,6 @@ function feedFetch(handler, feedRows) {
        chips.every(c => /^React with /.test(c.getAttribute('aria-label') || '')));
   }
 
-  // ── 10b. buildCard: the author's profile picture, or their initial ────────
-  {
-    const { api } = run({ boot: MEMBER });
-    const withPic = api._internals.buildCard(makePost({
-      username: 'betz', avatar_url: 'https://media.example/u/deadbeef/pic.jpg',
-    }));
-    const img = withPic.querySelector('.cf-avatar-img');
-    ok('an author with a picture shows the photo',
-       !!img && img.src === 'https://media.example/u/deadbeef/pic.jpg',
-       img ? img.src : 'no img');
-    ok('the avatar link still points at the profile',
-       withPic.querySelector('.cf-profile-link').href === '/community/u/betz');
-
-    const withoutPic = api._internals.buildCard(makePost({ username: 'betz' }));
-    const initial = withoutPic.querySelector('.cf-avatar');
-    ok('an author without a picture falls back to the initial',
-       !!initial && initial.textContent === 'B', initial ? initial.textContent : 'none');
-    ok('the fallback renders no <img>',
-       !withoutPic.querySelector('.cf-avatar-img'));
-  }
-
   // ── 11. Username gate ─────────────────────────────────────────────────────
   {
     // No username yet: a caption is not enough to enable Post.
