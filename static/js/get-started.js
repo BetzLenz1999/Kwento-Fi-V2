@@ -14,6 +14,11 @@
 // Boot config (set by the including template).
 const GM_BOOT = window.GM_GET_STARTED_BOOT || {};
 const _gmReturnTo = GM_BOOT.returnTo || '';
+// Where create / login / wallet-connect land by default. Server-owned
+// (config.POST_LOGIN_PATH, surfaced via the template context) so the client
+// fallback can never drift from the backend's `redirect_to`. A return-to
+// target (a guest who started on /swap, /savings, …) still wins over this.
+const _gmPostLoginPath = GM_BOOT.postLoginPath || '/community';
 
 // Network configuration is shared by the injected-wallet login flow.
 // The add/switch requests happen only after the Connect click, because
@@ -555,7 +560,7 @@ async function _lwCompleteLogin(data, pin) {
     // AND older accounts made before this flow get the setup step until
     // they have a username. A failed lookup must not block the login.
     // A guest who connected from /swap or /savings returns there.
-    const redirectTo = _gmReturnTo || data.redirect_to || '/wallet';
+    const redirectTo = _gmReturnTo || data.redirect_to || _gmPostLoginPath;
     let needsUsername = false;
     try {
         const uRes = await fetch('/api/user/username');
@@ -623,7 +628,7 @@ function _lwCanOfferPasskey() {
 }
 
 function _lwShowPasskeyStep(redirectTo) {
-    const redirect = redirectTo || _lwOfferPasskey && _lwOfferPasskey.redirectTo || '/wallet';
+    const redirect = redirectTo || _lwOfferPasskey && _lwOfferPasskey.redirectTo || _gmPostLoginPath;
     ['lwCreateStep', 'lwPhraseStep', 'lwUsernameStep'].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
@@ -653,7 +658,7 @@ async function submitLocalWalletPasskey() {
     const btn = document.getElementById('lwPasskeyEnableBtn');
     const st = document.getElementById('lwPasskeyStatus');
     const offer = _lwOfferPasskey;
-    const redirect = (offer && offer.redirectTo) || '/wallet';
+    const redirect = (offer && offer.redirectTo) || _gmPostLoginPath;
     const say = function (msg, kind) {
         if (!st) return;
         st.className = 'status-message' + (kind ? ' ' + kind : '');
@@ -685,15 +690,15 @@ async function submitLocalWalletPasskey() {
 // Declining is remembered so we never ask again on this device.
 function skipLocalWalletPasskey() {
     try { localStorage.setItem('gm_passkey_offer_declined_v1', '1'); } catch (_) {}
-    const redirect = (_lwOfferPasskey && _lwOfferPasskey.redirectTo) || '/wallet';
+    const redirect = (_lwOfferPasskey && _lwOfferPasskey.redirectTo) || _gmPostLoginPath;
     _lwClearPasskeyOffer();
     window.location.href = redirect;
 }
 
-let _lwUsernameRedirect = '/wallet';
+let _lwUsernameRedirect = _gmPostLoginPath;
 
 function _lwShowUsernameStep(redirectTo) {
-    _lwUsernameRedirect = redirectTo || '/wallet';
+    _lwUsernameRedirect = redirectTo || _gmPostLoginPath;
     document.getElementById('lwCreateStep').style.display = 'none';
     document.getElementById('lwPhraseStep').style.display = 'none';
     document.getElementById('lwUsernameStep').style.display = 'block';
@@ -2171,10 +2176,11 @@ function _gmApplyReturnTo(data) {
 }
 
 // Success redirect target: the page the guest started on (e.g. /swap) or the
-// wallet hub. Used by the injected / WalletConnect flows whose success path
-// does not read `redirect_to` from postVerifyIdentity's response.
+// configured post-login landing (config.POST_LOGIN_PATH, default /community).
+// Used by the injected / WalletConnect flows whose success path does not read
+// `redirect_to` from postVerifyIdentity's response.
 function _gmAfterLoginRedirect(delay) {
-    const target = _gmReturnTo || '/wallet';
+    const target = _gmReturnTo || _gmPostLoginPath;
     setTimeout(function () { window.location.href = target; }, delay || 900);
 }
 
