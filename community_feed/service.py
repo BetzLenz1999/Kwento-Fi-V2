@@ -835,16 +835,27 @@ def wallet_for_username(username: str | None) -> str | None:
     return (rows[0].get("wallet_address") or "").strip() or None
 
 
-def _count(supabase, table: str, filters: list[tuple[str, str, object]]) -> int:
+def _count(supabase, table: str, filters: list[tuple[str, str, object]],
+           select: str = "*") -> int:
     """Bounded row count. Falls back to len(rows) when the client gives no count.
 
     ``filters`` are ``(op, column, value)`` triples; ``op`` is ``"eq"`` or
     ``"ilike"``. The wallet is matched with ``ilike`` because sessions carry
     checksummed addresses while rows are stored lowercase (the documented
     case-mismatch bug class).
+
+    ``select`` is the projected column list. The count itself comes from
+    PostgREST's ``count="exact"`` and is independent of the projection, so a
+    caller may name a narrow column to keep the payload small — but it MUST
+    name one the table actually has. The default ``"*"`` is safe for any table:
+    this helper must never hard-code a column, because
+    ``community_feed_follows`` is keyed by its wallet pair and has no ``id``,
+    and asking PostgREST for a column that does not exist fails the WHOLE
+    request (``42703``) — which the ``except`` below turns into a silent 0, so
+    the follower counts read as zero while the follow itself succeeds.
     """
     try:
-        query = supabase.table(table).select("id", count="exact")
+        query = supabase.table(table).select(select, count="exact")
         for op, column, value in filters:
             query = getattr(query, op)(column, value)
         result = query.limit(1000).execute()
@@ -902,7 +913,8 @@ def get_public_profile(username: str | None,
         supabase, "community_feed_posts",
         [("ilike", "wallet_address", wallet),
          ("eq", "is_deleted", False),
-         ("eq", "is_hidden", False)])
+         ("eq", "is_hidden", False)],
+        select="id")
 
     album_count = 0
     media_count = 0
