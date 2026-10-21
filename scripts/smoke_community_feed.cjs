@@ -706,6 +706,137 @@ function feedFetch(handler, feedRows) {
        chips.every(c => /^React with /.test(c.getAttribute('aria-label') || '')));
   }
 
+  // ── 10b. buildCard: the author's profile picture, or their initial ────────
+  {
+    const { api } = run({ boot: MEMBER });
+    const withPic = api._internals.buildCard(makePost({
+      username: 'betz', avatar_url: 'https://media.example/u/deadbeef/pic.jpg',
+    }));
+    const img = withPic.querySelector('.cf-avatar-img');
+    ok('an author with a picture shows the photo',
+       !!img && img.src === 'https://media.example/u/deadbeef/pic.jpg',
+       img ? img.src : 'no img');
+    ok('the avatar link still points at the profile',
+       withPic.querySelector('.cf-profile-link').href === '/community/u/betz');
+
+    const withoutPic = api._internals.buildCard(makePost({ username: 'betz' }));
+    const initial = withoutPic.querySelector('.cf-avatar');
+    ok('an author without a picture falls back to the initial',
+       !!initial && initial.textContent === 'B', initial ? initial.textContent : 'none');
+    ok('the fallback renders no <img>',
+       !withoutPic.querySelector('.cf-avatar-img'));
+  }
+
+  // ── 10c. buildCard: the stacked reaction summary ──────────────────────────
+  // A social feed shows WHICH reactions a post got, not one anonymous emoji.
+  {
+    const { api } = run({ boot: MEMBER });
+    const card = api._internals.buildCard(makePost({
+      reaction_count: 12,
+      reaction_breakdown: { love: 7, like: 4, haha: 1 },
+    }));
+    const emojis = card.querySelectorAll('.cf-summary-emoji')
+      .map(n => n.textContent);
+    ok('the summary stacks the most-used reactions first',
+       emojis[0] === '❤️' && emojis[1] === '👍', JSON.stringify(emojis));
+    ok('the summary shows at most three reaction kinds',
+       emojis.length === 3, String(emojis.length));
+    ok('the headline number is still the authoritative total',
+       card.querySelector('.cf-count').textContent === '12',
+       card.querySelector('.cf-count').textContent);
+    ok('the summary emojis are decorative (not announced twice)',
+       card.querySelector('.cf-summary-emojis')
+         .getAttribute('aria-hidden') === 'true');
+
+    // Four kinds: the fourth is collapsed into a "+1" chip.
+    const many = api._internals.buildCard(makePost({
+      reaction_count: 9,
+      reaction_breakdown: { like: 4, love: 3, haha: 1, wow: 1 },
+    }));
+    ok('a fourth reaction kind collapses into a +N chip',
+       many.querySelector('.cf-summary-more').textContent === '+1',
+       many.querySelector('.cf-summary-more').textContent);
+
+    // No breakdown (an old row / un-migrated table): one 👍, never a gap.
+    const bare = api._internals.buildCard(makePost({ reaction_count: 3 }));
+    const bareEmojis = bare.querySelectorAll('.cf-summary-emoji');
+    ok('a missing breakdown falls back to a single 👍',
+       bareEmojis.length === 1 && bareEmojis[0].textContent === '👍',
+       JSON.stringify(bareEmojis.map(n => n.textContent)));
+
+    // The viewer's own reaction always gets a seat, even when it is the
+    // least-used kind.
+    const mine = api._internals.buildCard(makePost({
+      reaction_count: 20,
+      my_reaction: 'sad',
+      reaction_breakdown: { like: 19, sad: 1 },
+    }));
+    ok('the viewer reaction is always shown first',
+       mine.querySelector('.cf-summary-emoji').textContent === '😢',
+       mine.querySelector('.cf-summary-emoji').textContent);
+  }
+
+  // ── 10d. An optimistic reaction keeps the stacked summary in step ────────
+  {
+    const { api } = run({
+      boot: MEMBER,
+      fetchImpl: () => Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true, reaction_count: 4, my_reaction: 'haha',
+          reaction_breakdown: { like: 3, haha: 1 },
+        }),
+      }),
+    });
+    const post = makePost({
+      id: 5, reaction_count: 4, my_reaction: 'like',
+      reaction_breakdown: { like: 4 },
+    });
+    api.react(post, 'haha');
+    ok('the optimistic summary moves the viewer reaction',
+       post.my_reaction === 'haha' && post.reaction_breakdown.haha === 1
+         && post.reaction_breakdown.like === 3,
+       JSON.stringify(post.reaction_breakdown));
+    ok('a switch keeps the optimistic total flat',
+       post.reaction_count === 4, String(post.reaction_count));
+    await tick();
+    ok('the summary reconciles with the server tally',
+       post.reaction_breakdown.haha === 1 && post.reaction_breakdown.like === 3
+         && post.reaction_count === 4,
+       JSON.stringify(post.reaction_breakdown));
+  }
+
+  // ── 10e. Search: the `@` is chrome, never typed ───────────────────────────
+  {
+    const seen = [];
+    const { api, store } = run({
+      boot: MEMBER,
+      fetchImpl: feedFetch(function (url) {
+        seen.push(String(url));
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true, users: [{ username: 'betz' }],
+          }),
+        });
+      }),
+    });
+    // A pasted `@betz` is stripped from the FIELD (the row draws its own `@`).
+    store.cfSearchInput.value = '@betz';
+    api.searchInput();
+    await tick();
+    ok('a typed @ is stripped from the field', store.cfSearchInput.value === 'betz',
+       store.cfSearchInput.value);
+    ok('the request carries the bare username',
+       seen.some(u => /users\/search\?q=betz(&|$)/.test(u)), JSON.stringify(seen));
+
+    // A stored `@` on the row is stripped before display, so no `@@betz`.
+    api._internals.renderSearchResults([{ username: '@betz' }]);
+    ok('a stored @ is not doubled in the results',
+       store.cfSearchResults.querySelector('.cf-search-name').textContent === '@betz',
+       store.cfSearchResults.querySelector('.cf-search-name').textContent);
+  }
+
   // ── 11. Username gate ─────────────────────────────────────────────────────
   {
     // No username yet: a caption is not enough to enable Post.
