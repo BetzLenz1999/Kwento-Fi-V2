@@ -69,9 +69,29 @@ def _now_iso() -> str:
 
 
 def _get_table():
-    """Service-role client preferred (same RLS lesson as the rest of the app)."""
-    from supabase_client import get_supabase_admin_client, get_supabase_client
-    client = get_supabase_admin_client() or get_supabase_client()
+    """Service-role client preferred (same RLS lesson as the rest of the app).
+
+    Prefers the second Supabase project (``SUPABASE_URL2`` / ``*_KEY2``) when it
+    is configured, so ``local_wallet_accounts`` can live off the primary project;
+    falls back to the primary project when the split is not configured.
+
+    The ``*_2`` helpers are looked up with ``getattr`` so a stub/deployment that
+    predates the split (no project-2 helpers) still resolves the primary client.
+    """
+    import supabase_client as _sc
+
+    admin2 = getattr(_sc, "get_supabase_admin_client2", None)
+    client2 = getattr(_sc, "get_supabase_client2", None)
+
+    # Any project-2 client wins over any primary client: falling back to the
+    # primary project while the split is configured would silently read/write
+    # the wrong database (split-brain accounts) instead of failing loudly.
+    client = (
+        (admin2() if admin2 else None)
+        or (client2() if client2 else None)
+        or _sc.get_supabase_admin_client()
+        or _sc.get_supabase_client()
+    )
     return client.table("local_wallet_accounts") if client else None
 
 
@@ -230,11 +250,9 @@ def get_local_wallet_verification_summary() -> dict:
         "service_available": False,
     }
     try:
-        from supabase_client import get_supabase_admin_client, get_supabase_client
-        client = get_supabase_admin_client() or get_supabase_client()
-        if client is None:
+        table = _get_table()
+        if table is None:
             return summary
-        table = client.table("local_wallet_accounts")
 
         all_rows = _count(table)
         try:
@@ -284,12 +302,11 @@ def cleanup_incomplete_local_wallet_accounts(dry_run: bool = True) -> dict:
     """
     result = {"success": False, "examined": 0, "deleted": 0, "dry_run": dry_run}
     try:
-        from supabase_client import get_supabase_admin_client, get_supabase_client
-        client = get_supabase_admin_client() or get_supabase_client()
-        if client is None:
+        table = _get_table()
+        if table is None:
             result["error"] = "service_unavailable"
             return result
-        table = client.table("local_wallet_accounts")
+
         try:
             res = (
                 table.select("id", count="exact")
