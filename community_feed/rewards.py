@@ -48,6 +48,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from env_utils import get_env_decimal, get_env_int
+
 logger = logging.getLogger(__name__)
 
 FEATURE_NAME = "community_rewards_feature"
@@ -66,12 +68,7 @@ FEATURE_NAME = "community_rewards_feature"
 # pays a user for tapping a stranger's post, and the only one with no content
 # left behind to audit. It is priced as a nudge, not an income.
 def _rate(name: str, default: str) -> Decimal:
-    try:
-        value = Decimal(os.getenv(name, default))
-    except Exception:  # noqa: BLE001
-        logger.error("community_rewards: bad value for %s=%r; using %s",
-                     name, os.getenv(name), default)
-        value = Decimal(default)
+    value = get_env_decimal(name, default)
     return value if value > 0 else Decimal("0")
 
 
@@ -95,7 +92,7 @@ _ENV_RATE_DEFAULTS = {
 # an action off without a deploy (e.g. kill the tap reward during an incident).
 # The ceiling is well under the daily cap: a rate above DAILY_CAP would make
 # every credit unsatisfiable, which is a foot-gun, not a feature.
-RATE_MAX = Decimal(os.getenv("COMMUNITY_REWARD_RATE_MAX", "10"))
+RATE_MAX = get_env_decimal("COMMUNITY_REWARD_RATE_MAX", "10")
 RATE_BOUNDS = {name: (Decimal("0"), RATE_MAX) for name in RATE_NAMES}
 
 #: Where the admin overrides live. Stored as a JSON blob in the existing
@@ -107,18 +104,18 @@ RATES_FEATURE = "community_reward_rates"
 # invalidates the worker that handled it, and the other gunicorn workers pick
 # the change up within this window. That is the honest guarantee — do not claim
 # "instant" across workers without a shared store.
-_RATES_CACHE_TTL = int(os.getenv("COMMUNITY_REWARD_RATES_CACHE_TTL", "60"))
+_RATES_CACHE_TTL = get_env_int("COMMUNITY_REWARD_RATES_CACHE_TTL", 60)
 _rates_cache: tuple = (None, 0.0)
 
 # Caps. A daily cap is the single most effective control: it bounds the worst
 # case per account per day no matter how many reactions an attacker fabricates.
-DAILY_CAP = Decimal(os.getenv("COMMUNITY_REWARD_DAILY_CAP", "50"))
-POST_CAP = Decimal(os.getenv("COMMUNITY_REWARD_POST_CAP", "100"))
+DAILY_CAP = get_env_decimal("COMMUNITY_REWARD_DAILY_CAP", "50")
+POST_CAP = get_env_decimal("COMMUNITY_REWARD_POST_CAP", "100")
 
 # The payout minimum. v1 does not pay out (no payout path ships), so this is
 # the goal the card shows. 500 G$ is the gas-justified figure from the
 # proposal §6; it ships as an env var so it can be raised without a deploy.
-MIN_PAYOUT_GD = Decimal(os.getenv("COMMUNITY_REWARD_MIN_PAYOUT_GD", "500"))
+MIN_PAYOUT_GD = get_env_decimal("COMMUNITY_REWARD_MIN_PAYOUT_GD", "500")
 
 # Whether the card shows the VIEWER'S OWN balance and goal. Default HIDDEN: the
 # figure is not spendable and not on-chain (see the ledger proposal §0), so a
@@ -395,7 +392,7 @@ def invalidate_rates_cache() -> None:
 # and comment). Cached per wallet for a short TTL: a verified verdict is stable,
 # and a 5-minute window is short enough that someone who verifies mid-session
 # starts earning without a reload. Per process, like the rates cache.
-_ELIGIBILITY_TTL = int(os.getenv("COMMUNITY_REWARD_ELIGIBILITY_TTL", "300"))
+_ELIGIBILITY_TTL = get_env_int("COMMUNITY_REWARD_ELIGIBILITY_TTL", 300)
 _eligibility_cache: dict = {}
 
 
