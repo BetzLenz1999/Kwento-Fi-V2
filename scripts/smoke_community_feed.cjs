@@ -144,7 +144,7 @@ function run(opts) {
    'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame',
    'cfRail',
    'cfEarn', 'cfEarnChip', 'cfEarnAmount', 'cfEarnGoal', 'cfEarnBar',
-   'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates'
+   'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates', 'cfEarnBalance', 'cfEarnLead'
   ].forEach(id => {
     const node = dom.mk(
       id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
@@ -154,6 +154,10 @@ function run(opts) {
     registry[id] = node;
   });
   registry.cfPreviews.hidden = true;
+  // Mirror the markup: the card and the balance block both start hidden, so a
+  // "revealed" assertion cannot pass on the stub's default `false`.
+  registry.cfEarn.hidden = true;
+  registry.cfEarnBalance.hidden = true;
   registry.cfUsernameInput.value = '';
   registry.cfSearchInput.value = '';
   // The Buy Airtime iframe ships with the modal: `hidden` until opened, and
@@ -1559,6 +1563,12 @@ function feedFetch(handler, feedRows) {
   // ── 20. The G$ Earned card ───────────────────────────────────────────────
   // The balance is the server's SUM; the card must render it, keep the status
   // chip, and NEVER offer a withdraw control in v1.
+  //
+  // The personal figure is HIDDEN BY DEFAULT (the owner's ask): it is not
+  // spendable and not on-chain, so a bare "0 G$" under a big heading reads as a
+  // bug and advertises a payout path v1 does not have. The card sells what you
+  // can EARN — the four rates — instead. See
+  // docs/COMMUNITY_REWARDS_CARD_REVAMP_PROPOSAL.md.
   {
     const { api, store } = run({ boot: MEMBER });
     api._internals.renderRewards({
@@ -1575,6 +1585,19 @@ function feedFetch(handler, feedRows) {
     ok('the earn card names the threshold',
        /500 G\$/.test(store.cfEarnGoal.textContent),
        String(store.cfEarnGoal.textContent));
+
+    // The balance block is hidden unless the server opts in, and the elements
+    // are STILL written to — this is a presentation switch, not a second render
+    // path, so the value above stays assertable either way.
+    ok('the balance block is hidden by default',
+       store.cfEarnBalance.hidden === true,
+       String(store.cfEarnBalance.hidden));
+    ok('the lead line is always visible, even with the balance hidden',
+       store.cfEarnLead.hidden === false && store.cfEarnLead.textContent.length > 0,
+       String(store.cfEarnLead.textContent));
+    ok('the lead line says what you can earn',
+       /earn g\$/i.test(store.cfEarnLead.textContent),
+       String(store.cfEarnLead.textContent));
 
     // The rates are rendered from the server payload, and the list must show
     // all four with the right amounts — a wrong number here is a support ticket.
@@ -1605,6 +1628,31 @@ function feedFetch(handler, feedRows) {
        !/withdraw/i.test(store.cfEarnNote.textContent)
          || /until withdrawal opens/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
+  }
+
+  // ── 20a-ii. The balance block is revealed only on the server flag ────────
+  {
+    const { api, store } = run({ boot: MEMBER });
+    api._internals.renderRewards({
+      enabled: true, is_guest: false, balance_gd: 47,
+      min_payout_gd: 500, progress: 9.4, status: 'pending', can_withdraw: false,
+      show_balance: true,
+      rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
+    });
+    ok('an explicit show_balance reveals the balance block',
+       store.cfEarnBalance.hidden === false,
+       String(store.cfEarnBalance.hidden));
+
+    // Only the exact boolean `true` counts — a truthy string must not leak the
+    // figure, because the whole point of the flag is to keep it hidden.
+    api._internals.renderRewards({
+      enabled: true, is_guest: false, balance_gd: 47,
+      min_payout_gd: 500, progress: 9.4, status: 'pending', can_withdraw: false,
+      show_balance: 'yes',
+    });
+    ok('a non-boolean show_balance does not reveal the balance',
+       store.cfEarnBalance.hidden === true,
+       String(store.cfEarnBalance.hidden));
   }
 
   // ── 20b. The card flips to Ready at the threshold ────────────────────────
@@ -1662,6 +1710,14 @@ function feedFetch(handler, feedRows) {
     ok('a guest is told to sign in to earn',
        /sign in/i.test(store.cfEarnGoal.textContent),
        String(store.cfEarnGoal.textContent));
+    // The lead line is what the guest actually SEES now that the balance block
+    // is hidden by default, so it must carry the same instruction.
+    ok('a guest sees the sign-in instruction on the always-visible lead line',
+       /sign in/i.test(store.cfEarnLead.textContent),
+       String(store.cfEarnLead.textContent));
+    ok('a guest does not get the personal balance block',
+       store.cfEarnBalance.hidden === true,
+       String(store.cfEarnBalance.hidden));
 
     api._internals.renderRewards({ enabled: false });
     ok('a disabled rewards feature hides the card', store.cfEarn.hidden === true);
