@@ -896,6 +896,19 @@ body {
 .cf-nav-item.is-active .cf-nav-icon {
     background: var(--cf-field);
 }
+/* The G$ gold chip marks a MONEY action (Claim Free G$), the same role the
+   gold primary button plays on the wallet page. Gold carries DARK ink: white
+   on #f5a623 is 2.03:1 and fails AA, while --cf-gold-ink on the gold gradient
+   measures 6.0-9.0:1. The gold also has to survive the desktop rail, where
+   the chip is a row rather than a column — hence styling the ICON DISC, which
+   keeps its size and shape in both layouts. */
+.cf-nav-item.cf-nav-gold .cf-nav-icon {
+    background: linear-gradient(135deg, var(--cf-gold), var(--cf-gold-deep));
+    color: var(--cf-gold-ink);
+    font-weight: 700;
+}
+.cf-nav-item.cf-nav-gold { color: var(--cf-gold-deep); }
+.cf-nav-item.cf-nav-gold:hover { background: var(--cf-field); }
 .cf-nav-item .cf-nav-label {
     font-size: 0.68rem; font-weight: 800; line-height: 1.1;
     text-align: center; white-space: normal;
