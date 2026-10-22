@@ -2186,7 +2186,7 @@ def debug_database_status():
 if __name__ == "__main__":
     logger.info("🚀 Starting GoodDollar Analytics Platform...")
 
-    port = int(os.environ.get("PORT", 5000))
+    port = get_env_int("PORT", 5000)
     logger.info(f"🌐 Starting Flask server on http://0.0.0.0:{port}")
     logger.info(f"✅ Server is ready to accept connections")
     logger.info(f"📡 Webview URL: https://{os.environ.get('REPL_SLUG', 'app')}.{os.environ.get('REPL_OWNER', 'replit')}.repl.co")
