@@ -61,6 +61,22 @@
     /* The page gutter. The media rules pull back by exactly this much to reach
        the screen edge, so the two must move together. */
     --cf-gutter: 0.85rem;
+    /* ── Community G$ card ────────────────────────────────────────────────
+       The one surface on this page that is about MONEY, so it carries the G$
+       gold family rather than the neutral canvas. A gradient is a range, so
+       every text token below is measured against the WORST (lightest) stop
+       `#ffdfae`, not the average — see
+       docs/COMMUNITY_REWARDS_CARD_REVAMP_PROPOSAL.md §2 for the numbers. */
+    --cf-earn-bg1: #fff7e6;
+    --cf-earn-bg2: #ffdfae;
+    --cf-earn-line: rgba(180, 120, 20, 0.22);
+    --cf-earn-ink: #4a2a00;
+    --cf-earn-ink-2: #5c3600;
+    /* NOT --cf-gold-deep: that is only 2.37:1 here, and the rate value is the
+       number that matters. */
+    --cf-earn-accent: #8a4b00;
+    --cf-earn-tile: rgba(255, 255, 255, 0.72);
+    --cf-earn-shadow: 0 6px 20px rgba(180, 120, 20, 0.14);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -685,54 +701,106 @@ body {
    The community rewards balance. It lives on THIS page only and never on the
    wallet page — see docs/COMMUNITY_REWARDS_LEDGER_PROPOSAL.md §0. It is built
    from the same tokens and the same Instagram-mobile grammar as the feed, so
-   it reads as part of the page rather than a bolted-on widget. */
+   it reads as part of the page rather than a bolted-on widget.
+
+   It is the ONE surface on the page that is about money, so unlike the feed's
+   flat sections it keeps a warm G$ gold gradient, a radius and a shadow — the
+   owner asked for colour and a background here. See
+   docs/COMMUNITY_REWARDS_CARD_REVAMP_PROPOSAL.md. */
 .cf-earn {
-    background: var(--cf-card);
-    border: 1px solid var(--cf-border);
-    border-radius: 14px;
-    padding: 0.85rem 0.95rem 0.9rem;
-    box-shadow: var(--cf-elev);
+    position: relative;
+    isolation: isolate;
+    background: linear-gradient(135deg, var(--cf-earn-bg1), var(--cf-earn-bg2));
+    border: 1px solid var(--cf-earn-line);
+    border-radius: 16px;
+    padding: 0.9rem 0.95rem 0.95rem;
+    box-shadow: var(--cf-earn-shadow);
+    overflow: hidden;
+}
+/* One decorative loop, kept cheap: `transform`/`opacity` only, so it never
+   forces a full repaint per frame (the wallet load-perf lesson). Sits behind
+   the content via the negative z-index, and is switched off for reduced
+   motion. */
+.cf-earn::before {
+    content: '';
+    position: absolute;
+    inset: -40% -20% auto -20%;
+    height: 150%;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(60% 60% at 78% 8%,
+        rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 70%);
+    animation: cfEarnGlow 9s ease-in-out infinite;
+}
+@keyframes cfEarnGlow {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.85; }
+    50%      { transform: translate3d(-6%, 4%, 0) scale(1.06); opacity: 1; }
 }
 .cf-earn-head {
     display: flex; align-items: center; justify-content: space-between;
     gap: 0.6rem;
 }
 .cf-earn-title {
-    margin: 0; font-size: 0.78rem; font-weight: 700;
-    letter-spacing: 0.06em; text-transform: uppercase;
-    color: var(--cf-muted);
+    margin: 0; font-size: 0.82rem; font-weight: 800;
+    letter-spacing: 0.02em;
+    color: var(--cf-earn-ink);
+    display: flex; align-items: center; gap: 0.45rem;
+}
+/* A gold coin mark. Gold is a light surface, so the glyph carries DARK ink —
+   white on amber is 2.03:1 and fails (the wallet page's G$ gold rule). */
+.cf-earn-mark {
+    width: 1.55rem; height: 1.55rem; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 0.85rem; line-height: 1;
+    background: linear-gradient(140deg, #fbbf24, #f59e0b);
+    color: var(--cf-gold-ink);
+    box-shadow: inset 0 -1px 0 rgba(120, 70, 0, 0.25);
+}
+/* Always visible: it carries the state, so the card still says what to DO when
+   the personal balance is hidden (the default). */
+.cf-earn-lead {
+    margin: 0.5rem 0 0; font-size: 0.85rem; line-height: 1.45;
+    font-weight: 600; color: var(--cf-earn-ink-2);
 }
 /* The chip is always present so the balance is never shown bare and mistaken
-   for spendable on-chain G$. */
+   for spendable on-chain G$. Solid fills (not alpha washes over a gradient):
+   a translucent pill over a gradient can never be measured reliably. */
 .cf-earn-chip {
-    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.03em;
-    padding: 0.18rem 0.5rem; border-radius: 999px;
-    background: var(--cf-soft); color: var(--cf-dim);
-    border: 1px solid var(--cf-border);
+    flex-shrink: 0;
+    font-size: 0.68rem; font-weight: 800; letter-spacing: 0.02em;
+    padding: 0.22rem 0.55rem; border-radius: 999px;
+    background: #fff7e6; color: #8a4b00;
+    border: 1px solid rgba(180, 120, 20, 0.4);
 }
 .cf-earn-chip[data-state="ready"] {
-    background: rgba(245, 166, 35, 0.16); color: var(--cf-gold-deep);
-    border-color: rgba(245, 166, 35, 0.5);
+    background: #e7f8ec; color: #146c33;
+    border-color: rgba(20, 108, 51, 0.35);
 }
 /* Not an error: the wallet works, it just does not earn yet. A neutral tone
    reads as "one step to go", where red would read as "you did something wrong". */
 .cf-earn-chip[data-state="unverified"] {
-    background: rgba(94, 114, 235, 0.14); color: var(--cf-accent, #5e72eb);
-    border-color: rgba(94, 114, 235, 0.45);
+    background: #eceefe; color: #3730a3;
+    border-color: rgba(55, 48, 163, 0.3);
 }
+.cf-earn-chip[data-state="guest"] {
+    background: #f1f2f6; color: #4b5563;
+    border-color: rgba(75, 85, 99, 0.25);
+}
+.cf-earn-balance-wrap { margin: 0; }
 .cf-earn-balance {
-    margin: 0.5rem 0 0; display: flex; align-items: baseline; gap: 0.3rem;
+    margin: 0.55rem 0 0; display: flex; align-items: baseline; gap: 0.3rem;
 }
 .cf-earn-amount {
-    font-family: var(--cf-serif); font-size: 2rem; font-weight: 700;
-    line-height: 1; color: var(--cf-ink);
+    font-family: var(--cf-serif); font-size: 2.1rem; font-weight: 700;
+    line-height: 1; color: var(--cf-earn-ink);
     font-variant-numeric: tabular-nums;
 }
-.cf-earn-unit { font-size: 0.95rem; font-weight: 600; color: var(--cf-gold-deep); }
-.cf-earn-goal { margin: 0.3rem 0 0; font-size: 0.78rem; color: var(--cf-ink-2); }
+.cf-earn-unit { font-size: 0.95rem; font-weight: 700; color: var(--cf-earn-accent); }
+.cf-earn-goal { margin: 0.3rem 0 0; font-size: 0.78rem; color: var(--cf-earn-ink-2); }
 .cf-earn-bar {
-    margin-top: 0.5rem; height: 6px; border-radius: 999px;
-    background: var(--cf-field); overflow: hidden;
+    margin-top: 0.5rem; height: 7px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.65); overflow: hidden;
+    border: 1px solid var(--cf-earn-line);
 }
 .cf-earn-bar-fill {
     display: block; height: 100%; width: 0;
@@ -740,25 +808,33 @@ body {
     border-radius: 999px;
     transition: width 240ms ease;
 }
-/* The four rates, as a list. A definition-list shape reads faster than a
-   sentence here, and it lets the amounts align so the gap between them (which
-   is the whole point of the design) is visible at a glance. */
+/* The four rates, as a 2x2 grid of white tiles. Tiles read faster than a
+   sentence here, and the amounts align so the gap between them (which is the
+   whole point of the design) is visible at a glance. */
 .cf-earn-rates {
-    margin: 0.55rem 0 0; padding: 0; list-style: none;
-    display: grid; gap: 0.28rem;
-    font-size: 0.76rem; line-height: 1.35; color: var(--cf-dim);
+    margin: 0.6rem 0 0; padding: 0; list-style: none;
+    display: grid; gap: 0.4rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .cf-earn-rates li {
-    display: flex; align-items: baseline; justify-content: space-between;
-    gap: 0.6rem;
+    display: flex; flex-direction: column; gap: 0.15rem;
+    min-width: 0;
+    background: var(--cf-earn-tile);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    border-radius: 11px;
+    padding: 0.45rem 0.55rem;
 }
-.cf-earn-rates .cf-earn-rate-label { min-width: 0; }
+.cf-earn-rates .cf-earn-rate-label {
+    min-width: 0; font-size: 0.7rem; line-height: 1.3;
+    font-weight: 600; color: var(--cf-earn-ink-2);
+}
 .cf-earn-rates .cf-earn-rate-value {
-    font-weight: 700; color: var(--cf-gold-deep);
+    font-size: 0.92rem; font-weight: 800; color: var(--cf-earn-accent);
     font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .cf-earn-note {
-    margin: 0.45rem 0 0; font-size: 0.74rem; color: var(--cf-ink-2);
+    margin: 0.55rem 0 0; font-size: 0.74rem; line-height: 1.4;
+    color: var(--cf-earn-ink-2);
 }
 .cf-earn-note.is-warn { color: var(--cf-accent-ink); }
 
@@ -781,14 +857,17 @@ body {
         padding-bottom: 0.5rem;
     }
     .cf-card:last-child { border-bottom: none; }
-    /* The earn card follows the same grammar as the cards: a full-bleed
-       section on a phone, not a floating box. */
+    /* The earn card deliberately does NOT follow that grammar. It is the one
+       surface on the page that is about money, and the owner asked for colour
+       and a background — so it stays a card (gradient, radius, shadow) on a
+       phone instead of flattening into a bare section. Scoped to this
+       selector, so the feed's Instagram layout is untouched. */
     .cf-earn {
-        border: none; border-radius: 0; box-shadow: none;
-        padding: 0.15rem 0 0.9rem;
-        border-bottom: 1px solid var(--cf-hairline);
+        padding: 0.85rem 0.9rem 0.9rem;
+        border-radius: 14px;
     }
-    .cf-earn-amount { font-size: 1.85rem; }
+    .cf-earn-amount { font-size: 1.95rem; }
+    .cf-earn-rates { gap: 0.35rem; }
     .cf-composer { border-radius: 12px; border-color: var(--cf-hairline); }
     .cf-card-head { padding: 0.35rem 0 0.6rem; }
     .cf-skeleton { border-radius: 0; }
@@ -1143,4 +1222,8 @@ body.cf-modal-open { overflow: hidden; }
        over the photo as a permanent heart, so hide it entirely. */
     .cf-burst { display: none; }
     .cf-rail { scroll-behavior: auto; }
+    /* The earn card's glow is decoration; hold it still rather than removing
+       it, so the card keeps its lit look without moving. */
+    .cf-earn::before { animation: none; }
+    .cf-earn-bar-fill { transition: none; }
 }
