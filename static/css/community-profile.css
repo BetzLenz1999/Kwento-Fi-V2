@@ -257,6 +257,23 @@ body.cf-modal-open { overflow: hidden; }
 }
 .cp-media img { cursor: zoom-in; }
 
+/* Keep multi-photo post previews compact on public profiles too. Album tiles
+   below retain their separate three-column layout. */
+.cp-media.cp-media-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 3px; max-width: 520px; aspect-ratio: 1 / 1;
+    margin-inline: auto; overflow: hidden;
+}
+.cp-media.cp-media-grid-2 {
+    grid-template-rows: minmax(0, 1fr); aspect-ratio: 2 / 1;
+}
+.cp-media.cp-media-grid-3 > img:first-child { grid-row: 1 / span 2; }
+.cp-media.cp-media-grid > img {
+    width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: none;
+    aspect-ratio: auto; object-fit: cover; background: #000;
+}
+
 /* Video is Instagram-style: a BOUNDED, rounded frame — never the full screen.
    `contain` (not `cover`) so nothing is cropped. The frame is a button. */
 .cp-media .cp-video-frame {
