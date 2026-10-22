@@ -39,7 +39,15 @@ function makeDom() {
       placeholder: '', loading: '', referrerPolicy: '', controls: false,
       preload: '', playsInline: false, poster: '',
       scrollHeight: 400, clientHeight: 100,
-      attributes: {}, listeners: {}, style: {}, parent: null,
+      attributes: {}, listeners: {}, parent: null,
+      // A real CSSStyleDeclaration has setProperty/getPropertyValue as well as
+      // direct property assignment; the stub mirrors that so a bundle call to
+      // either form works instead of throwing "not a function".
+      style: {
+        _vars: {},
+        setProperty(name, value) { this._vars[name] = String(value); this[name] = String(value); },
+        getPropertyValue(name) { return this._vars[name] || ''; },
+      },
       setAttribute(k, v) { this.attributes[k] = String(v); },
       getAttribute(k) { return this.attributes[k] === undefined ? null : this.attributes[k]; },
       removeAttribute(k) { delete this.attributes[k]; },
@@ -133,7 +141,8 @@ function run(opts) {
    'cfEditSaveBtn', 'cfComposer',
    'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
    'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
-   'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame'
+   'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame',
+   'cfRail'
   ].forEach(id => {
     const node = dom.mk(
       id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
@@ -610,6 +619,9 @@ function feedFetch(handler, feedRows) {
   }
 
   // ── 9. buildCard renders the caption as TEXT, never markup ────────────────
+  // Instagram's caption shape is `author + text`. The author is a real ANCHOR
+  // (one element), and the body is raw TEXT nodes — so the injection guarantee
+  // is now asserted on the text nodes specifically, not on the whole caption.
   {
     const { api } = run({ boot: MEMBER });
     const card = api._internals.buildCard(makePost({
@@ -617,11 +629,23 @@ function feedFetch(handler, feedRows) {
     }));
     const caption = card.querySelector('.cf-caption');
     ok('the caption node exists', !!caption);
-    ok('the caption keeps the raw text as TEXT (no HTML injection)',
-       caption.textContent === '<img src=x onerror=alert(1)> hello',
+    ok('the caption text ends with the raw body as TEXT (no HTML injection)',
+       caption.textContent.endsWith('<img src=x onerror=alert(1)> hello'),
        JSON.stringify(caption.textContent));
-    ok('the caption created no element children',
-       caption.children.length === 0, JSON.stringify(caption.children.length));
+    ok('the injected markup created no element',
+       !caption.querySelector('img'),
+       JSON.stringify((caption.children || []).map(c => c.tagName)));
+    // The ONLY element child is the author link — the body added none.
+    ok('the caption holds exactly the author link as its element child',
+       caption.children.length === 1
+         && caption.children[0].className === 'cf-caption-author',
+       JSON.stringify((caption.children || []).map(c => c.className)));
+    // The body itself is a bare text node, which is what makes the injection
+    // impossible: markup in a text node cannot become an element.
+    ok('the body is written as a raw TEXT node',
+       caption.childNodes.some(n => n.nodeType === 3
+         && n.textContent === '<img src=x onerror=alert(1)> hello'),
+       JSON.stringify(caption.childNodes.map(n => n.nodeType)));
   }
 
   // ── 9b. Caption PLACEMENT: media → summary → caption → reactions ──────────
@@ -663,8 +687,15 @@ function feedFetch(handler, feedRows) {
     }));
     const caption = card.querySelector('.cf-caption');
     ok('a text-only post renders its caption',
-       !!caption && caption.textContent === 'Walang litrato, salita lang.',
+       !!caption && caption.textContent.endsWith('Walang litrato, salita lang.'),
        caption ? JSON.stringify(caption.textContent) : 'missing');
+    ok('the caption leads with the author link (Instagram shape)',
+       !!caption && caption.children[0].className === 'cf-caption-author'
+         && caption.children[0].textContent === 'betz',
+       caption ? JSON.stringify(caption.children[0] && caption.children[0].className) : 'missing');
+    ok('the caption author links to the public profile by USERNAME',
+       caption.children[0].href === '/community/u/betz',
+       caption.children[0].href);
   }
 
   // ── 9d. An image-only post renders media with NO caption node ────────────
@@ -1272,6 +1303,224 @@ function feedFetch(handler, feedRows) {
     const frame = card.querySelector('.cf-video-frame');
     ok('a clip with no reported size leaves the CSS default ratio',
        !frame.style.aspectRatio, JSON.stringify(frame.style.aspectRatio));
+  }
+
+  // ── 16. Instagram-style action row: heart · comment · share · report ─────
+  // The heart is a real like toggle: it reuses the optimistic reaction path, so
+  // it must POST a `like` and DELETE when un-tapped.
+  {
+    const seen = [];
+    const { api } = run({
+      boot: MEMBER,
+      fetchImpl: feedFetch(function (url, opts) {
+        seen.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true, reaction_count: 5, my_reaction: 'like',
+          }),
+        });
+      }),
+    });
+
+    const card = api._internals.buildCard(makePost({ id: 21, is_mine: true }));
+    const row = card.querySelector('.cf-card-actions');
+    ok('the action row renders', !!row);
+    const labels = (row.children || []).map(n => n.textContent);
+    ok('the row carries heart, Comment and Share',
+       labels.some(l => /Comment/.test(l)) && labels.some(l => /Share/.test(l)),
+       JSON.stringify(labels));
+    ok('the heart has no text label (it is an icon only)',
+       row.children[0].textContent === '🤍', JSON.stringify(row.children[0].textContent));
+    ok('the heart starts un-liked', row.children[0].className === 'cf-action-btn',
+       row.children[0].className);
+    ok('the heart carries an aria-pressed state',
+       row.children[0].getAttribute('aria-pressed') === 'false');
+
+    // Tap it: an optimistic like goes out, and the heart fills in.
+    row.children[0].onclick();
+    await tick();
+    ok('tapping the heart POSTs a like',
+       seen.some(s => s.method === 'POST' && /reaction/.test(s.url)),
+       JSON.stringify(seen));
+    const liked = api._internals.buildCard(makePost({ id: 21, is_mine: true, my_reaction: 'like' }));
+    const likedRow = liked.querySelector('.cf-card-actions');
+    ok('a liked post fills the heart red',
+       likedRow.children[0].className.includes('is-liked'), likedRow.children[0].className);
+    ok('a liked heart reads ❤️',
+       likedRow.children[0].textContent === '❤️', likedRow.children[0].textContent);
+    ok('a liked heart is aria-pressed',
+       likedRow.children[0].getAttribute('aria-pressed') === 'true');
+
+    // Un-tap: the same heart REMOVES the like (DELETE, never a null POST).
+    const before = seen.length;
+    likedRow.children[0].onclick();
+    await tick();
+    const after = seen.slice(before);
+    ok('un-liking DELETEs the reaction',
+       after.some(s => s.method === 'DELETE'), JSON.stringify(after));
+    ok('un-liking never POSTs a null reaction',
+       !after.some(s => s.method === 'POST'), JSON.stringify(after));
+  }
+
+  // ── 16b. The report control stays in the row for another member ──────────
+  {
+    const { api } = run({ boot: MEMBER });
+    const mine = api._internals.buildCard(makePost({ is_mine: true }));
+    ok('your own post has no Report in the action row',
+       !/Report/.test(mine.querySelector('.cf-card-actions').textContent));
+    const theirs = api._internals.buildCard(makePost({ is_mine: false }));
+    ok('another member\'s post keeps a Report control',
+       /Report/.test(theirs.querySelector('.cf-card-actions').textContent),
+       theirs.querySelector('.cf-card-actions').textContent);
+  }
+
+  // ── 17. Double-tap the photo to like (with the heart burst) ──────────────
+  {
+    const seen = [];
+    const { api, store } = run({
+      boot: MEMBER,
+      fetchImpl: feedFetch(function (url, opts) {
+        seen.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, reaction_count: 1, my_reaction: 'like' }),
+        });
+      }),
+    });
+    const card = api._internals.buildCard(makePost({
+      id: 31, media: [{ type: 'image', url: 'https://media.example/a.jpg' }],
+    }));
+    const img = card.querySelector('.cf-media').children[0];
+
+    // A single tap opens the lightbox (after the double-tap window closes).
+    img.onclick();
+    await new Promise(r => setTimeout(r, 350));
+    ok('a single tap opens the lightbox',
+       store.cfLightbox.hidden === false, String(store.cfLightbox.hidden));
+    api.closeLightbox();
+
+    // Two taps inside the window: the lightbox must NOT open, and the post is
+    // liked instead. Reset the tap state so the previous tap cannot pair up.
+    api._internals.onMediaTap(makePost({ id: 31, my_reaction: null }),
+      card.querySelector('.cf-media'), 'https://media.example/a.jpg', 'image', function () {});
+    const burstCard = api._internals.buildCard(makePost({
+      id: 32, media: [{ type: 'image', url: 'https://media.example/b.jpg' }],
+    }));
+    const burstImg = burstCard.querySelector('.cf-media').children[0];
+    burstImg.onclick();
+    burstImg.onclick();
+    await tick();
+    ok('a double tap likes the post',
+       seen.some(s => s.method === 'POST' && /reaction/.test(s.url)),
+       JSON.stringify(seen));
+    const burst = burstCard.querySelector('.cf-media').children
+      .filter(n => (n.className || '').split(/\s+/).includes('cf-burst'))[0];
+    ok('a double tap leaves a heart burst over the photo', !!burst, 'no .cf-burst');
+    ok('the burst is decorative (aria-hidden)',
+       !!burst && burst.getAttribute('aria-hidden') === 'true');
+    ok('a double tap does NOT open the lightbox',
+       store.cfLightbox.hidden === true, String(store.cfLightbox.hidden));
+
+    // `dblclick` is wired too: a mouse never fires the two synthetic taps.
+    const mouseCard = api._internals.buildCard(makePost({
+      id: 33, media: [{ type: 'image', url: 'https://media.example/c.jpg' }],
+    }));
+    ok('the media carries a dblclick handler for mouse users',
+       typeof mouseCard.querySelector('.cf-media').children[0].ondblclick === 'function');
+  }
+
+  // ── 18. Instagram's media box: the crop box comes from the real size ─────
+  {
+    const { api } = run({ boot: MEMBER });
+    const sized = api._internals.buildCard(makePost({
+      media: [{ type: 'image', url: 'https://media.example/a.jpg', w: 1080, h: 1350 }],
+    }));
+    const sizedImg = sized.querySelector('.cf-media').children[0];
+    ok('a sized image gets an explicit aspect box',
+       sizedImg.style.aspectRatio === '1080 / 1350', sizedImg.style.aspectRatio);
+    ok('a sized image is not marked raw (so it crops like IG)',
+       sizedImg.className !== 'cf-media-raw', sizedImg.className);
+
+    // No dimensions reported: we must NOT guess a box, because a guessed crop
+    // cuts a face off. Mark it `raw` so the CSS shows the whole photo.
+    const unsized = api._internals.buildCard(makePost({
+      media: [{ type: 'image', url: 'https://media.example/d.jpg' }],
+    }));
+    const unsizedImg = unsized.querySelector('.cf-media').children[0];
+    ok('an unsized image is marked raw instead of being cropped',
+       unsizedImg.className === 'cf-media-raw', unsizedImg.className);
+    ok('an unsized image sets no aspect ratio',
+       !unsizedImg.style.aspectRatio, String(unsizedImg.style.aspectRatio));
+
+    // A video's ratio lands on its own frame, which is what the full-bleed
+    // phone layout and the lightbox both read.
+    const video = api._internals.buildCard(makePost({
+      media: [{ type: 'video', url: 'https://media.example/v.mp4', w: 720, h: 1280 }],
+    }));
+    const frame = video.querySelector('.cf-video-frame');
+    ok('a sized video carries its own ratio',
+       frame.style.aspectRatio === '720 / 1280', String(frame.style.aspectRatio));
+  }
+
+  // ── 19. The "Recent posters" rail ────────────────────────────────────────
+  {
+    const { api, store } = run({ boot: MEMBER });
+    api._internals.setFeed([
+      makePost({ id: 1, username: 'ana' }),
+      makePost({ id: 2, username: 'betz', is_mine: true }),
+      makePost({ id: 3, username: 'ana' }),        // duplicate author
+      makePost({ id: 4, username: 'ces' }),
+      makePost({ id: 5, username: '@legacy' }),    // stored @ must not double up
+    ]);
+    api._internals.renderFeed();
+
+    const items = store.cfRail.children;
+    ok('the rail renders one row per DISTINCT author', items.length === 4,
+       JSON.stringify(items.length));
+    ok('the rail is revealed when there are authors', store.cfRail.hidden === false);
+
+    const names = items.map(n => n.querySelector('.cf-rail-name').textContent);
+    ok('your own row leads the rail', names[0] === 'You', JSON.stringify(names));
+    ok('a stored @ is not doubled in the rail label',
+       names.includes('legacy') && !names.includes('@@legacy'), JSON.stringify(names));
+    ok('another author links to their public profile by USERNAME',
+       items[1].href === '/community/u/ana', String(items[1].href));
+    ok('no wallet address reaches the rail',
+       !/0x/i.test(store.cfRail.textContent || ''), store.cfRail.textContent);
+
+    // Your own row is the composer entry point, not a profile link.
+    ok('your own row is a button, not a link',
+       items[0].tagName === 'BUTTON' && !items[0].href, items[0].tagName);
+    ok('your own row is marked is-self', items[0].className.includes('is-self'));
+
+    // The ring is present on every row (the Instagram look).
+    ok('every row carries a gradient ring',
+       items.every(n => !!n.querySelector('.cf-rail-ring')));
+
+    // An empty feed hides the rail instead of leaving a bare strip.
+    api._internals.setFeed([]);
+    api._internals.renderFeed();
+    ok('an empty feed hides the rail', store.cfRail.hidden === true);
+
+    // The rail caps its rows so a busy feed cannot grow an endless strip.
+    api._internals.setFeed(Array.from({ length: 30 }, (_, i) =>
+      makePost({ id: 100 + i, username: 'member' + i })));
+    api._internals.renderFeed();
+    ok('the rail is capped', store.cfRail.children.length === 12,
+       JSON.stringify(store.cfRail.children.length));
+  }
+
+  // ── 19b. A guest gets the rail too (reading is public) ──────────────────
+  {
+    const { api, store } = run({ boot: GUEST });
+    api._internals.setFeed([makePost({ id: 1, username: 'ana', is_mine: false })]);
+    api._internals.renderFeed();
+    ok('a guest sees the rail', store.cfRail.children.length === 1,
+       JSON.stringify(store.cfRail.children.length));
+    ok('a guest row is a plain profile link (nothing behind it is gated)',
+       store.cfRail.children[0].href === '/community/u/ana',
+       String(store.cfRail.children[0].href));
   }
 
   console.log('');
