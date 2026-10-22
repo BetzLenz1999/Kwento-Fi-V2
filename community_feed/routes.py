@@ -20,7 +20,7 @@ import threading
 import time
 from collections import defaultdict, deque
 
-from flask import Blueprint, jsonify, redirect, render_template, request, session
+from flask import Blueprint, Response, jsonify, redirect, render_template, request, session
 
 from . import rewards
 from . import service as svc
@@ -275,6 +275,45 @@ def api_profile(username: str):
     return jsonify(result), (200 if result.get("success") else 404)
 
 
+@community_feed_bp.route("/api/profile/<username>/avatar", methods=["GET"])
+def api_profile_avatar(username: str):
+    """Serve one member's intentionally public avatar through the app server.
+
+    The browser addresses the image by username; wallet resolution, the avatar
+    row and its R2 key stay server-side. The validator includes R2's current
+    object ETag, so even an overwrite of the same key invalidates cached bytes.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+    normalized = svc.normalize_username(username)
+    wallet = svc.wallet_for_username(normalized) if normalized else None
+    if not wallet:
+        return Response(status=404, headers={"Cache-Control": "no-store"})
+    avatar = svc.get_avatar_descriptor(wallet)
+    if not avatar:
+        return Response(status=404, headers={"Cache-Control": "no-store"})
+
+    etag = storage.avatar_etag(avatar)
+    headers = {"X-Content-Type-Options": "nosniff"}
+    if etag:
+        headers.update({
+            "Cache-Control": (
+                "public, max-age=30, s-maxage=60, stale-while-revalidate=30"),
+            "ETag": f'"{etag}"',
+        })
+        if request.if_none_match.contains(etag):
+            return Response(status=304, headers=headers)
+    else:
+        # Without an upstream version, serve this response but never let a
+        # browser/proxy keep bytes that cannot be validated on the next request.
+        headers["Cache-Control"] = "no-store"
+
+    image = storage.read_avatar(avatar)
+    if not image:
+        return Response(status=404, headers={"Cache-Control": "no-store"})
+    return Response(image["body"], mimetype=image["mime"], headers=headers)
+
+
 @community_feed_bp.route("/api/users/<username>/follow", methods=["POST"])
 def api_follow(username: str):
     """Follow a member. A write, so a guest gets the auth refusal (the browser
@@ -510,6 +549,12 @@ def api_presign_avatar():
     if svc.is_banned(wallet):
         return jsonify({"success": False, "code": "banned",
                         "error": "You cannot post in the community."}), 403
+    if not svc.normalize_username(svc.get_username(wallet)):
+        return jsonify({
+            "success": False,
+            "code": "username_required",
+            "error": "Choose a community username before uploading a profile picture.",
+        }), 400
 
     wait = _throttle(f"avatar:{wallet}", svc.AVATAR_RATE_LIMIT_SECONDS)
     if wait:
@@ -541,6 +586,12 @@ def api_set_avatar():
     wallet = _session_wallet()
     if not wallet:
         return jsonify({"success": False, "error": "Not authenticated"}), 401
+    if not svc.normalize_username(svc.get_username(wallet)):
+        return jsonify({
+            "success": False,
+            "code": "username_required",
+            "error": "Choose a community username before uploading a profile picture.",
+        }), 400
 
     ok, error, clean = storage.verify_avatar(wallet, _json_body())
     if not ok:
