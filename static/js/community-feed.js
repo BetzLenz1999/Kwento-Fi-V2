@@ -63,10 +63,14 @@
     function esc(text) { return String(text === undefined || text === null ? '' : text); }
 
     /* ── Avatars ──────────────────────────────────────────────────────────
-       A member's profile picture is a PUBLIC R2 URL that arrives on every feed
-       response (never a wallet). `avatarNode` renders the picture when there is
-       one and falls back to the username's initial — the same element shape in
-       both cases, so the CSS ring is identical with or without a photo. */
+       The response carries only the same-origin image path; it never exposes
+       an R2 URL. A failed read falls back to the member's initial. */
+    function avatarImageUrl(url, username) {
+        var name = esc(username).trim().replace(/^@+/, '');
+        if (!esc(url).trim() || !/^[A-Za-z0-9_]{3,24}$/.test(name)) return '';
+        return '/community/api/profile/' + encodeURIComponent(name) + '/avatar';
+    }
+
     function avatarNode(url, username, className) {
         var node = el('span', className || 'cf-avatar');
         node.setAttribute('aria-hidden', 'true');
@@ -77,15 +81,18 @@
     function renderAvatarInto(node, url, username) {
         if (!node) return;
         node.textContent = '';
-        var src = esc(url).trim();
-        if (src) {
+        var imageSrc = avatarImageUrl(url, username);
+        if (imageSrc) {
             var img = document.createElement('img');
             img.className = 'cf-avatar-img';
-            img.src = src;
+            img.src = imageSrc;
             img.alt = '';
             img.loading = 'lazy';
             img.decoding = 'async';
             img.referrerPolicy = 'no-referrer';
+            img.onerror = function () {
+                node.textContent = (esc(username) || 'A')[0].toUpperCase();
+            };
             node.appendChild(img);
             return;
         }
