@@ -2727,10 +2727,23 @@ def _notify_tip_recipient(reply_user_id, admin_telegram_id, result):
 
 @telegram_bot.route("/telegram/webhook", methods=["POST"])
 def webhook():
-    """Receive and handle Telegram updates."""
+    """Receive and handle Telegram updates.
+
+    Telegram treats ANY non-2xx response as a failed delivery and re-queues the
+    update, retrying with backoff until it succeeds or expires. Returning 500
+    for a *configuration* problem (no bot token) therefore turns one misconfig
+    into an endless stream of 500s in the platform logs, and the update is
+    redelivered forever. Configuration problems answer 200 with an explicit
+    body (so the delivery is acknowledged and dropped) and log at ERROR so the
+    cause is still loud and findable.
+    """
     if not TELEGRAM_BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN not set")
-        return jsonify({"ok": False}), 500
+        logger.error(
+            "Telegram webhook called but TELEGRAM_BOT_TOKEN is not set; "
+            "acknowledging the update so Telegram stops retrying. "
+            "Set TELEGRAM_BOT_TOKEN and re-run /telegram/setup-webhook."
+        )
+        return jsonify({"ok": False, "error": "bot_not_configured"}), 200
 
     if TELEGRAM_WEBHOOK_SECRET_TOKEN:
         provided_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
@@ -2739,7 +2752,7 @@ def webhook():
             return jsonify({"ok": False, "error": "forbidden"}), 403
 
     update = request.get_json(silent=True)
-    if not update:
+    if not update or not isinstance(update, dict):
         return jsonify({"ok": False}), 400
 
     try:
@@ -2747,9 +2760,17 @@ def webhook():
         callback = update.get("callback_query")
 
         if message:
-            chat_id = message["chat"]["id"]
+            # A Telegram message is not guaranteed to carry a chat (channel
+            # posts, service messages). Indexing it directly raised KeyError,
+            # which the broad except below swallowed — the update was dropped
+            # silently. Treat a chat-less message as nothing to do.
+            chat = message.get("chat") or {}
+            chat_id = chat.get("id")
+            if chat_id is None:
+                logger.warning("Telegram update without a chat id; ignoring")
+                return jsonify({"ok": True})
             telegram_user = message.get("from", {})
-            text = message.get("text", "").strip()
+            text = (message.get("text") or "").strip()
 
             logger.info(
                 "telegram: incoming message chat_id=%s chat_type=%s from_id=%s is_bot=%s text=%r",
