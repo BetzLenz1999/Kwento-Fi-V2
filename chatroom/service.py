@@ -56,6 +56,11 @@ _BLANK_RUN = re.compile(r"\n{3,}")
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,24}$")
 
 
+def _escape_like_literal(value: str) -> str:
+    """Escape SQL LIKE metacharacters when a username is used as a literal."""
+    return (value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _get_supabase():
     """Service-role client first (RLS-safe reads), falling back to anon."""
     try:
@@ -217,6 +222,7 @@ def get_public_profile(username: str | None) -> dict:
     Chat messages must not become a way to discover a member's wallet address
     or private earnings/activity.  A profile therefore contains only the
     member's public username, their join date, and public-room message count.
+    Username matching treats ``_`` literally and verifies the selected row.
     """
     name = (username or "").strip().lstrip("@")
     if not _USERNAME_RE.fullmatch(name):
@@ -226,17 +232,31 @@ def get_public_profile(username: str | None) -> dict:
     if not supabase:
         return {"success": False, "error": "Database unavailable", "code": "db"}
     try:
-        member_result = (
-            supabase.table("user_data")
-            .select("wallet_address, username, created_at")
-            .ilike("username", name)
-            .limit(1)
-            .execute()
-        )
-        if not member_result or not member_result.data:
+        member = None
+        display_name = name
+        for variant in (name, "@" + name):
+            member_result = (
+                supabase.table("user_data")
+                .select("wallet_address, username, created_at")
+                .ilike("username", _escape_like_literal(variant))
+                .limit(1)
+                .execute()
+            )
+            rows = (member_result.data or []) if member_result else []
+            if not rows:
+                continue
+            candidate = rows[0]
+            candidate_name = (candidate.get("username") or "").strip().lstrip("@")
+            if (not _USERNAME_RE.fullmatch(candidate_name)
+                    or candidate_name.casefold() != name.casefold()):
+                continue
+            member = candidate
+            display_name = candidate_name
+            break
+
+        if not member:
             return {"success": False, "error": "Member not found", "code": "not_found"}
 
-        member = member_result.data[0]
         wallet = (member.get("wallet_address") or "").strip()
         # Count only messages that are currently visible in the public room.
         # Never return this query's wallet key to the caller.
@@ -254,7 +274,7 @@ def get_public_profile(username: str | None) -> dict:
         return {
             "success": True,
             "profile": {
-                "username": (member.get("username") or name).strip(),
+                "username": display_name,
                 "joined_at": member.get("created_at"),
                 "message_count": message_count,
             },
