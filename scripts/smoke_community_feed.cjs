@@ -213,8 +213,10 @@ const MEMBER = {
   loginMethod: 'local', maxCaption: 2200, maxMedia: 4,
   maxImageMb: 10, maxVideoMb: 100, storageReady: true,
   // The same destination list the template emits (GM_COMMUNITY_BOOT.nav).
+  // No "Feed" tab: this page IS the feed. Its slot carries the Claim Free G$
+  // entry point, which deep-links to /wallet?claim=1 so the claim sheet opens.
   nav: [
-    { id: 'feed', icon: '🏠', label: 'Feed', href: '/community', guestOk: true },
+    { id: 'claim', icon: '🪙', label: 'Claim Free G$', href: '/wallet?claim=1', gold: true, guestOk: false },
     { id: 'search', icon: '🔍', label: 'Search', action: 'search', guestOk: true },
     { id: 'earn', icon: '💰', label: 'Earn', action: 'earn', guestOk: false },
     { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
@@ -982,12 +984,23 @@ function feedFetch(handler, feedRows) {
     ok('the bottom nav renders every destination', items.length === 5,
        JSON.stringify(items.length));
     const labels = items.map(n => n.querySelector('.cf-nav-label').textContent);
-    ok('the nav carries Feed, Search, Earn, Buy Airtime and Your Wallet',
+    ok('the nav carries Claim Free G$, Search, Earn, Buy Airtime and Your Wallet',
        JSON.stringify(labels) ===
-       JSON.stringify(['Feed', 'Search', 'Earn', 'Buy Airtime', 'Your Wallet']),
+       JSON.stringify(['Claim Free G$', 'Search', 'Earn', 'Buy Airtime', 'Your Wallet']),
        JSON.stringify(labels));
-    ok('the feed item is the active one',
-       items[0].className.split(/\s+/).includes('is-active'));
+    // The Feed tab is gone: this page IS the feed, so a tab pointing back at
+    // /community was a dead tap. Nothing claims to be the active tab now.
+    ok('no nav tab links back to /community',
+       items.every(n => n.href !== '/community'));
+    ok('no nav tab claims to be active on the feed page',
+       items.every(n => !n.className.split(/\s+/).includes('is-active')));
+
+    // Claim Free G$ deep-links to the wallet's claim sheet.
+    const claim = items.filter(n => /Claim Free G\$/.test(n.textContent))[0];
+    ok('Claim Free G$ links to /wallet?claim=1',
+       claim.href === '/wallet?claim=1', claim.href);
+    ok('the Claim Free G$ chip is the gold money chip',
+       claim.className.split(/\s+/).includes('cf-nav-gold'), claim.className);
 
     // Buy Airtime links to the Reloadly store's top-up tab (and opens the
     // in-page modal for a member — see 13d).
@@ -1041,7 +1054,8 @@ function feedFetch(handler, feedRows) {
     const earn = items.filter(n => /Earn/.test(n.textContent))[0];
     const airtime = items.filter(n => /Buy Airtime/.test(n.textContent))[0];
     const search = items.filter(n => /Search/.test(n.textContent))[0];
-    const feed = items.filter(n => /Feed/.test(n.textContent))[0];
+    const claim = items.filter(n => /Claim Free G\$/.test(n.textContent))[0];
+    const wallet = items.filter(n => /Your Wallet/.test(n.textContent))[0];
 
     // Earn is a signed-in destination: a guest tap raises the connect card and
     // must NOT open the sheet.
@@ -1066,14 +1080,26 @@ function feedFetch(handler, feedRows) {
     ok('a guest tapping Buy Airtime never loads the store iframe',
        !store.cfAirtimeFrame.src, String(store.cfAirtimeFrame.src));
 
-    // Reading stays public: Search and Feed are NOT gated for a guest.
+    // Claim Free G$ is a signed-in destination too: claiming needs a wallet, so
+    // the guest gets the connect card instead of a dead trip to /wallet.
+    let claimNavigated = false;
+    claim.onclick({ preventDefault() { claimNavigated = true; } });
+    ok('a guest tapping Claim Free G$ opens the connect card',
+       connectCalls === 3, String(connectCalls));
+    ok('a guest tapping Claim Free G$ is not navigated away', claimNavigated);
+
+    // Your Wallet is signed-in only as well.
+    let walletNavigated = false;
+    wallet.onclick({ preventDefault() { walletNavigated = true; } });
+    ok('a guest tapping Your Wallet opens the connect card',
+       connectCalls === 4, String(connectCalls));
+    ok('a guest tapping Your Wallet is not navigated away', walletNavigated);
+
+    // Reading stays public: Search is NOT gated for a guest.
     api.closeSearch();
     search.onclick({ preventDefault() {} });
     ok('a guest may open the member search', store.cfSearchBar.hidden === false);
-    ok('the read-only Search tap raised no connect card', connectCalls === 2,
-       String(connectCalls));
-    feed.onclick({ preventDefault() {} });
-    ok('the read-only Feed tap raised no connect card', connectCalls === 2,
+    ok('the read-only Search tap raised no connect card', connectCalls === 4,
        String(connectCalls));
   }
 
