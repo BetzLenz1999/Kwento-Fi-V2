@@ -1537,9 +1537,31 @@
         var amount = Number(data.balance_gd) || 0;
         var minimum = Number(data.min_payout_gd) || 0;
         var progress = Number(data.progress) || 0;
+        // The personal figure is HIDDEN by default: it is not spendable and not
+        // on-chain, so a "0 G$" under a big heading reads as a bug and
+        // advertises a payout path v1 does not have. The server decides (env
+        // COMMUNITY_REWARD_SHOW_BALANCE); the elements are still written to
+        // below either way, so this is a pure presentation switch.
+        var showBalance = data.show_balance === true;
 
         var amountEl = $('cfEarnAmount');
         if (amountEl) amountEl.textContent = formatGd(amount);
+
+        // The lead line is ALWAYS visible, and carries the state — so the card
+        // still tells the user what to do while the balance is hidden.
+        var leadEl = $('cfEarnLead');
+        if (leadEl) {
+            if (data.is_guest) {
+                leadEl.textContent = 'Sign in to earn G$ in the community.';
+            } else if (data.eligible === false) {
+                leadEl.textContent = 'Verify your identity to start earning G$.';
+            } else if (showBalance && minimum > 0 && amount >= minimum) {
+                leadEl.textContent = 'You reached the payout goal — keep earning.';
+            } else {
+                leadEl.textContent = 'Earn G$ when the community reacts to your '
+                    + 'posts and comments.';
+            }
+        }
 
         var goalEl = $('cfEarnGoal');
         if (goalEl) {
@@ -1598,6 +1620,9 @@
                 ratesEl.hidden = true;
             }
         }
+
+        var balanceWrap = $('cfEarnBalance');
+        if (balanceWrap) balanceWrap.hidden = !showBalance;
 
         var bar = $('cfEarnBar');
         var fill = $('cfEarnBarFill');
