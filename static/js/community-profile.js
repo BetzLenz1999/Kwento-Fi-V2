@@ -255,7 +255,12 @@
         card.appendChild(head);
 
         if (post.media && post.media.length) {
-            var mediaWrap = el('div', 'cp-media');
+            var photoGridCount = post.media.length >= 2 && post.media.length <= 4
+                && post.media.every(function (item) {
+                    return item && item.type !== 'video';
+                }) ? post.media.length : 0;
+            var mediaWrap = el('div', 'cp-media' + (photoGridCount
+                ? ' cp-media-grid cp-media-grid-' + photoGridCount : ''));
             post.media.forEach(function (item) {
                 if (item.type === 'video') {
                     mediaWrap.appendChild(buildVideoFrame(item, post.username));
