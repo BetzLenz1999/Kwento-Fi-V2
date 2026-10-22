@@ -38,6 +38,8 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from env_utils import get_env_int
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,7 +52,7 @@ def _env_flag(name: str, default: bool) -> bool:
 
 def _env_int(name: str, default: int) -> int:
     try:
-        return int(os.getenv(name, str(default)))
+        return get_env_int(name, default)
     except (TypeError, ValueError):
         return default
 
