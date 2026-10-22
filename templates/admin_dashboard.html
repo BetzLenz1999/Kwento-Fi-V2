@@ -2685,6 +2685,48 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     </button>
                     <div id="community-feed-visibility-result" style="margin-top: 1rem; display: none;"></div>
                 </div>
+
+                <div class="content-box" style="margin-top: 1.5rem;">
+                    <h2 style="margin-bottom: 1rem;">🪙 Community G$ Rewards</h2>
+                    <div style="margin-bottom: 0.75rem; padding: 0.75rem 1rem; background: rgba(245,158,11,0.10); border-radius: 8px; border-left: 3px solid #f59e0b; font-size: 0.88rem; color: rgba(241,245,249,0.85);">
+                        Weighted rates: <strong>2.5</strong> per comment received, <strong>1.5</strong> per comment given, <strong>0.5</strong> per reaction received, <strong>0.1</strong> per reaction given. The balance is the <strong>sum of an append-only ledger</strong> — it can never be edited, and there is no admin control to change anyone's balance. Shown <strong>only inside /community</strong>, never on the wallet page. <strong>v1 has no payout path</strong>: earnings accrue and display, nothing is withdrawable. Run <span style="font-family:monospace;">sql/community_reward_ledger.sql</span> first. <strong>Hidden by default.</strong>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Visibility</label>
+                        <select id="community-rewards-visibility-select" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
+                            <option value="false" selected>🚫 Hidden — no earnings, the card is not rendered</option>
+                            <option value="true">✅ Visible — members earn Community G$</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="saveFeatureVisibility('community_rewards_feature', 'community-rewards-visibility-select', 'community-rewards-visibility-result')" style="width: 100%; padding: 0.9rem; font-size: 1rem;">
+                        💾 Save Community G$ Rewards Setting
+                    </button>
+                    <div id="community-rewards-visibility-result" style="margin-top: 1rem; display: none;"></div>
+
+                    <!-- Rate editor. This changes the RATE, never a balance:
+                         the ledger stays append-only and a member's balance
+                         stays SUM(delta_gd), so past earnings are untouched by
+                         any edit here. Every save needs a reason and is logged
+                         with the admin wallet, so an economy change is always
+                         attributable. Bounds are enforced server-side; the
+                         min/max on the inputs only mirror them. -->
+                    <div style="margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid rgba(255,255,255,0.12);">
+                        <h3 style="margin-bottom: 0.5rem; font-size: 1rem;">Rates per action</h3>
+                        <div style="margin-bottom: 0.9rem; padding: 0.75rem 1rem; background: rgba(59,130,246,0.10); border-radius: 8px; border-left: 3px solid #3b82f6; font-size: 0.85rem; color: rgba(241,245,249,0.85);">
+                            Changing a rate affects <strong>future earnings only</strong>. Past credits are stored per row in an append-only ledger, so they are never recalculated. A rate of <strong>0</strong> switches that action off. Out-of-range values are clamped server-side.
+                        </div>
+                        <div id="reward-rates-fields"></div>
+                        <div style="margin-top: 0.9rem;">
+                            <label style="display: block; margin-bottom: 0.4rem; color: rgba(241,245,249,0.9); font-weight: 600; font-size: 0.9rem;">Reason (required — recorded with your admin wallet)</label>
+                            <input type="text" id="reward-rates-reason" maxlength="200" placeholder="e.g. tune the tap reward down during the campaign"
+                                   style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
+                        </div>
+                        <button class="btn btn-primary" onclick="saveRewardRates()" style="width: 100%; padding: 0.9rem; font-size: 1rem; margin-top: 0.9rem;">
+                            💾 Save Reward Rates
+                        </button>
+                        <div id="reward-rates-result" style="margin-top: 1rem; display: none;"></div>
+                    </div>
+                </div>
             </section>
 
             <!-- Referral Program Section - auto-disbursement + admin recovery -->
@@ -4346,8 +4388,89 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 document.getElementById('dapp-visibility-select').value = data.dapp_connect_visible === true ? 'true' : 'false';
                 document.getElementById('paluwagan-visibility-select').value = data.paluwagan_visible !== false ? 'true' : 'false';
                 document.getElementById('community-feed-visibility-select').value = data.community_feed_visible === true ? 'true' : 'false';
+                var _crSel = document.getElementById('community-rewards-visibility-select');
+                if (_crSel) _crSel.value = data.community_rewards_visible === true ? 'true' : 'false';
             } catch (e) {
                 statusDiv.innerHTML = '<p style="color:#ef4444;">❌ Failed to load settings</p>';
+            }
+            loadRewardRates();
+        }
+
+        // ── Community G$ rate editor ────────────────────────────────────────
+        // The labels are fixed here and keyed by the SAME rate names the server
+        // uses, so a payload key can never be shown against the wrong action.
+        const _REWARD_RATE_LABELS = {
+            comment_out: 'Someone comments on your post',
+            comment_in: 'You comment on a post',
+            reaction_out: 'Someone reacts to your post',
+            reaction_in: 'You react to a post'
+        };
+        async function loadRewardRates() {
+            const fields = document.getElementById('reward-rates-fields');
+            if (!fields) return;
+            try {
+                const res = await fetch('/community/api/admin/reward-rates');
+                const data = await res.json();
+                if (!data.success) {
+                    fields.innerHTML = '<p style="color:#ef4444;">❌ ' +
+                        (data.error || 'Could not load the rates') + '</p>';
+                    return;
+                }
+                const order = data.names || Object.keys(data.rates || {});
+                fields.innerHTML = order.map(function (name) {
+                    const value = (data.rates || {})[name];
+                    const label = _REWARD_RATE_LABELS[name] || name;
+                    return '<div style="margin-bottom: 0.7rem;">' +
+                        '<label style="display:block; margin-bottom:0.3rem; color:rgba(241,245,249,0.9); font-size:0.9rem;">' +
+                        label + '</label>' +
+                        '<input type="number" id="reward-rate-' + name + '" step="0.1" min="' +
+                        data.min + '" max="' + data.max + '" value="' + value + '" ' +
+                        'style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.1); ' +
+                        'border:1px solid rgba(255,255,255,0.2); border-radius:8px; color:#f1f5f9; font-size:1rem;">' +
+                        '</div>';
+                }).join('') +
+                '<p style="font-size:0.8rem; color:rgba(241,245,249,0.6);">Allowed range: ' +
+                data.min + '–' + data.max + ' G$. Values outside it are clamped.</p>';
+            } catch (e) {
+                fields.innerHTML = '<p style="color:#ef4444;">❌ Could not load the rates</p>';
+            }
+        }
+
+        async function saveRewardRates() {
+            const resultDiv = document.getElementById('reward-rates-result');
+            const reasonEl = document.getElementById('reward-rates-reason');
+            const reason = (reasonEl && reasonEl.value || '').trim();
+            if (!reason) {
+                // Fail before the request: the server refuses this too, but a
+                // round-trip to be told so is a worse experience than a hint.
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = '<p style="color:#ef4444;">❌ A reason is required.</p>';
+                return;
+            }
+            const rates = {};
+            Object.keys(_REWARD_RATE_LABELS).forEach(function (name) {
+                const input = document.getElementById('reward-rate-' + name);
+                if (input) rates[name] = input.value;
+            });
+            try {
+                const res = await fetch('/community/api/admin/reward-rates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rates: rates, reason: reason })
+                });
+                const data = await res.json();
+                resultDiv.style.display = 'block';
+                if (data.success) {
+                    resultDiv.innerHTML = '<p style="color:#22c55e;">✅ Rates saved. New earnings use them; past earnings are unchanged.</p>';
+                    if (reasonEl) reasonEl.value = '';
+                    loadRewardRates();
+                } else {
+                    resultDiv.innerHTML = '<p style="color:#ef4444;">❌ ' +
+                        (data.error || 'Could not save the rates') + '</p>';
+                }
+            } catch (e) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = '<p style="color:#ef4444;">❌ Could not save the rates</p>';
             }
         }
 
