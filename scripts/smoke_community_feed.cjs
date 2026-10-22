@@ -1558,6 +1558,45 @@ function feedFetch(handler, feedRows) {
        unsizedImg.className === 'cf-media-raw', unsizedImg.className);
     ok('an unsized image sets no aspect ratio',
        !unsizedImg.style.aspectRatio, String(unsizedImg.style.aspectRatio));
+    ok('a single photo keeps the existing media layout',
+       !unsized.querySelector('.cf-media').className.includes('cf-media-grid'));
+
+    const four = api._internals.buildCard(makePost({ media: [
+      { type: 'image', url: 'https://media.example/1.jpg', w: 1200, h: 800 },
+      { type: 'image', url: 'https://media.example/2.jpg', w: 800, h: 1200 },
+      { type: 'image', url: 'https://media.example/3.jpg' },
+      { type: 'image', url: 'https://media.example/4.jpg' },
+    ] }));
+    const gallery = four.querySelector('.cf-media');
+    ok('four photos use the compact 2x2 grid',
+       gallery.className.includes('cf-media-grid-4'), gallery.className);
+    ok('the four grid tiles keep upload order',
+       gallery.children.slice(0, 4).map(n => n.src).join('|')
+         === 'https://media.example/1.jpg|https://media.example/2.jpg|https://media.example/3.jpg|https://media.example/4.jpg');
+    ok('grid thumbnails ignore source aspect ratios',
+       !gallery.children[0].style.aspectRatio && gallery.children[0].className !== 'cf-media-raw');
+    ok('a grid thumbnail retains its tap-to-view handler',
+       typeof gallery.children[0].onclick === 'function');
+
+    const two = api._internals.buildCard(makePost({ media: [
+      { type: 'image', url: 'https://media.example/a.jpg' },
+      { type: 'image', url: 'https://media.example/b.jpg' },
+    ] }));
+    ok('two photos use one compact row',
+       two.querySelector('.cf-media').className.includes('cf-media-grid-2'));
+    const three = api._internals.buildCard(makePost({ media: [
+      { type: 'image', url: 'https://media.example/a.jpg' },
+      { type: 'image', url: 'https://media.example/b.jpg' },
+      { type: 'image', url: 'https://media.example/c.jpg' },
+    ] }));
+    ok('three photos use the split-height mosaic',
+       three.querySelector('.cf-media').className.includes('cf-media-grid-3'));
+    const mixed = api._internals.buildCard(makePost({ media: [
+      { type: 'image', url: 'https://media.example/a.jpg' },
+      { type: 'video', url: 'https://media.example/v.mp4' },
+    ] }));
+    ok('mixed photos and video keep the existing media layout',
+       !mixed.querySelector('.cf-media').className.includes('cf-media-grid'));
 
     // A video's ratio lands on its own frame, which is what the full-bleed
     // phone layout and the lightbox both read.
