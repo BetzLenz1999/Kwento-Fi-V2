@@ -1,5 +1,6 @@
 import multiprocessing
-import os
+
+from env_utils import get_env_int
 
 # ─── Workers & Threads ───────────────────────────────────────────────────────
 # Autoscale handles horizontal scaling (multiple instances).
@@ -9,8 +10,11 @@ threads = 4
 worker_class = "gthread"
 
 # ─── Binding ─────────────────────────────────────────────────────────────────
-# Always read PORT from environment — required for Autoscale / Cloud Run.
-port = os.environ.get("PORT", "5000")
+# PORT is required by Autoscale / Cloud Run, but a missing, blank, malformed,
+# or out-of-range value should not prevent the web worker from starting.
+port = get_env_int("PORT", 5000)
+if not 1 <= port <= 65535:
+    port = 5000
 bind = f"0.0.0.0:{port}"
 reuse_port = True
 
