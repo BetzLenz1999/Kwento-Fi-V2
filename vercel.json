@@ -1,16 +1,11 @@
 {
-  "version": 2,
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "flask",
   "installCommand": "pip install --no-cache-dir -r requirements.txt",
-  "builds": [
-    {
-      "src": "main.py",
-      "use": "@vercel/python"
+  "functions": {
+    "main.py": {
+      "includeFiles": "{static/**,templates/**}",
+      "excludeFiles": "{tests/**,docs/**,scripts/**,contracts/**,node_modules/**,.git/**}"
     }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "main.py"
-    }
-  ]
+  }
 }
