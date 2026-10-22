@@ -33,6 +33,7 @@
     var JPEG_QUALITY = 0.85;
 
     var _url = BOOT.avatarUrl || '';
+    var _cacheBust = '';
     var _listeners = [];
     var _busy = false;
 
@@ -84,18 +85,28 @@
 
     // Render the picture (or the initial) into every node that mirrors it: the
     // composer ring, the profile hero and the modal preview.
+    function avatarImageUrl(url) {
+        var name = esc(USERNAME).trim().replace(/^@+/, '');
+        if (!esc(url).trim() || !/^[A-Za-z0-9_]{3,24}$/.test(name)) return '';
+        var path = '/community/api/profile/' + encodeURIComponent(name) + '/avatar';
+        return _cacheBust ? path + '?v=' + encodeURIComponent(_cacheBust) : path;
+    }
+
     function renderInto(node, url, username) {
         if (!node) return;
         node.textContent = '';
-        var src = esc(url).trim();
-        if (src) {
+        var imageSrc = avatarImageUrl(url);
+        if (imageSrc) {
             var img = document.createElement('img');
             img.className = 'cf-avatar-img';
-            img.src = src;
+            img.src = imageSrc;
             img.alt = '';
             img.loading = 'lazy';
             img.decoding = 'async';
             img.referrerPolicy = 'no-referrer';
+            img.onerror = function () {
+                node.textContent = (esc(username) || 'A')[0].toUpperCase();
+            };
             node.appendChild(img);
             return;
         }
@@ -112,7 +123,9 @@
 
     function setUrl(url, notify) {
         _url = url || '';
+        _cacheBust = String(Date.now());
         paint();
+        _cacheBust = '';
         if (notify !== false) {
             _listeners.forEach(function (fn) {
                 try { fn(_url); } catch (e) { /* a listener must not break the save */ }
@@ -219,6 +232,10 @@
         var file = (fileList && fileList[0]) || null;
         if (!file) return;
         if (!WALLET) { requiresLogin(); return; }
+        if (!USERNAME) {
+            setStatus('Choose a community username before uploading a profile picture.', true);
+            return;
+        }
         if (!/^image\//.test(file.type || '')) {
             setStatus('Please choose an image file.', true);
             return;
