@@ -25,6 +25,8 @@ import os
 import re
 from datetime import datetime, timezone
 
+from . import rewards
+
 logger = logging.getLogger(__name__)
 
 FEATURE_NAME = "community_feed_feature"
@@ -196,6 +198,45 @@ def get_username(wallet: str | None) -> str | None:
 def display_name(wallet: str | None) -> str:
     """Username when set, otherwise a shortened wallet address."""
     return get_username(wallet) or short_wallet(wallet)
+
+
+def _comment_post_owner(supabase, post_id) -> str | None:
+    """The owner wallet of a post, for the comment-reward reversal.
+
+    Needed because a comment credits the owner too, so the reversal must find
+    the owner's row as well as the commenter's. Never raises.
+    """
+    if post_id in (None, ""):
+        return None
+    try:
+        result = (
+            supabase.table("community_feed_posts")
+            .select("wallet_address")
+            .eq("id", int(post_id))
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: post owner lookup failed: %s", exc)
+        return None
+    rows = _rows(result)
+    return rows[0].get("wallet_address") if rows else None
+
+
+def rewards_summary(wallet: str | None) -> dict:
+    """The rewards card payload for the routes (thin delegate, see rewards.py).
+
+    Kept here so the routes talk to one module, and so the rewards feature can
+    be stubbed in a test without reaching into ``community_feed.rewards``.
+    """
+    try:
+        return rewards.summary(wallet)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: rewards summary failed: %s", exc)
+        return {"success": True, "enabled": False, "is_guest": not wallet,
+                "balance_gd": 0.0, "min_payout_gd": 0.0, "progress": 0.0,
+                "status": "guest" if not wallet else "pending",
+                "can_withdraw": False}
 
 
 def is_enabled() -> bool:
@@ -1658,7 +1699,10 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
 
     try:
         if previous:
-            # Switch: update in place, count does not move.
+            # Switch: update in place, count does not move. A switch is NOT a
+            # new reaction, so it must never credit — and because the ledger
+            # credit is keyed on (post, reactor), the first credit stands and
+            # nothing more is written.
             supabase.table("community_feed_reactions").update(
                 {"reaction": reaction}
             ).eq("post_id", int(post_id)).ilike(
@@ -1676,6 +1720,19 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
         logger.error("community_feed: reaction write failed: %s", exc)
         return {"success": False, "error": "Could not save your reaction",
                 "code": "db"}
+
+    # A brand-new reaction earns. Self-activity is filtered inside the hook, so
+    # reacting to your own post credits nobody. Deliberately OUTSIDE the write
+    # try/except and after the reaction is persisted: a rewards problem must
+    # never turn a successful reaction into a reported failure. Wrapped here as
+    # well as inside the hook — a bug in the hook itself (or an import error)
+    # must not be able to fail the user's reaction.
+    if not previous:
+        try:
+            rewards.on_reaction_added(
+                wallet, post_id, post.get("wallet_address"), _supabase=supabase)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("community_feed: reward credit failed: %s", exc)
 
     return {"success": True, "reaction_count": count, "my_reaction": reaction,
             "reaction_breakdown": _post_breakdown(supabase, post_id)}
@@ -1710,6 +1767,13 @@ def clear_reaction(wallet: str, post_id: int, *, _supabase=None,
 
     count = max(0, int(post.get("reaction_count") or 0) - 1)
     _write_reaction_count(supabase, post_id, count)
+    # Removing a reaction reverses both sides of the credit it produced. The
+    # ledger's unique `reverses_ledger_id` makes a replayed undo a no-op.
+    try:
+        rewards.on_reaction_removed(
+            wallet, post_id, post.get("wallet_address"), _supabase=supabase)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: reward reversal failed: %s", exc)
     return {"success": True, "reaction_count": count, "my_reaction": None,
             "reaction_breakdown": _post_breakdown(supabase, post_id)}
 
@@ -1837,6 +1901,16 @@ def add_comment(wallet: str, post_id: int, body: str) -> dict:
                 "code": "db"}
 
     _bump_comment_count(supabase, post_id, +1)
+    # A new comment earns for BOTH sides — the commenter (COMMENT_IN_RATE) and
+    # the post owner (COMMENT_OUT_RATE, the larger rate); self-activity credits
+    # nobody. Best-effort, and after the comment is persisted, so a rewards
+    # problem never reports the comment as failed.
+    try:
+        rewards.on_comment_added(
+            wallet, rows[0].get("id"), post_id, post.get("wallet_address"),
+            _supabase=supabase)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: reward credit failed: %s", exc)
     avatar = _avatars_for_wallets(supabase, [wallet]).get((wallet or "").lower())
     return {"success": True,
             "comment": _public_comment(rows[0], wallet, avatar_url=avatar)}
@@ -1919,6 +1993,15 @@ def delete_comment(wallet: str, comment_id: int) -> dict:
         logger.error("community_feed: comment delete failed: %s", exc)
         return {"success": False, "error": "Could not delete the comment", "code": "db"}
     _bump_comment_count(supabase, rows[0].get("post_id"), -1)
+    # Deleting a comment reverses both sides of the credit it produced, so the
+    # owner's rate must be resolved here to find the owner's row.
+    try:
+        rewards.on_comment_removed(
+            wallet, comment_id,
+            _comment_post_owner(supabase, rows[0].get("post_id")),
+            _supabase=supabase)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: reward reversal failed: %s", exc)
     return {"success": True}
 
 
