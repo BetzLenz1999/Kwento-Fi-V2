@@ -342,7 +342,7 @@ function makeAlbum(over) {
     }));
     const img = withPic.querySelector('.cp-avatar-img');
     ok('a member with a picture shows the photo',
-       !!img && img.src === 'https://media.example/u/deadbeef/pic.jpg',
+       !!img && img.src === '/community/api/profile/betz/avatar',
        img ? img.src : 'no img');
     const withoutPic = api._internals.buildPostCard(makePost({ username: 'betz' }));
     const initial = withoutPic.querySelector('.cp-avatar');
@@ -350,6 +350,13 @@ function makeAlbum(over) {
        !!initial && initial.textContent === 'B', initial ? initial.textContent : 'none');
     ok('the fallback renders no <img>',
        !withoutPic.querySelector('.cp-avatar-img'));
+
+    const legacyName = api._internals.buildPostCard(makePost({
+      username: 'Community member',
+      avatar_url: 'https://media.example/u/deadbeef/legacy.jpg',
+    }));
+    ok('an invalid username never falls back to the raw R2 URL',
+       !legacyName.querySelector('.cp-avatar-img'));
   }
 
   // ── 5. Album is lazy-loaded on the first tab open ─────────────────────────
