@@ -412,8 +412,13 @@ window.GM_COMMUNITY_BOOT = {
     // built from this object, so a new destination is added here only.
     // `guestOk` marks a destination a signed-out visitor may reach (reading is
     // public); a `!guestOk` tap raises the shared connect card instead.
+    //
+    // There is deliberately NO "Feed" tab: this page IS the feed, so a tab
+    // pointing back at /community was a dead tap. Its slot now carries the
+    // Claim Free G$ entry point — the same action as the wallet's Claim chip,
+    // reached through /wallet?claim=1 so the claim sheet opens on arrival.
     nav: [
-        { id: 'feed',   icon: '🏠', label: 'Feed',        href: '/community',  guestOk: true },
+        { id: 'claim',  icon: '🪙', label: 'Claim Free G$', href: '/wallet?claim=1', gold: true, guestOk: false },
         { id: 'search', icon: '🔍', label: 'Search',      action: 'search',    guestOk: true },
         { id: 'earn',   icon: '💰', label: 'Earn',        action: 'earn',      guestOk: false },
         { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
