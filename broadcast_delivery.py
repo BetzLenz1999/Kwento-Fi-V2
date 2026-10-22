@@ -27,17 +27,30 @@ import logging
 import os
 import threading
 
+from env_utils import get_env_int
+
 logger = logging.getLogger(__name__)
 
 _DELIVERY_ENABLED = os.getenv("TELEGRAM_BROADCAST_DELIVERY_ENABLED", "").lower() in ("1", "true", "yes", "on")
-_POLL_INTERVAL_SEC = int(os.getenv("TELEGRAM_BROADCAST_DELIVERY_INTERVAL_SEC", "30"))
-_BATCH = int(os.getenv("TELEGRAM_BROADCAST_DELIVERY_BATCH", "50"))
-_MAX_AGE_HOURS = int(os.getenv("TELEGRAM_BROADCAST_DELIVERY_MAX_AGE_HOURS", "48"))
+_POLL_INTERVAL_SEC = get_env_int("TELEGRAM_BROADCAST_DELIVERY_INTERVAL_SEC", 30)
+_BATCH = get_env_int("TELEGRAM_BROADCAST_DELIVERY_BATCH", 50)
+_MAX_AGE_HOURS = get_env_int("TELEGRAM_BROADCAST_DELIVERY_MAX_AGE_HOURS", 48)
 
 _scheduler_stop = threading.Event()
 _scheduler_thread = None
 _scheduler_lock = threading.Lock()
 _wakeup = threading.Event()  # set by broadcast_message_async for near-immediate delivery
+_schema_missing = False  # latched when the tg_* migration clearly isn't applied
+
+
+def is_delivery_enabled() -> bool:
+    """True when the durable delivery scheduler is configured to run.
+
+    Read by telegram_notify.broadcast_message_async: when this is False the
+    admin broadcast must use the legacy direct send — queueing rows with no
+    scheduler running would deliver to nobody.
+    """
+    return _DELIVERY_ENABLED
 
 
 def wake_broadcast_delivery() -> None:
@@ -52,6 +65,9 @@ def _fetch_due_broadcasts():
     'partially_sent' (some sent, some still pending). We bound by created_at so
     a single ancient stuck broadcast can't starve fresh ones forever.
     """
+    global _schema_missing
+    if _schema_missing:
+        return []
     from datetime import datetime, timedelta, timezone
     from supabase_client import get_supabase_admin_client, get_supabase_client
     supabase = get_supabase_admin_client() or get_supabase_client()
@@ -71,7 +87,18 @@ def _fetch_due_broadcasts():
         )
         return [r["id"] for r in (result.data or []) if r.get("id") is not None]
     except Exception as exc:  # noqa: BLE001
-        logger.error("❌ Broadcast delivery: could not fetch due broadcasts: %s", exc)
+        # A missing tg_status column / telegram_broadcast_deliveries table means
+        # sql/telegram_broadcast_deliveries.sql was never applied. Say so once
+        # and stop polling, instead of logging the same error every interval.
+        if "tg_status" in str(exc) or "telegram_broadcast_deliveries" in str(exc) or "does not exist" in str(exc):
+            _schema_missing = True
+            logger.error(
+                "❌ Broadcast delivery: tg_* delivery schema missing — run "
+                "sql/telegram_broadcast_deliveries.sql in Supabase, then restart. "
+                "Scheduler idle until then. (error: %s)", exc,
+            )
+        else:
+            logger.error("❌ Broadcast delivery: could not fetch due broadcasts: %s", exc)
         return []
 
 
