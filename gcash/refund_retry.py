@@ -17,15 +17,17 @@ import os
 import threading
 from datetime import datetime, timedelta, timezone
 
+from env_utils import get_env_int
+
 logger = logging.getLogger(__name__)
 
 _REFUND_ENABLED = os.getenv("GCASH_AUTO_REFUND_ENABLED", "").lower() in ("1", "true", "yes", "on")
-_REFUND_INTERVAL_SEC = int(os.getenv("GCASH_AUTO_REFUND_INTERVAL_SEC", "300"))
-_MAX_REQUESTS = int(os.getenv("GCASH_AUTO_REFUND_MAX_REQUESTS", "50"))
+_REFUND_INTERVAL_SEC = get_env_int("GCASH_AUTO_REFUND_INTERVAL_SEC", 300)
+_MAX_REQUESTS = get_env_int("GCASH_AUTO_REFUND_MAX_REQUESTS", 50)
 _AUTO_REFUND_HOURS = 24
 # refund_failed rows (e.g. refund wallet out of gas) are retried too, but not
 # every tick — wait this long between attempts on the same row.
-_REFUND_FAILED_RETRY_AFTER_SEC = int(os.getenv("GCASH_REFUND_FAILED_RETRY_AFTER_SEC", "3600"))
+_REFUND_FAILED_RETRY_AFTER_SEC = get_env_int("GCASH_REFUND_FAILED_RETRY_AFTER_SEC", 3600)
 
 _scheduler_stop = threading.Event()
 _scheduler_thread = None
