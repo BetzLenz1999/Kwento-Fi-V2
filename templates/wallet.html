@@ -2225,9 +2225,38 @@
         .fv-deverify-note { background: rgba(22,163,74,0.08); border-color: rgba(22,163,74,0.34); color: #15803d; }
 
 
+        /* ── Embed mode: /wallet?embed=claim (community Claim Free G$ dialog) ──
+           The community feed frames THIS page so the claim sheet is reachable
+           without leaving the feed, and it is the ONE claim implementation
+           (see docs/COMMUNITY_CLAIM_MODAL_INLINE_PROPOSAL.md). Everything the
+           wallet page paints around the sheet — top bar, security banner,
+           hero, balance layout, bottom nav, sheets, the voucher modal — is
+           chrome inside a dialog, so it is hidden here and only the modal
+           overlays survive.
+
+           Deliberately NOT hidden: `.modal-overlay` (the claim + PIN sheets
+           themselves), `#gmCeleOverlay` (the post-claim celebration) and
+           `#walletMaintenanceOverlay` — that one out-stacks everything, so a
+           member must still see the maintenance notice rather than a dead
+           sheet.
+
+           No `zoom` reset is needed: the page's 0.7 scale is gated behind
+           `@media (min-width: 900px)`, and a media query inside a frame
+           evaluates against the FRAME's viewport (the dialog is ~460px), so
+           the scale never applies here. */
+        body.gm-embed-claim { background: var(--bg); }
+        body.gm-embed-claim > *:not(.modal-overlay):not(#gmCeleOverlay):not(#walletMaintenanceOverlay) {
+            display: none !important;
+        }
+
+
     </style>
 </head>
-<body>
+{# `gm-embed-claim` is set by /wallet?embed=claim — the community feed's Claim
+   Free G$ dialog frames this page. The CSS at the end of the style block hides
+   every piece of wallet chrome and leaves only the modal overlays, so the feed
+   shows the SAME claim sheet without the member leaving the feed. #}
+<body class="{% if embed_claim %}gm-embed-claim{% endif %}">
     <div id="navFeedbackOverlay" class="nav-feedback-overlay" aria-live="polite" aria-atomic="true">
         <div class="nav-feedback-box">
             <span class="spinner" aria-hidden="true"></span>
@@ -3693,7 +3722,12 @@
         "celoChainId": {{ celo_chain_id|default(42220, true)|tojson }},
         "identityContractAddress": {{ identity_contract_address|default('', true)|tojson }},
         "ethereumRpc": {{ ethereum_rpc|default('', true)|tojson }},
-        "ethereumRpcFallbacks": {{ ethereum_rpc_fallbacks|default('', true)|tojson }}
+        "ethereumRpcFallbacks": {{ ethereum_rpc_fallbacks|default('', true)|tojson }},
+        {# True when the page is framed by the community feed's Claim Free G$
+           dialog (?embed=claim). Full-page flows (Face Verification, logout)
+           must then navigate the TOP window — a navigation inside the frame
+           would load GoodDollar's page (or the homepage) INTO the dialog. #}
+        "embed": {{ 'true' if embed_claim else 'false' }}
     };
     </script>
     <script src="{{ url_for('static', filename='js/wallet-main.js', v=ASSET_VERSION) }}"></script>
@@ -3929,14 +3963,19 @@
 
     {# The GoodMarket Agent is HIDDEN by default (goodmarket_agent_visible) so
        the community room is what users land on. Flip it ON from the admin
-       dashboard when the agent is ready to be public again. #}
-    {% if goodmarket_agent_visible %}
+       dashboard when the agent is ready to be public again.
+       Embed mode (`?embed=claim`) skips both floating widgets: they are
+       position:fixed launchers that would sit over the framed claim sheet, and
+       skipping the include means their bundles never load either. #}
+    {% if goodmarket_agent_visible and not embed_claim %}
     {% include "_ai_agent.html" %}
     {% endif %}
 
     {# Public Community Chatroom — its OWN widget, separate from the agent.
        Auto-opens on load; hidden entirely while chatroom_feature is OFF. #}
+    {% if not embed_claim %}
     {% include "_chatroom.html" %}
+    {% endif %}
 
     {% if wallet_maintenance_mode %}
     <!-- Celo protocol-update maintenance (admin-toggled via the dashboard).
