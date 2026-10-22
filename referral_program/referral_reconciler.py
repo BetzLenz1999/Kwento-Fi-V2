@@ -27,11 +27,13 @@ import os
 import threading
 import time
 
+from env_utils import get_env_int
+
 logger = logging.getLogger(__name__)
 
 _ENABLED = os.getenv("REFERRAL_RECONCILER_ENABLED", "1").lower() not in ("0", "false", "no", "off")
-_INTERVAL_SEC = int(os.getenv("REFERRAL_RECONCILER_INTERVAL_SEC", "900"))
-_STUCK_HOURS = int(os.getenv("REFERRAL_RECONCILER_STUCK_HOURS", "1"))
+_INTERVAL_SEC = get_env_int("REFERRAL_RECONCILER_INTERVAL_SEC", 900)
+_STUCK_HOURS = get_env_int("REFERRAL_RECONCILER_STUCK_HOURS", 1)
 
 _scheduler_stop = threading.Event()
 _scheduler_thread = None
