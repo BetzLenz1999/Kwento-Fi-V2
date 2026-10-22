@@ -5,6 +5,8 @@ import string
 import random
 from datetime import datetime, timezone
 
+from env_utils import get_env_int
+
 logger = logging.getLogger(__name__)
 
 REFERRER_REWARD = 1000.0
@@ -1249,7 +1251,7 @@ class ReferralService:
         least that old. Set it to 0 to disable entirely (failed stays
         admin-retry-only)."""
         try:
-            return int(os.getenv('REFERRAL_RETRY_FAILED_AFTER_SEC', '900')) > 0
+            return get_env_int('REFERRAL_RETRY_FAILED_AFTER_SEC', 900) > 0
         except (TypeError, ValueError):
             return True
 
@@ -1260,7 +1262,7 @@ class ReferralService:
         another process)."""
         from datetime import timedelta
         try:
-            seconds = int(os.getenv('REFERRAL_RETRY_FAILED_AFTER_SEC', '900'))
+            seconds = get_env_int('REFERRAL_RETRY_FAILED_AFTER_SEC', 900)
         except (TypeError, ValueError):
             seconds = 900
         return (datetime.now(timezone.utc) - timedelta(seconds=max(0, seconds))).isoformat()
@@ -1664,7 +1666,7 @@ class ReferralService:
         try:
             from blockchain import has_confirmed_ubi_claim
             try:
-                evidence_days = int(os.getenv("REFERRAL_UBI_CLAIM_EVIDENCE_DAYS", "30"))
+                evidence_days = get_env_int("REFERRAL_UBI_CLAIM_EVIDENCE_DAYS", 30)
             except (TypeError, ValueError):
                 evidence_days = 30
             claim = has_confirmed_ubi_claim(referee_wallet, days=evidence_days) or {}
@@ -1933,7 +1935,7 @@ class ReferralService:
         """ISO cutoff for reclaiming a stranded 'disbursing' row."""
         from datetime import timedelta
         try:
-            seconds = int(os.getenv('REFERRAL_STALE_CLAIM_SEC', '300'))
+            seconds = get_env_int('REFERRAL_STALE_CLAIM_SEC', 300)
         except (TypeError, ValueError):
             seconds = 300
         return (datetime.now(timezone.utc) - timedelta(seconds=max(0, seconds))).isoformat()
