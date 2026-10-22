@@ -8091,9 +8091,19 @@ def wallet_page():
         wallet_maintenance_message = (maint.get('message') or '').strip()
     except Exception as maint_err:
         logger.warning(f"⚠️ Could not resolve wallet maintenance status: {maint_err}")
+
+    # `?embed=claim` renders the page for the community feed's Claim Free G$
+    # dialog: the claim sheet is the ONE implementation and the feed frames it,
+    # so the wallet's own chrome (top bar, hero, balances, bottom nav, sheets)
+    # is hidden by CSS and only the modal overlays remain visible. The claim
+    # deep link (`?claim=1`) is what actually opens the sheet. See
+    # docs/COMMUNITY_CLAIM_MODAL_INLINE_PROPOSAL.md.
+    embed_claim = (request.args.get("embed") or "").strip().lower() == "claim"
+
     return render_template(
         "wallet.html",
         wallet=wallet,
+        embed_claim=embed_claim,
         login_method=session.get("login_method", ""),
         privy_wallet_client_type=session.get("privy_wallet_client_type", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
