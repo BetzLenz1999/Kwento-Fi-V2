@@ -26,6 +26,8 @@ from web3 import Web3
 
 from .tokens import TOKENS, to_wei
 
+from env_utils import get_env_float
+
 logger = logging.getLogger(__name__)
 
 # Fallback RPCs used ONLY for receipt confirmation. A broadcast tx is a fact;
@@ -36,8 +38,8 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CELO_FALLBACKS = "https://forno.celo.org,https://rpc.ankr.com/celo,https://celo.drpc.org"
 _DEFAULT_XDC_FALLBACKS = "https://erpc.xinfin.network,https://rpc.xinfin.network"
 # How long to keep polling for a receipt before reporting submitted_unconfirmed.
-_RECEIPT_TIMEOUT_SEC = float(os.getenv("TIP_RECEIPT_TIMEOUT_SEC", "120") or "120")
-_RECEIPT_POLL_SEC = float(os.getenv("TIP_RECEIPT_POLL_SEC", "2.5") or "2.5")
+_RECEIPT_TIMEOUT_SEC = get_env_float("TIP_RECEIPT_TIMEOUT_SEC", 120.0)
+_RECEIPT_POLL_SEC = get_env_float("TIP_RECEIPT_POLL_SEC", 2.5)
 
 # Minimal ERC-20 surface — enough for balanceOf + transfer (G$ is ERC-777 on
 # Celo but exposes the ERC-20 surface, which is all a direct payout needs).
