@@ -23,14 +23,16 @@ from datetime import datetime, timezone
 
 from . import onchain
 
+from env_utils import get_env_int
+
 logger = logging.getLogger(__name__)
 
 ROOM = "general"
-MAX_MESSAGE_LENGTH = int(os.getenv("CHATROOM_MAX_MESSAGE_LENGTH", "500"))
+MAX_MESSAGE_LENGTH = get_env_int("CHATROOM_MAX_MESSAGE_LENGTH", 500)
 MIN_MESSAGE_LENGTH = 1
-RATE_LIMIT_SECONDS = int(os.getenv("CHATROOM_RATE_LIMIT_SECONDS", "3"))
-UPLOAD_RATE_LIMIT_SECONDS = int(os.getenv("CHATROOM_UPLOAD_RATE_LIMIT_SECONDS", "10"))
-IMAGE_EXPIRATION_DAYS = int(os.getenv("CHATROOM_IMAGE_EXPIRATION_DAYS", "0"))
+RATE_LIMIT_SECONDS = get_env_int("CHATROOM_RATE_LIMIT_SECONDS", 3)
+UPLOAD_RATE_LIMIT_SECONDS = get_env_int("CHATROOM_UPLOAD_RATE_LIMIT_SECONDS", 10)
+IMAGE_EXPIRATION_DAYS = get_env_int("CHATROOM_IMAGE_EXPIRATION_DAYS", 0)
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 100
 FEATURE_NAME = "chatroom_feature"
@@ -43,7 +45,7 @@ ATTACHMENT_HOSTS = {
     for h in os.getenv("CHATROOM_ATTACHMENT_HOSTS", "i.ibb.co,ibb.co").split(",")
     if h.strip()
 }
-MAX_UPLOAD_MB = int(os.getenv("CHATROOM_MAX_UPLOAD_MB", "5"))
+MAX_UPLOAD_MB = get_env_int("CHATROOM_MAX_UPLOAD_MB", 5)
 MAX_ATTACHMENT_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 # Strip control characters (including zero-width/line-separator tricks) so a
