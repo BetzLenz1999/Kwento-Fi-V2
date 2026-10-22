@@ -46,6 +46,8 @@
     var _reactionInFlight = {};  // post_id -> true (serialise per post)
     var _commentsOpen = {};    // post_id -> true
     var _commentCache = {};    // post_id -> [comments]
+    var _earnBusy = false;     // one in-flight rewards fetch at a time
+    var _earnDirty = false;    // a refresh arrived while one was in flight
 
     // ── Small helpers ──────────────────────────────────────────────────────
 
@@ -1213,6 +1215,7 @@
                 post.reaction_breakdown = result.data.reaction_breakdown;
             }
             rerenderPost(post);
+            loadRewards();
         }).catch(function (error) {
             // Roll back the chip, the count and the summary together.
             post.my_reaction = previous;
@@ -1332,6 +1335,7 @@
             post.comment_count = (Number(post.comment_count) || 0) + 1;
             renderComments(post, wrap);
             rerenderPost(post);
+            loadRewards();
         }).catch(function (error) {
             toast((error && error.message) || 'Could not post your comment.', 'error');
         }).then(function () {
@@ -1351,6 +1355,7 @@
             post.comment_count = Math.max(0, (Number(post.comment_count) || 1) - 1);
             renderComments(post, wrap);
             rerenderPost(post);
+            loadRewards();
         }).catch(function (error) {
             toast((error && error.message) || 'Could not delete the comment.', 'error');
         });
@@ -1518,7 +1523,125 @@
         if (box) box.hidden = true;
     }
 
-    // ── Feed loading ───────────────────────────────────────────────────────
+    // ── Community G$ card ──────────────────────────────────────────────────
+    // The balance lives on THIS page only (never the wallet page — see
+    // docs/COMMUNITY_REWARDS_LEDGER_PROPOSAL.md §0). It is the SUM of an
+    // append-only ledger, fetched from the server; the client never computes
+    // or stores it. Refreshed after every earning action so the number moves
+    // as the user reacts and comments.
+    function renderRewards(data) {
+        var card = $('cfEarn');
+        if (!card) return;
+        if (!data || !data.enabled) { card.hidden = true; return; }
+
+        var amount = Number(data.balance_gd) || 0;
+        var minimum = Number(data.min_payout_gd) || 0;
+        var progress = Number(data.progress) || 0;
+
+        var amountEl = $('cfEarnAmount');
+        if (amountEl) amountEl.textContent = formatGd(amount);
+
+        var goalEl = $('cfEarnGoal');
+        if (goalEl) {
+            if (data.is_guest) {
+                goalEl.textContent = 'Sign in to earn G$ in the community.';
+            } else if (data.eligible === false) {
+                // Say WHY the balance is zero. A silent 0 reads as "rewards are
+                // broken"; the real reason is that the wallet is not verified.
+                goalEl.textContent = 'Verify your identity to start earning G$.';
+            } else if (minimum > 0) {
+                var remaining = Math.max(0, minimum - amount);
+                goalEl.textContent = remaining > 0
+                    ? formatGd(remaining) + ' G$ to go until ' + formatGd(minimum) + ' G$'
+                    : formatGd(minimum) + ' G$ reached';
+            }
+        }
+
+        var chip = $('cfEarnChip');
+        if (chip) {
+            // The chip is ALWAYS present: a bare number invites "I can send
+            // this", which is false — it is not spendable and not on-chain.
+            var state = data.status === 'ready' ? 'ready'
+                : (data.status === 'guest' ? 'guest'
+                    : (data.status === 'unverified' ? 'unverified' : 'pending'));
+            chip.setAttribute('data-state', state);
+            chip.textContent = state === 'ready' ? 'Ready'
+                : (state === 'guest' ? 'Guest'
+                    : (state === 'unverified' ? 'Verify to earn' : 'Pending'));
+        }
+
+        // The rates are rendered from the server payload, never hard-coded, so
+        // the page cannot quote a rate the ledger does not pay. Each row is a
+        // label plus an amount; the list is only shown when rates are present.
+        var ratesEl = $('cfEarnRates');
+        if (ratesEl) {
+            var rates = data.rates || null;
+            if (rates) {
+                var rows = [
+                    ['Comment on a post', rates.comment_in],
+                    ['Someone comments on your post', rates.comment_out],
+                    ['Someone reacts to your post', rates.reaction_out],
+                    ['You react to a post', rates.reaction_in],
+                ];
+                ratesEl.textContent = '';
+                rows.forEach(function (row) {
+                    // Build the children explicitly: `el()`'s third argument is
+                    // textContent, so passing a node would stringify it.
+                    var li = el('li');
+                    li.appendChild(el('span', 'cf-earn-rate-label', row[0]));
+                    li.appendChild(el('span', 'cf-earn-rate-value',
+                        '+' + formatGd(row[1]) + ' G$'));
+                    ratesEl.appendChild(li);
+                });
+                ratesEl.hidden = false;
+            } else {
+                ratesEl.hidden = true;
+            }
+        }
+
+        var bar = $('cfEarnBar');
+        var fill = $('cfEarnBarFill');
+        if (bar) bar.setAttribute('aria-valuenow', String(Math.round(progress)));
+        if (fill) fill.style.width = Math.max(0, Math.min(100, progress)) + '%';
+
+        var note = $('cfEarnNote');
+        if (note) {
+            // v1 has no payout path: say so plainly rather than showing a dead
+            // button. The threshold is a goal, not a promise of a transfer.
+            note.hidden = false;
+            note.textContent = data.can_withdraw
+                ? 'Ready to withdraw to your wallet.'
+                : (data.eligible === false
+                    ? 'Only verified wallets earn Community G$. You can still post, comment and react.'
+                    : 'Community G$ is kept in the community until withdrawal opens.');
+        }
+        card.hidden = false;
+    }
+
+    function formatGd(value) {
+        var n = Number(value) || 0;
+        // Whole numbers read cleanly; a fractional balance keeps one decimal.
+        return n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1);
+    }
+
+    function loadRewards() {
+        // Coalesce rather than drop. A react fires a refresh while the boot
+        // fetch may still be in flight; dropping it would leave the number
+        // showing the pre-react balance, which reads as "my reaction did not
+        // count". One extra pass after the current one settles is enough: the
+        // server is the source of truth, so the latest response wins.
+        if (_earnBusy) { _earnDirty = true; return Promise.resolve(); }
+        _earnBusy = true;
+        return api('/community/api/rewards').then(function (result) {
+            if (result.data && result.data.enabled) renderRewards(result.data);
+        }).catch(function () {
+            // A rewards read failure must not disturb the feed; the card just
+            // stays as it was (hidden on first load).
+        }).then(function () {
+            _earnBusy = false;
+            if (_earnDirty) { _earnDirty = false; return loadRewards(); }
+        });
+    }
 
     function loadFeed(reset) {
         if (_loading) return Promise.resolve();
@@ -1851,6 +1974,7 @@
         // make that half a no-op; the feed wiring is what matters here.
         bind();
         renderNav();
+        loadRewards();
         loadFeed(true);
         if (window.location.hash && /^#post-\d+$/.test(window.location.hash)) {
             var id = window.location.hash.replace('#post-', '');
@@ -1933,6 +2057,9 @@
             updateUploadStatus: updateUploadStatus,
             renderPreviews: renderPreviews,
             renderFeed: renderFeed,
+            loadRewards: loadRewards,
+            renderRewards: renderRewards,
+            formatGd: formatGd,
             getFeed: function () { return _feed; },
             setFeed: function (rows) { _feed = rows; },
             getPending: function () { return _pending; },
