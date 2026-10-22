@@ -1061,7 +1061,12 @@
         // it, and the tap handler needs it to place the heart over the photo.
         var mediaWrap = null;
         if (post.media && post.media.length) {
-            mediaWrap = el('div', 'cf-media');
+            var photoGridCount = post.media.length >= 2 && post.media.length <= 4
+                && post.media.every(function (item) {
+                    return item && item.type !== 'video';
+                }) ? post.media.length : 0;
+            mediaWrap = el('div', 'cf-media' + (photoGridCount
+                ? ' cf-media-grid cf-media-grid-' + photoGridCount : ''));
             post.media.forEach(function (item) {
                 if (item.type === 'video') {
                     mediaWrap.appendChild(buildVideoFrame(item, post.username));
@@ -1072,14 +1077,15 @@
                     img.referrerPolicy = 'no-referrer';
                     img.src = item.url;
                     img.alt = post.body ? post.body.slice(0, 120) : 'Photo shared by ' + post.username;
-                    // Instagram's crop needs a box. Use the real dimensions when
-                    // the uploader reported them, and mark the node `raw` so the
-                    // CSS falls back to `contain` for an image we cannot box
-                    // without guessing (which would crop a face).
-                    if (item.w && item.h) {
-                        img.style.aspectRatio = item.w + ' / ' + item.h;
-                    } else {
-                        img.className = 'cf-media-raw';
+                    // Gallery thumbnails use a fixed square crop; the tap still
+                    // opens the original image. Single/mixed posts keep their
+                    // existing source-ratio or unsized-image behavior.
+                    if (!photoGridCount) {
+                        if (item.w && item.h) {
+                            img.style.aspectRatio = item.w + ' / ' + item.h;
+                        } else {
+                            img.className = 'cf-media-raw';
+                        }
                     }
                     img.onclick = function () {
                         onMediaTap(post, mediaWrap, item.url, 'image',
