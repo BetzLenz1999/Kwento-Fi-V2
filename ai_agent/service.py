@@ -22,6 +22,8 @@ from web3 import Web3
 
 from supabase_client import get_supabase_client, safe_supabase_operation
 
+from env_utils import get_env_decimal, get_env_int
+
 logger = logging.getLogger(__name__)
 
 SUPPORTED_ACTIONS = {
@@ -93,14 +95,14 @@ AI_ACTION_SCHEMA: dict[str, Any] = {
 }
 
 _VALUE_ACTIONS = {"send_gd", "stream_gd", "mobile_load", "swap", "bridge", "claim", "gcash_cashout"}
-_MAX_STREAM_GD_PER_DAY = Decimal(os.getenv("AI_AGENT_MAX_STREAM_GD_PER_DAY", "100"))
-_MAX_MOBILE_LOAD_FIAT = Decimal(os.getenv("AI_AGENT_MAX_MOBILE_LOAD_FIAT", "100"))
+_MAX_STREAM_GD_PER_DAY = get_env_decimal("AI_AGENT_MAX_STREAM_GD_PER_DAY", '100')
+_MAX_MOBILE_LOAD_FIAT = get_env_decimal("AI_AGENT_MAX_MOBILE_LOAD_FIAT", '100')
 # Must match the app-wide GCash cashout minimum (5,000 G$ = PHP 50).
-_GCASH_MIN_GD = Decimal(os.getenv("AI_AGENT_GCASH_MIN_GD", "5000"))
+_GCASH_MIN_GD = get_env_decimal("AI_AGENT_GCASH_MIN_GD", '5000')
 # App-side minimum bridge amount — same gate as the /swap bridge tab
 # (CELO_TO_XDC_UI_MIN_AMOUNT_GD / XDC_TO_CELO_UI_MIN_AMOUNT_GD there).
-_BRIDGE_MIN_GD = Decimal(os.getenv("AI_AGENT_BRIDGE_MIN_GD", "2000"))
-_ACTION_TTL_MINUTES = int(os.getenv("AI_AGENT_ACTION_TTL_MINUTES", "15"))
+_BRIDGE_MIN_GD = get_env_decimal("AI_AGENT_BRIDGE_MIN_GD", '2000')
+_ACTION_TTL_MINUTES = get_env_int("AI_AGENT_ACTION_TTL_MINUTES", 15)
 _OPENAI_MODEL = os.getenv("AI_AGENT_OPENAI_MODEL", "gpt-5.5-mini")
 
 # Local fallback storage keeps the MVP functional without requiring a new DB
