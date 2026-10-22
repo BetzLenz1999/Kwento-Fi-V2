@@ -142,7 +142,9 @@ function run(opts) {
    'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
    'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
    'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame',
-   'cfRail'
+   'cfRail',
+   'cfEarn', 'cfEarnChip', 'cfEarnAmount', 'cfEarnGoal', 'cfEarnBar',
+   'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates'
   ].forEach(id => {
     const node = dom.mk(
       id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
@@ -302,10 +304,15 @@ function feedFetch(handler, feedRows) {
     const { api } = run({ boot: MEMBER, fetchImpl: feedFetch(fetchImpl) });
     const p = makePost();
     api._internals.setFeed([p]);
+    // The bundle's init() also fetches the rewards card; scope the assertion
+    // to the reaction request itself rather than to the call count.
+    const reactionCalls = () => calls.filter(c => /\/reaction$/.test(c.url));
+    calls.length = 0;
     api.react(p, 'love');
+    const posted = reactionCalls();
     ok('reaction POSTs to the post endpoint',
-       calls.length === 1 && calls[0].url === '/community/api/posts/5/reaction'
-         && calls[0].method === 'POST', JSON.stringify(calls));
+       posted.length === 1 && posted[0].url === '/community/api/posts/5/reaction'
+         && posted[0].method === 'POST', JSON.stringify(calls));
     ok('reaction is optimistic immediately',
        p.reaction_count === 17 && p.my_reaction === 'love', JSON.stringify(p));
     await tick();
@@ -1521,6 +1528,249 @@ function feedFetch(handler, feedRows) {
     ok('a guest row is a plain profile link (nothing behind it is gated)',
        store.cfRail.children[0].href === '/community/u/ana',
        String(store.cfRail.children[0].href));
+  }
+
+  // ── 20. The G$ Earned card ───────────────────────────────────────────────
+  // The balance is the server's SUM; the card must render it, keep the status
+  // chip, and NEVER offer a withdraw control in v1.
+  {
+    const { api, store } = run({ boot: MEMBER });
+    api._internals.renderRewards({
+      enabled: true, is_guest: false, balance_gd: 47,
+      min_payout_gd: 500, progress: 9.4, status: 'pending', can_withdraw: false,
+      rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
+    });
+    ok('the earn card is revealed when enabled', store.cfEarn.hidden === false);
+    ok('the earn card shows the server balance',
+       store.cfEarnAmount.textContent === '47', String(store.cfEarnAmount.textContent));
+    ok('the earn card keeps a status chip',
+       store.cfEarnChip.textContent === 'Pending',
+       String(store.cfEarnChip.textContent));
+    ok('the earn card names the threshold',
+       /500 G\$/.test(store.cfEarnGoal.textContent),
+       String(store.cfEarnGoal.textContent));
+
+    // The rates are rendered from the server payload, and the list must show
+    // all four with the right amounts — a wrong number here is a support ticket.
+    const rateRows = store.cfEarnRates.children.map(li => li.textContent);
+    ok('the earn card lists all four rates', rateRows.length === 4,
+       JSON.stringify(rateRows));
+    ok('the commenter rate is 1.5',
+       rateRows.some(t => /Comment on a post/.test(t) && /\+1\.5 G\$/.test(t)),
+       JSON.stringify(rateRows));
+    ok('the post-owner comment rate is 2.5',
+       rateRows.some(t => /comments on your post/.test(t) && /\+2\.5 G\$/.test(t)),
+       JSON.stringify(rateRows));
+    ok('the received-reaction rate is 0.5',
+       rateRows.some(t => /reacts to your post/.test(t) && /\+0\.5 G\$/.test(t)),
+       JSON.stringify(rateRows));
+    ok('the given-reaction rate is 0.1',
+       rateRows.some(t => /You react to a post/.test(t) && /\+0\.1 G\$/.test(t)),
+       JSON.stringify(rateRows));
+    ok('the rates list is revealed',
+       store.cfEarnRates.hidden === false);
+    ok('the progress bar reflects the server progress',
+       store.cfEarnBarFill.style.width === '9.4%',
+       String(store.cfEarnBarFill.style.width));
+    ok('the progress bar is announced to assistive tech',
+       store.cfEarnBar.attributes['aria-valuenow'] === '9',
+       String(store.cfEarnBar.attributes['aria-valuenow']));
+    ok('the card never offers a withdraw control in v1',
+       !/withdraw/i.test(store.cfEarnNote.textContent)
+         || /until withdrawal opens/i.test(store.cfEarnNote.textContent),
+       String(store.cfEarnNote.textContent));
+  }
+
+  // ── 20b. The card flips to Ready at the threshold ────────────────────────
+  {
+    const { api, store } = run({ boot: MEMBER });
+    api._internals.renderRewards({
+      enabled: true, is_guest: false, balance_gd: 512,
+      min_payout_gd: 500, progress: 100, status: 'ready', can_withdraw: false,
+    });
+    ok('a balance at the threshold flips the chip to Ready',
+       store.cfEarnChip.textContent === 'Ready',
+       String(store.cfEarnChip.textContent));
+    ok('a reached goal says so',
+       /reached/i.test(store.cfEarnGoal.textContent),
+       String(store.cfEarnGoal.textContent));
+    ok('the bar is capped at 100%',
+       store.cfEarnBarFill.style.width === '100%',
+       String(store.cfEarnBarFill.style.width));
+  }
+
+  // ── 20b-ii. An unverified wallet is told why it earns nothing ────────────
+  //
+  // The server sends eligible:false / status:'unverified' and a zero balance.
+  // The card must NOT show a silent zero — that reads as "rewards are broken"
+  // rather than "you have not verified yet" — and it must not imply the wallet
+  // is locked out, because the feed stays fully usable.
+  {
+    const { api, store } = run({ boot: MEMBER });
+    api._internals.renderRewards({
+      enabled: true, is_guest: false, balance_gd: 0,
+      min_payout_gd: 500, progress: 0, status: 'unverified',
+      eligible: false, can_withdraw: false,
+    });
+    ok('an unverified wallet gets its own chip, not a bare Pending',
+       store.cfEarnChip.textContent === 'Verify to earn',
+       String(store.cfEarnChip.textContent));
+    ok('the chip carries the unverified state for styling',
+       store.cfEarnChip.attributes['data-state'] === 'unverified',
+       String(store.cfEarnChip.attributes['data-state']));
+    ok('the goal line says the balance is zero because of verification',
+       /verify/i.test(store.cfEarnGoal.textContent),
+       String(store.cfEarnGoal.textContent));
+    ok('the note says the feed still works, so it does not read as a lockout',
+       /still post/i.test(store.cfEarnNote.textContent),
+       String(store.cfEarnNote.textContent));
+  }
+
+  // ── 20c. A guest is invited to sign in, and a disabled feature hides ─────
+  {
+    const { api, store } = run({ boot: GUEST });
+    api._internals.renderRewards({
+      enabled: true, is_guest: true, balance_gd: 0,
+      min_payout_gd: 500, progress: 0, status: 'guest', can_withdraw: false,
+    });
+    ok('a guest is told to sign in to earn',
+       /sign in/i.test(store.cfEarnGoal.textContent),
+       String(store.cfEarnGoal.textContent));
+
+    api._internals.renderRewards({ enabled: false });
+    ok('a disabled rewards feature hides the card', store.cfEarn.hidden === true);
+  }
+
+  // ── 20d. No wallet address ever reaches the earn card ────────────────────
+  {
+    const { api, store } = run({ boot: MEMBER });
+    api._internals.renderRewards({
+      enabled: true, is_guest: false, balance_gd: 47, min_payout_gd: 500,
+      progress: 9.4, status: 'pending', can_withdraw: false,
+      rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
+    });
+    const text = store.cfEarn.textContent;
+    ok('no wallet address reaches the earn card',
+       !/0x/i.test(text), text);
+  }
+
+  // ── 20e. A refresh during an in-flight fetch is not dropped ──────────────
+  // The bug this pins: a react fires loadRewards() while the boot fetch is
+  // still open, and a naive `if (busy) return` would leave the card showing
+  // the PRE-react balance — which reads as "my reaction did not count".
+  {
+    const gate = [];
+    const balances = [10, 11];
+    let call = 0;
+    const { api, store } = run({
+      boot: MEMBER,
+      fetchImpl: feedFetch(function (url) {
+        if (String(url).indexOf('/community/api/rewards') === 0) {
+          const idx = call++;
+          return new Promise(resolve => {
+            gate.push(() => resolve({
+              ok: true,
+              json: () => Promise.resolve({
+                success: true, enabled: true, is_guest: false,
+                balance_gd: balances[idx] !== undefined ? balances[idx] : 11,
+                min_payout_gd: 500, progress: 2.0, status: 'pending',
+                can_withdraw: false,
+                rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
+              }),
+            }));
+          });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      }),
+    });
+
+    // Drive the promise chain without depending on its shape: `loadRewards`
+    // chains the follow-up fetch into the first call's promise, so awaiting the
+    // first call before releasing the second response would deadlock.
+    const tick = () => new Promise(r => setTimeout(r, 0));
+
+    const first = api._internals.loadRewards();
+    // The second call arrives while the first is still open.
+    api._internals.loadRewards();
+    await tick();
+    ok('only one rewards fetch is in flight at a time', gate.length === 1,
+       String(gate.length));
+
+    gate[0]();                      // release the first response
+    await tick();
+    ok('the coalesced refresh issues a second fetch', gate.length === 2,
+       String(gate.length));
+    gate[1]();                      // release the refresh
+    await first;
+    await tick();
+    ok('the card ends on the freshest balance',
+       store.cfEarnAmount.textContent === '11',
+       String(store.cfEarnAmount.textContent));
+  }
+
+  // ── N. Admin rate editor: the static contract ──────────────────────────────
+  //
+  // The editor's JS is inline in templates/admin_dashboard.html, so it cannot be
+  // driven through the bundle's VM the way the feed is. What is checkable — and
+  // what actually breaks — is the WIRING: that the labels cover every rate the
+  // server can send, that the endpoint path is the one the blueprint serves, and
+  // that the editor cannot be used to write a balance. Each of these was
+  // mutation-checked by breaking the template and watching this fail.
+  {
+    const fs2 = require('fs');
+    const tpl = fs2.readFileSync(
+      path.join(__dirname, '..', 'templates', 'admin_dashboard.html'), 'utf8');
+    const rw = fs2.readFileSync(
+      path.join(__dirname, '..', 'community_feed', 'rewards.py'), 'utf8');
+
+    // The server's rate vocabulary. The template must not invent a name.
+    const names = /RATE_NAMES\s*=\s*\(([^)]*)\)/.exec(rw);
+    const serverNames = names
+      ? names[1].split(',').map(x => x.trim().replace(/["']/g, '')).filter(Boolean)
+      : [];
+    ok('the server declares the four rates', serverNames.length === 4,
+       serverNames.join(','));
+
+    const labelBlock = /_REWARD_RATE_LABELS\s*=\s*\{([^}]*)\}/.exec(tpl);
+    const labelKeys = labelBlock
+      ? (labelBlock[1].match(/([a-z_]+)\s*:/g) || [])
+          .map(x => x.replace(/[:\s]/g, ''))
+      : [];
+    ok('the editor labels every server rate',
+       serverNames.every(n => labelKeys.includes(n)),
+       'server=' + serverNames.join(',') + ' labels=' + labelKeys.join(','));
+
+    ok('the editor posts to the endpoint the blueprint serves',
+       tpl.includes("'/community/api/admin/reward-rates'"));
+    ok('the editor reads the rates from the server, never hard-coded',
+       tpl.includes('fetch(') && tpl.includes('loadRewardRates'));
+
+    // The reason is mandatory on both sides. Client-side is UX; the server
+    // refusal is the control, and the test suite covers that separately.
+    ok('the editor requires a reason before saving',
+       /if\s*\(\s*!reason\s*\)/.test(tpl));
+    ok('the server refuses a write without an actor and a reason',
+       /if not actor or not actor\.strip\(\)/.test(rw) &&
+       /if not reason or not reason\.strip\(\)/.test(rw));
+
+    // The clamp must be server-side: the form's min/max is a convenience.
+    ok('the server clamps every rate to the bounds',
+       rw.includes('def _clamp') && rw.includes('RATE_BOUNDS'));
+
+    // The whole point: this writes config, and there is still no balance column.
+    ok('the rate write touches only the config table',
+       /maintenance_settings/.test(rw) &&
+       !/update\([^)]*delta_gd/.test(rw) &&
+       !/set_balance/.test(rw));
+
+    // The card copy must not advertise a balance the admin can edit.
+    ok('the admin copy still promises the balance cannot be edited',
+       tpl.includes("there is no admin control to change anyone's balance"));
+
+    // The visibility blurb must state the real rates, not the old flat 1 G$.
+    ok('the admin blurb states the weighted rates',
+       tpl.includes('<strong>2.5</strong> per comment received') &&
+       tpl.includes('<strong>0.1</strong> per reaction given'));
   }
 
   console.log('');
