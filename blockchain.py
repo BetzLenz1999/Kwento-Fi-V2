@@ -135,7 +135,7 @@ IDENTITY_CACHE_TTL = 1800  # 30 minutes — a VERIFIED answer rarely changes
 # 30 minutes pinned "not verified" on genuinely verified users for half an hour.
 # Negative answers therefore get a short TTL and are re-checked almost at once.
 try:
-    IDENTITY_NEGATIVE_CACHE_TTL = int(os.getenv("IDENTITY_NEGATIVE_CACHE_TTL", "60"))
+    IDENTITY_NEGATIVE_CACHE_TTL = get_env_int("IDENTITY_NEGATIVE_CACHE_TTL", 60)
 except (TypeError, ValueError):
     IDENTITY_NEGATIVE_CACHE_TTL = 60
 if IDENTITY_NEGATIVE_CACHE_TTL < 0:
