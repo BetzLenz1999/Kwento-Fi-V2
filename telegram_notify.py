@@ -29,6 +29,8 @@ import requests
 
 from supabase_client import get_supabase_admin_client, get_supabase_client, safe_supabase_operation
 
+from env_utils import get_env_float, get_env_int
+
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -36,17 +38,17 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}" if TELEGRAM_B
 
 # Telegram allows ~30 messages/second to distinct chats. A small delay keeps
 # large broadcasts within the rate limit.
-_BROADCAST_SEND_DELAY_SECONDS = float(os.getenv("TELEGRAM_BROADCAST_SEND_DELAY_SECONDS", "0.05"))
+_BROADCAST_SEND_DELAY_SECONDS = get_env_float("TELEGRAM_BROADCAST_SEND_DELAY_SECONDS", 0.05)
 
 # Max delivery attempts for a transient (rate-limited / network / 5xx) failure
 # before we give up and mark the recipient as permanently failed so the
 # scheduler doesn't spin on a permanently-broken chat forever.
-_MAX_RETRY_ATTEMPTS = int(os.getenv("TELEGRAM_BROADCAST_MAX_RETRY_ATTEMPTS", "5"))
+_MAX_RETRY_ATTEMPTS = get_env_int("TELEGRAM_BROADCAST_MAX_RETRY_ATTEMPTS", 5)
 
 # A delivery row claimed (pending -> sending) by a worker that then dies
 # mid-batch (gunicorn recycle) would otherwise be stuck in 'sending' forever —
 # reclaim it after this many seconds so another pass can deliver it.
-_STALE_CLAIM_SECONDS = int(os.getenv("TELEGRAM_BROADCAST_STALE_CLAIM_SECONDS", "300"))
+_STALE_CLAIM_SECONDS = get_env_int("TELEGRAM_BROADCAST_STALE_CLAIM_SECONDS", 300)
 
 
 def _now_iso() -> str:
