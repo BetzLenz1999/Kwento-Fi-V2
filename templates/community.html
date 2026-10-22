@@ -207,6 +207,39 @@
          bundle reveals it only when there is at least one author. -->
     <div class="cf-rail" id="cfRail" aria-label="Recent posters" hidden></div>
 
+    <!-- ── Community G$ card ───────────────────────────────────────────────
+         The community rewards balance lives HERE and ONLY here (never on the
+         wallet page — see docs/COMMUNITY_REWARDS_LEDGER_PROPOSAL.md §0: two G$
+         figures side by side invite "47 + 12 = 59", which is false, because
+         this balance is not spendable and not on-chain).
+
+         The number is the SUM of an append-only ledger, fetched from
+         /community/api/rewards; it is never a stored value. Starts `hidden`
+         and is revealed by the bundle only when the feature is enabled, so a
+         disabled deployment renders nothing. -->
+    <section class="cf-earn" id="cfEarn" aria-labelledby="cfEarnTitle" hidden>
+        <div class="cf-earn-head">
+            <h2 class="cf-earn-title" id="cfEarnTitle">Community G$</h2>
+            <span class="cf-earn-chip" id="cfEarnChip" data-state="pending">Pending</span>
+        </div>
+        <p class="cf-earn-balance">
+            <span class="cf-earn-amount" id="cfEarnAmount">0</span>
+            <span class="cf-earn-unit">G$</span>
+        </p>
+        <p class="cf-earn-goal" id="cfEarnGoal">of 500 G$ to unlock</p>
+        <div class="cf-earn-bar" role="progressbar" id="cfEarnBar"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+             aria-label="Progress towards the payout minimum">
+            <span class="cf-earn-bar-fill" id="cfEarnBarFill"></span>
+        </div>
+        <!-- The rates come from the server (`rates` in the rewards payload),
+             so this list is rendered by the bundle and can never quote a rate
+             the ledger does not actually pay. The empty element is a fallback
+             for no-JS, which never reveals the card anyway. -->
+        <ul class="cf-earn-rates" id="cfEarnRates" hidden></ul>
+        <p class="cf-earn-note" id="cfEarnNote" hidden></p>
+    </section>
+
     <!-- ── Feed ────────────────────────────────────────────────────────────
          Outside the is_guest branch on purpose: reading is PUBLIC. A guest
          gets the same cards a member does. Only writing is gated — the JS
