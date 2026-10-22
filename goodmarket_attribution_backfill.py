@@ -56,6 +56,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from env_utils import get_env_int
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,22 +80,16 @@ AUTO_RUN_KEY = os.getenv(
 
 # Cap how many wallets a single run touches so a buggy deploy can't hammer
 # the DB / on-chain RPCs. Raise via env var if you really need a bigger run.
-MAX_WALLETS_PER_RUN = int(
-    os.getenv("GOODMARKET_ATTRIBUTION_BACKFILL_MAX_WALLETS", "5000")
-)
+MAX_WALLETS_PER_RUN = get_env_int("GOODMARKET_ATTRIBUTION_BACKFILL_MAX_WALLETS", 5000)
 
 # Sleep between on-chain identity checks during the bulk backfill, in
 # milliseconds. Keeps us friendly to the public Celo RPC. The identity
 # check itself is cached for 5 min, so this only matters on the first pass.
-RPC_THROTTLE_MS = int(
-    os.getenv("GOODMARKET_ATTRIBUTION_BACKFILL_RPC_THROTTLE_MS", "50")
-)
+RPC_THROTTLE_MS = get_env_int("GOODMARKET_ATTRIBUTION_BACKFILL_RPC_THROTTLE_MS", 50)
 
 # Delay before kicking off the auto-backfill thread on boot. Gives the rest
 # of the app (Supabase client, blockchain helpers) time to fully initialise.
-AUTO_RUN_BOOT_DELAY_SECONDS = int(
-    os.getenv("GOODMARKET_ATTRIBUTION_BACKFILL_BOOT_DELAY_SECONDS", "30")
-)
+AUTO_RUN_BOOT_DELAY_SECONDS = get_env_int("GOODMARKET_ATTRIBUTION_BACKFILL_BOOT_DELAY_SECONDS", 30)
 
 # Window (seconds) for the strict attribution rule. The on-chain
 # ``lastAuthenticated`` timestamp must fall within this many seconds of when
@@ -106,9 +102,9 @@ AUTO_RUN_BOOT_DELAY_SECONDS = int(
 # PHASE 3 FIX: Extended to 7 days (604800 seconds) to allow for users who
 # verified earlier but didn't trigger the referral properly. This ensures
 # legitimate referrals are not rejected due to timing issues.
-STRICT_ATTRIBUTION_WINDOW_SECONDS = int(
-    os.getenv("GOODMARKET_ATTRIBUTION_STRICT_WINDOW_SECONDS", str(7 * 24 * 60 * 60))  # 7 days default
-)
+STRICT_ATTRIBUTION_WINDOW_SECONDS = get_env_int(
+    "GOODMARKET_ATTRIBUTION_STRICT_WINDOW_SECONDS", 7 * 24 * 60 * 60
+)  # 7 days default
 
 # Master switch for the strict attribution rule. Default ON. Flip to "0" to
 # fall back to the old "any whitelisted user counts" behaviour without needing
