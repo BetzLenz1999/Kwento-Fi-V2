@@ -1696,7 +1696,14 @@
     function buildNavItem(item) {
         var isLink = !!item.href;
         var node = document.createElement(isLink ? 'a' : 'button');
-        node.className = 'cf-nav-item' + (item.id === 'feed' ? ' is-active' : '');
+        // `active` is data-driven: this bar only renders on /community, and
+        // /community IS the feed, so no tab claims to be the current page any
+        // more (the Feed tab that did is gone — it was a dead tap back to the
+        // page you were already on). A future page reusing this bar marks its
+        // own destination with `active: true`.
+        node.className = 'cf-nav-item'
+            + (item.active ? ' is-active' : '')
+            + (item.gold ? ' cf-nav-gold' : '');
         node.setAttribute('data-nav', item.id || '');
         if (isLink) node.href = item.href;
         else node.type = 'button';
