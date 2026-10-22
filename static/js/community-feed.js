@@ -743,11 +743,85 @@
 
     // ── Feed rendering ─────────────────────────────────────────────────────
 
+    /* ── Recent posters rail ───────────────────────────────────────────────
+       Instagram's story rail, honestly labelled: this app has no 24-hour story
+       model, so calling it "Stories" would promise something the data cannot
+       honour. It is built from the authors ALREADY on this feed page — no new
+       endpoint, no new table — so it can never show a member who has not posted
+       and it costs no extra request.
+
+       Rows are addressed by USERNAME (never a wallet) and link to the same
+       public profile the cards do. A guest gets the rail too: reading is
+       public. */
+    var RAIL_MAX = 12;
+
+    function railAuthors() {
+        var seen = {};
+        var out = [];
+        _feed.forEach(function (post) {
+            var name = esc(post && post.username).trim().replace(/^@+/, '');
+            if (!name) return;
+            var key = name.toLowerCase();
+            if (seen[key]) return;
+            seen[key] = true;
+            out.push({
+                username: name,
+                avatar_url: post.avatar_url,
+                is_self: !!post.is_mine,
+            });
+        });
+        // Your own row leads, the way Instagram pins "Your story" first.
+        out.sort(function (a, b) {
+            return (b.is_self ? 1 : 0) - (a.is_self ? 1 : 0);
+        });
+        return out.slice(0, RAIL_MAX);
+    }
+
+    function buildRailItem(entry) {
+        var isSelf = entry.is_self;
+        var node;
+        if (isSelf) {
+            // Your own row is the composer entry point, not a profile link.
+            node = el('button', 'cf-rail-item is-self');
+            node.type = 'button';
+            node.setAttribute('aria-label', 'Create a post');
+            node.onclick = function () {
+                var input = $('cfCaption');
+                if (input && input.focus) input.focus();
+                var composer = $('cfComposer');
+                if (composer && composer.scrollIntoView) composer.scrollIntoView({ block: 'start' });
+            };
+        } else {
+            node = el('a', 'cf-rail-item');
+            node.href = '/community/u/' + encodeURIComponent(entry.username);
+            node.setAttribute('aria-label', 'View @' + entry.username + "'s profile");
+        }
+        var ring = el('span', 'cf-rail-ring');
+        ring.appendChild(avatarNode(entry.avatar_url, entry.username, 'cf-avatar'));
+        node.appendChild(ring);
+        node.appendChild(el('span', 'cf-rail-name',
+            isSelf ? 'You' : entry.username));
+        return node;
+    }
+
+    function buildRail() {
+        var rail = $('cfRail');
+        if (!rail) return;
+        rail.textContent = '';
+        var authors = railAuthors();
+        if (!authors.length) { rail.hidden = true; return; }
+        rail.hidden = false;
+        authors.forEach(function (entry) {
+            rail.appendChild(buildRailItem(entry));
+        });
+    }
+
     function renderFeed() {
         var container = $('cfFeed');
         if (!container) return;
         container.textContent = '';
         container.setAttribute('aria-busy', 'false');
+        buildRail();
 
         if (!_feed.length) {
             var empty = $('cfEmpty');
@@ -843,6 +917,97 @@
         return frame;
     }
 
+    /* ── Double-tap to like ────────────────────────────────────────────────
+       Instagram's primary gesture. A single tap still opens the lightbox
+       (genuinely useful here — it is how a member reads a small photo), so the
+       two have to be told apart: a tap arms a short timer, and a second tap
+       inside it cancels the lightbox and likes the post instead.
+
+       `dblclick` is wired too, because a mouse never fires the two synthetic
+       taps this timer counts — without it the gesture would be phone-only. */
+    var DBL_TAP_MS = 300;
+    var _lastTap = { id: null, at: 0 };
+
+    function heartBurst(mediaWrap) {
+        if (!mediaWrap) return;
+        var burst = el('span', 'cf-burst', '❤️');
+        burst.setAttribute('aria-hidden', 'true');
+        mediaWrap.appendChild(burst);
+        // Remove it after the animation so a re-render is not needed and the
+        // node cannot pile up on repeated taps.
+        setTimeout(function () {
+            if (burst.parentNode) burst.parentNode.removeChild(burst);
+        }, 900);
+    }
+
+    // `onSingle` runs when the tap turned out NOT to be a double tap.
+    function onMediaTap(post, mediaWrap, url, kind, onSingle) {
+        var now = Date.now();
+        var isDouble = _lastTap.id === post.id && (now - _lastTap.at) < DBL_TAP_MS;
+        _lastTap = { id: post.id, at: isDouble ? 0 : now };
+        if (!isDouble) {
+            setTimeout(function () {
+                if (_lastTap.at === now) onSingle();
+            }, DBL_TAP_MS);
+            return;
+        }
+        // Double tap: like (never un-like — Instagram only ever adds here), and
+        // show the burst. A guest gets the connect card through react().
+        if (post.my_reaction !== 'like') react(post, 'like');
+        heartBurst(mediaWrap);
+    }
+
+    /* Instagram's action row: heart · comment · share, with report pushed to the
+       right. The heart IS the `like` reaction — same optimistic path, same
+       rollback — so the row adds no new write. */
+    function buildActionRow(post, body) {
+        var actions = el('div', 'cf-card-actions');
+
+        var liked = post.my_reaction === 'like';
+        var likeBtn = el('button', 'cf-action-btn' + (liked ? ' is-liked' : ''));
+        likeBtn.type = 'button';
+        likeBtn.appendChild(el('span', 'cf-act-icon', liked ? '❤️' : '🤍'));
+        likeBtn.setAttribute('aria-pressed', liked ? 'true' : 'false');
+        likeBtn.setAttribute('aria-label', liked ? 'Unlike this post' : 'Like this post');
+        likeBtn.onclick = function () {
+            // Tapping a liked heart clears it, exactly like the chip row.
+            react(post, liked ? null : 'like');
+        };
+        actions.appendChild(likeBtn);
+
+        var commentBtn = el('button', 'cf-action-btn');
+        commentBtn.type = 'button';
+        commentBtn.appendChild(el('span', 'cf-act-icon', '💬'));
+        commentBtn.appendChild(el('span', null, 'Comment'));
+        // Reading a post is public; joining the thread is not. A guest gets the
+        // shared connect card instead of an empty comment box.
+        commentBtn.onclick = function () {
+            if (!WALLET) { requiresLogin(); return; }
+            toggleComments(post, body);
+        };
+        actions.appendChild(commentBtn);
+
+        var shareBtn = el('button', 'cf-action-btn');
+        shareBtn.type = 'button';
+        shareBtn.appendChild(el('span', 'cf-act-icon', '↗'));
+        shareBtn.appendChild(el('span', null, 'Share'));
+        shareBtn.onclick = function () { sharePost(post); };
+        actions.appendChild(shareBtn);
+
+        // Report stays in the row rather than moving behind `⋯`: it is the
+        // moderation path the guest-gate harness drives through this exact
+        // button, and it is the only report affordance a visitor has.
+        if (!post.is_mine) {
+            var reportBtn = el('button', 'cf-action-btn');
+            reportBtn.type = 'button';
+            reportBtn.appendChild(el('span', 'cf-act-icon', '⚑'));
+            reportBtn.appendChild(el('span', null, 'Report'));
+            reportBtn.onclick = function () { reportPost(post); };
+            actions.appendChild(reportBtn);
+        }
+        return actions;
+    }
+
     function buildCard(post) {
         var card = el('article', 'cf-card');
         card.setAttribute('data-post-id', post.id);
@@ -883,9 +1048,11 @@
         }
         card.appendChild(head);
 
-        // Media
+        // Media. The wrap is kept in scope: the double-tap burst is appended to
+        // it, and the tap handler needs it to place the heart over the photo.
+        var mediaWrap = null;
         if (post.media && post.media.length) {
-            var mediaWrap = el('div', 'cf-media');
+            mediaWrap = el('div', 'cf-media');
             post.media.forEach(function (item) {
                 if (item.type === 'video') {
                     mediaWrap.appendChild(buildVideoFrame(item, post.username));
@@ -896,7 +1063,20 @@
                     img.referrerPolicy = 'no-referrer';
                     img.src = item.url;
                     img.alt = post.body ? post.body.slice(0, 120) : 'Photo shared by ' + post.username;
-                    img.onclick = function () { openLightbox(item.url); };
+                    // Instagram's crop needs a box. Use the real dimensions when
+                    // the uploader reported them, and mark the node `raw` so the
+                    // CSS falls back to `contain` for an image we cannot box
+                    // without guessing (which would crop a face).
+                    if (item.w && item.h) {
+                        img.style.aspectRatio = item.w + ' / ' + item.h;
+                    } else {
+                        img.className = 'cf-media-raw';
+                    }
+                    img.onclick = function () {
+                        onMediaTap(post, mediaWrap, item.url, 'image',
+                            function () { openLightbox(item.url); });
+                    };
+                    img.ondblclick = function () { onMediaTap(post, mediaWrap, item.url, 'image', function () {}); };
                     mediaWrap.appendChild(img);
                 }
             });
@@ -904,6 +1084,9 @@
         }
 
         var body = el('div', 'cf-card-body');
+
+        // Actions FIRST, directly under the media — Instagram's order.
+        body.appendChild(buildActionRow(post, body));
 
         // Reaction + comment summary
         var summary = el('div', 'cf-summary');
@@ -919,9 +1102,15 @@
             : ''));
         body.appendChild(summary);
 
-        // Caption (media above, caption below — the IG/FB convention)
+        // Caption — Instagram's shape: the author in BOLD, then the text, on the
+        // same line. The author is a real link to the public profile.
         if (post.body) {
             var caption = el('p', 'cf-caption');
+            var author = el('a', 'cf-caption-author', post.username);
+            author.href = '/community/u/' + encodeURIComponent(
+                String(post.username || '').replace(/^@/, ''));
+            author.setAttribute('aria-label', 'View @' + post.username + "'s profile");
+            caption.appendChild(author);
             linkifyInto(caption, post.body);
             body.appendChild(caption);
             requestAnimationFrame(function () {
@@ -956,31 +1145,6 @@
         });
         body.appendChild(bar);
 
-        // Actions
-        var actions = el('div', 'cf-card-actions');
-        var commentBtn = el('button', 'cf-action-btn', '💬 Comment');
-        commentBtn.type = 'button';
-        // Reading a post is public; joining the thread is not. A guest gets the
-        // shared connect card instead of an empty comment box.
-        commentBtn.onclick = function () {
-            if (!WALLET) { requiresLogin(); return; }
-            toggleComments(post, body);
-        };
-        actions.appendChild(commentBtn);
-
-        var shareBtn = el('button', 'cf-action-btn', '↗ Share');
-        shareBtn.type = 'button';
-        shareBtn.onclick = function () { sharePost(post); };
-        actions.appendChild(shareBtn);
-
-        if (!post.is_mine) {
-            var reportBtn = el('button', 'cf-action-btn', '⚑ Report');
-            reportBtn.type = 'button';
-            reportBtn.onclick = function () { reportPost(post); };
-            actions.appendChild(reportBtn);
-        }
-        body.appendChild(actions);
-
         card.appendChild(body);
         return card;
     }
@@ -1002,10 +1166,17 @@
 
     function react(post, key) {
         if (!WALLET) { requiresLogin(); return; }
+        var previous = post.my_reaction;
+        // A null/undefined key is an explicit REMOVAL, not a no-op: the action
+        // row's heart calls `react(post, null)` to un-like, and it must take the
+        // DELETE path rather than POST a reaction of `null`.
+        if (key === null || key === undefined) {
+            if (!previous) return;
+            key = previous;
+        }
         if (_reactionInFlight[post.id]) return;   // a fast double-tap fires once
         _reactionInFlight[post.id] = true;
 
-        var previous = post.my_reaction;
         var previousCount = Number(post.reaction_count) || 0;
         var previousBreakdown = cloneBreakdown(post.reaction_breakdown);
 
@@ -1735,6 +1906,11 @@
             buildNavItem: buildNavItem,
             buildFollowButton: buildFollowButton,
             buildVideoFrame: buildVideoFrame,
+            buildActionRow: buildActionRow,
+            buildRail: buildRail,
+            buildRailItem: buildRailItem,
+            railAuthors: railAuthors,
+            onMediaTap: onMediaTap,
             avatarNode: avatarNode,
             renderAvatarInto: renderAvatarInto,
             onAvatarChanged: onAvatarChanged,
