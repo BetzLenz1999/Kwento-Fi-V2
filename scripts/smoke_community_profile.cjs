@@ -325,6 +325,34 @@ function makeAlbum(over) {
        video && video.poster === 'https://media.example/v.jpg');
   }
 
+  // ── 4d. Photo-only posts use a compact grid; tiles still open the lightbox ─
+  {
+    const { api, store } = run({ boot: MEMBER });
+    const card = api._internals.buildPostCard(makePost({ media: [
+      { type: 'image', url: 'https://media.example/1.jpg' },
+      { type: 'image', url: 'https://media.example/2.jpg' },
+      { type: 'image', url: 'https://media.example/3.jpg' },
+      { type: 'image', url: 'https://media.example/4.jpg' },
+    ] }));
+    const gallery = card.querySelector('.cp-media');
+    ok('four profile photos use the compact 2x2 gallery grid',
+       gallery.className.includes('cp-media-grid-4'), gallery.className);
+    ok('profile photo tiles keep upload order',
+       gallery.children.slice(0, 4).map(n => n.src).join('|')
+         === 'https://media.example/1.jpg|https://media.example/2.jpg|https://media.example/3.jpg|https://media.example/4.jpg');
+    gallery.children[0].onclick();
+    ok('a profile gallery tile opens its full image in the lightbox',
+       store.cpLightbox.hidden === false
+         && !!store.cpLightboxBody.querySelector('img'));
+
+    const mixed = api._internals.buildPostCard(makePost({ media: [
+      { type: 'image', url: 'https://media.example/a.jpg' },
+      { type: 'video', url: 'https://media.example/v.mp4' },
+    ] }));
+    ok('mixed profile media keeps the existing layout',
+       !mixed.querySelector('.cp-media').className.includes('cp-media-grid'));
+  }
+
   // ── 4d. A post links back to its place in the feed ────────────────────────
   {
     const { api } = run({ boot: MEMBER });
