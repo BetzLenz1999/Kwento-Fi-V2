@@ -210,20 +210,29 @@
         return frame;
     }
 
+    function avatarImageUrl(url, username) {
+        var name = String(username || '').trim().replace(/^@+/, '');
+        if (!String(url || '').trim() || !/^[A-Za-z0-9_]{3,24}$/.test(name)) return '';
+        return '/community/api/profile/' + encodeURIComponent(name) + '/avatar';
+    }
+
     // A member's profile picture, or their initial. Same element shape as the
     // feed's `cf-avatar`, so both views read as one product.
     function avatarNode(url, username, className) {
         var node = el('span', className || 'cp-avatar cp-avatar-sm');
         node.setAttribute('aria-hidden', 'true');
-        var src = String(url === undefined || url === null ? '' : url).trim();
-        if (src) {
+        var imageSrc = avatarImageUrl(url, username);
+        if (imageSrc) {
             var img = document.createElement('img');
             img.className = 'cp-avatar-img';
-            img.src = src;
+            img.src = imageSrc;
             img.alt = '';
             img.loading = 'lazy';
             img.decoding = 'async';
             img.referrerPolicy = 'no-referrer';
+            img.onerror = function () {
+                node.textContent = (String(username || 'A'))[0].toUpperCase();
+            };
             node.appendChild(img);
         } else {
             node.textContent = (String(username || 'A'))[0].toUpperCase();
