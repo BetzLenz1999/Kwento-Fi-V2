@@ -1759,6 +1759,18 @@
                 openAirtime();
                 return;
             }
+            if (item.action === 'claim') {
+                // Claim Free G$ opens the wallet's claim sheet in an in-page
+                // modal, so the member never leaves the feed. The sheet is the
+                // ONE claim implementation — the iframe loads the wallet page
+                // in embed mode (`?embed=claim&claim=1`), which hides the
+                // wallet chrome and opens the sheet. The href is kept so
+                // middle-click and no-JS still reach the real page.
+                if (event && event.preventDefault) event.preventDefault();
+                if (!WALLET) { requiresLogin(); return; }
+                openClaim();
+                return;
+            }
             // A plain link. A guest may follow it only when it is read-only.
             if (!item.guestOk && !WALLET) {
                 if (event && event.preventDefault) event.preventDefault();
@@ -1925,6 +1937,41 @@
         if (!sheetOpen) document.body.classList.remove('cf-modal-open');
     }
 
+    /* ── Claim Free G$ modal ────────────────────────────────────────────────
+       Frames the WALLET page's claim sheet (`/wallet?embed=claim&claim=1`) so
+       a member claims without leaving the feed. The sheet is the one claim
+       implementation: its PIN prompt, availability probe and face-verification
+       routing are the wallet page's, unchanged.
+
+       `src` is copied from `data-src` on the FIRST open only. The framed page
+       is the whole wallet bundle (balances, FV status, the XDC RPC probe), so
+       a member who never taps Claim must not pay for it. The frame is left
+       mounted on close: the claim state (entitlement, countdown) survives, so
+       reopening is instant and does not re-run the probe. */
+    var _claimOpened = false;
+
+    function openClaim() {
+        var modal = $('cfClaimModal');
+        if (!modal) return;
+        var frame = $('cfClaimFrame');
+        if (frame && !_claimOpened) {
+            var src = frame.getAttribute('data-src');
+            if (src) frame.src = src;
+            _claimOpened = true;
+        }
+        modal.hidden = false;
+        document.body.classList.add('cf-modal-open');
+    }
+
+    function closeClaim() {
+        var modal = $('cfClaimModal');
+        if (modal) modal.hidden = true;
+        // Only release the scroll lock when no other dialog wants it.
+        var sheet = $('cfSheetEarn');
+        var sheetOpen = sheet && sheet.classList.contains('open');
+        if (!sheetOpen) document.body.classList.remove('cf-modal-open');
+    }
+
     // ── Wiring ─────────────────────────────────────────────────────────────
 
     function bind() {
@@ -1993,6 +2040,7 @@
             if (event.key === 'Escape') {
                 closeLightbox(); closeEdit(); closeSheet(); closeSearch();
                 closeAirtime();
+                closeClaim();
                 if (window.GMCommunityAvatar) window.GMCommunityAvatar.close();
             }
         });
@@ -2053,6 +2101,8 @@
         sheetGo: sheetGo,
         openAirtime: openAirtime,
         closeAirtime: closeAirtime,
+        openClaim: openClaim,
+        closeClaim: closeClaim,
         // Exposed for the test harness (drives the real bodies).
         _internals: {
             timeAgo: timeAgo,
