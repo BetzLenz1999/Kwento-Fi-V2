@@ -96,7 +96,7 @@
         <div class="cp-avatar-wrap">
             <div class="cp-avatar" id="cpProfileAvatar" aria-hidden="true">
                 {%- if profile.avatar_url -%}
-                <img class="cp-avatar-img" src="{{ profile.avatar_url }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                <img class="cp-avatar-img" src="{{ url_for('community_feed.api_profile_avatar', username=profile.username) }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
                 {%- else -%}
                 {{ (profile.username or 'A')[0]|upper }}
                 {%- endif -%}
