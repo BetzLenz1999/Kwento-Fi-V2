@@ -120,6 +120,16 @@ POST_CAP = Decimal(os.getenv("COMMUNITY_REWARD_POST_CAP", "100"))
 # proposal §6; it ships as an env var so it can be raised without a deploy.
 MIN_PAYOUT_GD = Decimal(os.getenv("COMMUNITY_REWARD_MIN_PAYOUT_GD", "500"))
 
+# Whether the card shows the VIEWER'S OWN balance and goal. Default HIDDEN: the
+# figure is not spendable and not on-chain (see the ledger proposal §0), so a
+# personal "0 G$" under a big "Community G$" heading reads as a bug ("my
+# earnings did not count") and advertises a payout path v1 does not have. The
+# card then sells what you can EARN (the four rates) instead. Read per call, not
+# at import, so an operator can flip it without a redeploy — the repo
+# convention for operational switches.
+def show_balance() -> bool:
+    return _env_flag("COMMUNITY_REWARD_SHOW_BALANCE", "0")
+
 # Verification gate. Only a face-verified wallet may EARN. This is an earning
 # gate, not an access gate: an unverified wallet may still post, react and
 # comment — it just accrues nothing, and the card says why.
@@ -869,6 +879,7 @@ def summary(wallet: str | None, *, _supabase=None) -> dict:
             "eligible": False,
             "rates": _rate_payload(),
             "daily_cap_gd": float(DAILY_CAP),
+            "show_balance": show_balance(),
         }
     supabase = _supabase or _get_supabase()
     current = balance(wallet, _supabase=supabase) if supabase else Decimal("0")
@@ -903,4 +914,7 @@ def summary(wallet: str | None, *, _supabase=None) -> dict:
         "rates": rates,
         "reward_per_action": float(max(rates.values())) if rates else 0.0,
         "daily_cap_gd": float(DAILY_CAP),
+        # Whether the card may show the balance block. Default hidden (see the
+        # module comment): the figure is not spendable and not on-chain.
+        "show_balance": show_balance(),
     }
