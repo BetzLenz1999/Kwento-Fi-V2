@@ -23,18 +23,20 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from env_utils import get_env_float, get_env_int
+
 logger = logging.getLogger(__name__)
 
 _REMINDER_ENABLED = os.getenv("TELEGRAM_UBI_REMINDER_ENABLED", "").lower() in ("1", "true", "yes", "on")
-_REMINDER_UTC_HOUR = int(os.getenv("TELEGRAM_UBI_REMINDER_UTC_HOUR", "12"))
-_REMINDER_UTC_MINUTE = int(os.getenv("TELEGRAM_UBI_REMINDER_UTC_MINUTE", "30"))
-_MAX_USERS = int(os.getenv("TELEGRAM_UBI_REMINDER_MAX_USERS", "500"))
-_RPC_DELAY_SEC = float(os.getenv("TELEGRAM_UBI_REMINDER_RPC_DELAY_SEC", "0.1"))
+_REMINDER_UTC_HOUR = get_env_int("TELEGRAM_UBI_REMINDER_UTC_HOUR", 12)
+_REMINDER_UTC_MINUTE = get_env_int("TELEGRAM_UBI_REMINDER_UTC_MINUTE", 30)
+_MAX_USERS = get_env_int("TELEGRAM_UBI_REMINDER_MAX_USERS", 500)
+_RPC_DELAY_SEC = get_env_float("TELEGRAM_UBI_REMINDER_RPC_DELAY_SEC", 0.1)
 
 # Poll how often the thread wakes to decide whether it's time to run. A short
 # interval keeps the thread responsive to a restart that skips past the target
 # time, while the dedup column prevents double sends within a day.
-_POLL_INTERVAL_SECONDS = int(os.getenv("TELEGRAM_UBI_REMINDER_POLL_SECONDS", "300"))
+_POLL_INTERVAL_SECONDS = get_env_int("TELEGRAM_UBI_REMINDER_POLL_SECONDS", 300)
 
 _scheduler_stop = threading.Event()
 _scheduler_thread = None
