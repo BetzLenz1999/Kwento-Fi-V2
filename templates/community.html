@@ -196,6 +196,17 @@
     </section>
     {% endif %}
 
+    <!-- ── Recent posters rail ─────────────────────────────────────────────
+         Instagram's story rail: a sideways run of circular avatars, each with a
+         gradient ring and a label. It is built in the bundle from the authors
+         already on the feed page (`GMCommunity._internals.buildRail`), so it
+         needs no endpoint and no table, and it can never show a member who has
+         not posted. Outside the is_guest branch on purpose — reading is public.
+
+         It starts `hidden` so an empty feed does not flash an empty rail; the
+         bundle reveals it only when there is at least one author. -->
+    <div class="cf-rail" id="cfRail" aria-label="Recent posters" hidden></div>
+
     <!-- ── Feed ────────────────────────────────────────────────────────────
          Outside the is_guest branch on purpose: reading is PUBLIC. A guest
          gets the same cards a member does. Only writing is gated — the JS
