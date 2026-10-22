@@ -772,7 +772,7 @@ function feedFetch(handler, feedRows) {
     }));
     const img = withPic.querySelector('.cf-avatar-img');
     ok('an author with a picture shows the photo',
-       !!img && img.src === 'https://media.example/u/deadbeef/pic.jpg',
+       !!img && img.src === '/community/api/profile/betz/avatar',
        img ? img.src : 'no img');
     ok('the avatar link still points at the profile',
        withPic.querySelector('.cf-profile-link').href === '/community/u/betz');
@@ -783,6 +783,13 @@ function feedFetch(handler, feedRows) {
        !!initial && initial.textContent === 'B', initial ? initial.textContent : 'none');
     ok('the fallback renders no <img>',
        !withoutPic.querySelector('.cf-avatar-img'));
+
+    const legacyName = api._internals.buildCard(makePost({
+      username: 'Community member',
+      avatar_url: 'https://media.example/u/deadbeef/legacy.jpg',
+    }));
+    ok('an invalid username never falls back to the raw R2 URL',
+       !legacyName.querySelector('.cf-avatar-img'));
   }
 
   // ── 10c. buildCard: the stacked reaction summary ──────────────────────────
