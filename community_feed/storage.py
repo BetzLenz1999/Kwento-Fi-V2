@@ -112,7 +112,6 @@ def sign_avatar_upload(owner_wallet: str, content_type: str | None,
         "method": signed["method"],
         "headers": signed["headers"],
         "key": key,
-        "public_url": signed["public_url"],
         "expires_in": signed["expires_in"],
         "media_type": plan["media_type"],
         "mime": plan["mime"],
@@ -211,6 +210,70 @@ def verify_avatar(owner_wallet: str, item: dict) -> tuple[bool, str, dict]:
         "mime": verified.get("mime") or plan["mime"],
         "bytes": verified["bytes"],
     }
+
+
+def read_avatar(avatar: dict) -> dict | None:
+    """Read a stored avatar for the public profile image endpoint.
+
+    The caller obtains this descriptor from the service-role avatar row. Only
+    managed object keys and the image formats accepted at upload are served.
+    """
+    if not isinstance(avatar, dict):
+        return None
+    key = (avatar.get("r2_key") or "").strip()
+    mime = (avatar.get("mime") or "").split(";", 1)[0].strip().lower()
+    r2 = _r2()
+    if not key or not r2.is_managed_key(key):
+        return None
+    if mime not in svc.AVATAR_MIME_TYPES:
+        return None
+    try:
+        declared_bytes = int(avatar.get("bytes") or 0)
+    except (TypeError, ValueError):
+        return None
+    if declared_bytes < 1 or declared_bytes > svc.MAX_AVATAR_BYTES:
+        return None
+
+    stored = r2.object_get(key, max_bytes=svc.MAX_AVATAR_BYTES)
+    if not stored:
+        return None
+    body = stored.get("body") or b""
+    if not body or len(body) > svc.MAX_AVATAR_BYTES:
+        return None
+    actual_mime = r2.sniff_mime(body[:32])
+    if actual_mime != mime or actual_mime not in svc.AVATAR_MIME_TYPES:
+        return None
+    return {"body": body, "mime": actual_mime, "etag": stored.get("etag") or ""}
+
+
+def avatar_etag(avatar: dict) -> str | None:
+    """Return a validator based on R2's current object version, not only its key."""
+    import hashlib
+
+    if not isinstance(avatar, dict):
+        return None
+    key = (avatar.get("r2_key") or "").strip()
+    mime = (avatar.get("mime") or "").split(";", 1)[0].strip().lower()
+    r2 = _r2()
+    if not key or not r2.is_managed_key(key) or mime not in svc.AVATAR_MIME_TYPES:
+        return None
+    try:
+        declared_bytes = int(avatar.get("bytes") or 0)
+    except (TypeError, ValueError):
+        return None
+    if declared_bytes < 1 or declared_bytes > svc.MAX_AVATAR_BYTES:
+        return None
+    head = r2.object_head(key)
+    if not head or not head.get("exists"):
+        return None
+    try:
+        actual_bytes = int(head.get("bytes") or 0)
+    except (TypeError, ValueError):
+        return None
+    version = (head.get("etag") or "").strip().strip('"')
+    if actual_bytes < 1 or actual_bytes > svc.MAX_AVATAR_BYTES or not version:
+        return None
+    return hashlib.sha256(f"{key}\0{version}".encode("utf-8")).hexdigest()
 
 
 def _owner_hash(wallet: str) -> str:
