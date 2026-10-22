@@ -1100,6 +1100,23 @@
 
         var body = el('div', 'cf-card-body');
 
+        // Actions FIRST, directly under the media — Instagram's order.
+        body.appendChild(buildActionRow(post, body));
+
+        // Reaction + comment summary
+        var summary = el('div', 'cf-summary');
+        var left = el('div', 'cf-summary-left');
+        left.appendChild(buildSummaryEmojis(post));
+        var countNode = el('span', 'cf-count', countLabel(post.reaction_count) || '0');
+        // Announce the change without re-reading the whole card.
+        countNode.setAttribute('aria-live', 'polite');
+        left.appendChild(countNode);
+        summary.appendChild(left);
+        summary.appendChild(el('span', null, countLabel(post.comment_count)
+            ? countLabel(post.comment_count) + ' comment' + (post.comment_count === 1 ? '' : 's')
+            : ''));
+        body.appendChild(summary);
+
         // Caption — Instagram's shape: the author in BOLD, then the text, on the
         // same line. The author is a real link to the public profile.
         if (post.body) {
@@ -1127,26 +1144,7 @@
             });
         }
 
-        // Keep all engagement controls together directly below the caption.
-        // The comment button appends its expanded thread into this same group.
-        var engagement = el('div', 'cf-engagement');
-        engagement.appendChild(buildActionRow(post, engagement));
-
-        // Reaction + comment summary
-        var summary = el('div', 'cf-summary');
-        var left = el('div', 'cf-summary-left');
-        left.appendChild(buildSummaryEmojis(post));
-        var countNode = el('span', 'cf-count', countLabel(post.reaction_count) || '0');
-        // Announce the change without re-reading the whole card.
-        countNode.setAttribute('aria-live', 'polite');
-        left.appendChild(countNode);
-        summary.appendChild(left);
-        summary.appendChild(el('span', null, countLabel(post.comment_count)
-            ? countLabel(post.comment_count) + ' comment' + (post.comment_count === 1 ? '' : 's')
-            : ''));
-        engagement.appendChild(summary);
-
-        // Reaction bar — always visible, one tap; kept beside the action row.
+        // Reaction bar — always visible, one tap.
         var bar = el('div', 'cf-reactions');
         bar.setAttribute('role', 'group');
         bar.setAttribute('aria-label', 'Reactions');
@@ -1160,8 +1158,7 @@
             chip.onclick = function () { react(post, key); };
             bar.appendChild(chip);
         });
-        engagement.appendChild(bar);
-        body.appendChild(engagement);
+        body.appendChild(bar);
 
         card.appendChild(body);
         return card;
@@ -1553,8 +1550,11 @@
         var amount = Number(data.balance_gd) || 0;
         var minimum = Number(data.min_payout_gd) || 0;
         var progress = Number(data.progress) || 0;
-        // The server flag defaults on for signed-in members; the guest check
-        // below still prevents personal balance details from being disclosed.
+        // The personal figure is HIDDEN by default: it is not spendable and not
+        // on-chain, so a "0 G$" under a big heading reads as a bug and
+        // advertises a payout path v1 does not have. The server decides (env
+        // COMMUNITY_REWARD_SHOW_BALANCE); the elements are still written to
+        // below either way, so this is a pure presentation switch.
         var showBalance = data.show_balance === true;
 
         var amountEl = $('cfEarnAmount');
@@ -1605,11 +1605,10 @@
                     : (state === 'unverified' ? 'Verify to earn' : 'Pending'));
         }
 
-        // The rates come from the server payload, never hard-coded, so the page
-        // cannot quote a rate the ledger does not pay. Keep them collapsed until
-        // the accessible toggle is activated, preserving that choice on refresh.
+        // The rates are rendered from the server payload, never hard-coded, so
+        // the page cannot quote a rate the ledger does not pay. Each row is a
+        // label plus an amount; the list is only shown when rates are present.
         var ratesEl = $('cfEarnRates');
-        var ratesToggle = $('cfEarnRatesToggle');
         if (ratesEl) {
             var rates = data.rates || null;
             if (rates) {
@@ -1629,35 +1628,14 @@
                         '+' + formatGd(row[1]) + ' G$'));
                     ratesEl.appendChild(li);
                 });
-                if (ratesToggle) {
-                    ratesToggle.hidden = false;
-                    var expanded = ratesToggle.getAttribute('aria-expanded') === 'true';
-                    ratesEl.hidden = !expanded;
-                    ratesToggle.textContent = expanded
-                        ? 'Hide earning rates' : 'Show earning rates';
-                    ratesToggle.onclick = function () {
-                        var next = ratesToggle.getAttribute('aria-expanded') !== 'true';
-                        ratesToggle.setAttribute('aria-expanded', next ? 'true' : 'false');
-                        ratesEl.hidden = !next;
-                        ratesToggle.textContent = next
-                            ? 'Hide earning rates' : 'Show earning rates';
-                    };
-                } else {
-                    ratesEl.hidden = true;
-                }
+                ratesEl.hidden = false;
             } else {
-                ratesEl.textContent = '';
                 ratesEl.hidden = true;
-                if (ratesToggle) {
-                    ratesToggle.hidden = true;
-                    ratesToggle.setAttribute('aria-expanded', 'false');
-                    ratesToggle.textContent = 'Show earning rates';
-                }
             }
         }
 
         var balanceWrap = $('cfEarnBalance');
-        if (balanceWrap) balanceWrap.hidden = !showBalance || !!data.is_guest;
+        if (balanceWrap) balanceWrap.hidden = !showBalance;
 
         var bar = $('cfEarnBar');
         var fill = $('cfEarnBarFill');
@@ -1672,8 +1650,8 @@
             note.textContent = data.can_withdraw
                 ? 'Ready to withdraw to your wallet.'
                 : (data.eligible === false
-                    ? 'Only verified wallets earn Community G$. Community G$ cannot be withdrawn yet. You can still post, comment and react.'
-                    : 'Community G$ cannot be withdrawn yet; earnings stay in the community.');
+                    ? 'Only verified wallets earn Community G$. You can still post, comment and react.'
+                    : 'Community G$ is kept in the community until withdrawal opens.');
         }
         card.hidden = false;
     }
