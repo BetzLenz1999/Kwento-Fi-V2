@@ -125,7 +125,7 @@
                     aria-label="Change your profile picture">
                 <span class="cf-avatar" id="cfComposerAvatar" aria-hidden="true">
                     {%- if avatar_url -%}
-                    <img class="cf-avatar-img" src="{{ avatar_url }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                    <img class="cf-avatar-img" src="{{ url_for('community_feed.api_profile_avatar', username=username) }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
                     {%- else -%}
                     {{ (username or 'You')[0]|upper }}
                     {%- endif -%}
