@@ -5847,6 +5847,12 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                     } else {
                         applyEntitlementData(d);
                     }
+                    // ?claim=1 (the community "Claim Free G$" entry point) opens
+                    // the sheet only AFTER the state above is applied — opening
+                    // earlier would show the "Checking networks…" placeholder,
+                    // and openClaimOrVerify() reads window._walletNeedsFV to
+                    // choose between the face-verification intro and the sheet.
+                    _openClaimDeepLink();
                 })
                 .catch(() => { label.textContent = 'Claim G$'; icon.textContent = '🪙'; btn.disabled = false; });
         }
@@ -8176,6 +8182,34 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             window._walletNeedsFV = true;
             startFV();
         };
+
+        // ── ?claim=1 deep link (the community "Claim Free G$" entry point) ──
+        // /community sends the user here with ?claim=1 so the claim sheet opens
+        // without a second tap. The open is DEFERRED until the first
+        // availability response has been applied: opening straight away would
+        // show the "Checking networks…" placeholder, and openClaimOrVerify()
+        // needs window._walletNeedsFV to choose between the face-verification
+        // intro and the claim sheet. The param is stripped here so a refresh
+        // does not re-open the sheet.
+        let _claimDeepLinkPending = false;
+        (function() {
+            try {
+                const p = new URLSearchParams(window.location.search);
+                if (p.get('claim') !== '1') return;
+                _claimDeepLinkPending = true;
+                p.delete('claim');
+                const nextUrl = window.location.pathname + (p.toString() ? '?' + p.toString() : '') + window.location.hash;
+                window.history.replaceState({}, '', nextUrl);
+            } catch (_) {}
+        })();
+
+        function _openClaimDeepLink() {
+            if (!_claimDeepLinkPending) return;
+            _claimDeepLinkPending = false;
+            try {
+                if (typeof window.openClaimOrVerify === 'function') window.openClaimOrVerify();
+            } catch (_) {}
+        }
 
         // Init
         if (btn) { btn.disabled = true; label.textContent = 'Checking entitlement…'; icon.textContent = '⏳'; }
