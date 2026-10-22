@@ -8,6 +8,7 @@ configuration safe by falling back to defaults instead of raising ValueError.
 from __future__ import annotations
 
 import logging
+import math
 import os
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -32,7 +33,7 @@ def get_env_int(name: str, default: int) -> int:
     try:
         return int(value)
     except (TypeError, ValueError):
-        logger.warning("Invalid integer env var %s=%r; using default %s", name, value, default)
+        logger.warning("Invalid integer env var %s; using default %s", name, default)
         return default
 
 
@@ -41,10 +42,13 @@ def get_env_float(name: str, default: float) -> float:
     if value is None:
         return default
     try:
-        return float(value)
+        parsed = float(value)
+        if math.isfinite(parsed):
+            return parsed
     except (TypeError, ValueError):
-        logger.warning("Invalid float env var %s=%r; using default %s", name, value, default)
-        return default
+        pass
+    logger.warning("Invalid float env var %s; using default %s", name, default)
+    return default
 
 
 def get_env_decimal(name: str, default: Decimal | str | int | float) -> Decimal:
@@ -54,12 +58,10 @@ def get_env_decimal(name: str, default: Decimal | str | int | float) -> Decimal:
     if value is None:
         return default_decimal
     try:
-        return Decimal(value)
+        parsed = Decimal(value)
+        if parsed.is_finite():
+            return parsed
     except (InvalidOperation, ValueError):
-        logger.warning(
-            "Invalid decimal env var %s=%r; using default %s",
-            name,
-            value,
-            default_decimal,
-        )
-        return default_decimal
+        pass
+    logger.warning("Invalid decimal env var %s; using default %s", name, default_decimal)
+    return default_decimal
