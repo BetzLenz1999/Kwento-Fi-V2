@@ -1388,6 +1388,23 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         return null;
     }
 
+    // Full-page flows (Face Verification, logout, the MiniPay handoff) must
+    // leave the frame. /wallet?embed=claim is framed by the community feed's
+    // Claim Free G$ dialog, and a navigation inside that frame loads the
+    // destination INTO the dialog — GoodDollar's own page refuses to be framed,
+    // so the member would be left with a blank box. Send the TOP window
+    // instead. Outside embed mode this is a plain assignment.
+    function _gmNavigateTop(url) {
+        if (!url) return;
+        try {
+            if (window.GM_WALLET_BOOT && window.GM_WALLET_BOOT.embed) {
+                (window.top || window).location.href = url;
+                return;
+            }
+        } catch (_) { /* cross-origin frame — fall through to the local navigate */ }
+        window.location.href = url;
+    }
+
     function updateTotalBalanceInGd() {
         const totalBalanceEl = document.getElementById('totalBalanceUSD');
         if (!totalBalanceEl) return;
@@ -6047,7 +6064,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 '<div style="font-weight:700;color:#fbbf24;margin-bottom:0.35rem;">⚠️ Trust Wallet detected</div>' +
                 '<div style="margin-bottom:0.65rem;">Trust Wallet\'s in-app browser does not reliably deliver Face ID signatures back to this page. To verify reliably, please log out and reconnect with <strong>WalletConnect</strong> — Trust will then handle the signature inside its main app instead of the dApp browser tab.</div>' +
                 '<div style="display:flex;flex-direction:column;gap:0.45rem;">' +
-                  '<a href="/logout" style="display:block;text-align:center;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.55rem 1rem;border-radius:10px;font-size:0.9rem;">🔐 Log out & reconnect via WalletConnect</a>' +
+                  '<a href="/logout" target="_top" style="display:block;text-align:center;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.55rem 1rem;border-radius:10px;font-size:0.9rem;">🔐 Log out & reconnect via WalletConnect</a>' +
                   '<button type="button" id="fvTrustForceTryBtn" style="background:transparent;border:1px solid rgba(251,191,36,0.45);color:#fcd34d;font-size:0.8rem;font-weight:500;padding:0.45rem 0.9rem;border-radius:10px;cursor:pointer;">Try in-app sign anyway (may hang)</button>' +
                 '</div>';
             // Set the status text BEFORE appending the card. setStatus()
@@ -6179,7 +6196,9 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 forceBtn.addEventListener('click', () => {
                     card.remove();
                     _miniPayFvForceTry = true;
-                    window.location.href = link;
+                    // GoodDollar's page refuses to be framed, so this must
+                    // leave the community claim dialog (no-op when not embedded).
+                    _gmNavigateTop(link);
                 });
             }
         }
@@ -6244,7 +6263,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                         '<div style="margin-bottom:0.6rem;">Trust Wallet\'s in-app browser can sign you in and let you claim daily G$, but its Face Verification flow is unreliable — the wallet often signs the request but never delivers the signature back to this page, leaving you stuck on <em>"Preparing verification…"</em>.</div>' +
                         '<div style="margin-bottom:0.6rem;"><strong>Never share or enter your wallet recovery phrase or raw signing credentials on GoodMarket.</strong></div>' +
                         '<div style="margin-bottom:0.75rem;">Log out and reconnect here via <strong>WalletConnect</strong>. That routes the signature through Trust Wallet\'s main app (instead of the in-app browser), which also works reliably.</div>' +
-                        '<a href="/logout" style="display:block;text-align:center;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.55rem 1rem;border-radius:10px;font-size:0.9rem;">🔐 Log out & reconnect via WalletConnect</a>';
+                        '<a href="/logout" target="_top" style="display:block;text-align:center;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.55rem 1rem;border-radius:10px;font-size:0.9rem;">🔐 Log out & reconnect via WalletConnect</a>';
                     wrap.appendChild(notice);
                     return;
                 }
@@ -6255,7 +6274,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 esc.style.cssText = 'margin-top:0.7rem;padding:0.75rem 1rem;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.4);border-radius:10px;text-align:center;';
                 esc.innerHTML =
                     '<div style="font-size:0.82rem;color:#a78bfa;margin-bottom:0.45rem;">Stuck? Reconnect via WalletConnect for a more reliable signing flow.</div>' +
-                    '<a href="/logout" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.5rem 1rem;border-radius:8px;font-size:0.85rem;">🔐 Log out & switch to WalletConnect</a>';
+                    '<a href="/logout" target="_top" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.5rem 1rem;border-radius:8px;font-size:0.85rem;">🔐 Log out & switch to WalletConnect</a>';
                 wrap.appendChild(esc);
             }, _isTrustCtx ? 12000 : 25000);
 
@@ -6273,7 +6292,10 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                         _showMiniPayFvHandoff(link);
                         return;
                     }
-                    window.location.href = link;
+                    // Face Verification runs on GoodDollar's own site, which
+                    // refuses to be framed — navigate the TOP window when this
+                    // page is inside the community claim dialog.
+                    _gmNavigateTop(link);
                 })
                 .catch(err => {
                     _fvSettled = true;
