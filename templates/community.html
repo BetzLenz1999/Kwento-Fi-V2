@@ -371,6 +371,43 @@
     </div>
 </div>
 
+{# ── Claim Free G$ modal ────────────────────────────────────────────────────
+   The wallet page's claim sheet, framed so a member never leaves the feed.
+   `src` is NOT set here: `openClaim()` copies `data-src` on first open, so the
+   framed wallet page (balances, FV status, the XDC RPC probe) never loads for
+   a member who does not tap Claim.
+
+   The sheet is the ONE claim implementation — a second copy on the feed would
+   drift from the wallet's signing stack, its availability probe and its
+   face-verification routing (docs/COMMUNITY_CLAIM_MODAL_INLINE_PROPOSAL.md).
+
+   `embed=claim` makes the wallet page hide its own chrome so only the sheet
+   shows inside the dialog. The escape hatch matters: an injected wallet
+   (MiniPay / Trust) may not expose `window.ethereum` to a frame. #}
+<div class="cf-claim-modal" id="cfClaimModal" hidden role="dialog" aria-modal="true"
+     aria-labelledby="cfClaimTitle">
+    <div class="cf-claim-overlay" onclick="GMCommunity.closeClaim()"></div>
+    <div class="cf-claim-card">
+        <div class="cf-claim-head">
+            <div>
+                <div class="cf-claim-kicker">Daily G$</div>
+                <h3 id="cfClaimTitle">🪙 Claim Free G$</h3>
+            </div>
+            <div class="cf-claim-actions">
+                <a class="cf-claim-expand" href="/wallet?claim=1" target="_top"
+                   rel="noopener">Open full page ↗</a>
+                <button type="button" class="cf-claim-close" aria-label="Close claim"
+                        onclick="GMCommunity.closeClaim()">×</button>
+            </div>
+        </div>
+        <div class="cf-claim-body">
+            <iframe id="cfClaimFrame" title="Claim Free G$ — GoodMarket"
+                    data-src="/wallet?embed=claim&amp;claim=1"
+                    loading="lazy" referrerpolicy="no-referrer"></iframe>
+        </div>
+    </div>
+</div>
+
 {# The nav is built in the bundle from `GM_COMMUNITY_BOOT.nav` (emitted in the
    boot object below) so the destination list lives in ONE place. Labels are
    written with textContent — user-supplied data never reaches it. #}
@@ -435,10 +472,15 @@ window.GM_COMMUNITY_BOOT = {
     //
     // There is deliberately NO "Feed" tab: this page IS the feed, so a tab
     // pointing back at /community was a dead tap. Its slot now carries the
-    // Claim Free G$ entry point — the same action as the wallet's Claim chip,
-    // reached through /wallet?claim=1 so the claim sheet opens on arrival.
+    // Claim Free G$ entry point — the same action as the wallet's Claim chip.
+    //
+    // The claim sheet itself is the WALLET page's one implementation, framed
+    // here so the member never leaves the feed: `action: 'claim'` opens
+    // #cfClaimModal, whose iframe loads /wallet?embed=claim&claim=1 (the wallet
+    // page hides its chrome in embed mode and the deep link opens the sheet).
+    // The `href` stays the real page so middle-click / no-JS still work.
     nav: [
-        { id: 'claim',  icon: '🪙', label: 'Claim Free G$', href: '/wallet?claim=1', gold: true, guestOk: false },
+        { id: 'claim',  icon: '🪙', label: 'Claim Free G$', href: '/wallet?claim=1', action: 'claim', gold: true, guestOk: false },
         { id: 'search', icon: '🔍', label: 'Search',      action: 'search',    guestOk: true },
         { id: 'earn',   icon: '💰', label: 'Earn',        action: 'earn',      guestOk: false },
         { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
