@@ -397,6 +397,76 @@ def _block_scanner_paths():
 from flask import send_from_directory, Response as _FlaskResponse
 
 
+# A service worker must never be served as an error. `navigator.serviceWorker
+# .register()` rejects on a non-2xx response, which leaves whatever worker is
+# already installed in control forever — including the stale root-scoped one
+# this shim exists to retire. So every failure path below answers 200 with a
+# self-unregistering body and logs loudly instead of returning 500.
+_SW_SELF_UNREGISTER_BODY = (
+    "// GoodMarket service worker fallback.\n"
+    "// The real worker could not be read from disk, so this one retires\n"
+    "// itself instead of leaving a stale worker in control of the origin.\n"
+    "self.addEventListener('install', () => self.skipWaiting());\n"
+    "self.addEventListener('activate', (event) => {\n"
+    "  event.waitUntil((async () => {\n"
+    "    try { await self.registration.unregister(); } catch (_) {}\n"
+    "    const clients = await self.clients.matchAll();\n"
+    "    for (const c of clients) { try { c.navigate(c.url); } catch (_) {} }\n"
+    "  })());\n"
+    "});\n"
+)
+
+
+def _service_worker_response(body: str) -> "_FlaskResponse":
+    """Wrap a service-worker script in the headers the SW lifecycle requires."""
+    resp = _FlaskResponse(body, mimetype="application/javascript")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
+def _read_service_worker_source() -> "str | None":
+    """Return the raw service-worker source, or None when it cannot be read.
+
+    The file is resolved against several candidates rather than a single
+    `os.path.join(app.static_folder, ...)`, because the serverless (Vercel)
+    bundle does not guarantee the process working directory is the project
+    root. Flask computes `static_folder` relative to the app root path, which
+    is correct at import time, but a relative `static_folder` would resolve
+    against the CWD — and the CWD is not ours to assume on a serverless
+    runtime. `__file__` is the one anchor that always points at the code.
+    """
+    candidates = []
+    try:
+        if app.static_folder:
+            candidates.append(os.path.join(app.static_folder, "service-worker.js"))
+    except Exception:  # noqa: BLE001 - a broken static_folder must not 500
+        pass
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+    except NameError:  # frozen/embedded contexts may not define __file__
+        here = os.getcwd()
+    candidates.append(os.path.join(here, "static", "service-worker.js"))
+    candidates.append(os.path.join(here, "service-worker.js"))
+
+    seen = set()
+    for path in candidates:
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                return fh.read()
+        except OSError:
+            continue
+    logger.error(
+        "service worker source not found; tried: %s", ", ".join(sorted(seen))
+    )
+    return None
+
+
 @app.route("/favicon.ico")
 def _favicon():
     return send_from_directory(
@@ -432,23 +502,14 @@ def _dynamic_service_worker():
       the SW to control both the page and start_url for installability.
       Registration must still pass `{ scope: '/' }` (see static/js/pwa-install.js).
     """
-    sw_path = os.path.join(app.static_folder or "static", "service-worker.js")
-    try:
-        with open(sw_path, "r", encoding="utf-8") as fh:
-            body = fh.read()
-    except OSError as exc:
-        logger.error(f"service worker read failed: {exc}")
-        return _FlaskResponse("// service worker unavailable\n",
-                              status=500, mimetype="application/javascript")
+    body = _read_service_worker_source()
+    if body is None:
+        # 200, never 500 — see _SW_SELF_UNREGISTER_BODY. A failing SW fetch
+        # would otherwise leave a stale worker installed indefinitely.
+        return _service_worker_response(_SW_SELF_UNREGISTER_BODY)
 
     body = body.replace("__BUILD_VERSION__", ASSET_VERSION)
-
-    resp = _FlaskResponse(body, mimetype="application/javascript")
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers["Expires"] = "0"
-    resp.headers["Service-Worker-Allowed"] = "/"
-    return resp
+    return _service_worker_response(body)
 
 
 @app.route("/service-worker.js")
@@ -473,12 +534,9 @@ def _root_service_worker_unregister():
         "  })());\n"
         "});\n"
     )
-    resp = _FlaskResponse(body, mimetype="application/javascript")
     # Don't cache this aggressively — once stale clients clear, we want them
     # to stop getting it served.
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
-    resp.headers["Service-Worker-Allowed"] = "/"
-    return resp
+    return _service_worker_response(body)
 
 
 # Blockchain configuration for wallet balance checking
