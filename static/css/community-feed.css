@@ -681,6 +681,87 @@ body {
    640px, not 480px: this is a layout decision about a single-column feed, and
    the desktop rail only takes over at 900px. A 600px-wide window is still a
    one-column phone-shaped feed, so it gets the same treatment. */
+/* ── Community G$ card ──────────────────────────────────────────────────────
+   The community rewards balance. It lives on THIS page only and never on the
+   wallet page — see docs/COMMUNITY_REWARDS_LEDGER_PROPOSAL.md §0. It is built
+   from the same tokens and the same Instagram-mobile grammar as the feed, so
+   it reads as part of the page rather than a bolted-on widget. */
+.cf-earn {
+    background: var(--cf-card);
+    border: 1px solid var(--cf-border);
+    border-radius: 14px;
+    padding: 0.85rem 0.95rem 0.9rem;
+    box-shadow: var(--cf-elev);
+}
+.cf-earn-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.6rem;
+}
+.cf-earn-title {
+    margin: 0; font-size: 0.78rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--cf-muted);
+}
+/* The chip is always present so the balance is never shown bare and mistaken
+   for spendable on-chain G$. */
+.cf-earn-chip {
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.03em;
+    padding: 0.18rem 0.5rem; border-radius: 999px;
+    background: var(--cf-soft); color: var(--cf-dim);
+    border: 1px solid var(--cf-border);
+}
+.cf-earn-chip[data-state="ready"] {
+    background: rgba(245, 166, 35, 0.16); color: var(--cf-gold-deep);
+    border-color: rgba(245, 166, 35, 0.5);
+}
+/* Not an error: the wallet works, it just does not earn yet. A neutral tone
+   reads as "one step to go", where red would read as "you did something wrong". */
+.cf-earn-chip[data-state="unverified"] {
+    background: rgba(94, 114, 235, 0.14); color: var(--cf-accent, #5e72eb);
+    border-color: rgba(94, 114, 235, 0.45);
+}
+.cf-earn-balance {
+    margin: 0.5rem 0 0; display: flex; align-items: baseline; gap: 0.3rem;
+}
+.cf-earn-amount {
+    font-family: var(--cf-serif); font-size: 2rem; font-weight: 700;
+    line-height: 1; color: var(--cf-ink);
+    font-variant-numeric: tabular-nums;
+}
+.cf-earn-unit { font-size: 0.95rem; font-weight: 600; color: var(--cf-gold-deep); }
+.cf-earn-goal { margin: 0.3rem 0 0; font-size: 0.78rem; color: var(--cf-ink-2); }
+.cf-earn-bar {
+    margin-top: 0.5rem; height: 6px; border-radius: 999px;
+    background: var(--cf-field); overflow: hidden;
+}
+.cf-earn-bar-fill {
+    display: block; height: 100%; width: 0;
+    background: linear-gradient(90deg, var(--cf-gold), var(--cf-gold-deep));
+    border-radius: 999px;
+    transition: width 240ms ease;
+}
+/* The four rates, as a list. A definition-list shape reads faster than a
+   sentence here, and it lets the amounts align so the gap between them (which
+   is the whole point of the design) is visible at a glance. */
+.cf-earn-rates {
+    margin: 0.55rem 0 0; padding: 0; list-style: none;
+    display: grid; gap: 0.28rem;
+    font-size: 0.76rem; line-height: 1.35; color: var(--cf-dim);
+}
+.cf-earn-rates li {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 0.6rem;
+}
+.cf-earn-rates .cf-earn-rate-label { min-width: 0; }
+.cf-earn-rates .cf-earn-rate-value {
+    font-weight: 700; color: var(--cf-gold-deep);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.cf-earn-note {
+    margin: 0.45rem 0 0; font-size: 0.74rem; color: var(--cf-ink-2);
+}
+.cf-earn-note.is-warn { color: var(--cf-accent-ink); }
+
 @media (max-width: 640px) {
     /* `max-width: none` is load-bearing: the full-bleed media pulls back by
        exactly `--cf-gutter`, which only lands on the screen edge when the wrap
@@ -700,6 +781,14 @@ body {
         padding-bottom: 0.5rem;
     }
     .cf-card:last-child { border-bottom: none; }
+    /* The earn card follows the same grammar as the cards: a full-bleed
+       section on a phone, not a floating box. */
+    .cf-earn {
+        border: none; border-radius: 0; box-shadow: none;
+        padding: 0.15rem 0 0.9rem;
+        border-bottom: 1px solid var(--cf-hairline);
+    }
+    .cf-earn-amount { font-size: 1.85rem; }
     .cf-composer { border-radius: 12px; border-color: var(--cf-hairline); }
     .cf-card-head { padding: 0.35rem 0 0.6rem; }
     .cf-skeleton { border-radius: 0; }
