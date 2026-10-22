@@ -104,6 +104,11 @@ def public_base_url() -> str:
     return _env("R2_PUBLIC_BASE_URL").rstrip("/")
 
 
+def credentials_configured() -> bool:
+    """Whether the server can access the private S3 API, independent of CDN."""
+    return bool(access_key_id() and secret_access_key() and bucket() and endpoint())
+
+
 def presign_ttl() -> int:
     """Signed-URL lifetime in seconds, clamped to a sane window."""
     try:
@@ -120,13 +125,7 @@ def is_configured() -> bool:
     for the feed to render media at all, so a half-configured deployment reads
     as "not configured" instead of handing out URLs that 404.
     """
-    return bool(
-        access_key_id()
-        and secret_access_key()
-        and bucket()
-        and endpoint()
-        and public_base_url()
-    )
+    return credentials_configured() and bool(public_base_url())
 
 
 # ── Keys ─────────────────────────────────────────────────────────────────────
@@ -362,7 +361,7 @@ def _object_url(key: str) -> str:
 def _request(method: str, key: str, *, extra: dict | None = None,
              timeout: int = 15):
     """Signed server-side request. Returns a response or None (never raises)."""
-    if not is_configured() or not is_managed_key(key):
+    if not credentials_configured() or not is_managed_key(key):
         return None
     try:
         headers = _signed_headers(method, key, extra=extra)
@@ -395,6 +394,42 @@ def object_head(key: str) -> dict | None:
             }
     except Exception as exc:  # noqa: BLE001
         logger.warning("r2: HEAD read failed for %s: %s", key, exc)
+        return None
+
+
+def object_get(key: str, *, max_bytes: int) -> dict | None:
+    """Read one managed object, refusing bodies larger than ``max_bytes``.
+
+    This server-side path is used for the deliberately public profile-avatar
+    endpoint; it does not depend on the bucket's public CDN being enabled.
+    """
+    try:
+        limit = max(1, int(max_bytes))
+    except (TypeError, ValueError):
+        return None
+    response = _request("GET", key, timeout=20)
+    if response is None:
+        return None
+    try:
+        with response:
+            raw_size = response.headers.get("Content-Length")
+            if raw_size is not None:
+                try:
+                    if int(raw_size) > limit:
+                        return None
+                except (TypeError, ValueError):
+                    pass
+            body = response.read(limit + 1) or b""
+            if len(body) > limit:
+                return None
+            return {
+                "body": body,
+                "bytes": len(body),
+                "content_type": response.headers.get("Content-Type"),
+                "etag": (response.headers.get("ETag") or "").strip('"'),
+            }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("r2: GET read failed for %s: %s", key, exc)
         return None
 
 
