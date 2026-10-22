@@ -22,6 +22,7 @@ from collections import defaultdict, deque
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session
 
+from . import rewards
 from . import service as svc
 from . import storage
 
@@ -146,6 +147,61 @@ def api_state():
         "max_caption": svc.MAX_CAPTION,
         "max_media": svc.MAX_MEDIA_PER_POST,
     })
+
+
+@community_feed_bp.route("/api/rewards", methods=["GET"])
+def api_rewards():
+    """The viewer's G$ earned balance. Reading it is gated like the feed."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    return jsonify(svc.rewards_summary(wallet))
+
+
+@community_feed_bp.route("/api/admin/reward-rates", methods=["GET"])
+def api_admin_reward_rates():
+    """The rates in force, plus the bounds the editor must respect.
+
+    Admin-only. The bounds travel with the payload so the form's min/max can
+    never drift from the server clamp — the server clamp is still the control.
+    """
+    if not _admin_wallet():
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    rates = rewards.effective_rates(use_cache=False)
+    low, high = rewards.RATE_BOUNDS["comment_out"]
+    return jsonify({
+        "success": True,
+        "rates": {name: float(value) for name, value in rates.items()},
+        # `names` fixes the display order (largest to smallest) so the editor
+        # cannot reorder the anti-farm story by accident.
+        "names": list(rewards.RATE_NAMES),
+        "min": float(low),
+        "max": float(high),
+        "defaults": {name: float(rewards._env_rate(name))
+                     for name in rewards.RATE_NAMES},
+    })
+
+
+@community_feed_bp.route("/api/admin/reward-rates", methods=["POST"])
+def api_admin_set_reward_rates():
+    """Change the rates. Admin-only, audited, clamped server-side.
+
+    This is the ONLY admin write path in the rewards system. It writes config,
+    never a balance: the ledger stays append-only and the balance stays a SUM,
+    so an admin still cannot change what a member has already earned.
+    """
+    admin = _admin_wallet()
+    if not admin:
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    data = request.get_json(silent=True) or {}
+    result = rewards.set_rates(
+        data.get("rates") or {},
+        actor=admin,
+        reason=data.get("reason") or "",
+    )
+    if not result.get("success"):
+        return jsonify(result), 400
+    return jsonify(result)
 
 
 @community_feed_bp.route("/api/feed", methods=["GET"])
