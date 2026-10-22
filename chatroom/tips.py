@@ -26,13 +26,15 @@ import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
+from env_utils import get_env_decimal, get_env_int
+
 logger = logging.getLogger(__name__)
 
 ROOM = "general"
 FEATURE_NAME = "chatroom_feature"
 
-TIP_RATE_LIMIT_SECONDS = int(os.getenv("CHATROOM_TIP_RATE_LIMIT_SECONDS", "10"))
-MAX_TIP_AMOUNT = Decimal(os.getenv("CHATROOM_MAX_TIP_AMOUNT", "1000000"))
+TIP_RATE_LIMIT_SECONDS = get_env_int("CHATROOM_TIP_RATE_LIMIT_SECONDS", 10)
+MAX_TIP_AMOUNT = get_env_decimal("CHATROOM_MAX_TIP_AMOUNT", '1000000')
 
 CELO_CHAIN_ID = 42220
 XDC_CHAIN_ID = 50
