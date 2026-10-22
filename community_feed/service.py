@@ -462,8 +462,8 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
     The wallet address is dropped and ownership is reduced to ``is_mine`` — a
     boolean — so a feed response can never leak an address. ``is_following``
     likewise reduces the follow graph to a per-author boolean the viewer owns.
-    ``avatar_url`` is a PUBLIC R2 URL (never a wallet) so a card can show the
-    author's profile picture. ``reactions`` is a ``{key: count}`` breakdown (no
+    ``avatar_url`` is a same-origin profile path, never a public R2 URL.
+    ``reactions`` is a ``{key: count}`` breakdown (no
     wallet, just tallies) so a card can show WHICH reactions were used.
     """
     owner = (row.get("wallet_address") or "").lower()
@@ -473,7 +473,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         "id": row.get("id"),
         "username": username or ANON_LABEL,
         "body": row.get("body") or "",
-        "avatar_url": avatar_url or None,
+        "avatar_url": public_avatar_path(username) if avatar_url else None,
         "media": media,
         "reaction_count": int(row.get("reaction_count") or 0),
         "reaction_breakdown": _clean_breakdown(reactions),
@@ -529,19 +529,18 @@ def _public_comment(row: dict, viewer: str | None,
         "id": row.get("id"),
         "username": username or ANON_LABEL,
         "body": row.get("body") or "",
-        "avatar_url": avatar_url or None,
+        "avatar_url": public_avatar_path(username) if avatar_url else None,
         "is_mine": bool(viewer) and owner == viewer.lower(),
         "created_at": row.get("created_at"),
     }
 
 
-def _avatars_for_wallets(supabase, wallets: list[str]) -> dict[str, str]:
-    """Public avatar URL per wallet, in ONE batched query.
+def _avatars_for_wallets(supabase, wallets: list[str]) -> dict[str, bool]:
+    """Avatar-presence flag per wallet, in ONE batched query.
 
-    Returns ``{lowercased_wallet: public_url}``. The wallet is the lookup KEY
-    only — it is never copied into the returned value, so a feed response can
-    carry an avatar without carrying an address (the same rule as
-    ``_public_post``). A wallet with no avatar simply has no entry.
+    Returns ``{lowercased_wallet: True}``. The wallet and stored R2 URL/key are
+    server-side lookup details only; public serializers turn presence into a
+    same-origin profile path. A wallet with no avatar simply has no entry.
     """
     wanted = sorted({(w or "").lower() for w in wallets if w})
     if not wanted:
@@ -549,16 +548,16 @@ def _avatars_for_wallets(supabase, wallets: list[str]) -> dict[str, str]:
     try:
         result = (
             supabase.table("community_feed_avatars")
-            .select("wallet_address,public_url")
+            .select("wallet_address,r2_key")
             .in_("wallet_address", wanted)
             .execute()
         )
-        out: dict[str, str] = {}
+        out: dict[str, bool] = {}
         for row in _rows(result):
             wallet = (row.get("wallet_address") or "").lower()
-            url = (row.get("public_url") or "").strip()
-            if wallet and url:
-                out[wallet] = url
+            key = (row.get("r2_key") or "").strip()
+            if wallet and key:
+                out[wallet] = True
         return out
     except Exception as exc:  # noqa: BLE001
         # A missing avatar table (migration not yet run) must not break the
@@ -568,13 +567,50 @@ def _avatars_for_wallets(supabase, wallets: list[str]) -> dict[str, str]:
 
 
 def get_avatar_url(wallet: str | None) -> str | None:
-    """One member's public avatar URL, or None. Never returns the wallet."""
+    """One member's same-origin avatar path, or None. Never returns an R2 URL."""
     if not wallet:
         return None
     supabase = _get_supabase()
     if not supabase:
         return None
-    return _avatars_for_wallets(supabase, [wallet]).get((wallet or "").lower())
+    has_avatar = _avatars_for_wallets(supabase, [wallet]).get((wallet or "").lower())
+    return public_avatar_path(get_username(wallet)) if has_avatar else None
+
+
+def get_avatar_descriptor(wallet: str | None) -> dict | None:
+    """Private storage metadata for one member's current avatar.
+
+    The descriptor stays inside the server route; callers must never serialize
+    its R2 key or wallet lookup into a browser response.
+    """
+    if not wallet:
+        return None
+    supabase = _get_supabase()
+    if not supabase:
+        return None
+    try:
+        result = (
+            supabase.table("community_feed_avatars")
+            .select("r2_key,mime,bytes")
+            .eq("wallet_address", wallet.lower())
+            .limit(1)
+            .execute()
+        )
+        rows = _rows(result)
+        if not rows:
+            return None
+        row = rows[0]
+        key = (row.get("r2_key") or "").strip()
+        if not key:
+            return None
+        return {
+            "r2_key": key,
+            "mime": (row.get("mime") or "").strip().lower(),
+            "bytes": row.get("bytes"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: avatar descriptor lookup failed: %s", exc)
+        return None
 
 
 # ── Feed reads ───────────────────────────────────────────────────────────────
@@ -943,6 +979,12 @@ def normalize_username(username: str | None) -> str | None:
     return name
 
 
+def public_avatar_path(username: str | None) -> str | None:
+    """Build the public same-origin image route for a valid community handle."""
+    name = normalize_username(username)
+    return f"/community/api/profile/{name}/avatar" if name else None
+
+
 # Public member search. A user may type a partial name, so the term is
 # normalised to a safe subset and the WILDCARD is added server-side: a raw
 # `%`/`_` from the client would otherwise widen the match (PostgREST `ilike`
@@ -960,6 +1002,11 @@ def normalize_search_term(term: str | None) -> str | None:
     return cleaned[:24]
 
 
+def _escape_like_literal(value: str) -> str:
+    """Escape SQL LIKE metacharacters so a username remains a literal value."""
+    return (value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _like_pattern(term: str) -> str:
     """Wrap a search term for PostgREST ``ilike``, escaping LIKE metacharacters.
 
@@ -968,7 +1015,7 @@ def _like_pattern(term: str) -> str:
     the user never asked for. Escaping it (SQL LIKE's default escape is ``\\``)
     keeps the search literal.
     """
-    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    escaped = _escape_like_literal(term)
     return f"%{escaped}%"
 
 
@@ -1057,7 +1104,9 @@ def search_users(term: str | None, limit: int | None = None) -> dict:
         seen.add(key)
         users.append({
             "username": username,
-            "avatar_url": avatars.get((row.get("wallet_address") or "").lower()),
+            "avatar_url": (public_avatar_path(username)
+                           if avatars.get((row.get("wallet_address") or "").lower())
+                           else None),
         })
     return {"success": True, "users": users, "term": cleaned}
 
@@ -1066,7 +1115,8 @@ def wallet_for_username(username: str | None) -> str | None:
     """Resolve a public username to its owner wallet (server-side only).
 
     Tries both stored spellings (plain and ``@``-prefixed) so a legacy row is
-    still reachable by the name the member actually types.
+    still reachable by the name the member actually types. LIKE metacharacters
+    are escaped and the returned row is verified to match the requested handle.
     """
     name = normalize_username(username)
     if not name:
@@ -1078,8 +1128,8 @@ def wallet_for_username(username: str | None) -> str | None:
         try:
             result = (
                 supabase.table("user_data")
-                .select("wallet_address")
-                .ilike("username", variant)
+                .select("username,wallet_address")
+                .ilike("username", _escape_like_literal(variant))
                 .limit(1)
                 .execute()
             )
@@ -1088,7 +1138,10 @@ def wallet_for_username(username: str | None) -> str | None:
             logger.warning("community_feed: profile wallet lookup failed: %s", exc)
             return None
         if rows:
-            return (rows[0].get("wallet_address") or "").strip() or None
+            matched = normalize_username(rows[0].get("username"))
+            wallet = (rows[0].get("wallet_address") or "").strip()
+            if matched and matched.casefold() == name.casefold() and wallet:
+                return wallet
     return None
 
 
@@ -1206,7 +1259,7 @@ def get_public_profile(username: str | None,
         "success": True,
         "profile": {
             "username": name,
-            "avatar_url": avatar,
+            "avatar_url": public_avatar_path(name) if avatar else None,
             "joined_at": joined_at,
             "post_count": post_count,
             "album_count": album_count,
@@ -1421,8 +1474,9 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict]) -> di
 # REPLACES the old row and hard-deletes the replaced R2 object on the same path,
 # so a member never accumulates pictures (and never leaves orphans in the
 # bucket). The picture is PUBLIC — that is the point of a profile picture — but
-# the WALLET is still never sent to the browser: the response carries only the
-# public URL, exactly like a post.
+# public feed/profile payloads never include the WALLET, R2 URL or R2 key. They
+# receive only a same-origin username route; the owner-only signed upload flow
+# continues to pass its upload reference to the browser.
 
 def set_avatar(wallet: str, avatar: dict) -> dict:
     """Store a member's profile picture from an already-verified descriptor.
@@ -1450,9 +1504,10 @@ def set_avatar(wallet: str, avatar: dict) -> dict:
     lower_wallet = (wallet or "").lower()
     previous = _avatar_key(supabase, lower_wallet)
 
+    username = get_username(wallet)
     payload = {
         "wallet_address": lower_wallet,
-        "username": get_username(wallet),
+        "username": username,
         "r2_key": key,
         "public_url": public_url,
         "mime": (avatar or {}).get("mime"),
@@ -1476,7 +1531,7 @@ def set_avatar(wallet: str, avatar: dict) -> dict:
     if previous and previous != key:
         _purge_objects([previous])
 
-    return {"success": True, "avatar_url": public_url}
+    return {"success": True, "avatar_url": public_avatar_path(username)}
 
 
 def clear_avatar(wallet: str) -> dict:
