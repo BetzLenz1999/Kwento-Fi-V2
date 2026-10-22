@@ -38,30 +38,32 @@ import os
 import time
 from datetime import datetime, timezone
 
+from env_utils import get_env_float, get_env_int
+
 logger = logging.getLogger(__name__)
 
 # ── Config ───────────────────────────────────────────────────────────────────
 CHAT_CONTRACT = (os.getenv("CHAT_CONTRACT") or "").strip()
-CHAT_CHAIN_ID = int(os.getenv("CHAT_CHAIN_ID", "42220"))
+CHAT_CHAIN_ID = get_env_int("CHAT_CHAIN_ID", 42220)
 
 # Where the scan starts. Without this the scan would walk from genesis, which is
 # hundreds of thousands of blocks and would time out. Set it at deploy time from
 # the receipt block (the deploy script prints it).
-CHAT_DEPLOYMENT_BLOCK = int(os.getenv("CHAT_DEPLOYMENT_BLOCK", "0"))
+CHAT_DEPLOYMENT_BLOCK = get_env_int("CHAT_DEPLOYMENT_BLOCK", 0)
 
 # Chunk size for eth_getLogs. forno rejects ranges above ~5000 blocks, so the
 # scan must chunk below that; the adaptive retry halves further when a provider
 # still refuses.
-GETLOGS_MAX_CHUNK = int(os.getenv("CHATROOM_GETLOGS_MAX_CHUNK", "4000"))
-GETLOGS_MIN_CHUNK = int(os.getenv("CHATROOM_GETLOGS_MIN_CHUNK", "500"))
+GETLOGS_MAX_CHUNK = get_env_int("CHATROOM_GETLOGS_MAX_CHUNK", 4000)
+GETLOGS_MIN_CHUNK = get_env_int("CHATROOM_GETLOGS_MIN_CHUNK", 500)
 
 # Hard cap on blocks scanned in one request when no deployment block is set, so
 # a misconfiguration cannot turn a page load into a chain walk.
-MAX_LOOKBACK_BLOCKS = int(os.getenv("CHATROOM_LOOKBACK_BLOCKS", "120000"))
+MAX_LOOKBACK_BLOCKS = get_env_int("CHATROOM_LOOKBACK_BLOCKS", 120000)
 
 # Result cache. A warm poll is a cheap no-op; the TTL is short so a just-posted
 # message appears promptly.
-CACHE_TTL_SECONDS = float(os.getenv("CHATROOM_CACHE_TTL", "3"))
+CACHE_TTL_SECONDS = get_env_float("CHATROOM_CACHE_TTL", 3.0)
 
 # Event + ABI constants. Computed from the signature at import when eth_utils is
 # available, and pinned as the verified literals otherwise -- so a signature
@@ -108,7 +110,7 @@ _KIND_NAMES = {KIND_TEXT: "text", KIND_IMAGE: "image", KIND_TIP: "tip"}
 # Mirrors the contract's MAX_LEN. The backend validates in BYTES (the contract
 # counts bytes) while the DB path counted characters, so the two limits are kept
 # as separate constants rather than one shared number.
-MAX_BODY_BYTES = int(os.getenv("CHATROOM_MAX_MESSAGE_BYTES", "500"))
+MAX_BODY_BYTES = get_env_int("CHATROOM_MAX_MESSAGE_BYTES", 500)
 
 # Explorer base for the chain the room lives on.
 _EXPLORERS = {
@@ -503,9 +505,9 @@ def message_count() -> int | None:
 #
 # Quoting the limit instead of the used gas overstates the cost ~2x
 # (150,000 vs ~72,000), which is what users compared against their wallet.
-POST_GAS_LIMIT = int(os.getenv("CHATROOM_POST_GAS_LIMIT", "150000"))
-POST_GAS_USED = int(os.getenv("CHATROOM_POST_GAS_USED", "72000"))
-FEE_CURRENCY_INTRINSIC_GAS = int(os.getenv("CHATROOM_FEE_CURRENCY_INTRINSIC_GAS", "50000"))
+POST_GAS_LIMIT = get_env_int("CHATROOM_POST_GAS_LIMIT", 150000)
+POST_GAS_USED = get_env_int("CHATROOM_POST_GAS_USED", 72000)
+FEE_CURRENCY_INTRINSIC_GAS = get_env_int("CHATROOM_FEE_CURRENCY_INTRINSIC_GAS", 50000)
 
 # Back-compat alias for the value the estimate bills by default.
 DEFAULT_POST_GAS_UNITS = POST_GAS_USED
