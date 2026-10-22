@@ -11,6 +11,8 @@ import time
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
+from env_utils import get_env_float, get_env_int
+
 logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -34,8 +36,8 @@ _REFUND_GAS_LIMIT = 250_000
 # A freshly-broadcast tx isn't mined/indexed yet when the user submits — poll
 # briefly before declaring it "not found" (the frontend already waits for the
 # receipt, this is the safety net for RPC indexing lag).
-_RECEIPT_LOOKUP_ATTEMPTS = int(os.getenv("GCASH_RECEIPT_LOOKUP_ATTEMPTS", "8"))
-_RECEIPT_LOOKUP_INTERVAL_SEC = float(os.getenv("GCASH_RECEIPT_LOOKUP_INTERVAL_SEC", "2.5"))
+_RECEIPT_LOOKUP_ATTEMPTS = get_env_int("GCASH_RECEIPT_LOOKUP_ATTEMPTS", 8)
+_RECEIPT_LOOKUP_INTERVAL_SEC = get_env_float("GCASH_RECEIPT_LOOKUP_INTERVAL_SEC", 2.5)
 
 GCASH_NUMBER_RE = re.compile(r"^09\d{9}$")  # 11 digits starting with 09
 GCASH_NAME_RE = re.compile(r"^[A-Za-z\s.\-']{2,100}$")
