@@ -27,20 +27,22 @@ from datetime import datetime, timezone
 
 from . import rewards
 
+from env_utils import get_env_int
+
 logger = logging.getLogger(__name__)
 
 FEATURE_NAME = "community_feed_feature"
 
-MAX_CAPTION = int(os.getenv("COMMUNITY_MAX_CAPTION", "2200"))
+MAX_CAPTION = get_env_int("COMMUNITY_MAX_CAPTION", 2200)
 # The UI counts characters; the server also bounds UTF-8 bytes, because an emoji
 # costs 4 bytes and a bytes-blind check would let a ~8KB post through the
 # 2200-character gate.
-MAX_CAPTION_BYTES = int(os.getenv("COMMUNITY_MAX_CAPTION_BYTES", str(MAX_CAPTION * 4)))
-MAX_COMMENT = int(os.getenv("COMMUNITY_MAX_COMMENT", "500"))
-MAX_MEDIA_PER_POST = int(os.getenv("COMMUNITY_MAX_MEDIA_PER_POST", "4"))
-POST_RATE_LIMIT_SECONDS = int(os.getenv("COMMUNITY_POST_RATE_LIMIT_SECONDS", "60"))
-COMMENT_RATE_LIMIT_SECONDS = int(os.getenv("COMMUNITY_COMMENT_RATE_LIMIT_SECONDS", "5"))
-UPLOAD_RATE_LIMIT_SECONDS = int(os.getenv("COMMUNITY_UPLOAD_RATE_LIMIT_SECONDS", "10"))
+MAX_CAPTION_BYTES = get_env_int("COMMUNITY_MAX_CAPTION_BYTES", MAX_CAPTION * 4)
+MAX_COMMENT = get_env_int("COMMUNITY_MAX_COMMENT", 500)
+MAX_MEDIA_PER_POST = get_env_int("COMMUNITY_MAX_MEDIA_PER_POST", 4)
+POST_RATE_LIMIT_SECONDS = get_env_int("COMMUNITY_POST_RATE_LIMIT_SECONDS", 60)
+COMMENT_RATE_LIMIT_SECONDS = get_env_int("COMMUNITY_COMMENT_RATE_LIMIT_SECONDS", 5)
+UPLOAD_RATE_LIMIT_SECONDS = get_env_int("COMMUNITY_UPLOAD_RATE_LIMIT_SECONDS", 10)
 # How many presigns one wallet may request inside the upload window. A single
 # post carries up to MAX_MEDIA_PER_POST files and every video also uploads a
 # poster frame, so allowing only ONE presign per window made any post with a
@@ -52,7 +54,7 @@ MAX_PAGE_SIZE = 30
 # Follow-to-follow. A cap on how many accounts one wallet may follow, so a
 # scripted account cannot mint an unbounded edge table. The follower side is
 # unbounded on purpose (popularity is not a bug).
-FOLLOW_LIMIT = int(os.getenv("COMMUNITY_FOLLOW_LIMIT", "5000"))
+FOLLOW_LIMIT = get_env_int("COMMUNITY_FOLLOW_LIMIT", 5000)
 
 # A public post must carry a real username. Without this gate a user who never
 # picked one publishes a shortened wallet address, which looks like spam and
@@ -65,8 +67,8 @@ REQUIRE_USERNAME = os.getenv("COMMUNITY_REQUIRE_USERNAME", "1").strip() != "0"
 ANON_LABEL = "Community member"
 
 # Video is accepted but bounded; images get the tighter cap.
-MAX_IMAGE_MB = int(os.getenv("R2_MAX_IMAGE_MB", "10"))
-MAX_VIDEO_MB = int(os.getenv("R2_MAX_VIDEO_MB", "100"))
+MAX_IMAGE_MB = get_env_int("R2_MAX_IMAGE_MB", 10)
+MAX_VIDEO_MB = get_env_int("R2_MAX_VIDEO_MB", 100)
 MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024
 MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024
 
@@ -86,7 +88,7 @@ REACTION_KEYS = tuple(REACTIONS)
 # authoritative total, so a bounded scan cannot under-report the headline
 # number. Without a bound, one viral post could pull thousands of rows into a
 # single page render.
-REACTION_SCAN_LIMIT = int(os.getenv("COMMUNITY_REACTION_SCAN_LIMIT", "2000"))
+REACTION_SCAN_LIMIT = get_env_int("COMMUNITY_REACTION_SCAN_LIMIT", 2000)
 
 # Declared content types we will hand a presigned PUT to, mapped to the file
 # extension used in the object key. Anything else is refused before signing.
@@ -106,9 +108,9 @@ ALLOWED_MIME_TYPES = {**IMAGE_MIME_TYPES, **VIDEO_MIME_TYPES}
 # get their own, tighter size cap: an avatar is rendered small on every card, so
 # a 10MB upload would only cost storage and mobile data for no visible gain.
 AVATAR_MIME_TYPES = dict(IMAGE_MIME_TYPES)
-MAX_AVATAR_MB = int(os.getenv("COMMUNITY_MAX_AVATAR_MB", "5"))
+MAX_AVATAR_MB = get_env_int("COMMUNITY_MAX_AVATAR_MB", 5)
 MAX_AVATAR_BYTES = MAX_AVATAR_MB * 1024 * 1024
-AVATAR_RATE_LIMIT_SECONDS = int(os.getenv("COMMUNITY_AVATAR_RATE_LIMIT_SECONDS", "10"))
+AVATAR_RATE_LIMIT_SECONDS = get_env_int("COMMUNITY_AVATAR_RATE_LIMIT_SECONDS", 10)
 
 # Control characters (including zero-width/line-separator tricks) are stripped
 # so a caption can never smuggle invisible content into the rendered feed. The
