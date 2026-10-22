@@ -213,24 +213,44 @@
          figures side by side invite "47 + 12 = 59", which is false, because
          this balance is not spendable and not on-chain).
 
-         The number is the SUM of an append-only ledger, fetched from
-         /community/api/rewards; it is never a stored value. Starts `hidden`
-         and is revealed by the bundle only when the feature is enabled, so a
-         disabled deployment renders nothing. -->
+         The balance/goal block (#cfEarnBalance) is HIDDEN BY DEFAULT and
+         revealed only when the server payload says `show_balance` (env
+         COMMUNITY_REWARD_SHOW_BALANCE). The number is not spendable and not
+         on-chain, so a personal "0 G$" under a big heading reads as a bug and
+         advertises a payout path v1 does not have. What the card sells instead
+         is what you can EARN — the four rates below, which come from the
+         server payload and are never hard-coded.
+
+         Starts `hidden` and is revealed by the bundle only when the feature is
+         enabled, so a disabled deployment renders nothing.
+         See docs/COMMUNITY_REWARDS_CARD_REVAMP_PROPOSAL.md. -->
     <section class="cf-earn" id="cfEarn" aria-labelledby="cfEarnTitle" hidden>
         <div class="cf-earn-head">
-            <h2 class="cf-earn-title" id="cfEarnTitle">Community G$</h2>
+            <h2 class="cf-earn-title" id="cfEarnTitle">
+                <span class="cf-earn-mark" aria-hidden="true">🪙</span>
+                <span>Community G$</span>
+            </h2>
             <span class="cf-earn-chip" id="cfEarnChip" data-state="pending">Pending</span>
         </div>
-        <p class="cf-earn-balance">
-            <span class="cf-earn-amount" id="cfEarnAmount">0</span>
-            <span class="cf-earn-unit">G$</span>
-        </p>
-        <p class="cf-earn-goal" id="cfEarnGoal">of 500 G$ to unlock</p>
-        <div class="cf-earn-bar" role="progressbar" id="cfEarnBar"
-             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
-             aria-label="Progress towards the payout minimum">
-            <span class="cf-earn-bar-fill" id="cfEarnBarFill"></span>
+        <!-- Always-visible lead. It carries the state (verify / sign in / just
+             start posting), so the card says what to DO even with the balance
+             hidden. Written by the bundle. -->
+        <p class="cf-earn-lead" id="cfEarnLead">Earn G$ when the community
+            reacts to your posts and comments.</p>
+        <!-- The personal figure. Hidden by default; the bundle reveals it only
+             on `show_balance`. The elements stay in the DOM (and are still
+             written to) either way, so this is a pure presentation switch. -->
+        <div class="cf-earn-balance-wrap" id="cfEarnBalance" hidden>
+            <p class="cf-earn-balance">
+                <span class="cf-earn-amount" id="cfEarnAmount">0</span>
+                <span class="cf-earn-unit">G$</span>
+            </p>
+            <p class="cf-earn-goal" id="cfEarnGoal">of 500 G$ to unlock</p>
+            <div class="cf-earn-bar" role="progressbar" id="cfEarnBar"
+                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+                 aria-label="Progress towards the payout minimum">
+                <span class="cf-earn-bar-fill" id="cfEarnBarFill"></span>
+            </div>
         </div>
         <!-- The rates come from the server (`rates` in the rewards payload),
              so this list is rendered by the bundle and can never quote a rate
