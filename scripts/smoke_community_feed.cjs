@@ -145,8 +145,7 @@ function run(opts) {
    'cfClaimModal', 'cfClaimFrame',
    'cfRail',
    'cfEarn', 'cfEarnChip', 'cfEarnAmount', 'cfEarnGoal', 'cfEarnBar',
-   'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates', 'cfEarnRatesToggle',
-   'cfEarnBalance', 'cfEarnLead'
+   'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates', 'cfEarnBalance', 'cfEarnLead'
   ].forEach(id => {
     const node = dom.mk(
       id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
@@ -160,9 +159,6 @@ function run(opts) {
   // "revealed" assertion cannot pass on the stub's default `false`.
   registry.cfEarn.hidden = true;
   registry.cfEarnBalance.hidden = true;
-  registry.cfEarnRates.hidden = true;
-  registry.cfEarnRatesToggle.hidden = true;
-  registry.cfEarnRatesToggle.setAttribute('aria-expanded', 'false');
   registry.cfUsernameInput.value = '';
   registry.cfSearchInput.value = '';
   // The Buy Airtime iframe ships with the modal: `hidden` until opened, and
@@ -675,9 +671,10 @@ function feedFetch(handler, feedRows) {
        JSON.stringify(caption.childNodes.map(n => n.nodeType)));
   }
 
-  // ── 9b. Caption + engagement PLACEMENT ────────────────────────────────────
-  // The caption is below the media; actions, counts, reaction chips and the
-  // expanded thread are grouped together immediately after it.
+  // ── 9b. Caption PLACEMENT: media → summary → caption → reactions ──────────
+  // The card order is the spec (docs/COMMUNITY_FEED_R2_PROPOSAL.md §4.2): the
+  // caption sits BELOW the media and ABOVE the reaction bar. A refactor that
+  // reorders these is a silent regression, so it is pinned by index.
   {
     const { api } = run({ boot: MEMBER });
     const card = api._internals.buildCard(makePost({
@@ -687,28 +684,22 @@ function feedFetch(handler, feedRows) {
     const order = [];
     (function walk(node) {
       for (const child of node.children || []) {
-        for (const cls of ['cf-media', 'cf-caption', 'cf-card-actions',
-                           'cf-summary', 'cf-reactions']) {
+        for (const cls of ['cf-media', 'cf-summary', 'cf-caption',
+                           'cf-reactions', 'cf-card-actions']) {
           if ((child.className || '').split(/\s+/).includes(cls)) order.push(cls);
         }
         walk(child);
       }
     })(card);
     const at = (name) => order.indexOf(name);
-    ok('the card renders media, caption and grouped engagement controls',
+    ok('the card renders media, summary, caption, reactions and actions',
        order.length === 5, JSON.stringify(order));
     ok('the caption sits BELOW the media', at('cf-media') < at('cf-caption'),
        JSON.stringify(order));
-    ok('actions, summary and reactions follow the caption in order',
-       at('cf-caption') < at('cf-card-actions')
-         && at('cf-card-actions') < at('cf-summary')
-         && at('cf-summary') < at('cf-reactions'), JSON.stringify(order));
-    const engagement = card.querySelector('.cf-engagement');
-    const commentBtn = card.querySelector('.cf-card-actions').children
-      .filter(b => /Comment/.test(b.textContent))[0];
-    commentBtn.onclick();
-    ok('the expanded comment thread stays in the engagement group',
-       !!engagement.querySelector('.cf-comments'));
+    ok('the caption sits ABOVE the reaction bar',
+       at('cf-caption') < at('cf-reactions'), JSON.stringify(order));
+    ok('the reaction summary sits above the caption',
+       at('cf-summary') < at('cf-caption'), JSON.stringify(order));
   }
 
   // ── 9c. A caption-only post still renders its caption (no media branch) ───
@@ -1681,16 +1672,16 @@ function feedFetch(handler, feedRows) {
   // The balance is the server's SUM; the card must render it, keep the status
   // chip, and NEVER offer a withdraw control in v1.
   //
-  // Signed-in members see the balance by default, while guests never see
-  // personal figures. Rate details are collapsed behind an accessible toggle.
-  // The card still states that community earnings are not withdrawable. See
+  // The personal figure is HIDDEN BY DEFAULT (the owner's ask): it is not
+  // spendable and not on-chain, so a bare "0 G$" under a big heading reads as a
+  // bug and advertises a payout path v1 does not have. The card sells what you
+  // can EARN — the four rates — instead. See
   // docs/COMMUNITY_REWARDS_CARD_REVAMP_PROPOSAL.md.
   {
     const { api, store } = run({ boot: MEMBER });
     api._internals.renderRewards({
       enabled: true, is_guest: false, balance_gd: 47,
       min_payout_gd: 500, progress: 9.4, status: 'pending', can_withdraw: false,
-      show_balance: true,
       rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
     });
     ok('the earn card is revealed when enabled', store.cfEarn.hidden === false);
@@ -1703,28 +1694,21 @@ function feedFetch(handler, feedRows) {
        /500 G\$/.test(store.cfEarnGoal.textContent),
        String(store.cfEarnGoal.textContent));
 
-    // The server defaults show_balance to true for signed-in members. The
-    // amount, goal, progress and note still come from the server payload.
-    ok('the balance block is visible by default for a member',
-       store.cfEarnBalance.hidden === false,
+    // The balance block is hidden unless the server opts in, and the elements
+    // are STILL written to — this is a presentation switch, not a second render
+    // path, so the value above stays assertable either way.
+    ok('the balance block is hidden by default',
+       store.cfEarnBalance.hidden === true,
        String(store.cfEarnBalance.hidden));
-    ok('the lead line is always visible',
+    ok('the lead line is always visible, even with the balance hidden',
        store.cfEarnLead.hidden === false && store.cfEarnLead.textContent.length > 0,
        String(store.cfEarnLead.textContent));
     ok('the lead line says what you can earn',
        /earn g\$/i.test(store.cfEarnLead.textContent),
        String(store.cfEarnLead.textContent));
 
-    // The rates are rendered from the server payload and collapsed until
-    // requested; a wrong value is a support ticket.
-    ok('rate details start collapsed', store.cfEarnRates.hidden === true);
-    ok('the accessible rate toggle is available',
-       store.cfEarnRatesToggle.hidden === false
-         && store.cfEarnRatesToggle.getAttribute('aria-expanded') === 'false');
-    store.cfEarnRatesToggle.onclick();
-    ok('the rate toggle expands the list and updates its state',
-       store.cfEarnRates.hidden === false
-         && store.cfEarnRatesToggle.getAttribute('aria-expanded') === 'true');
+    // The rates are rendered from the server payload, and the list must show
+    // all four with the right amounts — a wrong number here is a support ticket.
     const rateRows = store.cfEarnRates.children.map(li => li.textContent);
     ok('the earn card lists all four rates', rateRows.length === 4,
        JSON.stringify(rateRows));
@@ -1740,7 +1724,7 @@ function feedFetch(handler, feedRows) {
     ok('the given-reaction rate is 0.1',
        rateRows.some(t => /You react to a post/.test(t) && /\+0\.1 G\$/.test(t)),
        JSON.stringify(rateRows));
-    ok('the rates list remains revealed after opening',
+    ok('the rates list is revealed',
        store.cfEarnRates.hidden === false);
     ok('the progress bar reflects the server progress',
        store.cfEarnBarFill.style.width === '9.4%',
@@ -1748,28 +1732,27 @@ function feedFetch(handler, feedRows) {
     ok('the progress bar is announced to assistive tech',
        store.cfEarnBar.attributes['aria-valuenow'] === '9',
        String(store.cfEarnBar.attributes['aria-valuenow']));
-    ok('the pending state does not offer a withdrawal action',
-       !/ready to withdraw/i.test(store.cfEarnNote.textContent),
-       String(store.cfEarnNote.textContent));
-    ok('a member is told Community G$ cannot be withdrawn yet',
-       /cannot be withdrawn yet/i.test(store.cfEarnNote.textContent),
+    ok('the card never offers a withdraw control in v1',
+       !/withdraw/i.test(store.cfEarnNote.textContent)
+         || /until withdrawal opens/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
   }
 
-  // ── 20a-ii. The explicit flag can hide the member balance ─────────────────
+  // ── 20a-ii. The balance block is revealed only on the server flag ────────
   {
     const { api, store } = run({ boot: MEMBER });
     api._internals.renderRewards({
       enabled: true, is_guest: false, balance_gd: 47,
       min_payout_gd: 500, progress: 9.4, status: 'pending', can_withdraw: false,
-      show_balance: false,
+      show_balance: true,
       rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
     });
-    ok('an explicit opt-out hides the balance block',
-       store.cfEarnBalance.hidden === true,
+    ok('an explicit show_balance reveals the balance block',
+       store.cfEarnBalance.hidden === false,
        String(store.cfEarnBalance.hidden));
 
-    // Only the exact boolean `true` counts; a truthy string does not reveal it.
+    // Only the exact boolean `true` counts — a truthy string must not leak the
+    // figure, because the whole point of the flag is to keep it hidden.
     api._internals.renderRewards({
       enabled: true, is_guest: false, balance_gd: 47,
       min_payout_gd: 500, progress: 9.4, status: 'pending', can_withdraw: false,
@@ -1823,9 +1806,6 @@ function feedFetch(handler, feedRows) {
     ok('the note says the feed still works, so it does not read as a lockout',
        /still post/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
-    ok('the unverified-wallet note explains withdrawal is unavailable',
-       /cannot be withdrawn yet/i.test(store.cfEarnNote.textContent),
-       String(store.cfEarnNote.textContent));
   }
 
   // ── 20c. A guest is invited to sign in, and a disabled feature hides ─────
@@ -1834,22 +1814,18 @@ function feedFetch(handler, feedRows) {
     api._internals.renderRewards({
       enabled: true, is_guest: true, balance_gd: 0,
       min_payout_gd: 500, progress: 0, status: 'guest', can_withdraw: false,
-      show_balance: true,
     });
     ok('a guest is told to sign in to earn',
        /sign in/i.test(store.cfEarnGoal.textContent),
        String(store.cfEarnGoal.textContent));
-    // The lead line carries the sign-in instruction; even a true server flag
-    // must never reveal a guest's personal balance.
+    // The lead line is what the guest actually SEES now that the balance block
+    // is hidden by default, so it must carry the same instruction.
     ok('a guest sees the sign-in instruction on the always-visible lead line',
        /sign in/i.test(store.cfEarnLead.textContent),
        String(store.cfEarnLead.textContent));
     ok('a guest does not get the personal balance block',
        store.cfEarnBalance.hidden === true,
        String(store.cfEarnBalance.hidden));
-    ok('a guest is told Community G$ cannot be withdrawn yet',
-       /cannot be withdrawn yet/i.test(store.cfEarnNote.textContent),
-       String(store.cfEarnNote.textContent));
 
     api._internals.renderRewards({ enabled: false });
     ok('a disabled rewards feature hides the card', store.cfEarn.hidden === true);
