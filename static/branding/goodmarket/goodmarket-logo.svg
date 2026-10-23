@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 620" role="img" aria-labelledby="title desc">
+  <title id="title">GoodMarket Community</title>
+  <desc id="desc">GoodMarket Community logo with a globe, G dollar mark, orbit lines, and community symbols.</desc>
+  <defs>
+    <linearGradient id="orbit" x1="148" y1="283" x2="752" y2="283" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+    <linearGradient id="wordmark" x1="260" y1="472" x2="640" y2="472" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#102A43"/>
+      <stop offset="1" stop-color="#163B5C"/>
+    </linearGradient>
+  </defs>
+  <circle cx="450" cy="278" r="251" fill="#FFFFFF" stroke="#102A43" stroke-width="9"/>
+  <ellipse cx="450" cy="278" rx="295" ry="102" fill="none" stroke="url(#orbit)" stroke-width="10" transform="rotate(-24 450 278)"/>
+  <ellipse cx="450" cy="278" rx="295" ry="102" fill="none" stroke="url(#orbit)" stroke-width="10" opacity=".74" transform="rotate(24 450 278)"/>
+  <circle cx="450" cy="278" r="141" fill="#F8FAFC" stroke="#102A43" stroke-width="17"/>
+  <path d="M365 278c0-48 36-84 88-84 32 0 58 11 76 31l-29 30c-12-14-27-21-47-21-29 0-50 18-50 44 0 28 21 46 51 46 12 0 23-3 33-9v-24h-43v-31h84v76c-20 18-47 29-78 29-51 0-85-35-85-87Z" fill="#102A43"/>
+  <path d="M496 202v148M519 234h27M519 279h27M519 324h27" fill="none" stroke="#F59E0B" stroke-width="11" stroke-linecap="round"/>
+  <g fill="#102A43">
+    <circle cx="207" cy="184" r="17"/><circle cx="692" cy="373" r="17"/>
+  </g>
+  <g fill="#0EA5E9"><circle cx="198" cy="373" r="15"/><circle cx="705" cy="186" r="15"/></g>
+  <text x="450" y="492" text-anchor="middle" font-family="Nunito Sans, Arial, sans-serif" font-size="66" font-weight="900" letter-spacing="-2" fill="url(#wordmark)">GoodMarket</text>
+  <text x="450" y="533" text-anchor="middle" font-family="Nunito Sans, Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="3" fill="#0EA5E9">COMMUNITY • WALLET • STORIES</text>
+</svg>
