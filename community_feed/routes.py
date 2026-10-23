@@ -129,6 +129,66 @@ def community_feed_home():
     )
 
 
+@community_feed_bp.route("/p/<int:post_id>")
+def community_feed_post(post_id: int):
+    """Canonical public URL for one post, including social-share metadata.
+
+    The post is loaded server-side so crawlers and messaging apps receive a
+    real per-post title/description/image instead of a feed URL with a hash
+    fragment (fragments are never sent to the server). The service serializer
+    deliberately removes the owner's wallet address before the object reaches
+    the template or browser.
+    """
+    wallet = _session_wallet()
+    if not svc.is_enabled():
+        return redirect("/wallet" if wallet else "/")
+
+    result = svc.get_post(post_id, viewer=wallet)
+    post = result.get("post") if result.get("success") else None
+    if not post:
+        return Response("Post not found", status=404, mimetype="text/plain")
+
+    from routes import _claim_boot_context
+
+    media = post.get("media") or []
+    first_media = media[0] if media else {}
+    share_image = first_media.get("url") if first_media.get("type") == "image" else first_media.get("poster")
+    if not share_image:
+        share_image = request.url_root.rstrip("/") + "/static/images/community-post-preview.svg"
+    username = post.get("username") or "Community member"
+    body = " ".join((post.get("body") or "").split())
+    description = body[:180] + ("…" if len(body) > 180 else "")
+    if not description:
+        description = "A post from the GoodMarket Community."
+    canonical_url = request.url_root.rstrip("/") + "/community/p/" + str(post_id)
+    return render_template(
+        "community.html",
+        **_claim_boot_context(
+            wallet or "",
+            session.get("login_method", ""),
+            claim_only=True,
+            fv_return_to=canonical_url,
+        ),
+        is_guest=not bool(wallet),
+        display_name=svc.display_name(wallet) if wallet else None,
+        username=svc.get_username(wallet) if wallet else None,
+        avatar_url=svc.get_avatar_url(wallet) if wallet else None,
+        username_required=svc.REQUIRE_USERNAME,
+        max_caption=svc.MAX_CAPTION,
+        max_media=svc.MAX_MEDIA_PER_POST,
+        max_image_mb=svc.MAX_IMAGE_MB,
+        max_video_mb=svc.MAX_VIDEO_MB,
+        max_avatar_mb=svc.MAX_AVATAR_MB,
+        storage_ready=storage.storage_available(),
+        focus_post=post,
+        focus_post_id=post_id,
+        canonical_url=canonical_url,
+        share_title=f"@{username} on GoodMarket Community",
+        share_description=description,
+        share_image=share_image,
+    )
+
+
 # ── Feed ─────────────────────────────────────────────────────────────────────
 
 @community_feed_bp.route("/api/state", methods=["GET"])
