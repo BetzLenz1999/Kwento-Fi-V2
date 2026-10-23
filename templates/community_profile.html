@@ -121,6 +121,11 @@
            mount point, so nothing is rendered for a guest's own profile or
            for the member looking at themselves. #}
         <div class="cp-follow-wrap" id="cpFollowWrap"></div>
+        {% if not profile.is_self %}
+        <button type="button" class="cp-message" id="cpMessageBtn"
+                onclick="GMProfile.openMessage()"
+                aria-label="Message @{{ profile.username }}">Message</button>
+        {% endif %}
         <p class="cp-privacy">
             This public profile never shows a wallet address, balance, or private activity.
         </p>
@@ -199,6 +204,7 @@ window.GM_PROFILE_BOOT = {
     isGuest: {{ 'true' if is_guest else 'false' }},
     wallet: {{ (wallet or '')|tojson }},
     username: {{ (profile.username if profile else (username or ''))|tojson }},
+    messageTarget: {{ (profile.username if profile and not profile.is_self else '')|tojson }},
     viewerUsername: {{ (viewer_username or '')|tojson }},
     avatarUrl: {{ (profile.avatar_url if profile and profile.avatar_url else '')|tojson }},
     maxAvatarMb: {{ max_avatar_mb|default(5) }},
