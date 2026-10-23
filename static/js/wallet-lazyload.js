@@ -1,10 +1,13 @@
 // Extracted from templates/wallet.html inline <script> (load-perf refactor).
 // Per-request values come from window.GM_WALLET_BOOT (set inline in wallet.html).
 (function() {
-            var ethersLoaded = false;
             var qrLoaded = false;
             function loadEthers(cb) {
                 if (window.ethers) { if(cb) cb(); return; }
+                if (window.GMEthersLoader && typeof window.GMEthersLoader.load === 'function') {
+                    window.GMEthersLoader.load().then(function() { if (cb) cb(); }).catch(function() {});
+                    return;
+                }
                 var s = document.createElement('script');
                 s.src = 'https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js';
                 // SRI: refuse to execute the script if its hash doesn't match.
