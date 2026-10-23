@@ -28,9 +28,20 @@
       </header>
       <div class="gm-msg-log" id="gmMsgLog" role="log" aria-live="polite" aria-busy="false"></div>
       <p class="gm-msg-thread-error" id="gmMsgThreadError" role="alert" hidden></p>
+      <div class="gm-msg-attachment" id="gmMsgAttachment" hidden>
+        <span class="gm-msg-attachment-icon" aria-hidden="true">📎</span>
+        <span class="gm-msg-attachment-copy">
+          <strong id="gmMsgAttachmentName"></strong>
+          <small id="gmMsgAttachmentStatus">Preparing upload…</small>
+        </span>
+        <button type="button" class="gm-msg-attachment-remove" id="gmMsgAttachmentRemove" aria-label="Remove attachment">×</button>
+      </div>
+      <p class="gm-msg-upload-error" id="gmMsgUploadError" role="alert" hidden></p>
       <form class="gm-msg-composer" id="gmMsgComposer">
         <label class="gm-msg-sr" for="gmMsgInput">Write a message</label>
-        <textarea id="gmMsgInput" maxlength="2000" rows="1" placeholder="Write a message…" required></textarea>
+        <input id="gmMsgFile" class="gm-msg-file" type="file" accept="image/jpeg,image/png,image/gif,image/webp,application/pdf" hidden>
+        <button type="button" class="gm-msg-attach" id="gmMsgAttach" aria-label="Attach a file" title="Attach a file">＋</button>
+        <textarea id="gmMsgInput" maxlength="2000" rows="1" placeholder="Write a message…"></textarea>
         <button type="submit" id="gmMsgSend">Send</button>
       </form>
     </section>
