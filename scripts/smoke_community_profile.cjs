@@ -8,7 +8,7 @@
    - the album: lazy-loaded on first tab open, tiles + video badge,
    - the stats: public message count from the CHATROOM endpoint, hidden when
      the chatroom is off,
-   - the lightbox.
+   - the lightbox, including the clickable profile-header avatar and fallback.
 
    Run: node scripts/smoke_community_profile.cjs
 */
@@ -21,6 +21,7 @@ const SRC = fs.readFileSync(
   path.join(__dirname, '..', 'static', 'js', 'community-profile.js'), 'utf8');
 
 function makeDom() {
+  let activeElement = null;
   function matches(node, sel) {
     if (!sel || !node || node.nodeType === 3) return false;
     if (sel.startsWith('#')) return node.id === sel.slice(1);
@@ -74,7 +75,7 @@ function makeDom() {
       querySelectorAll(sel) { return this._walk([]).filter(n => matches(n, sel)); },
       querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
       _walk(out) { this.children.forEach(c => { out.push(c); if (c._walk) c._walk(out); }); return out; },
-      focus() {},
+      focus() { this.focused = true; activeElement = this; },
       get firstElementChild() { return this.children[0] || null; },
       set innerHTML(v) { if (v === '') { this.children = []; this.childNodes = []; } },
       get innerHTML() { return ''; },
@@ -88,14 +89,14 @@ function makeDom() {
       },
     };
   }
-  return { mk, root: mk('body') };
+  return { mk, root: mk('body'), getActiveElement: () => activeElement };
 }
 
 const IDS = [
   'cpPosts', 'cpPostsEmpty', 'cpPostsMore', 'cpAlbums', 'cpAlbumsEmpty',
   'cpAlbumsMore', 'cpTabPosts', 'cpTabAlbum', 'cpPanelPosts', 'cpPanelAlbum',
   'cpMessageCount', 'cpMessageStat', 'cpPostCount', 'cpAlbumCount',
-  'cpMediaCount', 'cpLightbox', 'cpLightboxBody',
+  'cpMediaCount', 'cpProfileAvatar', 'cpLightbox', 'cpLightboxBody',
   'cpFollowWrap', 'cpFollowerCount', 'cpFollowingCount', 'cpToast',
 ];
 
@@ -104,10 +105,28 @@ function run(opts) {
   const dom = makeDom();
   const registry = {};
   IDS.forEach(id => {
-    const node = dom.mk('div');
+    const node = dom.mk(id === 'cpProfileAvatar' ? 'button' : 'div');
     node.id = id;
     registry[id] = node;
   });
+  registry.cpProfileAvatar.type = 'button';
+  registry.cpProfileAvatar.setAttribute('aria-haspopup', 'dialog');
+  registry.cpProfileAvatar.setAttribute('aria-controls', 'cpLightbox');
+  const profileAvatarUrl = (opts.boot || {}).avatarUrl || '';
+  if (profileAvatarUrl) {
+    const profileAvatarImage = dom.mk('img');
+    profileAvatarImage.className = 'cp-avatar-img';
+    profileAvatarImage.src = '/community/api/profile/'
+      + encodeURIComponent((opts.boot || {}).username || 'member') + '/avatar';
+    registry.cpProfileAvatar.appendChild(profileAvatarImage);
+  } else {
+    registry.cpProfileAvatar.textContent = ((opts.boot || {}).username || 'A')[0].toUpperCase();
+  }
+  registry.cpLightbox.hidden = true;
+  const lightboxClose = dom.mk('button');
+  lightboxClose.className = 'cp-lightbox-close';
+  registry.cpLightbox.appendChild(lightboxClose);
+  registry.cpLightbox.appendChild(registry.cpLightboxBody);
   // The message-count stat starts hidden in the markup; the bundle reveals it.
   const messageStat = registry.cpMessageStat;
   messageStat.className = 'cp-stat';
@@ -116,16 +135,19 @@ function run(opts) {
   dom.root.appendChild(messageStat);
 
   const calls = [];
+  const docListeners = {};
   const doc = {
     readyState: 'complete',
     body: dom.root,
+    get activeElement() { return dom.getActiveElement(); },
     createElement: dom.mk,
     createTextNode: t => ({ nodeType: 3, textContent: String(t) }),
     getElementById: id => registry[id] || null,
     querySelector: sel => registry[String(sel).replace('#', '')] || dom.root.querySelector(sel),
     querySelectorAll: sel => dom.root.querySelectorAll(sel),
-    addEventListener: () => {},
+    addEventListener: (name, fn) => { (docListeners[name] = docListeners[name] || []).push(fn); },
     removeEventListener: () => {},
+    dispatch: (name, event) => (docListeners[name] || []).forEach(fn => fn(event)),
   };
 
   const fetchImpl = opts.fetchImpl || function (url) {
@@ -160,7 +182,7 @@ function run(opts) {
 
   vm.createContext(sandbox);
   vm.runInContext(SRC, sandbox);
-  return { api: sandbox.GMProfile, store: registry, sandbox, calls, messageStat };
+  return { api: sandbox.GMProfile, store: registry, sandbox, calls, messageStat, document: doc };
 }
 
 let failures = 0;
@@ -385,6 +407,49 @@ function makeAlbum(over) {
     }));
     ok('an invalid username never falls back to the raw R2 URL',
        !legacyName.querySelector('.cp-avatar-img'));
+  }
+
+  // ── 4f. The profile-header avatar opens the viewer and fails safely ────────
+  {
+    const { api, store, document } = run({
+      boot: Object.assign({}, MEMBER, {
+        avatarUrl: '/community/api/profile/betz/avatar',
+      }),
+    });
+    const avatar = store.cpProfileAvatar;
+    const image = avatar.querySelector('img');
+    ok('the profile header avatar is an enabled accessible button',
+       avatar.tagName === 'BUTTON' && !avatar.disabled
+         && avatar.getAttribute('aria-haspopup') === 'dialog'
+         && /View profile picture of @betz/.test(avatar.getAttribute('aria-label')));
+    ok('the profile header avatar image loads eagerly',
+       !!image && image.loading === 'eager' && image.fetchPriority === 'high');
+
+    avatar.onclick();
+    const viewerImage = store.cpLightboxBody.querySelector('img');
+    ok('tapping the header avatar opens its same-origin image in the viewer',
+       !store.cpLightbox.hidden && !!viewerImage
+         && viewerImage.src === image.src
+         && viewerImage.alt === 'Profile picture of @betz');
+    ok('opening the viewer focuses its close button',
+       document.activeElement === store.cpLightbox.querySelector('.cp-lightbox-close'));
+    document.dispatch('keydown', { key: 'Escape' });
+    ok('Escape closes the viewer and returns focus to the avatar',
+       store.cpLightbox.hidden && document.activeElement === avatar);
+
+    image.onerror();
+    ok('a failed header image becomes the member initial and is not clickable',
+       avatar.disabled && avatar.textContent === 'B'
+         && /unavailable/i.test(avatar.getAttribute('aria-label')));
+  }
+
+  // ── 4g. A profile without a picture shows a disabled initial avatar ────────
+  {
+    const { store } = run({ boot: MEMBER });
+    ok('a profile without an image shows an initial, not a broken image',
+       store.cpProfileAvatar.disabled
+         && store.cpProfileAvatar.textContent === 'B'
+         && !store.cpProfileAvatar.querySelector('img'));
   }
 
   // ── 5. Album is lazy-loaded on the first tab open ─────────────────────────
