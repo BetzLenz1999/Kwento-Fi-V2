@@ -29,6 +29,7 @@
     var _albumsCursor = null;
     var _albumsLoading = false;
     var _albumLoaded = false;
+    var _lightboxOpener = null;
 
     // ── Small helpers ──────────────────────────────────────────────────────
 
@@ -520,12 +521,58 @@
         });
     }
 
+    function bindProfileAvatar() {
+        var avatar = $('cpProfileAvatar');
+        if (!avatar || avatar.tagName !== 'BUTTON') return;
+
+        function setAvatarUnavailable() {
+            avatar.textContent = (USERNAME || 'A')[0].toUpperCase();
+            avatar.disabled = true;
+            avatar.setAttribute('aria-label',
+                'Profile picture unavailable for @' + USERNAME);
+        }
+
+        function syncAvatar(url) {
+            var image = avatar.querySelector('img');
+            var available = !!url && !!image;
+            avatar.disabled = !available;
+            avatar.setAttribute('aria-label', available
+                ? 'View profile picture of @' + USERNAME
+                : 'No profile picture for @' + USERNAME);
+            if (image) {
+                // The hero is above the fold; don't lazy-load the image the
+                // visitor came to this page to see.
+                image.loading = 'eager';
+                image.fetchPriority = 'high';
+                image.referrerPolicy = 'no-referrer';
+                image.onerror = setAvatarUnavailable;
+            }
+        }
+
+        avatar.onclick = function () {
+            if (avatar.disabled) return;
+            var image = avatar.querySelector('img');
+            var src = image && (image.currentSrc || image.src);
+            if (!src) return;
+            openLightbox(src, 'image', 'Profile picture of @' + USERNAME, avatar);
+        };
+
+        syncAvatar(BOOT.avatarUrl || '');
+        if (window.GMCommunityAvatar
+                && typeof window.GMCommunityAvatar.onChange === 'function') {
+            window.GMCommunityAvatar.onChange(syncAvatar);
+        }
+    }
+
     // ── Lightbox ───────────────────────────────────────────────────────────
 
-    function openLightbox(url, kind) {
+    function openLightbox(url, kind, label, opener) {
         var box = $('cpLightbox');
         var body = $('cpLightboxBody');
         if (!box || !body) return;
+        _lightboxOpener = opener || (document.activeElement !== document.body
+            ? document.activeElement : null);
+        box.setAttribute('aria-label', label ? label + ' viewer' : 'Media viewer');
         body.textContent = '';
         if (kind === 'video') {
             var video = document.createElement('video');
@@ -537,10 +584,19 @@
         } else {
             var img = document.createElement('img');
             img.src = url;
-            img.alt = '';
+            img.alt = label || '';
+            img.onerror = function () {
+                body.textContent = '';
+                var fallback = el('p', 'cp-lightbox-error',
+                    'This image could not be loaded.');
+                fallback.setAttribute('role', 'status');
+                body.appendChild(fallback);
+            };
             body.appendChild(img);
         }
         box.hidden = false;
+        var closeButton = box.querySelector('.cp-lightbox-close');
+        if (closeButton && closeButton.focus) closeButton.focus();
     }
 
     function closeLightbox() {
@@ -548,6 +604,10 @@
         var body = $('cpLightboxBody');
         if (body) body.textContent = '';
         if (box) box.hidden = true;
+        if (box) box.setAttribute('aria-label', 'Media viewer');
+        var opener = _lightboxOpener;
+        _lightboxOpener = null;
+        if (opener && !opener.disabled && opener.focus) opener.focus();
     }
 
     // ── Init ───────────────────────────────────────────────────────────────
@@ -558,6 +618,7 @@
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape') closeLightbox();
         });
+        bindProfileAvatar();
         followButton();
         loadPosts(true);
         loadMessageCount();
@@ -587,6 +648,7 @@
             loadPosts: loadPosts,
             loadAlbums: loadAlbums,
             loadMessageCount: loadMessageCount,
+            bindProfileAvatar: bindProfileAvatar,
             getPosts: function () { return _posts; },
             setPosts: function (rows) { _posts = rows; },
             getAlbums: function () { return _albums; },
