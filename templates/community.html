@@ -16,8 +16,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GoodMarket Community - GoodMarket</title>
-    <meta name="description" content="Share your daily life with the GoodMarket community — post photos and videos, react and comment. A community app for G$ users.">
+    <title>{{ share_title|default('GoodMarket Community - GoodMarket', true) }}</title>
+    <meta name="description" content="{{ share_description|default('Share your daily life with the GoodMarket community — post photos and videos, react and comment. A community app for G$ users.', true) }}">
+    {% if canonical_url|default('', true) %}
+    <link rel="canonical" href="{{ canonical_url }}">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="{{ canonical_url }}">
+    <meta property="og:title" content="{{ share_title }}">
+    <meta property="og:description" content="{{ share_description }}">
+    <meta property="og:image" content="{{ share_image }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ share_title }}">
+    <meta name="twitter:description" content="{{ share_description }}">
+    <meta name="twitter:image" content="{{ share_image }}">
+    {% endif %}
     <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
@@ -141,7 +153,7 @@
 
         <label class="cf-sr-only" for="cfCaption">Caption</label>
         <textarea id="cfCaption" class="cf-caption-input" rows="2"
-                  placeholder="What's on your mind?"
+                  placeholder="What happened today?"
                   maxlength="{{ max_caption }}"></textarea>
 
         {# Username gate. Shown only when the signed-in wallet has no username
@@ -206,6 +218,10 @@
 
          It starts `hidden` so an empty feed does not flash an empty rail; the
          bundle reveals it only when there is at least one author. -->
+    <div class="cf-daily-heading" id="cfDailyHeading" hidden>
+        <strong>Today in Community</strong>
+        <span>Daily moments from members</span>
+    </div>
     <div class="cf-rail" id="cfRail" aria-label="Recent posters" hidden></div>
 
     <!-- ── Community G$ card ───────────────────────────────────────────────
@@ -444,6 +460,8 @@ window.GM_COMMUNITY_BOOT = {
     maxVideoMb: {{ max_video_mb }},
     maxAvatarMb: {{ max_avatar_mb }},
     storageReady: {{ 'true' if storage_ready else 'false' }},
+    focusPostId: {{ (focus_post_id or '')|tojson }},
+    focusPost: {{ (focus_post or none)|tojson }},
     // Destination list for the bottom nav. ONE source of truth: the bar is
     // built from this object, so a new destination is added here only.
     // `guestOk` marks a destination a signed-out visitor may reach (reading is
