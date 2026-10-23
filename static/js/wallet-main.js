@@ -1,4 +1,3 @@
-
 // Extracted from templates/wallet.html inline <script> (load-perf refactor).
 // Per-request values come from window.GM_WALLET_BOOT (set inline in wallet.html).
 const WALLET = window.GM_WALLET_BOOT.wallet;
@@ -850,11 +849,14 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
                 if (++_eipRetries >= 6) clearInterval(_eipTimer);
             }, 200);
-            // EIP-1193 `ethereum#initialized` fires when a wallet finishes
-            // late injection; re-run EIP-6963 discovery so the picker sees it.
-            window.addEventListener('ethereum#initialized', () => {
+            // EIP-1193 and Trust-specific initialized events fire when a wallet
+            // finishes late injection; re-run EIP-6963 discovery so the picker
+            // sees it even when the dApp browser uses a generic mobile UA.
+            const rediscover = () => {
                 try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
-            }, { once: true });
+            };
+            window.addEventListener('ethereum#initialized', rediscover);
+            window.addEventListener('TrustWallet#initialized', rediscover);
         } catch (_) { /* no-op: older browsers / strict CSPs */ }
     })();
 
@@ -1083,20 +1085,25 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         // Trust builds that ship a generic UA and so do NOT match
         // _isTrustWalletMobileContext(). Desktop extensions inject
         // synchronously, so they keep the short budget.
+        const mobileContext = _isLikelyMobileWalletContext();
         const trustBudget = _isTrustWalletMobileContext()
             ? 4200
-            : (_isLikelyMobileWalletContext() ? 2500 : 800);
+            : (mobileContext ? 2500 : 800);
         const budget = typeof timeoutMs === 'number' ? timeoutMs : trustBudget;
         const stepMs = 120;
         const start = Date.now();
 
         let first = _getEthProvider();
-        if (first) return first;
+        // Mobile dApp browsers may expose a temporary window.ethereum shim
+        // before the real Trust provider announces through EIP-6963. Allow the
+        // branded provider to arrive instead of returning the shim immediately.
+        if (first && !mobileContext) return first;
         while (Date.now() - start < budget) {
             try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
             await new Promise(r => setTimeout(r, stepMs));
             const p = _getEthProvider();
-            if (p) return p;
+            if (p && (!mobileContext || p.isTrust || p.isTrustWallet || _isTrustWalletUA())) return p;
+            if (p) first = p;
         }
         // WalletConnect fallback: if no injected provider was found, try the
         // existing WC session so users who logged in via WalletConnect can
@@ -1111,8 +1118,9 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         return null;
     }
 
-    // Re-prime discovery only for Trust Wallet mobile transitions.
-    if (_isTrustWalletMobileContext()) {
+    // Re-prime discovery on mobile wallet transitions. Trust Wallet may use a
+    // generic UA and may not expose its alias until the page becomes visible.
+    if (_isLikelyMobileWalletContext()) {
         window.addEventListener('pageshow', () => {
             try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
         });
