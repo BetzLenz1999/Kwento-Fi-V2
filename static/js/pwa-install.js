@@ -47,6 +47,18 @@
     var _homepageInstallState = 'checking';
     var _homepageProgressTimer = null;
     var _homepageInstallCompleted = false;
+    var _homepageProgressStageIndex = -1;
+    var HOMEPAGE_PROGRESS_STAGES = [
+        { percent: 10, message: 'Preparing GoodMarket…' },
+        { percent: 20, message: 'Preparing app resources…' },
+        { percent: 30, message: 'Setting up the app shell…' },
+        { percent: 40, message: 'Registering GoodMarket for your device…' },
+        { percent: 50, message: 'Still installing GoodMarket…' },
+        { percent: 60, message: 'Checking the app setup…' },
+        { percent: 70, message: 'Finalizing the installation…' },
+        { percent: 80, message: 'Almost ready…' },
+        { percent: 90, message: 'Finishing installation — keep this page open…' },
+    ];
 
     // ── storage helpers (fail closed on blocked storage) ────────────────
     function _readFlag(key) {
@@ -178,6 +190,11 @@
         return gate ? gate.querySelector('[data-gm-pwa-progress-value]') : null;
     }
 
+    function _homepageProgressMessage() {
+        var gate = _homepageGate();
+        return gate ? gate.querySelector('[data-gm-pwa-progress-message]') : null;
+    }
+
     function _setHomepageState(state, message) {
         _homepageInstallState = state;
         var gate = _homepageGate();
@@ -186,7 +203,7 @@
         var status = _homepageGateStatus();
         if (status && message) status.textContent = message;
         var progressWrap = gate.querySelector('[data-gm-pwa-progress-wrap]');
-        if (progressWrap && state !== 'installing' && state !== 'installed'
+        if (progressWrap && state !== 'prompting' && state !== 'installing'
                 && state !== 'installed-awaiting-launch') {
             progressWrap.hidden = true;
         }
@@ -209,9 +226,13 @@
         if (progress) {
             progress.value = percent;
             progress.setAttribute('aria-valuenow', String(percent));
+            progress.setAttribute('aria-valuetext', (message || 'Installing GoodMarket')
+                + ' Approximately ' + String(percent) + ' percent.');
             progress.hidden = false;
         }
         if (value) value.textContent = String(percent) + '%';
+        var progressMessage = _homepageProgressMessage();
+        if (progressMessage && message) progressMessage.textContent = message;
         if (gate) gate.setAttribute('data-progress', String(percent));
         if (message) {
             var status = _homepageGateStatus();
@@ -228,15 +249,21 @@
 
     function _startHomepageProgress() {
         _stopHomepageProgress();
-        _setHomepageState('installing', 'Processing download and installing GoodMarket…');
-        _setHomepageProgress(10);
-        var percent = 10;
+        _homepageProgressStageIndex = 0;
+        var firstStage = HOMEPAGE_PROGRESS_STAGES[0];
+        _setHomepageState('installing', firstStage.message);
+        _setHomepageProgress(firstStage.percent, firstStage.message);
         _homepageProgressTimer = setInterval(function () {
-            // Browsers do not expose byte-level PWA install progress. Stop at
-            // 90% and reserve 100% for appinstalled/standalone confirmation.
-            if (percent >= 90 || _homepageInstallCompleted) return;
-            percent += 10;
-            _setHomepageProgress(percent, 'Processing download and installing GoodMarket…');
+            // Browsers do not expose byte-level PWA installation progress.
+            // Stop at 90% and reserve 100% for a real completion signal.
+            if (_homepageInstallCompleted) return;
+            if (_homepageProgressStageIndex >= HOMEPAGE_PROGRESS_STAGES.length - 1) {
+                _stopHomepageProgress();
+                return;
+            }
+            _homepageProgressStageIndex += 1;
+            var stage = HOMEPAGE_PROGRESS_STAGES[_homepageProgressStageIndex];
+            _setHomepageProgress(stage.percent, stage.message);
         }, 700);
     }
 
@@ -244,28 +271,18 @@
         if (_homepageInstallCompleted) return;
         _homepageInstallCompleted = true;
         _stopHomepageProgress();
+        _homepageProgressStageIndex = HOMEPAGE_PROGRESS_STAGES.length - 1;
         _markInstalled();
-        // `appinstalled` confirms that the browser/OS accepted the install,
-        // not that this browser tab has become the standalone app. Keep the
-        // strict gate in front of the homepage until the installed icon is
-        // opened and display-mode: standalone is observable here.
-        _setHomepageState(
-            'installed-awaiting-launch',
-            'Installation complete. Open GoodMarket from your home screen or app launcher to continue.'
-        );
-        _setHomepageProgress(
-            100,
-            'Installation complete. Open GoodMarket from your home screen or app launcher to continue.'
-        );
+        var message = 'GoodMarket is installed. Open it from your home screen or app launcher to continue.';
+        _setHomepageState('installed-awaiting-launch', message);
+        _setHomepageProgress(100, message);
     }
 
     function _releaseHomepageGate(reason) {
-        var gate = _homepageGate();
         var isDappBypass = reason === 'dapp';
-        // A homepage gate may only be released by confirmed standalone mode,
-        // except for the explicit wallet/DApp-browser bypass established by
-        // the existing detection flow. In particular, appinstalled alone is
-        // never a release signal for the current browser tab.
+        var gate = _homepageGate();
+        // The ordinary browser gate may only release in standalone mode. The
+        // existing DApp-browser bypass remains an explicit separate reason.
         if (gate && !isDappBypass && !isStandalone()) return false;
         _stopHomepageProgress();
         _homepageGateReleased = true;
@@ -302,9 +319,8 @@
 
     function _initHomepageGate() {
         if (!_homepageGate()) return Promise.resolve('not-applicable');
-        // Do not trust a local-storage "installed" marker for the gate: it
-        // only proves the prompt was accepted at some point, not that this
-        // browser tab is running as the installed app.
+        // Do not trust a local-storage marker for the gate: it only proves that
+        // a prompt was accepted at some point, not that this tab is standalone.
         if (isStandalone()) {
             _homepageInstallCompleted = true;
             _releaseHomepageGate('standalone');
@@ -325,6 +341,7 @@
                 return 'dapp';
             }
             if (isStandalone()) {
+                _homepageInstallCompleted = true;
                 _releaseHomepageGate('standalone');
                 return 'installed';
             }
@@ -400,7 +417,10 @@
         }
 
         var homepage = !!_homepageGate();
-        if (homepage) _setHomepageState('prompting', 'Opening the browser install request…');
+        if (homepage) {
+            _setHomepageState('prompting', 'Opening the browser install request…');
+            _setHomepageProgress(1, 'Starting the install request…');
+        }
 
         return promptInstall({ homepage: homepage }).then(function (res) {
             if (res.outcome === 'accepted') {
@@ -621,7 +641,8 @@
         function checkInstalledMode() {
             if (!isStandalone()) return;
             if (_homepageGate()) {
-                if (_homepageInstallState === 'installing' || _homepageInstallState === 'prompting') {
+                if (_homepageInstallState === 'installing' || _homepageInstallState === 'prompting'
+                        || _homepageInstallState === 'installed-awaiting-launch') {
                     _confirmHomepageInstall();
                 }
                 _homepageInstallCompleted = true;
