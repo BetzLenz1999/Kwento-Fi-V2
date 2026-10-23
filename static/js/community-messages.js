@@ -1,7 +1,7 @@
 /* Private Community Messages. User text and filenames are always assigned with textContent. */
 (function () {
   'use strict';
-  var BOOT = window.GM_MESSAGES_BOOT || {};
+  var BOOT = window.GM_MESSAGES_BOOT || {}; 
   var state = { conversations: [], current: null, currentUser: null, timer: null, view: 'inbox', attachment: null };
 
   function $(id) { return document.getElementById(id); }
