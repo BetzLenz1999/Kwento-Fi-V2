@@ -122,9 +122,10 @@
            for the member looking at themselves. #}
         <div class="cp-follow-wrap" id="cpFollowWrap"></div>
         {% if not profile.is_self %}
-        <button type="button" class="cp-message" id="cpMessageBtn"
-                onclick="GMProfile.openMessage()"
-                aria-label="Message @{{ profile.username }}">Message</button>
+        <a class="cp-message" id="cpMessageBtn"
+           href="/messages?with={{ profile.username|urlencode }}"
+           onclick="return GMProfile.openMessage(event)"
+           aria-label="Message @{{ profile.username }}">Message</a>
         {% endif %}
         <p class="cp-privacy">
             This public profile never shows a wallet address, balance, or private activity.
