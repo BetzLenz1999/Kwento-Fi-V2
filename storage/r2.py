@@ -228,8 +228,11 @@ def presign(method: str, key: str, *, content_type: str | None = None,
     Returns ``{url, method, headers, key, public_url, expires_in}`` or an empty
     dict when the deployment is not configured. Never raises.
     """
-    if not is_configured():
-        logger.error("r2: presign requested but storage is not configured")
+    # Private DM attachments only need the S3-compatible credentials and
+    # endpoint; they deliberately do not require R2_PUBLIC_BASE_URL because
+    # they are delivered through short-lived signed GET URLs.
+    if not credentials_configured():
+        logger.error("r2: presign requested but credentials are not configured")
         return {}
     if not is_managed_key(key):
         logger.error("r2: refusing to presign a non-managed key")
