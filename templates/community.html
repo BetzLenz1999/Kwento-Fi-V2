@@ -451,7 +451,8 @@ window.GM_COMMUNITY_BOOT = {
     //
     // There is deliberately NO "Feed" tab: this page IS the feed, so a tab
     // pointing back at /community was a dead tap. Its slot now carries the
-    // Claim Free G$ entry point — the same action as the wallet's Claim chip.
+    // Messages inbox so profile conversations are reachable from every feed
+    // screen.
     //
     // Claim Free G$ is rendered directly in this page by the shared claim
     // partial/controller. The href stays the real wallet page so middle-click
@@ -459,7 +460,7 @@ window.GM_COMMUNITY_BOOT = {
     nav: [
         { id: 'claim',  icon: '🪙', label: 'Claim Free G$', href: '/wallet?claim=1', action: 'claim', gold: true, guestOk: false },
         { id: 'search', icon: '🔍', label: 'Search',      action: 'search',    guestOk: true },
-        { id: 'earn',   icon: '💰', label: 'Earn',        action: 'earn',      guestOk: false },
+        { id: 'messages', icon: '💬', label: 'Messages',    action: 'messages', guestOk: false },
         { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
         { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet',     guestOk: false }
     ],
