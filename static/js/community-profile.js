@@ -669,8 +669,33 @@
                      item.info.uuid === detail.info.uuid);
             })) profileEip6963Providers.push(detail);
         });
-        window.dispatchEvent(new Event('eip6963:requestProvider'));
     } catch (_) {}
+    function profilePrimeProviderDiscovery() {
+        if (window.__gmProfileDiscoveryPromise) return window.__gmProfileDiscoveryPromise;
+        window.__gmProfileDiscoveryPromise = Promise.resolve().then(function () {
+            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+            return true;
+        }).finally(function () { window.__gmProfileDiscoveryPromise = null; });
+        return window.__gmProfileDiscoveryPromise;
+    }
+    function profileBindProviderLifecycle() {
+        if (window.__gmProfileProviderLifecycleBound) return;
+        window.__gmProfileProviderLifecycleBound = true;
+        var rediscover = function () {
+            if (typeof document !== 'undefined' &&
+                document.visibilityState && document.visibilityState !== 'visible') return;
+            profilePrimeProviderDiscovery().catch(function () {});
+        };
+        try {
+            window.addEventListener('pageshow', rediscover);
+            window.addEventListener('TrustWallet#initialized', rediscover);
+            if (typeof document !== 'undefined' && document.addEventListener) {
+                document.addEventListener('visibilitychange', rediscover);
+            }
+        } catch (_) {}
+    }
+    profilePrimeProviderDiscovery();
+    profileBindProviderLifecycle();
     function profileProviderInfo(p) {
         var item = profileEip6963Providers.find(function (entry) { return entry.provider === p; });
         return (item && item.info) || {};
@@ -713,8 +738,8 @@
         // for a short bounded window instead of failing on the first tap.
         var mobile=/android|iphone|ipad|ipod/i.test(String(navigator.userAgent||''));
         var deadline=Date.now()+(mobile?4200:800);
+        await profilePrimeProviderDiscovery();
         do {
-            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
             ps=profileProviderOrder(profileProviders());
             for(var i=0;i<ps.length;i++){
                 var ac=[];
