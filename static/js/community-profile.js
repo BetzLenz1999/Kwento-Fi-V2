@@ -1,4 +1,3 @@
-
 /* GoodMarket shared public profile — a member's posts + media ALBUM.
 
    Used by BOTH the Community Feed profile (`/community/u/<username>`) and the
