@@ -111,6 +111,26 @@ def post(conversation_id: str):
                                     data.get("client_message_id"), data.get("attachment")))
 
 
+@messages_bp.route("/api/messages/profile/<username>/onchain-transfer", methods=["POST"])
+def save_onchain_transfer(username: str):
+    """Verify a Celo transfer again, then save a structured DM message."""
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    if not _send_allowed(wallet):
+        return jsonify({"success": False, "code": "rate_limited",
+                        "error": "Please wait a moment before saving another transfer message."}), 429
+    data = request.get_json(silent=True) or {}
+    from community_feed import profile_tips
+    verified = profile_tips.record(wallet, username, data.get("token"),
+                                   data.get("amount"), data.get("tx_hash"))
+    if not verified.get("success"):
+        return _result(verified)
+    return _result(svc.send_transfer_message(wallet, username, verified.get("tip") or {}))
+
+
 @messages_bp.route("/api/messages/conversations/<conversation_id>/attachments/presign", methods=["POST"])
 def presign_attachment(conversation_id: str):
     if not _enabled():
