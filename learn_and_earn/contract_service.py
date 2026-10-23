@@ -14,6 +14,7 @@ import logging
 from datetime import datetime
 from web3 import Web3
 from eth_account import Account
+from chain_rpc import make_provider
 from config import LEARN_EARN_CONTRACT_ADDRESS as _CONFIG_LEARN_EARN_ADDRESS
 
 logger = logging.getLogger(__name__)
@@ -225,7 +226,7 @@ class LearnEarnContractService:
         self.contract_address = _CONFIG_LEARN_EARN_ADDRESS or None
         self.learn_wallet_key = os.getenv('LEARN_WALLET_PRIVATE_KEY')
 
-        self.w3 = Web3(Web3.HTTPProvider(self.celo_rpc_url))
+        self.w3 = Web3(make_provider(self.celo_rpc_url))
         self.contract = None
         self.gooddollar_contract = None
         self.owner_account = None
@@ -233,14 +234,14 @@ class LearnEarnContractService:
         self._initialize()
 
     def _initialize(self):
-        """Initialize Web3 connection and contract instances"""
+        """Initialize Web3 connection and contract instances
+
+        No ``is_connected()`` probe: this runs at import time (module-level
+        singleton) and a blocking probe there is what made a serverless cold
+        start exceed its function timeout. ``eth.contract()`` is pure local
+        decoding and needs no network.
+        """
         try:
-            if not self.w3.is_connected():
-                logger.error("❌ Failed to connect to Celo network")
-                return
-
-            logger.info("✅ Connected to Celo network for Learn & Earn Contract")
-
             if self.contract_address:
                 self.contract = self.w3.eth.contract(
                     address=Web3.to_checksum_address(self.contract_address),
