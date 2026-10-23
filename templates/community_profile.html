@@ -89,18 +89,23 @@
     {% else %}
 
     <section class="cp-card cp-hero" aria-labelledby="cpProfileName">
-        {# Profile picture. The member's uploaded photo when there is one, their
-           initial otherwise. The owner also gets a button to change it; the
-           shared avatar module (`community-avatar.js`) binds it, so this page
-           and the feed card read the SAME row and can never disagree. #}
+        {# Profile picture. The shared avatar module paints the same row used by
+           feed cards; the button opens this public image in the profile viewer.
+           The owner's camera control stays separate and owner-only. #}
         <div class="cp-avatar-wrap">
-            <div class="cp-avatar" id="cpProfileAvatar" aria-hidden="true">
+            <button type="button" class="cp-avatar cp-avatar-button" id="cpProfileAvatar"
+                    aria-haspopup="dialog" aria-controls="cpLightbox"
+                    aria-label="Profile picture of @{{ profile.username }}"
+                    {% if not profile.avatar_url %}disabled{% endif %}>
                 {%- if profile.avatar_url -%}
-                <img class="cp-avatar-img" src="{{ url_for('community_feed.api_profile_avatar', username=profile.username) }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                <img class="cp-avatar-img"
+                     src="{{ url_for('community_feed.api_profile_avatar', username=profile.username) }}"
+                     alt="" loading="eager" fetchpriority="high" decoding="async"
+                     referrerpolicy="no-referrer">
                 {%- else -%}
                 {{ (profile.username or 'A')[0]|upper }}
                 {%- endif -%}
-            </div>
+            </button>
             {% if profile.is_self %}
             <button type="button" class="cp-avatar-edit" id="cpAvatarEdit"
                     aria-label="Change your profile picture">📷</button>
