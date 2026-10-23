@@ -1004,6 +1004,7 @@ body {
     z-index: 1200;
 }
 .cf-nav-item {
+    position: relative;
     flex: 1 1 0;
     min-width: 0;
     display: flex;
@@ -1054,6 +1055,13 @@ body {
     font-size: 0.68rem; font-weight: 800; line-height: 1.1;
     text-align: center; white-space: normal;
 }
+.cf-nav-unread {
+    position: absolute; top: 0.15rem; right: 0.45rem;
+    min-width: 1.05rem; height: 1.05rem; padding: 0 0.22rem;
+    display: grid; place-items: center; border-radius: 999px;
+    background: #2463eb; color: #fff; font-size: 0.62rem; font-weight: 800; line-height: 1;
+}
+.cf-nav-unread[hidden] { display: none; }
 .cf-nav-item:focus-visible { outline: 2px solid var(--cf-accent-2); outline-offset: 1px; }
 
 /* ── Earn sheet (bottom sheet) ──────────────────────────────────────────────
