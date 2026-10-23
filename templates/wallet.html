@@ -2746,108 +2746,9 @@
 
     <!-- ─── Modals ─── -->
 
-    <!-- Claim Modal -->
-    <!-- Claim details are intentionally modal-only. The wallet landing page
-         stays focused on balances, assets, and transaction activity. -->
-    <div class="modal-overlay" id="claimModal" role="dialog" aria-modal="true" aria-labelledby="claimModalTitle">
-        <div class="modal-sheet">
-            <div class="modal-handle"></div>
-            <div class="modal-title" id="claimModalTitle">🪙 Available G$ Claims</div>
+    {% include "_claim_modal.html" %}
 
-            <div class="ubi-pool-panel">
-                <div class="ubi-pool-head">
-                    <span class="ubi-pool-title">🏦 Celo UBI Pool</span>
-                    <span class="ubi-pool-live" id="ubiPoolLive">Live</span>
-                </div>
-                <div class="ubi-pool-grid">
-                    <div class="ubi-pool-cell">
-                        <span class="ubi-pool-cell-label">Today's G$ Distribution</span>
-                        <span class="ubi-pool-cell-value is-accent" id="ubiDailyDistribution">—</span>
-                    </div>
-                    <div class="ubi-pool-cell">
-                        <span class="ubi-pool-cell-label">Per claimer (est.)</span>
-                        <span class="ubi-pool-cell-value" id="ubiDailyPerClaimer">—</span>
-                    </div>
-                    <div class="ubi-pool-cell">
-                        <span class="ubi-pool-cell-label">Claimers today</span>
-                        <span class="ubi-pool-cell-value" id="ubiClaimersToday">—</span>
-                    </div>
-                    <div class="ubi-pool-cell">
-                        <span class="ubi-pool-cell-label">Pool balance</span>
-                        <span class="ubi-pool-cell-value" id="ubiPoolBalance">—</span>
-                    </div>
-                </div>
-                <div class="ubi-pool-note" id="ubiPoolNote">Live figures from the GoodDollar UBI pool.</div>
-            </div>
-
-            <div class="claim-network-list" id="claimNetworkList" aria-live="polite">
-                <div class="claim-network-card">
-                    <div class="claim-network-main">
-                        <div class="claim-network-icon">⏳</div>
-                        <div>
-                            <div class="claim-network-name">Checking networks…</div>
-                            <div class="claim-network-hint">Looking for any network you have not claimed yet.</div>
-                        </div>
-                    </div>
-                    <div class="claim-network-status">Loading</div>
-                </div>
-            </div>
-            <div class="claim-wallet-note" id="claimWalletNote">GoodMarket recommends Celo first, but you can claim on any network that is available to you.</div>
-
-            <button id="ubiClaimBtn" onclick="doUbiClaim()" class="btn-primary">
-                <span id="ubiClaimIcon">⏳</span>
-                <span id="ubiClaimLabel">Checking…</span>
-            </button>
-
-            <div id="celoBalanceWarning" role="status" aria-live="polite" style="display:none;margin-top:0.7rem;padding:0.6rem 0.85rem;background:rgba(251,191,36,0.14);border:1px solid rgba(251,191,36,0.4);border-radius:10px;color:#fcd34d;font-size:0.78rem;line-height:1.4;text-align:left;">
-                <strong>⚠️ Keep your CELO in this wallet.</strong>
-                Your CELO is used as gas for claims — transferring it to another wallet may cause errors on your next claim. We'll auto top-up small amounts as needed.
-            </div>
-
-            <div class="claim-status" id="ubiClaimStatus"></div>
-
-            <!-- Shown when already-claimed but FV may have expired -->
-            <div id="ubiReVerifyHint" style="display:none;margin-top:0.6rem;padding:0.55rem 0.85rem;background:rgba(124,58,237,0.06);border:1px solid rgba(124,58,237,0.22);border-radius:10px;text-align:center;">
-                <div style="font-size:0.78rem;color:#a78bfa;margin-bottom:0.35rem;">Haven't claimed yet? Your Face Verification may have expired.</div>
-                <button onclick="window._triggerReVerify()" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);border:none;color:#fff;font-size:0.78rem;font-weight:600;padding:0.35rem 0.9rem;border-radius:8px;cursor:pointer;">🪪 Re-verify Face ID</button>
-            </div>
-
-            <div class="countdown-box" id="ubiCountdownBox">
-                <div class="countdown-label">Next Claim Opens In</div>
-                <div class="countdown-display" id="ubiCountdownDisplay">--:--:--</div>
-                <div class="countdown-note">Resets at <strong>12:00 UTC</strong> · 8:00 PM Philippine Time</div>
-            </div>
-
-            <button class="btn-secondary" onclick="closeModal('claimModal')">Close</button>
-        </div>
-    </div>
-
-
-    <!-- Local Wallet Unlock Modal -->
-    <div class="modal-overlay" id="lwUnlockModal">
-        <div class="modal-sheet">
-            <div class="modal-handle"></div>
-            <div class="modal-title">🔐 Sign this transaction</div>
-            <p id="lwUnlockSubtitle" style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem;text-align:center">
-                Confirm with your fingerprint, Face ID, or device PIN — or enter your wallet PIN below.
-            </p>
-            <div style="margin-bottom:1rem">
-                <input type="password" id="lwUnlockPin" inputmode="numeric" maxlength="8"
-                    placeholder="••••••••" autocomplete="off"
-                    style="width:100%;padding:0.8rem 1rem;text-align:center;font-size:1.4rem;letter-spacing:0.5rem;border-radius:10px;border:1px solid var(--card-border);background:rgba(255,255,255,0.07);color:var(--text);outline:none"
-                    onkeydown="if(event.key==='Enter')_lwUnlockSubmit()">
-            </div>
-            <div id="lwUnlockError" style="display:none;color:var(--red);font-size:0.8rem;margin-bottom:0.8rem;text-align:center"></div>
-            <button type="button" id="lwUnlockPasskeyBtn" onclick="_lwUnlockViaPasskey()" class="btn-primary"
-                    style="display:none;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;">
-                👆 Use fingerprint / Face ID
-            </button>
-            <button id="lwUnlockBtn" onclick="_lwUnlockSubmit()" class="btn-primary">
-                Sign &amp; Continue
-            </button>
-            <button class="btn-secondary" onclick="_lwUnlockCancel()" style="margin-top:0.5rem">Cancel</button>
-        </div>
-    </div>
+    {% include "_claim_support_modals.html" %}
 
     <!-- Send Modal -->
 
@@ -3448,63 +3349,6 @@
         </div>
     </div>
 
-    <!-- Face Verification Intro — shown the FIRST time an unverified user taps
-         the claim hero. Explains why verification is required (GoodDollar's
-         KYC / one-account-per-person) and what the user unlocks after
-         verifying, then hands off to the existing signing flow via
-         continueFvIntro() -> startFV(). -->
-    <div class="modal-overlay" id="fvIntroModal">
-        <div class="modal-sheet">
-            <div class="modal-handle"></div>
-            <div class="modal-title">🪪 Verify your account to start earning</div>
-
-            <div class="fv-intro-lead">
-                Daily G$ and GoodMarket's earning features are for verified humans only.
-                Verifying takes about a minute and keeps the shared G$ pool fair for everyone.
-            </div>
-
-            <div class="fv-intro-card">
-                <div class="fv-intro-card-title">🔍 What this verification is (KYC)</div>
-                <div class="fv-intro-card-copy">
-                    This step is a <strong>Know Your Customer (KYC)</strong> check — it confirms you are a real,
-                    unique person. It is performed by the <strong>GoodDollar identity service</strong>,
-                    not by GoodMarket.
-                </div>
-            </div>
-
-            <div class="fv-intro-card">
-                <div class="fv-intro-card-title">👤 One person, one account</div>
-                <div class="fv-intro-card-copy">
-                    Your verified face can be linked to <strong>one account only</strong>. A wallet verified for
-                    one person cannot be reused to run multiple accounts — this is how we prevent abuse of the
-                    daily G$ pool.
-                </div>
-            </div>
-
-            <div class="fv-intro-card">
-                <div class="fv-intro-card-title">🔒 Your privacy</div>
-                <div class="fv-intro-card-copy">
-                    Verification creates an <strong>anonymized record</strong>. GoodMarket never sees or stores
-                    your face, photos or ID documents. The record is held by the GoodDollar identity service
-                    and is deleted automatically after the verification period (currently <strong>180 days</strong>).
-                </div>
-            </div>
-
-            <div class="fv-intro-card">
-                <div class="fv-intro-card-title">💰 After you verify</div>
-                <div class="fv-intro-card-copy">
-                    You can <strong>claim your daily G$</strong> and use GoodMarket's earning features right away.
-                </div>
-            </div>
-
-            <div class="modal-sheet-footer">
-                <button type="button" id="fvIntroContinueBtn" onclick="continueFvIntro()" class="btn-primary">
-                    Continue
-                </button>
-                <button type="button" class="btn-secondary" onclick="closeModal('fvIntroModal')">Not now</button>
-            </div>
-        </div>
-    </div>
 
     {% if dapp_connect_visible %}
     <!-- ── Connect a dApp (WalletConnect wallet role) — Phase 1 ──
@@ -3574,6 +3418,7 @@
     <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"
             integrity="sha384-0d+Gr7vM4Drod8E3hXKgciWJSWbjD/opKLLygI9ktiWbuvlDwQLzU46wJ9s5gsp7"
             crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/claim-modal.css', v=ASSET_VERSION) }}">
     <!-- Shared transaction-error formatter so user-facing alerts don't leak ethers/RPC JSON. -->
     <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
     <!-- Shared WalletConnect bridge (claim / send / FV signing fallback for WC users). -->
