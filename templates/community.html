@@ -59,7 +59,7 @@
         }
     </style>
 </head>
-<body>
+<body class="cf-page">
 
 <header class="cf-nav">
     <a class="cf-brand" href="/wallet">
@@ -532,6 +532,7 @@ window.GM_WALLET_BOOT = {
     ethereumRpc: {{ ethereum_rpc|default('', true)|tojson }},
     ethereumRpcFallbacks: {{ ethereum_rpc_fallbacks|default('', true)|tojson }},
     fvReturnTo: {{ fv_return_to|default('/community', true)|tojson }},
+    returnTo: '/community',
     claimOnly: true,
     embed: false
 };
