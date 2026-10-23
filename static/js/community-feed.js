@@ -176,6 +176,13 @@
         return new Date(then).toLocaleDateString();
     }
 
+    function timeTitle(iso) {
+        if (!iso) return '';
+        var then = new Date(iso);
+        if (isNaN(then.getTime())) return '';
+        return then.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+    }
+
     function countLabel(n) {
         n = Number(n) || 0;
         if (n <= 0) return '';
@@ -908,7 +915,9 @@
     function buildVideoFrame(item, username) {
         var frame = el('button', 'cf-video-frame');
         frame.type = 'button';
-        frame.setAttribute('aria-label', 'Play video by ' + (username || 'this member'));
+        var videoLabel = 'Video shared by ' + (username || 'this member');
+        frame.setAttribute('aria-label', 'Open ' + videoLabel);
+        frame.title = 'Open video';
         // Match the frame to the clip when the uploader reported its size, so
         // there are no letterbox bars; fall back to the IG portrait default.
         if (item.w && item.h) {
@@ -918,8 +927,20 @@
         video.controls = true;
         video.preload = 'metadata';
         video.playsInline = true;
+        video.muted = true;
+        video.setAttribute('aria-label', videoLabel);
         if (item.poster) video.poster = item.poster;
         video.src = item.url;
+        video.addEventListener('loadeddata', function () {
+            frame.classList.remove('is-loading');
+            frame.classList.remove('is-error');
+        });
+        video.addEventListener('error', function () {
+            frame.classList.remove('is-loading');
+            frame.classList.add('is-error');
+            frame.setAttribute('aria-label', 'Video unavailable from ' + (username || 'this member'));
+        });
+        frame.classList.add('is-loading');
         // The controls need the taps; the frame handles the rest.
         video.onclick = function (event) { event.stopPropagation(); };
         frame.appendChild(video);
@@ -1104,20 +1125,28 @@
 
         var commentBtn = el('button', 'cf-action-btn');
         commentBtn.type = 'button';
+        commentBtn.classList.add('cf-comment-action');
         commentBtn.appendChild(el('span', 'cf-act-icon', '💬'));
         commentBtn.appendChild(el('span', null, 'Comment'));
+        commentBtn.setAttribute('aria-label', 'View comments' + (post.comment_count ? ' (' + post.comment_count + ')' : ''));
+        commentBtn.setAttribute('aria-controls', 'cf-comments-' + post.id);
+        commentBtn.setAttribute('aria-expanded', 'false');
         // Reading a post is public; joining the thread is not. A guest gets the
         // shared connect card instead of an empty comment box.
         commentBtn.onclick = function () {
             if (!WALLET) { requiresLogin(); return; }
+            var isOpen = !!body.querySelector('.cf-comments');
+            commentBtn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
             toggleComments(post, body);
         };
         actions.appendChild(commentBtn);
 
         var shareBtn = el('button', 'cf-action-btn');
         shareBtn.type = 'button';
+        shareBtn.classList.add('cf-share-action');
         shareBtn.appendChild(el('span', 'cf-act-icon', '↗'));
         shareBtn.appendChild(el('span', null, 'Share'));
+        shareBtn.setAttribute('aria-label', 'Share post');
         shareBtn.onclick = function () { sharePost(post); };
         actions.appendChild(shareBtn);
 
@@ -1157,7 +1186,15 @@
         var who = el('div', 'cf-card-who');
         who.appendChild(el('strong', null, post.username));
         var stamp = timeAgo(post.created_at) + (post.is_edited ? ' · edited' : '');
-        who.appendChild(el('span', null, stamp));
+        var time = el('time', null, stamp || 'Posted');
+        time.className = 'cf-post-time';
+        if (post.created_at) {
+            time.dateTime = post.created_at;
+            time.setAttribute('datetime', post.created_at);
+            var exactTime = timeTitle(post.created_at);
+            if (exactTime) time.title = exactTime;
+        }
+        who.appendChild(time);
         profile.appendChild(who);
         head.appendChild(profile);
         // Follow pill: only for ANOTHER member's post. Your own post never
@@ -1193,8 +1230,15 @@
                     img.loading = 'lazy';
                     img.decoding = 'async';
                     img.referrerPolicy = 'no-referrer';
+                    img.className = 'cf-media-image is-loading';
                     img.src = item.url;
-                    img.alt = post.body ? post.body.slice(0, 120) : 'Photo shared by ' + post.username;
+                    img.alt = 'Photo shared by ' + (post.username || 'this member');
+                    img.onload = function () { img.classList.remove('is-loading'); };
+                    img.onerror = function () {
+                        img.classList.remove('is-loading');
+                        img.classList.add('is-error');
+                        img.alt = 'Photo unavailable from ' + (post.username || 'this member');
+                    };
                     // Gallery thumbnails use a fixed square crop; the tap still
                     // opens the original image. Single/mixed posts keep their
                     // existing source-ratio or unsized-image behavior.
@@ -1202,7 +1246,7 @@
                         if (item.w && item.h) {
                             img.style.aspectRatio = item.w + ' / ' + item.h;
                         } else {
-                            img.className = 'cf-media-raw';
+                            img.classList.add('cf-media-raw');
                         }
                     }
                     img.onclick = function () {
@@ -1383,6 +1427,7 @@
         _commentsOpen[post.id] = true;
 
         var wrap = el('div', 'cf-comments');
+        wrap.id = 'cf-comments-' + post.id;
         wrap.setAttribute('aria-label', 'Comments');
         wrap.appendChild(el('div', 'cf-comment', 'Loading comments…'));
         body.appendChild(wrap);
