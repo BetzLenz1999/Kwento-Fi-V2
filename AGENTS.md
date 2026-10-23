@@ -2233,11 +2233,14 @@ as-built record: `docs/COMMUNITY_FEED_R2_PROPOSAL.md`.
   `community_feed_posts.body`; the media table has **no** caption column on
   purpose (per-file captions are how carousels get confusing). Typed in the
   composer textarea, rendered **below the media**. Directly after it, one
-  `.cf-engagement` group contains the action row, reaction/comment counts, six
-  reaction chips and any expanded comment thread. Order is pinned in the node
-  harness: `cf-media -> cf-caption -> cf-card-actions -> cf-summary ->
-  cf-reactions`; the comment thread stays inside `.cf-engagement`. Caption is
-  optional when there is media, required when there is none.
+  `.cf-engagement` group contains the action row, reaction/comment counts, the
+  heart-anchored reaction picker and any expanded comment thread. The six
+  reaction choices are hidden until a 400ms press-and-hold or keyboard
+  `ArrowDown`; tapping the heart toggles the `love` reaction. Order is pinned in
+  the node harness: `cf-media -> cf-caption -> cf-card-actions -> cf-summary`;
+  the picker is inside the action row and the comment thread stays inside
+  `.cf-engagement`. Caption is optional when there is media, required when
+  there is none.
   Rendered with `textContent` + a **non-capturing** `URL_RE` linkifier (a
   capturing group silently drops all surrounding text - the chatroom bug).
   Editable afterwards via `PATCH /api/posts/<id>` (stamps `edited_at`); **media
@@ -2823,4 +2826,3 @@ python -c "import time; t=time.time(); import main; print(time.time()-t)"
 To reproduce a serverless cold-start failure locally, patch
 `requests.Session.request` to sleep then raise, and time `import main`. If the
 time tracks the injected latency, the import path is network-bound.
-
