@@ -241,6 +241,58 @@ html.gm-pwa-gate-required .gm-pwa-gate { display: grid; }
     outline: 3px solid #c4b5fd;
     outline-offset: 4px;
 }
+.gm-pwa-gate .gm-pwa-install-btn:disabled {
+    cursor: wait;
+    opacity: 0.72;
+    filter: saturate(0.7);
+}
+.gm-pwa-gate-progress {
+    width: min(100%, 29rem);
+    margin: 1.15rem auto 0;
+    padding: 0.85rem 0.95rem 0.95rem;
+    border: 1px solid rgba(196, 181, 253, 0.22);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.055);
+    text-align: left;
+}
+.gm-pwa-gate-progress[hidden] { display: none; }
+.gm-pwa-gate-progress-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.55rem;
+    color: rgba(226, 232, 240, 0.86);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+.gm-pwa-gate-progress-heading strong {
+    color: #fbbf24;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+}
+.gm-pwa-gate-progress progress {
+    display: block;
+    width: 100%;
+    height: 0.62rem;
+    overflow: hidden;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.2);
+    accent-color: #fbbf24;
+}
+.gm-pwa-gate-progress progress::-webkit-progress-bar {
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.2);
+}
+.gm-pwa-gate-progress progress::-webkit-progress-value {
+    border-radius: 999px;
+    background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+.gm-pwa-gate-progress progress::-moz-progress-bar {
+    border-radius: 999px;
+    background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
 
 @media (max-width: 560px) {
     .gm-pwa-banner { margin-left: 0.9rem; margin-right: 0.9rem; }
@@ -250,6 +302,7 @@ html.gm-pwa-gate-required .gm-pwa-gate { display: grid; }
 @media (prefers-reduced-motion: reduce) {
     .gm-pwa-install-btn { transition: none; }
     .gm-pwa-install-btn:hover { transform: none; }
+    .gm-pwa-gate-progress progress { transition: none; }
 }
 
 /* ── "New version available" toast (revives the old login-page banner) ── */
