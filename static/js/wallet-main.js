@@ -4361,6 +4361,28 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         let _availabilityPollTimer = null;
         let _seenPausedState = false;
 
+        function _claimFetch(url, options, timeoutMs) {
+            const requestOptions = Object.assign({}, options || {}, { cache: 'no-store' });
+            let controller = null;
+            if (typeof AbortController !== 'undefined') {
+                controller = new AbortController();
+                requestOptions.signal = controller.signal;
+            }
+            let timer = null;
+            const request = fetch(url, requestOptions);
+            const timeout = new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                    if (controller) controller.abort();
+                    const error = new Error('Claim data request timed out.');
+                    error.code = 'CLAIM_DATA_TIMEOUT';
+                    reject(error);
+                }, timeoutMs || 12000);
+            });
+            return Promise.race([request, timeout]).finally(() => {
+                if (timer) clearTimeout(timer);
+            });
+        }
+
         const btn    = document.getElementById('ubiClaimBtn');
         const label  = document.getElementById('ubiClaimLabel');
         const icon   = document.getElementById('ubiClaimIcon');
@@ -5852,7 +5874,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             // Always force-bypass the backend cache on the first check.
             // Stale cache (up to 3 min) caused "Already Claimed Today" to appear for
             // wallets whose face-verification status had just changed.
-            fetch('/api/claim/availability?force=1', { cache: 'no-store' })
+            _claimFetch('/api/claim/availability?force=1', {}, 15000)
                 .then(r => r.json())
                 .then(d => {
                     // Guard: if the session wallet changed (user switched wallets),
@@ -5874,7 +5896,18 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                     // choose between the face-verification intro and the sheet.
                     _openClaimDeepLink();
                 })
-                .catch(() => { label.textContent = 'Claim G$'; icon.textContent = '🪙'; btn.disabled = false; });
+                .catch((error) => {
+                    label.textContent = 'Retry claim data';
+                    icon.textContent = '⚠️';
+                    btn.disabled = false;
+                    setStatus(
+                        error && error.code === 'CLAIM_DATA_TIMEOUT'
+                            ? 'Live claim data took too long to respond. Tap retry in a moment.'
+                            : 'Could not load live claim data. Please try again.',
+                        '#b45309'
+                    );
+                    window._celoCanClaim = false;
+                });
         }
 
         // ── UBI pool stats (the same figures GoodDapp shows on its Claim screen) ──
@@ -5898,7 +5931,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         function loadUbiPoolStats() {
             const live = document.getElementById('ubiPoolLive');
             if (live) live.textContent = 'Loading';
-            fetch('/api/ubi-pool-balance', { cache: 'no-store' })
+            _claimFetch('/api/ubi-pool-balance', {}, 12000)
                 .then(r => r.json())
                 .then(d => {
                     if (!d || !d.success) {
@@ -8129,6 +8162,10 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
 
         window.doUbiClaim = async function() {
             if (btn.disabled) return;
+            if (!claimAvailability) {
+                fetchEntitlement(false);
+                return;
+            }
             recommendedClaimNetwork = pickRecommendedClaimNetwork() || recommendedClaimNetwork;
             if (claimed && recommendedClaimNetwork === 'celo') return;
             if (needsVerification) { startFV(); return; }
