@@ -622,6 +622,60 @@
         if (opener && !opener.disabled && opener.focus) opener.focus();
     }
 
+    // ── Send Money / Profile tip ──────────────────────────────────────────
+    var tipBusy = false;
+    function tipStatus(text, error) { var node=$('cpTipStatus'); if (!node) return; node.textContent=text||''; node.className='cp-money-status'+(error?' is-error':''); }
+    function resetTipSuccess() {
+        var panel = $('cpTipSuccess');
+        if (panel) panel.hidden = true;
+        var summary = $('cpTipSuccessSummary');
+        if (summary) summary.textContent = '';
+        var link = $('cpTipSuccessLink');
+        if (link) { link.hidden = false; link.removeAttribute('href'); }
+    }
+    function showTipSuccess(tip) {
+        var panel = $('cpTipSuccess');
+        var summary = $('cpTipSuccessSummary');
+        var link = $('cpTipSuccessLink');
+        var label = (tip && tip.token_label) || (tip && tip.token) || '';
+        var amount = (tip && tip.amount) || '';
+        var recipient = (tip && tip.recipient_username) || USERNAME;
+        if (summary) summary.textContent = amount + ' ' + label + ' sent to @' + recipient + '.';
+        if (link && tip && tip.explorer_url) { link.href = tip.explorer_url; link.hidden = false; }
+        else if (link) link.hidden = true;
+        if (panel) panel.hidden = false;
+        tipStatus('');
+        toast('Transfer confirmed on Celo.', 'success');
+    }
+    function openSendMoney() {
+        if (!BOOT.wallet) { requiresLogin(); return; }
+        var m = $('cpSendMoneyModal');
+        if (m) { m.hidden = false; document.body.classList.add('cp-money-open'); resetTipSuccess(); }
+    }
+    function closeSendMoney() {
+        var m = $('cpSendMoneyModal');
+        if (m) m.hidden = true;
+        document.body.classList.remove('cp-money-open');
+        tipStatus(''); resetTipSuccess();
+    }
+    function profileProviders() { var a=[], add=function(p){if(p&&p.provider)p=p.provider;if(p&&typeof p.request==='function'&&a.indexOf(p)<0)a.push(p);}; var e=window.ethereum; if(e&&Array.isArray(e.providers))e.providers.forEach(add); add(e); add(window.trustwallet); add(window.trustWallet); return a; }
+    async function profileSignerProvider() {
+        var method=String(BOOT.loginMethod||'').toLowerCase();
+        if(method==='local'){ if(!window.GMLocalWallet)throw new Error('Your in-app wallet is still loading.'); if(!GMLocalWallet.isUnlocked()&&window._lwOpenUnlockModal)await window._lwOpenUnlockModal({title:'Sign transfer',subtitle:'Enter your PIN to send money',submitLabel:'Sign & Send',busyLabel:'Signing…'}); if(!GMLocalWallet.isUnlocked())throw new Error('Please unlock your in-app wallet first.'); return GMLocalWallet.getProvider(); }
+        if(Array.isArray(window.GMPrivyWallets)){var pr=window.GMPrivyWallets.find(function(x){return x&&x.provider&&typeof x.provider.request==='function';});if(pr)return pr.provider;}
+        if((method==='walletconnect'||(window.GMWalletConnect&&GMWalletConnect.isPreferred&&GMWalletConnect.isPreferred()))&&window.GMWalletConnect)return await GMWalletConnect.getProvider();
+        var ps=profileProviders(), wanted=String(BOOT.wallet||'').toLowerCase();
+        for(var i=0;i<ps.length;i++){var ac=[];try{ac=await ps[i].request({method:'eth_requestAccounts'})||[]}catch(_){} if(!ac.length)try{ac=await ps[i].request({method:'eth_accounts'})||[]}catch(_){} if(ac.some(function(x){return String(x).toLowerCase()===wanted;}))return ps[i];}
+        throw new Error(ps.length?'Wrong wallet connected. Please switch to your GoodMarket wallet.':'No wallet detected. Please open MetaMask, Trust Wallet, MiniPay, or use WalletConnect.');
+    }
+    async function profileSendTransaction(provider,prep){
+        var method=String(BOOT.loginMethod||'').toLowerCase(), ac=[];
+        if(method!=='local') ac=await provider.request({method:'eth_requestAccounts'})||[];
+        var from=method==='local'?BOOT.wallet:ac.find(function(x){return String(x).toLowerCase()===String(BOOT.wallet).toLowerCase();}); if(!from)throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+        if(method!=='local'){var chain=await provider.request({method:'eth_chainId'}).catch(function(){return null;});if(String(chain||'').toLowerCase()!=='0xa4ec'){try{await provider.request({method:'wallet_switchEthereumChain',params:[{chainId:'0xa4ec'}]});}catch(e){if(e&&e.code===4902)await provider.request({method:'wallet_addEthereumChain',params:[{chainId:'0xa4ec',chainName:'Celo Mainnet',nativeCurrency:{name:'CELO',symbol:'CELO',decimals:18},rpcUrls:['https://forno.celo.org'],blockExplorerUrls:['https://celoscan.io']}]});else throw e;}}}
+        var tx={from:from,to:prep.to,data:prep.data||'0x',value:prep.value||'0x0'}; if(method==='local')tx.chainId=prep.chain_id; if(provider.isMiniPay&&method!=='local'&&prep.minipay_fee_currencies)tx.feeCurrency=prep.minipay_fee_currencies.cusd; return provider.request({method:'eth_sendTransaction',params:[tx]});
+    }
+    async function sendMoney(){if(tipBusy)return;if(!BOOT.wallet){requiresLogin();return;}var token=$('cpTipToken')&&$('cpTipToken').value,amount=$('cpTipAmount')&&$('cpTipAmount').value.trim(),button=$('cpTipSubmit');if(!amount||Number(amount)<=0){tipStatus('Enter a valid amount.',true);return;}tipBusy=true;if(button)button.disabled=true;try{tipStatus('Preparing transfer…');var pr=await api('/community/api/profile/'+encodeURIComponent(USERNAME)+'/tip/prepare',{method:'POST',body:JSON.stringify({token:token,amount:amount})});if(!pr.ok||!pr.data.success)throw new Error((pr.data&&pr.data.error)||'Could not prepare transfer.');tipStatus('Confirm the transaction in your wallet…');var provider=await profileSignerProvider(),hash=await profileSendTransaction(provider,pr.data);if(!hash)throw new Error('Your wallet did not return a transaction hash.');tipStatus('Verifying on Celo…');var cf=await api('/community/api/profile/'+encodeURIComponent(USERNAME)+'/tip/confirm',{method:'POST',body:JSON.stringify({token:token,amount:amount,tx_hash:hash})});if(!cf.ok||!cf.data.success)throw new Error((cf.data&&cf.data.error)||'Transfer verification failed.');var saved=await api('/api/messages/profile/'+encodeURIComponent(USERNAME)+'/onchain-transfer',{method:'POST',body:JSON.stringify({token:token,amount:amount,tx_hash:hash})}).catch(function(){return {ok:false};});showTipSuccess(cf.data.tip);if(!saved.ok)tipStatus('Transfer confirmed, but it could not be added to Messages.',true);if($('cpTipAmount'))$('cpTipAmount').value='';}catch(e){tipStatus((e&&e.message)||'Transfer failed. Please try again.',true);}finally{tipBusy=false;if(button)button.disabled=false;}}
     // ── Init ───────────────────────────────────────────────────────────────
 
     function init() {
@@ -638,6 +692,9 @@
 
     window.GMProfile = {
         openMessage: openMessage,
+        openSendMoney: openSendMoney,
+        closeSendMoney: closeSendMoney,
+        sendMoney: sendMoney,
         init: init,
         showTab: showTab,
         loadMorePosts: loadMorePosts,
