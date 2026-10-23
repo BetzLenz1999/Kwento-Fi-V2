@@ -7992,8 +7992,19 @@ def daily_task_page():
     return render_template("daily-task.html", wallet=wallet)
 
 
+def _safe_fv_return_path(value: str | None) -> str:
+    """Resolve the only approved post-FV destinations.
+
+    GoodDollar's callback URL is user-visible and tamperable, so never redirect
+    to an arbitrary URL supplied as ``return_to``.
+    """
+    return {"community": "/community", "wallet": "/wallet"}.get(
+        (value or "").strip().lower(), "/wallet"
+    )
+
+
 def _claim_boot_context(wallet: str, login_method: str = "", *, claim_only: bool = False,
-                        embed_claim: bool = False) -> dict:
+                        embed_claim: bool = False, fv_return_to: str = "/wallet") -> dict:
     """Build the single claim runtime contract shared by Wallet and Community.
 
     ``wallet-main.js`` is the source of truth for Identity/UBI availability and
@@ -8017,6 +8028,7 @@ def _claim_boot_context(wallet: str, login_method: str = "", *, claim_only: bool
         "ethereum_rpc_fallbacks": os.environ.get("ETHEREUM_RPC_FALLBACKS", ""),
         "claim_only": bool(claim_only),
         "embed_claim": bool(embed_claim),
+        "fv_return_to": _safe_fv_return_path(fv_return_to),
     }
 
 
@@ -8044,10 +8056,14 @@ def wallet_page():
     # `face_verified_at`, so we only set it once the chain confirms).
     fv_pending = request.args.get("fv_pending") == "1"
     fv_src_goodmarket = request.args.get("src", "") == "goodmarket"
+    fv_return_path = _safe_fv_return_path(request.args.get("return_to"))
     if fv_pending and fv_src_goodmarket and wallet:
         try:
             from blockchain import is_identity_verified
-            fv_onchain = is_identity_verified(wallet) or {}
+            # A successful FV may have landed seconds ago. Bypass the normal
+            # negative identity cache so this callback does not incorrectly
+            # remain on Wallet while waiting for its TTL to expire.
+            fv_onchain = is_identity_verified(wallet, force=True) or {}
             fv_confirmed = bool(fv_onchain.get("verified", False)) and not fv_onchain.get("error")
         except Exception as fv_check_err:
             logger.warning(f"[wallet-fv-attr] on-chain FV check failed for {wallet[:8]}…: {fv_check_err}")
@@ -8074,6 +8090,10 @@ def wallet_page():
                 mark_local_wallet_verified(wallet)
             except Exception as fv_lw_err:
                 logger.warning(f"[wallet-fv-attr] mark_local_wallet_verified error: {fv_lw_err}")
+            if fv_return_path == "/community":
+                # Wallet is the trusted callback bridge. Only after the fresh
+                # on-chain check above may we return to Community.
+                return redirect("/community?claim=1&fv_complete=1")
         else:
             logger.info(
                 f"ℹ️ [wallet-fv-attr] fv_pending redirect for {wallet[:8]}… but the wallet is "
