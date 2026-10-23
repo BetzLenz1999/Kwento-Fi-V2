@@ -100,6 +100,15 @@
     var size = document.createElement('small'); size.textContent = formatBytes(attachment.bytes); copy.appendChild(size);
     card.appendChild(copy); return card;
   }
+  function makeTransferNode(transfer) {
+    if (!transfer || transfer.type !== 'onchain_transfer') return null;
+    var card = document.createElement('div'); card.className = 'gm-msg-transfer';
+    var title = document.createElement('strong'); title.textContent = 'On-chain transfer confirmed'; card.appendChild(title);
+    var amount = document.createElement('p'); amount.textContent = (transfer.amount || '') + ' ' + (transfer.token_label || transfer.token || '') + ' sent to @' + (transfer.recipient_username || 'member'); card.appendChild(amount);
+    var link = document.createElement('a'); link.href = transfer.explorer_url || '#'; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'View transaction on CeloScan'; card.appendChild(link);
+    var hash = document.createElement('small'); var tx = String(transfer.tx_hash || ''); hash.textContent = tx ? 'Tx: ' + tx.slice(0, 10) + '…' + tx.slice(-8) : ''; card.appendChild(hash);
+    return card;
+  }
   function renderThread(data) {
     var conversation = data.conversation || {}; state.currentUser = conversation;
     var name = $('gmMsgThreadName'), host = $('gmMsgThreadAvatar'), log = $('gmMsgLog');
@@ -109,6 +118,7 @@
     (data.messages || []).forEach(function (message) {
       var bubble = document.createElement('div'); bubble.className = 'gm-msg-bubble' + (message.is_me ? ' is-me' : '');
       if (message.body) { var body = document.createElement('span'); body.className = 'gm-msg-bubble-body'; body.textContent = message.body; bubble.appendChild(body); }
+      var transfer = makeTransferNode(message.transfer); if (transfer) bubble.appendChild(transfer);
       var attachment = makeAttachmentNode(message.attachment); if (attachment) bubble.appendChild(attachment);
       var time = document.createElement('small'); time.className = 'gm-msg-time'; time.textContent = timeAgo(message.created_at); bubble.appendChild(time); log.appendChild(bubble);
     });
