@@ -5,6 +5,30 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     const CLAIM_ONLY = !!window.GM_WALLET_BOOT.claimOnly;
     const IS_PRIVY_LOGIN = (LOGIN_METHOD || '').toLowerCase() === 'privy';
 
+    // Every claim/FV/signing path waits on the same idempotent loader. This
+    // avoids a race where openClaimOrVerify exists while ethers is still
+    // blocked, slow, or rejected by the CDN's SRI check.
+    async function _gmEnsureEthers() {
+        if (window.ethers) return window.ethers;
+        if (window.GMEthersLoader && typeof window.GMEthersLoader.load === 'function') {
+            if (window.GMEthersLoader.getState() === 'failed' &&
+                typeof window.GMEthersLoader.retry === 'function') {
+                return window.GMEthersLoader.retry();
+            }
+            return window.GMEthersLoader.load();
+        }
+        for (let i = 0; i < 60 && !window.ethers; i++) {
+            await new Promise(resolve => setTimeout(resolve, 150));
+        }
+        if (!window.ethers) {
+            const error = new Error('Wallet tools could not be loaded. Check your connection and try again.');
+            error.code = 'ETHERS_LOAD_FAILED';
+            throw error;
+        }
+        return window.ethers;
+    }
+    window.ensureGoodMarketWalletLibrary = _gmEnsureEthers;
+
     // Configure the shared WalletConnect bridge so users that logged in via
     // WalletConnect (no `window.ethereum`) can still claim / send / sign with
     // approval prompts coming back through their original WC session.
@@ -114,10 +138,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     }
 
     async function getRaffleProvider() {
-        for (let i = 0; i < 30 && !window.ethers; i++) {
-            await new Promise(resolve => setTimeout(resolve, 150));
-        }
-        if (!window.ethers) throw new Error('Wallet library is still loading. Please try again in a moment.');
+        await _gmEnsureEthers();
         return new ethers.JsonRpcProvider('https://forno.celo.org');
     }
 
@@ -1628,11 +1649,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     }
 
     async function _fvEnsureEthers() {
-        if (window.ethers) return;
-        for (let i = 0; i < 20 && !window.ethers; i++) {
-            await new Promise(r => setTimeout(r, 150));
-        }
-        if (!window.ethers) throw new Error('Wallet library is still loading. Please try again in a moment.');
+        await _gmEnsureEthers();
     }
 
     async function confirmFvDeVerify() {
@@ -1725,7 +1742,35 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         return window._walletFvReason !== 're_verification_needed';
     }
 
+    function _claimLibraryStatus(message, isError) {
+        const status = document.getElementById('ubiClaimStatus');
+        const actions = document.getElementById('gmEthersLoadActions');
+        const btn = document.getElementById('ubiClaimBtn');
+        const label = document.getElementById('ubiClaimLabel');
+        const icon = document.getElementById('ubiClaimIcon');
+        if (status) {
+            status.textContent = message || '';
+            status.style.color = isError ? 'var(--red)' : 'var(--text-dim)';
+        }
+        if (actions) actions.hidden = !isError;
+        if (btn) btn.disabled = true;
+        if (label) label.textContent = isError ? 'Wallet tools unavailable' : 'Loading wallet tools…';
+        if (icon) icon.textContent = isError ? '⚠️' : '⏳';
+    }
+
     function openClaimOrVerify() {
+        if (!window.ethers) {
+            openModal('claimModal');
+            _claimLibraryStatus('Loading wallet tools… please wait.', false);
+            _gmEnsureEthers().then(function () {
+                _claimLibraryStatus('Wallet tools ready. Checking claim availability…', false);
+                if (typeof fetchEntitlement === 'function') fetchEntitlement(true);
+                openClaimOrVerify();
+            }).catch(function () {
+                _claimLibraryStatus('Wallet tools could not be loaded. Check your connection and retry.', true);
+            });
+            return;
+        }
         // The claim is the moment the XDC fee-row problem bites. Re-probe (and
         // surface the one-tap fix) right when the user is about to claim.
         if (typeof window.checkXdcRpcHealthProactively === 'function') {
@@ -1754,7 +1799,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         }
     }
     window.openClaimOrVerify = openClaimOrVerify;
-    window.continueFvIntro = continueFvIntro;
+        window.continueFvIntro = continueFvIntro;
 
     function renderFvStatus(d) {
         _fvStatusState = d || {};
@@ -3398,10 +3443,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         return via;
     }
     async function _aiSwapEnsureEthers() {
-        for (let i = 0; i < 30 && !window.ethers; i++) {
-            await new Promise(r => setTimeout(r, 500));
-        }
-        if (!window.ethers) throw new Error('Wallet library is still loading. Please try again in a moment.');
+        await _gmEnsureEthers();
     }
     function _aiSwapNormalizeToken(raw) {
         const alias = { 'g$': 'GD', 'gd': 'GD', 'gooddollar': 'GD', 'cusd': 'CUSD', 'celo-dollar': 'CUSD', 'celo': 'CELO', 'usdt': 'USDT', 'tether': 'USDT' };
@@ -8274,8 +8316,24 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         }
 
         // Init
-        if (btn) { btn.disabled = true; label.textContent = 'Checking entitlement…'; icon.textContent = '⏳'; }
-        fetchEntitlement();
+        // Init: ethers readiness is a prerequisite for the shared claim/FV
+        // controller. The modal may still open while this is pending, but no
+        // claim action is enabled until the loader resolves.
+        function startClaimAvailability() {
+            if (btn) { btn.disabled = true; label.textContent = 'Loading wallet tools…'; icon.textContent = '⏳'; }
+            _claimLibraryStatus('Loading wallet tools… please wait.', false);
+            _gmEnsureEthers().then(function () {
+                _claimLibraryStatus('Wallet tools ready. Checking claim availability…', false);
+                fetchEntitlement();
+            }).catch(function () {
+                _claimLibraryStatus('Wallet tools could not be loaded. Check your connection and retry.', true);
+            });
+        }
+        const ethersRetryBtn = document.getElementById('gmEthersRetryBtn');
+        if (ethersRetryBtn) ethersRetryBtn.onclick = function () {
+            startClaimAvailability();
+        };
+        startClaimAvailability();
     })();
 
     // ── FV Link Generator (mirrors ClaimSDK.generateFVLink from @gooddollar/web3sdk-v2) ─────
