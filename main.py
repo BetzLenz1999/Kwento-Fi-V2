@@ -67,6 +67,21 @@ logger = logging.getLogger(__name__)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)  # Changed from WARNING to ERROR
 logging.getLogger('httpx').setLevel(logging.ERROR)  # Reduce httpx logging
 
+from runtime_policy import should_run_inprocess_background_jobs
+
+
+def _start_serverless_background_job(name, initializer, *args):
+    """Start an in-process job only where one persistent process is expected."""
+    if not should_run_inprocess_background_jobs():
+        logger.info(
+            "Skipping process-local background job %s in serverless runtime; "
+            "configure an external scheduler if it must run there",
+            name,
+        )
+        return False
+    return initializer(*args)
+
+
 app = Flask(__name__, static_folder='static', static_url_path='/static')
 app.secret_key = os.environ.get('SESSION_SECRET') or os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
@@ -777,7 +792,9 @@ from telegram_bot import telegram_bot, init_telegram_learn_earn_timer_scheduler
 app.register_blueprint(telegram_bot)
 logger.info("✅ Telegram bot blueprint registered")
 try:
-    if init_telegram_learn_earn_timer_scheduler(app):
+    if _start_serverless_background_job(
+        "Telegram Learn & Earn timer", init_telegram_learn_earn_timer_scheduler, app
+    ):
         logger.info("✅ Telegram Learn & Earn timer scheduler started")
     else:
         logger.info("ℹ️ Telegram Learn & Earn timer scheduler not started")
@@ -789,7 +806,9 @@ except Exception as e:
 # to verify first). One reminder per wallet per UTC day via a dedup column.
 try:
     from ubi_reminder import init_ubi_reminder_scheduler
-    if init_ubi_reminder_scheduler(app):
+    if _start_serverless_background_job(
+        "Telegram UBI reminder", init_ubi_reminder_scheduler, app
+    ):
         logger.info("✅ Telegram UBI reminder scheduler started")
     else:
         logger.info("ℹ️ Telegram UBI reminder scheduler not started (disabled)")
@@ -803,7 +822,9 @@ except Exception as e:
 # (TELEGRAM_BROADCAST_DELIVERY_ENABLED, default off).
 try:
     from broadcast_delivery import init_broadcast_delivery_scheduler
-    if init_broadcast_delivery_scheduler(app):
+    if _start_serverless_background_job(
+        "Telegram broadcast delivery", init_broadcast_delivery_scheduler, app
+    ):
         logger.info("✅ Telegram broadcast delivery scheduler started")
     else:
         logger.info("ℹ️ Telegram broadcast delivery scheduler not started (disabled)")
@@ -816,7 +837,9 @@ except Exception as e:
 # verify-ubi / claim confirm), e.g. referee verified while the RPC was down.
 try:
     from referral_program.referral_reconciler import init_referral_reconciler
-    if init_referral_reconciler(app):
+    if _start_serverless_background_job(
+        "referral reconciliation", init_referral_reconciler, app
+    ):
         logger.info("✅ Referral reconciler started")
     else:
         logger.info("ℹ️ Referral reconciler not started (disabled)")
@@ -829,7 +852,9 @@ except Exception as e:
 # verification columns so admins can count/trace verified local-wallet users.
 try:
     from local_wallet_verification import init_local_wallet_verification_scheduler
-    if init_local_wallet_verification_scheduler(app):
+    if _start_serverless_background_job(
+        "local-wallet verification", init_local_wallet_verification_scheduler, app
+    ):
         logger.info("✅ local-wallet FV reconciler started")
     else:
         logger.info("ℹ️ local-wallet FV reconciler not started (disabled)")
@@ -887,7 +912,9 @@ else:
 # succeeds automatically once gas/balance is refilled.
 try:
     from reloadly.refund_retry import init_refund_retry_scheduler
-    if init_refund_retry_scheduler(app):
+    if _start_serverless_background_job(
+        "Reloadly refund retry", init_refund_retry_scheduler, app
+    ):
         logger.info("✅ Reloadly refund retry scheduler started")
     else:
         logger.info("ℹ️ Reloadly refund retry scheduler not started (disabled)")
@@ -906,7 +933,9 @@ except Exception as e:
 
 try:
     from gcash.refund_retry import init_gcash_refund_scheduler
-    if init_gcash_refund_scheduler(app):
+    if _start_serverless_background_job(
+        "GCash refund retry", init_gcash_refund_scheduler, app
+    ):
         logger.info("✅ GCash auto-refund scheduler started")
     else:
         logger.info("ℹ️ GCash auto-refund scheduler not started (disabled)")
@@ -966,7 +995,9 @@ else:
 # when LEARN_EARN_PAYOUT_MODE is a streaming alias (or LEARN_EARN_STREAM_SCHEDULER_ENABLED=1).
 # Each Gunicorn worker spawns its own thread; per-row OCC claims keep concurrent runs safe.
 try:
-    if init_learn_earn_stream_scheduler(app):
+    if _start_serverless_background_job(
+        "Learn & Earn stream processing", init_learn_earn_stream_scheduler, app
+    ):
         logger.info("✅ Learn & Earn stream scheduler started")
     else:
         logger.info("ℹ️ Learn & Earn stream scheduler not started (disabled or instant mode)")
@@ -983,7 +1014,9 @@ except Exception as e:
 logger.info("🧮 Initializing GoodMarket claim reconciler...")
 try:
     from goodmarket_claim_reconciler import init_goodmarket_claim_reconciler
-    if init_goodmarket_claim_reconciler(app):
+    if _start_serverless_background_job(
+        "GoodMarket claim reconciliation", init_goodmarket_claim_reconciler, app
+    ):
         logger.info("✅ GoodMarket claim reconciler started")
     else:
         logger.info("ℹ️ GoodMarket claim reconciler not started (disabled)")
@@ -997,7 +1030,9 @@ except Exception as e:
 logger.info("🏷️ Initializing GoodMarket attribution backfill...")
 try:
     from goodmarket_attribution_backfill import init_attribution_backfill
-    if init_attribution_backfill(app):
+    if _start_serverless_background_job(
+        "GoodMarket attribution backfill", init_attribution_backfill, app
+    ):
         logger.info("✅ GoodMarket attribution backfill scheduled")
     else:
         logger.info("ℹ️ GoodMarket attribution backfill not scheduled (disabled or already ran)")
