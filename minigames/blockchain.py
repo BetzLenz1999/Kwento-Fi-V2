@@ -3,6 +3,7 @@ import os
 import logging
 from web3 import Web3
 from eth_account import Account
+from chain_rpc import make_provider
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -50,13 +51,9 @@ class MinigamesBlockchainService:
             self.server_address = None
             logger.warning("⚠️ SERVER_PRIVATE_KEY not configured")
 
-        # Initialize Web3
-        self.w3 = Web3(Web3.HTTPProvider(self.celo_rpc_url))
-
-        if self.w3.is_connected():
-            logger.info("✅ Connected to Celo network for Minigames")
-        else:
-            logger.error("❌ Failed to connect to Celo network")
+        # Initialize Web3 (bounded, no probe: this object is built at import
+        # time, so it must not touch the network — see chain_rpc.py)
+        self.w3 = Web3(make_provider(self.celo_rpc_url))
 
         # GoodDollar token contract
         self.gooddollar_token = Web3.to_checksum_address(self.gooddollar_contract)
