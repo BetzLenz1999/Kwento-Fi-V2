@@ -550,19 +550,21 @@ gooddollar_contract = None
 
 # Initialize blockchain connection
 def initialize_blockchain():
-    """Initialize blockchain connection for wallet balance checking"""
+    """Initialize blockchain connection for wallet balance checking
+
+    Deliberately does NOT probe the network. This runs at import time (see the
+    call below), and a blocking ``is_connected()`` here is what made a
+    serverless cold start exceed its function timeout and return a 500 with no
+    application log — the module never finished importing, so nothing could log.
+    The provider is built with a hard timeout; the first real RPC call decides
+    whether the chain is up.
+    """
     global w3, gooddollar_contract
     try:
-        from web3 import Web3
+        from chain_rpc import make_provider
 
-        # Initialize Web3 connection
-        w3 = Web3(Web3.HTTPProvider(CELO_RPC_URL))
-
-        if not w3.is_connected():
-            logger.error("❌ Failed to connect to Celo network")
-            return False
-
-        logger.info("✅ Connected to Celo network")
+        # Initialize Web3 connection (bounded — never hangs on a dead RPC)
+        w3 = Web3(make_provider(CELO_RPC_URL))
 
         # GoodDollar ERC20 ABI for balance checking
         erc20_abi = [
@@ -609,7 +611,8 @@ def initialize_blockchain():
         logger.error(f"❌ Blockchain initialization error: {e}")
         return False
 
-# Initialize the blockchain connection when the app starts
+# Build the Web3 provider when the app starts. This is now local-only work
+# (no network probe) so a serverless cold start stays fast.
 if not initialize_blockchain():
     logger.warning("Blockchain initialization failed. Wallet balance features might not work.")
 
