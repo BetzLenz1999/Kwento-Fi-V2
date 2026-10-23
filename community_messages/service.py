@@ -5,6 +5,7 @@ as server-side participant keys and are never returned in API payloads.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -27,6 +28,7 @@ ATTACHMENT_MIME_TYPES = {
 }
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b-\u200f\u2028\u2029]")
+_TX_HASH = re.compile(r"^0x[0-9a-fA-F]{64}$")
 
 
 def _db():
@@ -245,6 +247,37 @@ def _public_attachment(row: dict | None) -> dict | None:
             "download_url": f"/api/messages/attachments/{row.get('id')}/download"}
 
 
+
+def _transfer_from_body(body: str | None) -> dict | None:
+    """Decode only the server-created on-chain transfer envelope."""
+    try:
+        value = json.loads(body or "")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(value, dict) or value.get("type") != "onchain_transfer":
+        return None
+    tx_hash = str(value.get("tx_hash") or "")
+    explorer = str(value.get("explorer_url") or "")
+    token = str(value.get("token") or "")[:16]
+    amount = str(value.get("amount") or "")[:80]
+    username = profile_service.normalize_username(value.get("recipient_username"))
+    if (not _TX_HASH.fullmatch(tx_hash) or
+            not explorer.startswith("https://celoscan.io/tx/") or
+            not token or not amount or not username):
+        return None
+    return {"type": "onchain_transfer", "token": token,
+            "token_label": str(value.get("token_label") or token)[:24],
+            "amount": amount, "recipient_username": username,
+            "tx_hash": tx_hash, "explorer_url": explorer}
+
+
+def _public_message(row: dict, viewer: str) -> dict:
+    transfer = _transfer_from_body(row.get("body"))
+    return {"id": row.get("id"), "body": "" if transfer else row.get("body") or "",
+            "transfer": transfer, "created_at": row.get("created_at"),
+            "is_me": _wallet(row.get("sender_wallet")) == viewer,
+            "attachment": None}
+
 def _conversation(db, conversation_id: str) -> dict | None:
     rows = _rows(db.table("community_dm_conversations").select("id,pair_key,status,created_at,last_message_at,last_message_preview")
               .eq("id", conversation_id).limit(1).execute())
@@ -357,11 +390,13 @@ def get_thread(viewer_wallet: str, conversation_id: str, limit: int | None = Non
                          .order("created_at", desc=True).limit(size).execute())
         messages.reverse()
         attachments = _attachments_for_messages(db, [str(m.get("id")) for m in messages])
+        public_messages = []
+        for message in messages:
+            item = _public_message(message, viewer)
+            item["attachment"] = _public_attachment(attachments.get(str(message.get("id"))))
+            public_messages.append(item)
         return {"success": True, "conversation": {"id": conversation_id, **person},
-                "messages": [{"id": m.get("id"), "body": m.get("body") or "", "created_at": m.get("created_at"),
-                              "is_me": _wallet(m.get("sender_wallet")) == viewer,
-                              "attachment": _public_attachment(attachments.get(str(m.get("id"))))}
-                         for m in messages]}
+                "messages": public_messages}
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_messages: thread failed: %s", exc)
         return {"success": False, "code": "db_error", "error": "Could not load conversation."}
@@ -427,6 +462,44 @@ def send_message(viewer_wallet: str, conversation_id: str, body: str,
         logger.warning("community_messages: send failed: %s", exc)
         return {"success": False, "code": "db_error", "error": "Message was not sent."}
 
+
+
+def send_transfer_message(viewer_wallet: str, username: str, tip: dict) -> dict:
+    """Persist a verified transfer card in the existing DM message table."""
+    viewer = _wallet(viewer_wallet)
+    transfer = _transfer_from_body(json.dumps({"type": "onchain_transfer", **(tip or {})}))
+    if not viewer or not transfer:
+        return {"success": False, "code": "invalid_transfer", "error": "Invalid verified transfer."}
+    conversation = start_conversation(viewer, username)
+    if not conversation.get("success"):
+        return conversation
+    cid = conversation["conversation"]["id"]
+    client_id = "onchain-transfer:" + transfer["tx_hash"]
+    db = _db()
+    if not db:
+        return {"success": False, "code": "db_unavailable", "error": "Messaging is temporarily unavailable."}
+    try:
+        existing = _rows(db.table("community_dm_messages").select("id,sender_wallet,body,created_at")
+                         .eq("conversation_id", cid).eq("client_message_id", client_id).limit(1).execute())
+        if existing:
+            return {"success": True, "duplicate": True, "message": _public_message(existing[0], viewer),
+                    "conversation_id": cid}
+        body = json.dumps(transfer, separators=(",", ":"))
+        result = db.table("community_dm_messages").insert({
+            "conversation_id": cid, "sender_wallet": viewer, "body": body,
+            "client_message_id": client_id}).execute()
+        row = (_rows(result) or [None])[0]
+        if not row:
+            return {"success": False, "code": "insert_failed", "error": "Transfer message was not saved."}
+        now = datetime.now(timezone.utc).isoformat()
+        preview = f"On-chain transfer: {transfer['amount']} {transfer['token_label']}"
+        db.table("community_dm_conversations").update({"last_message_at": now,
+            "last_message_preview": preview}).eq("id", cid).execute()
+        return {"success": True, "duplicate": False, "message": _public_message(row, viewer),
+                "conversation_id": cid}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_messages: transfer message failed: %s", exc)
+        return {"success": False, "code": "db_error", "error": "Transfer message was not saved."}
 
 def mark_read(viewer_wallet: str, conversation_id: str) -> dict:
     db = _db()
