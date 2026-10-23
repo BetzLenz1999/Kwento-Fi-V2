@@ -213,13 +213,11 @@
          figures side by side invite "47 + 12 = 59", which is false, because
          this balance is not spendable and not on-chain).
 
-         The balance/goal block (#cfEarnBalance) is HIDDEN BY DEFAULT and
-         revealed only when the server payload says `show_balance` (env
-         COMMUNITY_REWARD_SHOW_BALANCE). The number is not spendable and not
-         on-chain, so a personal "0 G$" under a big heading reads as a bug and
-         advertises a payout path v1 does not have. What the card sells instead
-         is what you can EARN — the four rates below, which come from the
-         server payload and are never hard-coded.
+         Signed-in members see their balance/goal by default; operators can hide
+         it with COMMUNITY_REWARD_SHOW_BALANCE=0. Guests never see a personal
+         balance. The figure is not spendable or on-chain, and the card says that
+         no withdrawal path is available yet. Earning-rate details start
+         collapsed behind an accessible toggle and come only from the server.
 
          Starts `hidden` and is revealed by the bundle only when the feature is
          enabled, so a disabled deployment renders nothing.
@@ -234,12 +232,13 @@
         </div>
         <!-- Always-visible lead. It carries the state (verify / sign in / just
              start posting), so the card says what to DO even with the balance
-             hidden. Written by the bundle. -->
+             hidden for guests or before the server response arrives. Written by
+             the bundle. -->
         <p class="cf-earn-lead" id="cfEarnLead">Earn G$ when the community
             reacts to your posts and comments.</p>
-        <!-- The personal figure. Hidden by default; the bundle reveals it only
-             on `show_balance`. The elements stay in the DOM (and are still
-             written to) either way, so this is a pure presentation switch. -->
+        <!-- The personal figure stays hidden until the server response arrives,
+             preventing a stale/zero flash. The bundle reveals it for members
+             when `show_balance` is true, but never for guests. -->
         <div class="cf-earn-balance-wrap" id="cfEarnBalance" hidden>
             <p class="cf-earn-balance">
                 <span class="cf-earn-amount" id="cfEarnAmount">0</span>
@@ -252,10 +251,14 @@
                 <span class="cf-earn-bar-fill" id="cfEarnBarFill"></span>
             </div>
         </div>
+        <button type="button" class="cf-earn-rates-toggle" id="cfEarnRatesToggle"
+                aria-controls="cfEarnRates" aria-expanded="false" hidden>
+            Show earning rates
+        </button>
         <!-- The rates come from the server (`rates` in the rewards payload),
              so this list is rendered by the bundle and can never quote a rate
-             the ledger does not actually pay. The empty element is a fallback
-             for no-JS, which never reveals the card anyway. -->
+             the ledger does not actually pay. It is collapsed until the member
+             or guest asks to expand it. -->
         <ul class="cf-earn-rates" id="cfEarnRates" hidden></ul>
         <p class="cf-earn-note" id="cfEarnNote" hidden></p>
     </section>
