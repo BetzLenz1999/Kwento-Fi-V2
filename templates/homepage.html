@@ -2184,6 +2184,167 @@
             color: #ddd6fe;
             border-color: rgba(167, 139, 250, 0.6);
         }
+        .btn-utility {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            width: fit-content;
+            padding: 0.72rem 0.95rem;
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            border-radius: 12px;
+            background: rgba(16, 185, 129, 0.08);
+            color: #a7f3d0;
+            font-size: 0.86rem;
+            font-weight: 700;
+            text-decoration: none;
+            transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+        }
+        .btn-utility:hover {
+            background: rgba(16, 185, 129, 0.16);
+            border-color: rgba(52, 211, 153, 0.55);
+            transform: translateY(-2px);
+        }
+        .community-entry-section,
+        .balance-explainer {
+            max-width: 1220px;
+            margin: 0 auto;
+            padding: 0 2rem 2.5rem;
+        }
+        .community-entry-card {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+            gap: 1.5rem;
+            align-items: center;
+            padding: clamp(1.4rem, 4vw, 2.25rem);
+            border: 1px solid rgba(96, 165, 250, 0.3);
+            border-radius: 24px;
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(124, 58, 237, 0.14));
+            box-shadow: var(--card-shadow);
+            overflow: hidden;
+        }
+        .section-kicker {
+            display: inline-block;
+            margin-bottom: 0.65rem;
+            color: var(--action);
+            font-size: 0.7rem;
+            font-weight: 900;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+        .community-entry-copy h2,
+        .balance-explainer-head h2 {
+            margin: 0 0 0.65rem;
+            color: #ffffff;
+            font-size: clamp(1.5rem, 3vw, 2.25rem);
+            line-height: 1.12;
+            letter-spacing: -0.03em;
+        }
+        .community-entry-copy p,
+        .balance-explainer-head p {
+            max-width: 620px;
+            margin: 0 0 1rem;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+        .fs-cta-primary {
+            background: var(--action);
+            border-color: transparent;
+            color: var(--action-text);
+        }
+        .fs-cta-primary:hover {
+            background: var(--action-2);
+            color: var(--action-text);
+            border-color: transparent;
+        }
+        .community-entry-visual {
+            position: relative;
+            min-height: 190px;
+            border: 1px solid rgba(196, 181, 253, 0.22);
+            border-radius: 20px;
+            background: rgba(8, 13, 35, 0.35);
+            overflow: hidden;
+        }
+        .community-entry-orb {
+            position: absolute;
+            inset: 50% auto auto 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(251, 191, 36, 0.85);
+            font-size: 6rem;
+            text-shadow: 0 0 38px rgba(251, 191, 36, 0.42);
+        }
+        .community-entry-chip {
+            position: absolute;
+            padding: 0.35rem 0.65rem;
+            border: 1px solid rgba(196, 181, 253, 0.3);
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.82);
+            color: var(--text);
+            font-size: 0.7rem;
+            font-weight: 800;
+        }
+        .chip-one { top: 18%; left: 12%; }
+        .chip-two { right: 10%; top: 28%; }
+        .chip-three { bottom: 16%; left: 22%; }
+        .social-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .social-feature-card {
+            display: flex;
+            min-height: 360px;
+            aspect-ratio: 1 / 1;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+        .social-feature-card .fs-card-label { margin-bottom: 0.55rem; }
+        .social-card-icon {
+            display: grid;
+            place-items: center;
+            width: 72px;
+            height: 72px;
+            margin: 0 0 1rem;
+            border: 1px solid rgba(196, 181, 253, 0.28);
+            border-radius: 22px;
+            background: var(--primary-soft);
+            color: var(--action);
+            font-size: 2.15rem;
+            font-weight: 900;
+        }
+        .social-card-community .social-card-icon { color: #93c5fd; background: rgba(59, 130, 246, 0.16); }
+        .social-card-games .social-card-icon { color: var(--primary-text); }
+        .social-card-utility .social-card-icon { color: #a7f3d0; background: rgba(16, 185, 129, 0.12); }
+        .social-feature-card .fs-card-title { max-width: 18rem; font-size: clamp(1.05rem, 2vw, 1.3rem); line-height: 1.2; }
+        .social-feature-card .fs-card-sub { max-width: 24rem; margin-bottom: 0.55rem; }
+        .social-card-caveat {
+            margin: 0 0 0.85rem;
+            color: var(--text-muted);
+            font-size: 0.74rem;
+            line-height: 1.45;
+        }
+        .social-feature-card .fs-cta { align-self: flex-start; margin-top: auto; }
+        .balance-explainer { padding-top: 0.5rem; }
+        .balance-explainer-head { margin-bottom: 1rem; text-align: center; }
+        .balance-explainer-head p { margin-right: auto; margin-left: auto; }
+        .balance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; }
+        .balance-item {
+            display: flex;
+            min-height: 126px;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding: 1rem;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--surface);
+        }
+        .balance-item strong { color: var(--text); font-size: 0.9rem; }
+        .balance-item span { color: var(--text-dim); font-size: 0.78rem; line-height: 1.5; }
+        @media (max-width: 768px) {
+            .community-entry-section,
+            .balance-explainer { padding-right: 1rem; padding-left: 1rem; }
+            .community-entry-card { grid-template-columns: 1fr; }
+            .social-card-grid,
+            .balance-grid { grid-template-columns: 1fr; }
+            .social-feature-card { min-height: 0; aspect-ratio: auto; }
+            .hero-buttons { align-items: stretch; flex-direction: column; }
+            .btn-primary, .btn-secondary, .btn-utility { justify-content: center; width: 100%; }
+        }
         /* Book stack: one violet family (was blue / violet / green). */
         .fs-book-b1 { background: linear-gradient(160deg, #a78bfa 0%, #7c3aed 70%, #6d28d9 100%); }
         .fs-book-b2 { background: linear-gradient(160deg, #c4b5fd 0%, #8b5cf6 70%, #7c3aed 100%); }
@@ -2389,44 +2550,43 @@
     </main>
     {% endif %}
 
-    <!-- Hero Section -->
+    <!-- Social-first hero: the homepage starts with community, not a feature list. -->
     <section class="hero-section" id="overview">
         <div class="hero-grid">
             <div class="hero-content">
-                <span class="hero-eyebrow"><span class="pulse-dot"></span>Community-built · Live on Celo</span>
+                <span class="hero-eyebrow"><span class="pulse-dot"></span>GoodMarket Community · Built for G$ users</span>
                 <h1 class="hero-title">
-                    <span class="line">Earn <span class="highlight">G$</span> every day.</span>
-                    <span class="line">Save, swap &amp; spend.</span>
+                    <span class="line">Share. Connect.</span>
+                    <span class="line">Earn <span class="highlight">together.</span></span>
                 </h1>
                 <p class="hero-description">
-                    Answer quizzes, finish daily social tasks, and play minigames to earn real G$ tokens on the GoodDollar protocol. Rewards land straight in your wallet — ready to save, swap, or spend.
+                    Join community conversations, discover eligible G$ rewards, play skill games, and use on-chain G$ for everyday utilities.
                 </p>
                 <p class="hero-tagline-tl">
-                    🇵🇭 Libreng G$ araw-araw — kumita habang natututo, diretso sa wallet mo.
+                    🇵🇭 Sumali sa community, makipag-ugnayan, at tuklasin kung paano gumagana ang G$.
                 </p>
                 <div class="hero-buttons">
-                    <button class="btn-primary" onclick="openWalletModal()">
-                        Get Started <span class="arrow">→</span>
-                    </button>
-                    <button class="btn-secondary" onclick="showSection('learn-earn')">
-                        Explore features
-                    </button>
+                    {% if community_feed_visible %}
+                    <a class="btn-primary" href="/community">Open Community <span class="arrow">→</span></a>
+                    {% else %}
+                    <a class="btn-primary" href="/community-stories/featured">Explore Community Stories <span class="arrow">→</span></a>
+                    {% endif %}
+                    <button class="btn-secondary" onclick="showSection('what-is')">See how G$ works <span class="arrow">→</span></button>
+                    <a class="btn-utility" href="/reloadly">Use G$ for airtime &amp; data <span class="arrow">→</span></a>
                 </div>
                 <div class="hero-checks">
-                    <span class="hero-check">Gas-free claims</span>
-                    <span class="hero-check">On-chain rewards</span>
-                    <span class="hero-check">Save &amp; swap</span>
+                    <span class="hero-check">Public community</span>
+                    <span class="hero-check">Clear balance status</span>
+                    <span class="hero-check">On-chain utility</span>
                 </div>
                 <p class="hero-community-note">
-                    🤝 Independent community project for users of the <strong>G$</strong> token on the GoodDollar protocol — easing claims, swaps &amp; onboarding. Not an official GoodDollar product.
+                    🤝 Independent community project for <strong>G$</strong> users on the GoodDollar protocol. Not an official GoodDollar product.
                 </p>
             </div>
-
-            <div class="hero-stats-stage" aria-label="Live platform statistics">
+            <div class="hero-stats-stage" aria-label="GoodMarket community statistics">
                 <div class="hero-orb" aria-hidden="true">
                     <span class="hero-orb-symbol">G$</span>
                 </div>
-
                 <div class="hero-stat-card stat-disbursed">
                     <div class="stat-eyebrow">🌐 Total G$ Distributed</div>
                     <div class="stat-value" id="heroStatDisbursed">{{ homepage_stats.total_g_disbursed_formatted }}</div>
@@ -2444,108 +2604,119 @@
                         {% endif %}
                     </div>
                 </div>
-
                 <div class="hero-stat-card stat-earners">
-                    <div class="stat-eyebrow">👥 Active Earners</div>
-                    <div class="stat-value" id="heroStatEarners">{{ homepage_stats.active_earners_formatted }}</div>
-                    <div class="stat-foot">Across all features</div>
+                    <div class="stat-eyebrow">👥 Registered users</div>
+                    <div class="stat-value" id="heroStatRegistered">{{ homepage_stats.total_users_formatted|default('—') }}</div>
+                    <div class="stat-foot">GoodMarket community</div>
                 </div>
-
                 <div class="hero-stat-card stat-tasks">
-                    <div class="stat-eyebrow">✅ Tasks Completed This Month</div>
-                    <div class="stat-value" id="heroStatTasks">{{ homepage_stats.tasks_last_30_days_formatted }}</div>
-                    <div class="stat-foot">Last 30 days</div>
+                    <div class="stat-eyebrow">✅ Active earners</div>
+                    <div class="stat-value" id="heroStatEarners">{{ homepage_stats.active_earners_formatted }}</div>
+                    <div class="stat-foot">Across eligible features</div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Feature Showcase — visual app-style cards -->
-    <section class="feature-showcase" aria-label="Explore GoodMarket features">
+    <!-- Community-first entry block. Live feed preview is intentionally deferred
+         until a safe public/cache-backed preview is approved. -->
+    <section class="community-entry-section" aria-labelledby="community-entry-title">
+        <div class="community-entry-card">
+            <div class="community-entry-copy">
+                <span class="section-kicker">The GoodMarket Community</span>
+                <h2 id="community-entry-title">Your next G$ journey starts with people.</h2>
+                <p>Share an update, react thoughtfully, follow members, and discover conversations from the community.</p>
+                {% if community_feed_visible %}
+                <a class="fs-cta fs-cta-primary" href="/community">Open Community Feed <span class="arrow">→</span></a>
+                {% else %}
+                <a class="fs-cta fs-cta-primary" href="/community-stories/featured">Explore Community Stories <span class="arrow">→</span></a>
+                {% endif %}
+            </div>
+            <div class="community-entry-visual" aria-hidden="true">
+                <span class="community-entry-orb">✦</span>
+                <span class="community-entry-chip chip-one">Share</span>
+                <span class="community-entry-chip chip-two">Connect</span>
+                <span class="community-entry-chip chip-three">Discover</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Four square app modules: community first, then rewards, games, and utility. -->
+    <section class="feature-showcase" aria-labelledby="feature-showcase-title">
         <div class="feature-showcase-head">
-            <span class="fs-eyebrow">✦ Everything in one app</span>
-            <h2>Explore what you can do with G$</h2>
-            <p>Quizzes with learning modules, skill games, and mobile top-ups — your G$ works for you beyond just holding it.</p>
+            <span class="fs-eyebrow">✦ Four ways to participate</span>
+            <h2 id="feature-showcase-title">One community. Clearer G$ journeys.</h2>
+            <p>Choose how you want to connect, explore, play, or use eligible on-chain G$.</p>
         </div>
-        <div class="feature-showcase-grid">
-            <div class="feature-card-ui">
-                <div class="fs-card-label">📚 Learn &amp; Earn <span class="fs-tag fs-tag-blue">Modules</span></div>
-                <div class="fs-card-title">Read. Learn. Get paid.</div>
-                <p class="fs-card-sub">Finish the learning module, then answer the quiz — up to 2,000 G$ per quiz.</p>
-                <div class="fs-books">
-                    <div class="fs-book-stack">
-                        <div class="fs-book fs-book-b1"><span class="fs-book-label">MODULE 1</span></div>
-                        <div class="fs-book fs-book-b2"><span class="fs-book-label">MODULE 2</span></div>
-                        <div class="fs-book fs-book-b3"><span class="fs-book-label">MODULE 3</span></div>
-                        <div class="fs-book fs-book-b1" style="opacity:0.55;"><span class="fs-book-label">MODULE 4</span></div>
-                    </div>
-                    <span class="fs-module-pill"><span class="dot"></span> 200 G$ / answer</span>
-                </div>
-                <div style="margin-top:0.9rem;"><button class="fs-cta" onclick="showSection('learn-earn')">Start learning <span class="arrow">→</span></button></div>
-            </div>
-
-            <div class="feature-card-ui">
-                <div class="fs-card-label">🎮 Play &amp; Earn <span class="fs-tag fs-tag-violet">Games</span></div>
-                <div class="fs-card-title">Skill games. Real rewards.</div>
-                <p class="fs-card-sub">Crash, Jumble Words, Price Prediction and more — win G$ while having fun.</p>
-                <div class="fs-game">
-                    <div class="fs-game-pad">
-                        <span class="dp"></span>
-                        <span class="btn-a"></span>
-                        <span class="btn-b"></span>
-                    </div>
-                    <div class="fs-game-multiplier">
-                        <span class="fs-mult-big">2.4×</span>
-                        <span class="fs-mult-row">
-                            <span class="fs-mini-chip">Crash</span>
-                            <span class="fs-mini-chip">Jumble</span>
-                            <span class="fs-mini-chip">Predict</span>
-                        </span>
-                    </div>
-                </div>
-                <div style="margin-top:0.9rem;"><button class="fs-cta" onclick="showSection('minigames')">Play now <span class="arrow">→</span></button></div>
-            </div>
-
-            <div class="feature-card-ui">
-                <div class="fs-card-label">📡 Spends &amp; Load <span class="fs-tag fs-tag-green">Top-up</span></div>
-                <div class="fs-card-title">Turn G$ into everyday value</div>
-                <p class="fs-card-sub">Top up mobile data, buy gift cards, and pay bills — pay straight with your G$.</p>
-                <div class="fs-phone">
-                    <div class="fs-phone-frame">
-                        <span class="notch"></span>
-                        <div class="fs-phone-screen">
-                            <div class="bars"><i></i><i></i><i></i><i></i></div>
-                            <span class="fs-phone-amt">₱150</span>
-                        </div>
-                    </div>
-                    <div class="fs-phone-data">
-                        <span class="fs-operator-row"><span class="fs-flag">🇵🇭</span> Smart Data</span>
-                        <div class="fs-data-track"></div>
-                        <div class="fs-data-meta"><span>2GB data</span><span>0.15 G$▼</span></div>
-                    </div>
-                </div>
-                <div style="margin-top:0.9rem;"><a class="fs-cta" href="/reloadly" style="text-decoration:none;">Top up now <span class="arrow">→</span></a></div>
-            </div>
+        <div class="feature-showcase-grid social-card-grid">
+            <article class="feature-card-ui social-feature-card social-card-community">
+                <div class="fs-card-label">01 · Community <span class="fs-tag fs-tag-blue">Connect</span></div>
+                <div class="social-card-icon" aria-hidden="true">◎</div>
+                <div class="fs-card-title">Post something that matters.</div>
+                <p class="fs-card-sub">Share updates, join conversations, follow members, and discover community stories.</p>
+                {% if community_feed_visible %}
+                <a class="fs-cta" href="/community">Open Community <span class="arrow">→</span></a>
+                {% else %}
+                <a class="fs-cta" href="/community-stories/featured">Explore Stories <span class="arrow">→</span></a>
+                {% endif %}
+            </article>
+            <article class="feature-card-ui social-feature-card social-card-rewards">
+                <div class="fs-card-label">02 · Community Rewards <span class="fs-tag fs-tag-violet">Eligible activity</span></div>
+                <div class="social-card-icon" aria-hidden="true">✦</div>
+                <div class="fs-card-title">Participation may earn Community G$.</div>
+                <p class="fs-card-sub">Eligible, face-verified members may accrue rewards from configured community activity.</p>
+                <p class="social-card-caveat">Community G$ is currently a ledger balance; withdrawal is not yet available.</p>
+                <button class="fs-cta" type="button" onclick="showSection('daily-tasks')">Learn about rewards <span class="arrow">→</span></button>
+            </article>
+            <article class="feature-card-ui social-feature-card social-card-games">
+                <div class="fs-card-label">03 · Games <span class="fs-tag fs-tag-violet">Play</span></div>
+                <div class="social-card-icon" aria-hidden="true">✚</div>
+                <div class="fs-card-title">Play skill games. Track a separate balance.</div>
+                <p class="fs-card-sub">Try Crash, Jumble Words, Price Prediction, and other games with their own rules.</p>
+                <p class="social-card-caveat">Withdrawals may require a 500 G$ minimum and other limits.</p>
+                <button class="fs-cta" type="button" onclick="showSection('minigames')">Explore games <span class="arrow">→</span></button>
+            </article>
+            <article class="feature-card-ui social-feature-card social-card-utility">
+                <div class="fs-card-label">04 · Airtime &amp; Data <span class="fs-tag fs-tag-green">Use G$</span></div>
+                <div class="social-card-icon" aria-hidden="true">⌁</div>
+                <div class="fs-card-title">Use eligible on-chain G$ in everyday life.</div>
+                <p class="fs-card-sub">Top up mobile airtime and data through the supported utility flow.</p>
+                <p class="social-card-caveat">Top-ups spend G$; they are not an earning event.</p>
+                <a class="fs-cta" href="/reloadly">Buy airtime &amp; data <span class="arrow">→</span></a>
+            </article>
         </div>
     </section>
 
+    <!-- Balance explainer: keep ledger, game, and on-chain G$ distinct. -->
+    <section class="balance-explainer" aria-labelledby="balance-explainer-title">
+        <div class="balance-explainer-head">
+            <span class="section-kicker">Know your balance</span>
+            <h2 id="balance-explainer-title">Not all balances work the same way.</h2>
+            <p>GoodMarket keeps community rewards, game winnings, and on-chain wallet G$ separate so your status stays clear.</p>
+        </div>
+        <div class="balance-grid">
+            <div class="balance-item"><strong>Community G$</strong><span>Configured community ledger balance. Withdrawal is not yet available.</span></div>
+            <div class="balance-item"><strong>Game balance</strong><span>Separate virtual winnings subject to game and withdrawal rules.</span></div>
+            <div class="balance-item"><strong>On-chain wallet G$</strong><span>Spendable when tokens reach your wallet and the utility supports them.</span></div>
+        </div>
+    </section>
     <!-- How it works — 3-step strip for first-time visitors -->
     <section class="hiw-section" aria-label="How GoodMarket works">
         <div class="hiw-grid">
             <div class="hiw-step">
                 <span class="hiw-step-num">1</span>
-                <div class="hiw-step-title">Create your account</div>
-                <p class="hiw-step-desc">Sign up with email + PIN in under a minute — no crypto experience or existing wallet needed.</p>
+                <div class="hiw-step-title">Join the conversation</div>
+                <p class="hiw-step-desc">Open the community, share an update, and discover what other G$ users are talking about.</p>
             </div>
             <div class="hiw-step">
                 <span class="hiw-step-num">2</span>
-                <div class="hiw-step-title">Earn G$</div>
-                <p class="hiw-step-desc">Quizzes, daily social tasks, minigames, community stories &amp; referrals — rewards go straight to your wallet, gas-free.</p>
+                <div class="hiw-step-title">Explore your G$ paths</div>
+                <p class="hiw-step-desc">Learn, play, and participate in eligible activities while keeping each balance type clear.</p>
             </div>
             <div class="hiw-step">
                 <span class="hiw-step-num">3</span>
-                <div class="hiw-step-title">Save, swap &amp; spend</div>
-                <p class="hiw-step-desc">Grow your G$ in savings, swap between tokens, or send it to anyone — all from one wallet on Celo.</p>
+                <div class="hiw-step-title">Use eligible on-chain G$</div>
+                <p class="hiw-step-desc">Save, swap, send, or use supported utilities when G$ has reached your on-chain wallet.</p>
             </div>
         </div>
     </section>
