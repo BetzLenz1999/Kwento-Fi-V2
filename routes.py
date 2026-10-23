@@ -7992,6 +7992,34 @@ def daily_task_page():
     return render_template("daily-task.html", wallet=wallet)
 
 
+def _claim_boot_context(wallet: str, login_method: str = "", *, claim_only: bool = False,
+                        embed_claim: bool = False) -> dict:
+    """Build the single claim runtime contract shared by Wallet and Community.
+
+    ``wallet-main.js`` is the source of truth for Identity/UBI availability and
+    signing. Keeping these values in one server-side helper prevents a page
+    that mounts the shared claim modal from silently receiving blank contract
+    addresses or a different chain configuration.
+    """
+    return {
+        "wallet": wallet,
+        "login_method": login_method or "",
+        "gd_token_address": GOODDOLLAR_CONTRACTS.get("GOODDOLLAR_TOKEN", ""),
+        "raffle_contract_address": os.environ.get("GOODMARKET_RAFFLE_CONTRACT_ADDRESS", ""),
+        "walletconnect_project_id": os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
+        "bridge_contract": os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5"),
+        "celo_gd_token_contract": os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+        "xdc_gd_token_contract": os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c"),
+        "xdc_chain_id": get_env_int("XDC_MAINNET_CHAIN_ID", 50),
+        "celo_chain_id": get_env_int("CELO_MAINNET_CHAIN_ID", 42220),
+        "identity_contract_address": GOODDOLLAR_CONTRACTS.get("IDENTITY", ""),
+        "ethereum_rpc": os.environ.get("ETHEREUM_RPC_URL", ""),
+        "ethereum_rpc_fallbacks": os.environ.get("ETHEREUM_RPC_FALLBACKS", ""),
+        "claim_only": bool(claim_only),
+        "embed_claim": bool(embed_claim),
+    }
+
+
 @routes.route("/wallet")
 def wallet_page():
     """Wallet page for sending/receiving G$ and CELO"""
@@ -8102,34 +8130,23 @@ def wallet_page():
     # docs/COMMUNITY_CLAIM_MODAL_INLINE_PROPOSAL.md.
     embed_claim = (request.args.get("embed") or "").strip().lower() == "claim"
 
+    claim_boot = _claim_boot_context(
+        wallet,
+        session.get("login_method", ""),
+        claim_only=embed_claim,
+        embed_claim=embed_claim,
+    )
     return render_template(
         "wallet.html",
-        wallet=wallet,
-        embed_claim=embed_claim,
-        login_method=session.get("login_method", ""),
+        **claim_boot,
         privy_wallet_client_type=session.get("privy_wallet_client_type", ""),
-        walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
-        gd_token_address=GOODDOLLAR_CONTRACTS.get("GOODDOLLAR_TOKEN", ""),
-        raffle_contract_address=os.environ.get("GOODMARKET_RAFFLE_CONTRACT_ADDRESS", ""),
         buy_eth_visible=buy_eth_visible,
         dapp_connect_visible=dapp_connect_visible,
         wallet_maintenance_mode=wallet_maintenance_mode,
         wallet_maintenance_message=wallet_maintenance_message,
-        # Same bridge/chain context as the swap page — the chat agent's
-        # in-page bridge + XSwap execution reads these via GM_WALLET_BOOT.
-        bridge_contract=os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5"),
-        celo_gd_token_contract=os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
-        xdc_gd_token_contract=os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c"),
-        xdc_chain_id=get_env_int("XDC_MAINNET_CHAIN_ID", 50),
-        celo_chain_id=get_env_int("CELO_MAINNET_CHAIN_ID", 42220),
-        identity_contract_address=GOODDOLLAR_CONTRACTS.get("IDENTITY", ""),
-        # Connect-a-dApp (wallet role) needs Ethereum in the in-app wallet's
-        # chain registry. Public RPC list with failover — overridable per deploy.
-        ethereum_rpc=os.environ.get("ETHEREUM_RPC_URL", ""),
-        ethereum_rpc_fallbacks=os.environ.get("ETHEREUM_RPC_FALLBACKS", ""),
         # "Install app" (PWA) one-time banner — shown to local (email + PIN)
         # wallet users only; see the template gate.
         pwa_installable=_is_pwa_install_enabled(),
