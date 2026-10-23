@@ -32,7 +32,10 @@
     {% endif %}
     <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='branding/goodmarket/goodmarket-icon.svg', v=ASSET_VERSION) }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico', v=ASSET_VERSION) }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/goodmarket-icon.png', v=ASSET_VERSION) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='branding/goodmarket/goodmarket-brand.css', v=ASSET_VERSION) }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap" rel="stylesheet">
@@ -49,6 +52,10 @@
         .cf-nav {
             padding-top: env(safe-area-inset-top, 0px);
         }
+        .cf-brand .goodmarket-mark {
+            width: 32px;
+            height: 32px;
+        }
         body {
             overflow-x: clip;
         }
@@ -63,7 +70,7 @@
 
 <header class="cf-nav">
     <a class="cf-brand" href="/wallet">
-        <span class="cf-brand-mark" aria-hidden="true">🌐</span>
+        <img class="cf-brand-mark goodmarket-mark" src="{{ url_for('static', filename='branding/goodmarket/goodmarket-mark.svg', v=ASSET_VERSION) }}" alt="" width="32" height="32">
         <span>GoodMarket <strong>Community</strong></span>
     </a>
     <div class="cf-nav-right">
