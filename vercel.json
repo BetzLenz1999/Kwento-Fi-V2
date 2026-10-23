@@ -5,7 +5,8 @@
   "functions": {
     "main.py": {
       "includeFiles": "{static/**,templates/**}",
-      "excludeFiles": "{tests/**,docs/**,scripts/**,contracts/**,node_modules/**,.git/**}"
+      "excludeFiles": "{tests/**,docs/**,scripts/**,contracts/**,node_modules/**,.git/**}",
+      "maxDuration": 60
     }
   }
 }
