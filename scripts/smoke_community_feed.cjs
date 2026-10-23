@@ -8,7 +8,7 @@
    - the three-hop upload: presign -> PUT straight to R2 with the SIGNED headers,
    - the client-side media type allow-list,
    - the guest guard (a guest can never post or queue an upload),
-   - buildCard: caption as TEXT (no HTML injection) and six pressable chips.
+   - buildCard: caption as TEXT (no HTML injection) and a hidden reaction picker.
 
    Run: node scripts/smoke_community_feed.cjs
 */
@@ -93,7 +93,7 @@ function makeDom() {
       closest() { return null; },
       contains(n) { return this._walk([]).includes(n); },
       getBoundingClientRect() { return { top: 0, bottom: 10, right: 200, left: 20, width: 180, height: 10 }; },
-      scrollIntoView() {}, focus() {},
+      scrollIntoView() {}, focus() { this.focused = true; },
       // insertAdjacentElement('afterend', n) attaches to the SIBLING position,
       // i.e. a child of this node's parent — never of this node.
       insertAdjacentElement(pos, n) {
@@ -190,10 +190,24 @@ function run(opts) {
     dispatch: (name, event) => (docListeners[name] || []).forEach(fn => fn(event)),
   };
 
+  let nextTimerId = 1;
+  const timeoutCallbacks = new Map();
   const sandbox = {
     document: doc, console,
-    setTimeout: fn => { Promise.resolve().then(fn); return 0; },
-    clearTimeout: () => {}, requestAnimationFrame: fn => fn(),
+    setTimeout: fn => {
+      const id = nextTimerId++;
+      timeoutCallbacks.set(id, fn);
+      Promise.resolve().then(() => {
+        const callback = timeoutCallbacks.get(id);
+        if (callback) {
+          timeoutCallbacks.delete(id);
+          callback();
+        }
+      });
+      return id;
+    },
+    clearTimeout: id => { timeoutCallbacks.delete(id); },
+    requestAnimationFrame: fn => fn(),
     fetch: opts.fetchImpl || (() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),
     navigator: { userAgent: 'node' },
     Image: function () { this.onload = null; this.onerror = null; },
@@ -211,7 +225,7 @@ function run(opts) {
 
   vm.createContext(sandbox);
   vm.runInContext(SRC, sandbox);
-  return { api: sandbox.GMCommunity, store: registry, sandbox };
+  return { api: sandbox.GMCommunity, store: registry, sandbox, document: doc };
 }
 
 let failures = 0;
@@ -676,7 +690,7 @@ function feedFetch(handler, feedRows) {
   }
 
   // ── 9b. Caption + engagement PLACEMENT ────────────────────────────────────
-  // The caption is below the media; actions, counts, reaction chips and the
+  // The caption is below the media; actions, counts, the hidden picker and the
   // expanded thread are grouped together immediately after it.
   {
     const { api } = run({ boot: MEMBER });
@@ -688,7 +702,7 @@ function feedFetch(handler, feedRows) {
     (function walk(node) {
       for (const child of node.children || []) {
         for (const cls of ['cf-media', 'cf-caption', 'cf-card-actions',
-                           'cf-summary', 'cf-reactions']) {
+                           'cf-summary']) {
           if ((child.className || '').split(/\s+/).includes(cls)) order.push(cls);
         }
         walk(child);
@@ -696,13 +710,19 @@ function feedFetch(handler, feedRows) {
     })(card);
     const at = (name) => order.indexOf(name);
     ok('the card renders media, caption and grouped engagement controls',
-       order.length === 5, JSON.stringify(order));
+       order.length === 4, JSON.stringify(order));
     ok('the caption sits BELOW the media', at('cf-media') < at('cf-caption'),
        JSON.stringify(order));
-    ok('actions, summary and reactions follow the caption in order',
+    ok('actions and summary follow the caption in order',
        at('cf-caption') < at('cf-card-actions')
-         && at('cf-card-actions') < at('cf-summary')
-         && at('cf-summary') < at('cf-reactions'), JSON.stringify(order));
+         && at('cf-card-actions') < at('cf-summary'),
+       JSON.stringify(order));
+    const picker = card.querySelector('.cf-reaction-picker');
+    ok('the picker is inside the action row and hidden by default',
+       !!picker && picker.hidden
+         && card.querySelector('.cf-card-actions').contains(picker));
+    ok('there is no permanent reaction toolbar row',
+       !card.querySelector('.cf-reactions'));
     const engagement = card.querySelector('.cf-engagement');
     const commentBtn = card.querySelector('.cf-card-actions').children
       .filter(b => /Comment/.test(b.textContent))[0];
@@ -759,12 +779,14 @@ function feedFetch(handler, feedRows) {
        video && video.poster === 'https://media.example/v.jpg');
   }
 
-  // ── 10. buildCard: six reaction chips, only the viewer's is pressed ───────
+  // ── 10. buildCard: six reaction choices inside the hidden picker ─────────
   {
     const { api } = run({ boot: MEMBER });
     const card = api._internals.buildCard(makePost({ my_reaction: 'love' }));
-    const chips = card.querySelectorAll('.cf-chip');
-    ok('all six reaction chips are rendered', chips.length === 6, String(chips.length));
+    const picker = card.querySelector('.cf-reaction-picker');
+    const chips = picker ? picker.querySelectorAll('.cf-chip') : [];
+    ok('all six choices are in the reaction picker', chips.length === 6, String(chips.length));
+    ok('the six choices are hidden until the picker opens', !!picker && picker.hidden);
     const pressed = chips.filter(c => c.getAttribute('aria-pressed') === 'true');
     ok('exactly the viewer reaction is marked pressed',
        pressed.length === 1 && pressed[0].textContent === '❤️',
@@ -1421,18 +1443,17 @@ function feedFetch(handler, feedRows) {
   }
 
   // ── 16. Instagram-style action row: heart · comment · share · report ─────
-  // The heart is a real like toggle: it reuses the optimistic reaction path, so
-  // it must POST a `like` and DELETE when un-tapped.
+  // Tapping the heart toggles ❤️ (`love`); the picker handles other reactions.
   {
     const seen = [];
     const { api } = run({
       boot: MEMBER,
       fetchImpl: feedFetch(function (url, opts) {
-        seen.push({ url: String(url), method: (opts && opts.method) || 'GET' });
+        seen.push({ url: String(url), method: (opts && opts.method) || 'GET', body: opts && opts.body });
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({
-            success: true, reaction_count: 5, my_reaction: 'like',
+            success: true, reaction_count: 5, my_reaction: 'love',
           }),
         });
       }),
@@ -1440,36 +1461,40 @@ function feedFetch(handler, feedRows) {
 
     const card = api._internals.buildCard(makePost({ id: 21, is_mine: true }));
     const row = card.querySelector('.cf-card-actions');
+    const trigger = card.querySelector('.cf-reaction-trigger');
     ok('the action row renders', !!row);
     const labels = (row.children || []).map(n => n.textContent);
     ok('the row carries heart, Comment and Share',
        labels.some(l => /Comment/.test(l)) && labels.some(l => /Share/.test(l)),
        JSON.stringify(labels));
     ok('the heart has no text label (it is an icon only)',
-       row.children[0].textContent === '🤍', JSON.stringify(row.children[0].textContent));
-    ok('the heart starts un-liked', row.children[0].className === 'cf-action-btn',
-       row.children[0].className);
+       trigger.querySelector('.cf-act-icon').textContent === '🤍',
+       JSON.stringify(trigger.querySelector('.cf-act-icon').textContent));
+    ok('the heart starts un-liked', !trigger.classList.contains('is-liked'),
+       trigger.className);
     ok('the heart carries an aria-pressed state',
-       row.children[0].getAttribute('aria-pressed') === 'false');
+       trigger.getAttribute('aria-pressed') === 'false');
 
-    // Tap it: an optimistic like goes out, and the heart fills in.
-    row.children[0].onclick();
+    // Tap it: an optimistic love reaction goes out, and the heart fills in.
+    trigger.onclick();
     await tick();
-    ok('tapping the heart POSTs a like',
-       seen.some(s => s.method === 'POST' && /reaction/.test(s.url)),
+    ok('tapping the heart POSTs a love reaction',
+       seen.some(s => s.method === 'POST' && /reaction/.test(s.url)
+         && JSON.parse(s.body).reaction === 'love'),
        JSON.stringify(seen));
-    const liked = api._internals.buildCard(makePost({ id: 21, is_mine: true, my_reaction: 'like' }));
-    const likedRow = liked.querySelector('.cf-card-actions');
+    const liked = api._internals.buildCard(makePost({ id: 21, is_mine: true, my_reaction: 'love' }));
+    const likedTrigger = liked.querySelector('.cf-reaction-trigger');
     ok('a liked post fills the heart red',
-       likedRow.children[0].className.includes('is-liked'), likedRow.children[0].className);
+       likedTrigger.className.includes('is-liked'), likedTrigger.className);
     ok('a liked heart reads ❤️',
-       likedRow.children[0].textContent === '❤️', likedRow.children[0].textContent);
+       likedTrigger.querySelector('.cf-act-icon').textContent === '❤️',
+       likedTrigger.querySelector('.cf-act-icon').textContent);
     ok('a liked heart is aria-pressed',
-       likedRow.children[0].getAttribute('aria-pressed') === 'true');
+       likedTrigger.getAttribute('aria-pressed') === 'true');
 
-    // Un-tap: the same heart REMOVES the like (DELETE, never a null POST).
+    // Un-tap: the same heart REMOVES love (DELETE, never a null POST).
     const before = seen.length;
-    likedRow.children[0].onclick();
+    likedTrigger.onclick();
     await tick();
     const after = seen.slice(before);
     ok('un-liking DELETEs the reaction',
@@ -1478,7 +1503,102 @@ function feedFetch(handler, feedRows) {
        !after.some(s => s.method === 'POST'), JSON.stringify(after));
   }
 
-  // ── 16b. The report control stays in the row for another member ──────────
+  // ── 16a. Press-and-hold, keyboard access, and picker dismissal ────────────
+  {
+    const pickerWrites = [];
+    const { api, store, document } = run({
+      boot: MEMBER,
+      fetchImpl: (url, opts) => {
+        const isReaction = /\/reaction$/.test(String(url));
+        const key = isReaction && opts && opts.body
+          ? JSON.parse(opts.body).reaction : null;
+        if (isReaction && key) pickerWrites.push(key);
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            success: true, posts: [], has_more: false, reaction_count: 1,
+            my_reaction: key, reaction_breakdown: key ? { [key]: 1 } : {},
+          }),
+        });
+      },
+    });
+    const reactionPost = makePost({ id: 22 });
+    const card = api._internals.buildCard(reactionPost);
+    const trigger = card.querySelector('.cf-reaction-trigger');
+    const picker = card.querySelector('.cf-reaction-picker');
+    const keyEvent = { key: 'ArrowDown', prevented: false,
+      preventDefault() { this.prevented = true; } };
+    trigger.dispatch('keydown', keyEvent);
+    ok('ArrowDown opens the picker from the heart',
+       !picker.hidden && trigger.getAttribute('aria-expanded') === 'true');
+    ok('keyboard opening focuses the first reaction choice',
+       !!picker.querySelector('.cf-chip').focused);
+    const escape = { key: 'Escape', prevented: false,
+      preventDefault() { this.prevented = true; } };
+    document.dispatch('keydown', escape);
+    ok('Escape closes the picker and returns focus to the heart',
+       picker.hidden && trigger.getAttribute('aria-expanded') === 'false'
+         && trigger.focused && escape.prevented);
+
+    const quickPost = makePost({ id: 25 });
+    const quickCard = api._internals.buildCard(quickPost);
+    const quickTrigger = quickCard.querySelector('.cf-reaction-trigger');
+    const quickPicker = quickCard.querySelector('.cf-reaction-picker');
+    quickTrigger.dispatch('pointerdown', { pointerType: 'touch', clientX: 12, clientY: 8 });
+    quickTrigger.dispatch('pointerup', {});
+    await Promise.resolve();
+    ok('a short press cancels the long-press picker', quickPicker.hidden);
+    quickTrigger.onclick();
+    await tick();
+    ok('a short press still toggles the heart reaction', quickPost.my_reaction === 'love');
+
+    trigger.dispatch('pointerdown', { pointerType: 'touch', clientX: 20, clientY: 10 });
+    await Promise.resolve();
+    ok('holding the heart opens the picker', !picker.hidden);
+    trigger.dispatch('pointerup', {});
+    trigger.onclick({ preventDefault() {} });
+    ok('the synthetic click after a hold does not toggle a reaction',
+       trigger.getAttribute('aria-pressed') === 'false');
+
+    const haha = picker.querySelectorAll('.cf-chip').filter(
+      chip => chip.getAttribute('aria-label') === 'React with haha')[0];
+    haha.onclick();
+    await tick();
+    ok('choosing a picker option closes the picker', picker.hidden);
+    ok('the selected emoji is sent through the existing reaction API',
+       pickerWrites.includes('haha') && reactionPost.my_reaction === 'haha',
+       JSON.stringify({ pickerWrites, my_reaction: reactionPost.my_reaction }));
+
+    const outsideCard = api._internals.buildCard(makePost({ id: 23 }));
+    const outsideTrigger = outsideCard.querySelector('.cf-reaction-trigger');
+    const outsidePicker = outsideCard.querySelector('.cf-reaction-picker');
+    outsideTrigger.oncontextmenu({ preventDefault() {} });
+    document.dispatch('pointerdown', { target: store.cfFeed });
+    ok('a pointer press outside the picker dismisses it', outsidePicker.hidden);
+  }
+
+  // ── 16b. Scroll gesture cancels the hold instead of reacting ──────────────
+  {
+    const { api } = run({ boot: MEMBER });
+    const card = api._internals.buildCard(makePost({ id: 24 }));
+    const trigger = card.querySelector('.cf-reaction-trigger');
+    const picker = card.querySelector('.cf-reaction-picker');
+    trigger.dispatch('pointerdown', { pointerType: 'touch', clientX: 20, clientY: 10 });
+    trigger.dispatch('pointermove', { clientX: 20, clientY: 40 });
+    await Promise.resolve();
+    ok('moving to scroll cancels the picker hold', picker.hidden);
+    trigger.dispatch('pointerup', {});
+    let prevented = false;
+    trigger.onclick({ preventDefault() { prevented = true; } });
+    ok('a cancelled scroll gesture does not fire a heart reaction', prevented);
+
+    trigger.dispatch('pointerdown', { pointerType: 'mouse', button: 0, clientX: 5, clientY: 5 });
+    trigger.dispatch('pointerleave', {});
+    await Promise.resolve();
+    ok('leaving the heart cancels a pending hold', picker.hidden);
+  }
+
+  // ── 16c. The report control stays in the row for another member ──────────
   {
     const { api } = run({ boot: MEMBER });
     const mine = api._internals.buildCard(makePost({ is_mine: true }));
