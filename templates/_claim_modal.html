@@ -23,10 +23,14 @@
             <div class="claim-network-card"><div class="claim-network-main"><div class="claim-network-icon">⏳</div><div><div class="claim-network-name">Checking networks…</div><div class="claim-network-hint">Looking for any network you have not claimed yet.</div></div></div><div class="claim-network-status">Loading</div></div>
         </div>
         <div class="claim-wallet-note" id="claimWalletNote">GoodMarket recommends Celo first, but you can claim on any network that is available to you.</div>
-        <button id="ubiClaimBtn" onclick="doUbiClaim()" class="btn-primary"><span id="ubiClaimIcon">⏳</span><span id="ubiClaimLabel">Checking…</span></button>
+        <button id="ubiClaimBtn" onclick="doUbiClaim()" class="btn-primary" disabled><span id="ubiClaimIcon">⏳</span><span id="ubiClaimLabel">Checking…</span></button>
         <div id="celoBalanceWarning" role="status" aria-live="polite" class="gm-claim-warning" style="display:none"><strong>⚠️ Keep your CELO in this wallet.</strong> Your CELO is used as gas for claims — transferring it may cause errors on your next claim.</div>
         <div class="claim-status" id="ubiClaimStatus" role="status" aria-live="polite"></div>
         <div id="ubiReVerifyHint" class="gm-reverify-hint" style="display:none"><div>Haven't claimed yet? Your Face Verification may have expired.</div><button onclick="window._triggerReVerify()">🪪 Re-verify Face ID</button></div>
+        <div id="gmEthersLoadActions" hidden>
+            <button type="button" class="btn-secondary" id="gmEthersRetryBtn">Retry wallet tools</button>
+            <a class="btn-secondary" id="gmEthersWalletFallback" href="/wallet?claim=1">Open full Wallet page</a>
+        </div>
         <div class="countdown-box" id="ubiCountdownBox"><div class="countdown-label">Next Claim Opens In</div><div class="countdown-display" id="ubiCountdownDisplay">--:--:--</div><div class="countdown-note">Resets at <strong>12:00 UTC</strong> · 8:00 PM Philippine Time</div></div>
         <button class="btn-secondary" onclick="closeModal('claimModal')">Close</button>
     </div>
