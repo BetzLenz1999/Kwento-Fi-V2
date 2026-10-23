@@ -2,6 +2,7 @@
 // Per-request values come from window.GM_WALLET_BOOT (set inline in wallet.html).
 const WALLET = window.GM_WALLET_BOOT.wallet;
     var LOGIN_METHOD = window.GM_WALLET_BOOT.loginMethod;
+    const CLAIM_ONLY = !!window.GM_WALLET_BOOT.claimOnly;
     const IS_PRIVY_LOGIN = (LOGIN_METHOD || '').toLowerCase() === 'privy';
 
     // Configure the shared WalletConnect bridge so users that logged in via
@@ -1489,6 +1490,8 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             document.body.classList.remove('gm-modal-open');
         }
     }
+    window.openModal = openModal;
+    window.closeModal = closeModal;
     document.querySelectorAll('.modal-overlay').forEach(el => {
         el.addEventListener('click', e => {
             if (e.target !== el) return;
@@ -8496,6 +8499,11 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
 
     // ── Init ──────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
+        // Community loads this bundle in claim-only mode. The claim IIFE above
+        // still initializes availability and signing, but wallet balances,
+        // portfolio, passkey nudges, and wallet-only RPC repair do not belong
+        // on the feed page.
+        if (CLAIM_ONLY) return;
         const reminderBanner = document.getElementById('walletReminderBanner');
         if (reminderBanner) {
             const bannerSeenKey = 'walletUnifiedClaimNoticeSeen_v1';
