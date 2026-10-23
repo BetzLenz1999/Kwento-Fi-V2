@@ -481,9 +481,8 @@ window.GM_COMMUNITY_BOOT = {
    GoodMarket Wallet" and "Log in with email + PIN" were both dead ends for
    guests. The member branch also loads ethers because the shared claim-only
    controller must support local-wallet PIN unlock and claim signing. #}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
-        integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
+<script>window.GMEthersLoader.load().catch(function () {});</script>
 <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
@@ -518,9 +517,8 @@ window.GM_WALLET_BOOT = {
     embed: false
 };
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
-        integrity="sha384-6Zl0Pc8zjSzK8vmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
+<script>window.GMEthersLoader.load().catch(function () {});</script>
 <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
