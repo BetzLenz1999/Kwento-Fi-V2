@@ -3421,6 +3421,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/claim-modal.css', v=ASSET_VERSION) }}">
     <!-- Shared transaction-error formatter so user-facing alerts don't leak ethers/RPC JSON. -->
     <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
+    <script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
+    <script>window.GMEthersLoader.load().catch(function () {});</script>
     <!-- Shared WalletConnect bridge (claim / send / FV signing fallback for WC users). -->
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
