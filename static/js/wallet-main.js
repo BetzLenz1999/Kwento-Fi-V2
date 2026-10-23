@@ -142,6 +142,52 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         return new ethers.JsonRpcProvider('https://forno.celo.org');
     }
 
+    // Trust Wallet mobile can initialize or re-announce its provider when the
+    // dApp becomes visible. Keep this discovery-only and single-flight: it
+    // must never open a signing/account prompt by itself.
+    function _rafflePrimeProviderDiscovery() {
+        if (window.__gmRaffleDiscoveryPromise) return window.__gmRaffleDiscoveryPromise;
+        window.__gmRaffleDiscoveryPromise = Promise.resolve().then(function () {
+            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+            return true;
+        }).finally(function () { window.__gmRaffleDiscoveryPromise = null; });
+        return window.__gmRaffleDiscoveryPromise;
+    }
+    function _raffleAssertConnectedAccount(ep) {
+        return Promise.resolve().then(async function () {
+            let accounts = [];
+            try { accounts = await ep.request({ method: 'eth_accounts' }) || []; } catch (_) {}
+            if (!accounts.length) {
+                accounts = await ep.request({ method: 'eth_requestAccounts' }) || [];
+            }
+            const expected = String(WALLET || '').toLowerCase();
+            const match = accounts.find(function (account) {
+                return String(account || '').toLowerCase() === expected;
+            });
+            if (!match) {
+                throw new Error('Wrong wallet connected. Please use your GoodMarket wallet.');
+            }
+            return match;
+        });
+    }
+    function _raffleBindProviderLifecycle() {
+        if (window.__gmRaffleProviderLifecycleBound) return;
+        window.__gmRaffleProviderLifecycleBound = true;
+        const rediscover = function () {
+            if (typeof document !== 'undefined' &&
+                document.visibilityState && document.visibilityState !== 'visible') return;
+            _rafflePrimeProviderDiscovery().catch(function () {});
+        };
+        try {
+            window.addEventListener('pageshow', rediscover);
+            window.addEventListener('TrustWallet#initialized', rediscover);
+            if (typeof document !== 'undefined' && document.addEventListener) {
+                document.addEventListener('visibilitychange', rediscover);
+            }
+        } catch (_) {}
+    }
+    _raffleBindProviderLifecycle();
+
     async function getRaffleSignerProvider() {
         // Local self-custodial accounts sign with the in-app browser wallet —
         // never with an injected MetaMask/extension (a different account).
@@ -170,6 +216,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         // to go straight to the injected provider, so a WalletConnect user
         // (whose in-app browser injects nothing) was told "No Web3 wallet
         // detected" even though their WC session was live.
+        await _rafflePrimeProviderDiscovery();
         let ep = null;
         if (IS_PRIVY_LOGIN) {
             ep = await _walletGetPrivyProviderIfPreferred({ promptLogin: true, timeoutMs: 10000 });
@@ -183,6 +230,11 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         // login_method persistence).
         if (!ep) ep = await _walletGetWcProviderIfPreferred();
         if (!ep) throw new Error('No wallet detected. Please connect your GoodMarket wallet via MetaMask, Trust Wallet, MiniPay, or WalletConnect.');
+        // Reject a wrong injected/WC account before chain switching or any
+        // raffle contract call. BrowserProvider.getSigner() also checks this
+        // later, but the explicit preflight gives a stable, actionable error
+        // when several mobile wallets are present.
+        await _raffleAssertConnectedAccount(ep);
         const chainHex = await ep.request({ method: 'eth_chainId' });
         if (parseInt(chainHex, 16) !== 42220) {
             try {
