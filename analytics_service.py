@@ -211,6 +211,39 @@ def _configured_gd_usd_price() -> float:
     return price if price > 0 else 0.0
 
 
+def _count_registered_users():
+    """Return the exact number of user_data rows, or None if unavailable.
+
+    Use a count-only PostgREST request and prefer the service-role client so
+    RLS cannot turn a public platform total into a misleading zero. The
+    caller's homepage-stats cache keeps this small query off the hot path.
+    """
+    try:
+        from supabase_client import (
+            get_supabase_admin_client,
+            supabase,
+            supabase_enabled,
+        )
+        if not supabase_enabled:
+            return None
+        try:
+            admin_client = get_supabase_admin_client()
+        except Exception as e:
+            logger.warning(f"homepage_public_stats: service-role client unavailable: {e}")
+            admin_client = None
+        client = admin_client or supabase
+        if client is None:
+            return None
+        response = client.table("user_data").select(
+            "wallet_address", count="exact", head=True
+        ).execute()
+        count = getattr(response, "count", None)
+        return max(0, int(count)) if count is not None else None
+    except Exception as e:
+        logger.warning(f"homepage_public_stats: registered user count unavailable: {e}")
+        return None
+
+
 class AnalyticsService:
     def __init__(self):
         self.user_sessions = {}
@@ -510,8 +543,11 @@ class AnalyticsService:
         active_earners = self._count_active_earners_across_features()
         tasks_last_30_days = self._count_daily_tasks_last_30_days()
         week_growth_pct = self._compute_disbursement_week_growth_pct()
+        total_users = _count_registered_users()
 
         result = {
+            "total_users": total_users,
+            "total_users_formatted": f"{total_users:,}" if total_users is not None else "—",
             "total_g_disbursed": total_g_disbursed,
             "total_g_disbursed_formatted": total_g_disbursed_formatted,
             "total_g_disbursed_usd": total_g_disbursed_usd,
