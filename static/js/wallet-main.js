@@ -8261,19 +8261,29 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         // Handle FV callback query params
         (function() {
             const p = new URLSearchParams(window.location.search);
-            if (p.get('fv_pending') === '1') {
+            if (p.get('fv_complete') === '1') {
+                window._claimEntryMessage = {
+                    text: '✅ Face verification confirmed! Re-checking your eligibility…',
+                    color: '#34d399'
+                };
+                p.delete('fv_complete');
+                history.replaceState(null, '', window.location.pathname + (p.toString() ? '?' + p.toString() : ''));
+            } else if (p.get('fv_pending') === '1') {
                 window._claimEntryMessage = {
                     text: '✅ Face verification submitted! Re-checking your eligibility…',
                     color: '#fcd34d'
                 };
-                history.replaceState(null, '', window.location.pathname);
+                p.delete('fv_pending');
+                p.delete('return_to');
+                history.replaceState(null, '', window.location.pathname + (p.toString() ? '?' + p.toString() : ''));
             } else if (p.get('fv_failed') === '1') {
                 const r = p.get('reason') || '';
                 window._claimEntryMessage = {
                     text: 'Face verification not completed' + (r ? ' (' + r + ')' : '') + '. Please try again.',
                     color: 'var(--red)'
                 };
-                history.replaceState(null, '', window.location.pathname);
+                p.delete('fv_failed');
+                history.replaceState(null, '', window.location.pathname + (p.toString() ? '?' + p.toString() : ''));
             }
         })();
 
@@ -8366,8 +8376,10 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             // `wallet` param below is unrelated to FV signing — it's just the
             // GoodMarket-side redirect param for /wallet?fv_pending=1, which
             // we keep lowercased so the redirect URL is canonical.)
+            const returnTo = (window.GM_WALLET_BOOT && window.GM_WALLET_BOOT.fvReturnTo) || '/wallet';
             const callbackUrl = window.location.origin +
-                '/wallet?fv_pending=1&wallet=' + encodeURIComponent(address.toLowerCase()) + '&src=goodmarket';
+                '/wallet?fv_pending=1&wallet=' + encodeURIComponent(address.toLowerCase()) +
+                '&src=goodmarket&return_to=' + encodeURIComponent(returnTo);
             const params = {
                 account:   address,
                 fvsig:     fvSig,
