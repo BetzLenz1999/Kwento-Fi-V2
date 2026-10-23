@@ -186,13 +186,16 @@
         var status = _homepageGateStatus();
         if (status && message) status.textContent = message;
         var progressWrap = gate.querySelector('[data-gm-pwa-progress-wrap]');
-        if (progressWrap && state !== 'installing' && state !== 'installed') {
+        if (progressWrap && state !== 'installing' && state !== 'installed'
+                && state !== 'installed-awaiting-launch') {
             progressWrap.hidden = true;
         }
         var button = _homepageGateButton();
         if (button) {
-            var busy = state === 'prompting' || state === 'installing';
+            var busy = state === 'prompting' || state === 'installing'
+                || state === 'installed-awaiting-launch';
             button.disabled = busy;
+            button.hidden = state === 'installed-awaiting-launch';
             button.setAttribute('aria-busy', busy ? 'true' : 'false');
         }
     }
@@ -242,19 +245,31 @@
         _homepageInstallCompleted = true;
         _stopHomepageProgress();
         _markInstalled();
-        _setHomepageState('installed', 'Installation complete. Opening GoodMarket…');
-        _setHomepageProgress(100, 'Installation complete. Opening GoodMarket…');
-        hideAllBanners();
-        // Give assistive technology and the visual progress state a brief
-        // completion window before exposing the homepage content.
-        setTimeout(_releaseHomepageGate, 450);
+        // `appinstalled` confirms that the browser/OS accepted the install,
+        // not that this browser tab has become the standalone app. Keep the
+        // strict gate in front of the homepage until the installed icon is
+        // opened and display-mode: standalone is observable here.
+        _setHomepageState(
+            'installed-awaiting-launch',
+            'Installation complete. Open GoodMarket from your home screen or app launcher to continue.'
+        );
+        _setHomepageProgress(
+            100,
+            'Installation complete. Open GoodMarket from your home screen or app launcher to continue.'
+        );
     }
 
-    function _releaseHomepageGate() {
+    function _releaseHomepageGate(reason) {
+        var gate = _homepageGate();
+        var isDappBypass = reason === 'dapp';
+        // A homepage gate may only be released by confirmed standalone mode,
+        // except for the explicit wallet/DApp-browser bypass established by
+        // the existing detection flow. In particular, appinstalled alone is
+        // never a release signal for the current browser tab.
+        if (gate && !isDappBypass && !isStandalone()) return false;
         _stopHomepageProgress();
         _homepageGateReleased = true;
         var root = document.documentElement;
-        var gate = _homepageGate();
         if (root && root.classList) {
             root.classList.remove('gm-pwa-gate-checking');
             root.classList.remove('gm-pwa-gate-required');
@@ -264,6 +279,7 @@
             gate.setAttribute('data-state', 'released');
             gate.setAttribute('aria-hidden', 'true');
         }
+        return true;
     }
 
     function _requireHomepageInstall() {
@@ -291,11 +307,11 @@
         // browser tab is running as the installed app.
         if (isStandalone()) {
             _homepageInstallCompleted = true;
-            _releaseHomepageGate();
+            _releaseHomepageGate('standalone');
             return Promise.resolve('installed');
         }
         if (_hasDappBrowserSignal()) {
-            _releaseHomepageGate();
+            _releaseHomepageGate('dapp');
             return Promise.resolve('dapp');
         }
         var gate = _homepageGate();
@@ -305,11 +321,11 @@
         }
         return _waitForDappBrowser().then(function (isDapp) {
             if (isDapp) {
-                _releaseHomepageGate();
+                _releaseHomepageGate('dapp');
                 return 'dapp';
             }
             if (isStandalone()) {
-                _releaseHomepageGate();
+                _releaseHomepageGate('standalone');
                 return 'installed';
             }
             _requireHomepageInstall();
@@ -607,12 +623,11 @@
             if (_homepageGate()) {
                 if (_homepageInstallState === 'installing' || _homepageInstallState === 'prompting') {
                     _confirmHomepageInstall();
-                } else {
-                    _homepageInstallCompleted = true;
-                    _releaseHomepageGate();
                 }
+                _homepageInstallCompleted = true;
+                _releaseHomepageGate('standalone');
             } else {
-                _releaseHomepageGate();
+                _releaseHomepageGate('standalone');
             }
         }
         window.addEventListener('pageshow', checkInstalledMode);
