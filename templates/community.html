@@ -513,6 +513,7 @@ window.GM_WALLET_BOOT = {
     identityContractAddress: {{ identity_contract_address|default('', true)|tojson }},
     ethereumRpc: {{ ethereum_rpc|default('', true)|tojson }},
     ethereumRpcFallbacks: {{ ethereum_rpc_fallbacks|default('', true)|tojson }},
+    fvReturnTo: {{ fv_return_to|default('/community', true)|tojson }},
     claimOnly: true,
     embed: false
 };
@@ -524,7 +525,7 @@ window.GM_WALLET_BOOT = {
 <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"
-        integrity="sha384-0d+Gr7vM4Drod8E3hXKgciWJSWbjW/opD7KLLygI9ktiWbuvlDwQLzU46wJ9s5gsp7"
+        integrity="sha384-0d+Gr7vM4Drod8E3hXKgciWJSWbjD/opKLLygI9ktiWbuvlDwQLzU46wJ9s5gsp7"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="{{ url_for('static', filename='js/wallet-main.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
