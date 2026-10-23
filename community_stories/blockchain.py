@@ -41,15 +41,12 @@ class CommunityStoriesBlockchain:
         else:
             logger.error("❌ COMMUNITY_KEY not found in environment variables")
         
-        # Initialize Web3
+        # Initialize Web3 (bounded, no probe: this object is built at import
+        # time, so it must not touch the network — see chain_rpc.py).
         try:
-            self.w3 = Web3(Web3.HTTPProvider(self.celo_rpc_url))
-            if not self.w3.is_connected():
-                logger.error("❌ Failed to connect to Celo network")
-                self.enabled = False
-            else:
-                logger.info("✅ Connected to Celo network for Community Stories")
-                self.enabled = True
+            from chain_rpc import make_provider
+            self.w3 = Web3(make_provider(self.celo_rpc_url))
+            self.enabled = True
         except Exception as e:
             logger.error(f"❌ Web3 initialization error: {e}")
             self.enabled = False
