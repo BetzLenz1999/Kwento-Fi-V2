@@ -2371,6 +2371,15 @@
                     Install GoodMarket
                 </button>
             </div>
+            <div class="gm-pwa-gate-progress" data-gm-pwa-progress-wrap hidden>
+                <div class="gm-pwa-gate-progress-heading">
+                    <span>Installing GoodMarket</span>
+                    <strong data-gm-pwa-progress-value>0%</strong>
+                </div>
+                <progress data-gm-pwa-progress max="100" value="0"
+                          aria-label="GoodMarket installation progress"
+                          aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></progress>
+            </div>
             <p class="gm-pwa-gate-status" id="gmPwaGateStatus" data-gm-pwa-status
                role="status" aria-live="polite">Checking whether this is an installed app or a wallet browser…</p>
             <p class="gm-pwa-gate-note">
