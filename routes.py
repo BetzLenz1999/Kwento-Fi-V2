@@ -1681,6 +1681,8 @@ def index():
     except Exception as e:
         logger.error(f"homepage stats failed: {e}")
         homepage_stats = {
+            "total_users": None,
+            "total_users_formatted": "—",
             "total_g_disbursed_formatted": "—",
             "total_g_disbursed_week_growth_pct": None,
             "active_earners_formatted": "—",
