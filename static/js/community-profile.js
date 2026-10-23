@@ -85,6 +85,18 @@
         return false;
     }
 
+    function openMessage(event) {
+        if (!BOOT.wallet) {
+            if (event && event.preventDefault) event.preventDefault();
+            requiresLogin();
+            return false;
+        }
+        if (!BOOT.messageTarget) return true;
+        if (event && event.preventDefault) event.preventDefault();
+        window.location.href = '/messages?with=' + encodeURIComponent(BOOT.messageTarget);
+        return false;
+    }
+
     function toast(message, kind) {
         var node = $('cpToast');
         if (!node) return;
@@ -625,6 +637,7 @@
     }
 
     window.GMProfile = {
+        openMessage: openMessage,
         init: init,
         showTab: showTab,
         loadMorePosts: loadMorePosts,
