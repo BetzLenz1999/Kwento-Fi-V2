@@ -14,6 +14,7 @@ import time
 from datetime import datetime
 from web3 import Web3
 from eth_account import Account
+from chain_rpc import make_provider
 from web3.exceptions import TimeExhausted
 from config import (
     ESCROW_MARKETPLACE_ADDRESS as _CONFIG_ESCROW_ADDRESS,
@@ -180,7 +181,7 @@ class AchievementNFTService:
         self._g_dollar_address = _CONFIG_GD_ADDRESS
         self.tx_receipt_timeout = get_env_int('TX_RECEIPT_TIMEOUT', 300)
 
-        self.w3 = Web3(Web3.HTTPProvider(self.celo_rpc_url, request_kwargs={'timeout': 30}))
+        self.w3 = Web3(make_provider(self.celo_rpc_url))
         self.contract = None
         self.escrow_contract = None
         self.operator_account = None
@@ -188,11 +189,10 @@ class AchievementNFTService:
         self._initialize()
 
     def _initialize(self):
+        """No ``is_connected()`` probe here — this runs at import time via the
+        module-level singleton, and a blocking probe is what made a serverless
+        cold start exceed its function timeout."""
         try:
-            if not self.w3.is_connected():
-                logger.error("Failed to connect to Celo network for NFT service")
-                return
-
             if self.contract_address:
                 self.contract = self.w3.eth.contract(
                     address=Web3.to_checksum_address(self.contract_address),
