@@ -44,6 +44,9 @@
     var _installedFlag = _readFlag(INSTALLED_KEY);
     var _swRegistered = false;
     var _homepageGateReleased = false;
+    var _homepageInstallState = 'checking';
+    var _homepageProgressTimer = null;
+    var _homepageInstallCompleted = false;
 
     // ── storage helpers (fail closed on blocked storage) ────────────────
     function _readFlag(key) {
@@ -155,7 +158,100 @@
         return document.getElementById('gmPwaInstallGate');
     }
 
+    function _homepageGateStatus() {
+        var gate = _homepageGate();
+        return gate ? gate.querySelector('[data-gm-pwa-status]') : null;
+    }
+
+    function _homepageGateButton() {
+        var gate = _homepageGate();
+        return gate ? gate.querySelector('[data-gm-pwa-install]') : null;
+    }
+
+    function _homepageProgress() {
+        var gate = _homepageGate();
+        return gate ? gate.querySelector('[data-gm-pwa-progress]') : null;
+    }
+
+    function _homepageProgressValue() {
+        var gate = _homepageGate();
+        return gate ? gate.querySelector('[data-gm-pwa-progress-value]') : null;
+    }
+
+    function _setHomepageState(state, message) {
+        _homepageInstallState = state;
+        var gate = _homepageGate();
+        if (!gate) return;
+        gate.setAttribute('data-state', state);
+        var status = _homepageGateStatus();
+        if (status && message) status.textContent = message;
+        var progressWrap = gate.querySelector('[data-gm-pwa-progress-wrap]');
+        if (progressWrap && state !== 'installing' && state !== 'installed') {
+            progressWrap.hidden = true;
+        }
+        var button = _homepageGateButton();
+        if (button) {
+            var busy = state === 'prompting' || state === 'installing';
+            button.disabled = busy;
+            button.setAttribute('aria-busy', busy ? 'true' : 'false');
+        }
+    }
+
+    function _setHomepageProgress(percent, message) {
+        var progress = _homepageProgress();
+        var value = _homepageProgressValue();
+        var gate = _homepageGate();
+        var progressWrap = gate ? gate.querySelector('[data-gm-pwa-progress-wrap]') : null;
+        if (progressWrap) progressWrap.hidden = false;
+        if (progress) {
+            progress.value = percent;
+            progress.setAttribute('aria-valuenow', String(percent));
+            progress.hidden = false;
+        }
+        if (value) value.textContent = String(percent) + '%';
+        if (gate) gate.setAttribute('data-progress', String(percent));
+        if (message) {
+            var status = _homepageGateStatus();
+            if (status) status.textContent = message;
+        }
+    }
+
+    function _stopHomepageProgress() {
+        if (_homepageProgressTimer !== null) {
+            clearInterval(_homepageProgressTimer);
+            _homepageProgressTimer = null;
+        }
+    }
+
+    function _startHomepageProgress() {
+        _stopHomepageProgress();
+        _setHomepageState('installing', 'Processing download and installing GoodMarket…');
+        _setHomepageProgress(10);
+        var percent = 10;
+        _homepageProgressTimer = setInterval(function () {
+            // Browsers do not expose byte-level PWA install progress. Stop at
+            // 90% and reserve 100% for appinstalled/standalone confirmation.
+            if (percent >= 90 || _homepageInstallCompleted) return;
+            percent += 10;
+            _setHomepageProgress(percent, 'Processing download and installing GoodMarket…');
+        }, 700);
+    }
+
+    function _confirmHomepageInstall() {
+        if (_homepageInstallCompleted) return;
+        _homepageInstallCompleted = true;
+        _stopHomepageProgress();
+        _markInstalled();
+        _setHomepageState('installed', 'Installation complete. Opening GoodMarket…');
+        _setHomepageProgress(100, 'Installation complete. Opening GoodMarket…');
+        hideAllBanners();
+        // Give assistive technology and the visual progress state a brief
+        // completion window before exposing the homepage content.
+        setTimeout(_releaseHomepageGate, 450);
+    }
+
     function _releaseHomepageGate() {
+        _stopHomepageProgress();
         _homepageGateReleased = true;
         var root = document.documentElement;
         var gate = _homepageGate();
@@ -172,6 +268,7 @@
 
     function _requireHomepageInstall() {
         if (_homepageGateReleased) return;
+        _setHomepageState('required', 'Install GoodMarket, then open it from your home screen or app launcher.');
         var root = document.documentElement;
         var gate = _homepageGate();
         if (root && root.classList) {
@@ -182,8 +279,6 @@
             gate.hidden = false;
             gate.setAttribute('data-state', 'required');
             gate.removeAttribute('aria-hidden');
-            var status = gate.querySelector('[data-gm-pwa-status]');
-            if (status) status.textContent = 'Install GoodMarket, then open it from your home screen or app launcher.';
             var installButton = gate.querySelector('[data-gm-pwa-install]');
             if (installButton && installButton.focus) installButton.focus();
         }
@@ -195,6 +290,7 @@
         // only proves the prompt was accepted at some point, not that this
         // browser tab is running as the installed app.
         if (isStandalone()) {
+            _homepageInstallCompleted = true;
             _releaseHomepageGate();
             return Promise.resolve('installed');
         }
@@ -239,7 +335,8 @@
     }
 
     // ── native prompt ───────────────────────────────────────────────────
-    function promptInstall() {
+    function promptInstall(opts) {
+        opts = opts || {};
         var deferred = _deferredPrompt;
         if (!deferred) {
             return Promise.resolve({
@@ -256,11 +353,9 @@
             .then(function (choice) {
                 var outcome = (choice && choice.outcome) || 'dismissed';
                 if (outcome === 'accepted') {
-                    _markInstalled();
-                    hideAllBanners();
-                    var gateStatus = document.getElementById('gmPwaGateStatus');
-                    if (gateStatus) {
-                        gateStatus.textContent = 'Install request accepted. Waiting for the browser to confirm installation; if this page stays here, open GoodMarket from its new app icon.';
+                    if (!opts.homepage) {
+                        _markInstalled();
+                        hideAllBanners();
                     }
                 }
                 _emit('gm-pwa-install-choice', { outcome: outcome });
@@ -288,19 +383,26 @@
             return Promise.resolve({ outcome: 'already-installed' });
         }
 
-        return promptInstall().then(function (res) {
+        var homepage = !!_homepageGate();
+        if (homepage) _setHomepageState('prompting', 'Opening the browser install request…');
+
+        return promptInstall({ homepage: homepage }).then(function (res) {
             if (res.outcome === 'accepted') {
-                setStatus(_homepageGate()
-                    ? 'Install request accepted. Waiting for confirmation…'
-                    : 'Installing GoodMarket…');
+                if (homepage) {
+                    _startHomepageProgress();
+                } else {
+                    setStatus('Installing GoodMarket…');
+                }
                 return res;
             }
             if (res.outcome === 'dismissed') {
+                if (homepage) _setHomepageState('cancelled', 'Installation cancelled — you can try again anytime.');
                 setStatus('Install cancelled — you can try again anytime.');
                 return res;
             }
             // No native prompt available (Firefox/Safari, or before the
             // engagement threshold) — guide the user to the manual path.
+            if (homepage) _setHomepageState('manual', manualInstallHint());
             setStatus(manualInstallHint());
             return res;
         });
@@ -490,15 +592,28 @@
         });
 
         window.addEventListener('appinstalled', function () {
-            _markInstalled();
-            hideAllBanners();
-            _releaseHomepageGate();
+            if (_homepageGate()) {
+                _confirmHomepageInstall();
+            } else {
+                _markInstalled();
+                hideAllBanners();
+            }
             _emit('gm-pwa-installed', {});
         });
         // Some platforms return from the native install flow into the browser
         // tab; reveal only if the browser now reports installed display mode.
         function checkInstalledMode() {
-            if (isStandalone()) _releaseHomepageGate();
+            if (!isStandalone()) return;
+            if (_homepageGate()) {
+                if (_homepageInstallState === 'installing' || _homepageInstallState === 'prompting') {
+                    _confirmHomepageInstall();
+                } else {
+                    _homepageInstallCompleted = true;
+                    _releaseHomepageGate();
+                }
+            } else {
+                _releaseHomepageGate();
+            }
         }
         window.addEventListener('pageshow', checkInstalledMode);
         window.addEventListener('focus', checkInstalledMode);
