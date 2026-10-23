@@ -107,7 +107,43 @@ def post(conversation_id: str):
         return jsonify({"success": False, "code": "rate_limited",
                         "error": "Please wait a moment before sending another message."}), 429
     data = request.get_json(silent=True) or {}
-    return _result(svc.send_message(wallet, conversation_id, data.get("body"), data.get("client_message_id")))
+    return _result(svc.send_message(wallet, conversation_id, data.get("body"),
+                                    data.get("client_message_id"), data.get("attachment")))
+
+
+@messages_bp.route("/api/messages/conversations/<conversation_id>/attachments/presign", methods=["POST"])
+def presign_attachment(conversation_id: str):
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    data = request.get_json(silent=True) or {}
+    return _result(svc.presign_attachment(wallet, conversation_id,
+                                          data.get("name"), data.get("mime"), data.get("bytes")))
+
+
+@messages_bp.route("/api/messages/attachments/<attachment_id>/download", methods=["GET"])
+def download_attachment(attachment_id: str):
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    result = svc.attachment_download(wallet, attachment_id)
+    if not result.get("success"):
+        return _result(result)
+    return redirect(result["url"], code=302)
+
+
+@messages_bp.route("/api/messages/attachments/<upload_id>/cancel", methods=["POST"])
+def cancel_attachment(upload_id: str):
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    return _result(svc.cancel_attachment(wallet, upload_id))
 
 
 @messages_bp.route("/api/messages/conversations/<conversation_id>/read", methods=["POST"])
