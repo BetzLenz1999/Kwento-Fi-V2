@@ -105,16 +105,20 @@ def community_feed_home():
     # feed is for all signed-in users and guests may read it. Moderation is the
     # report/ban path. Re-add a human_verification_redirect only if the product
     # decision changes.
+    from routes import _claim_boot_context
+
     return render_template(
         "community.html",
-        wallet=wallet,
+        **_claim_boot_context(
+            wallet or "",
+            session.get("login_method", ""),
+            claim_only=True,
+        ),
         is_guest=not bool(wallet),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
         avatar_url=svc.get_avatar_url(wallet) if wallet else None,
         username_required=svc.REQUIRE_USERNAME,
-        login_method=session.get("login_method", ""),
-        walletconnect_project_id=os.getenv("WALLETCONNECT_PROJECT_ID", ""),
         max_caption=svc.MAX_CAPTION,
         max_media=svc.MAX_MEDIA_PER_POST,
         max_image_mb=svc.MAX_IMAGE_MB,
