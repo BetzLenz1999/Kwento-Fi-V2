@@ -658,14 +658,78 @@
         document.body.classList.remove('cp-money-open');
         tipStatus(''); resetTipSuccess();
     }
-    function profileProviders() { var a=[], add=function(p){if(p&&p.provider)p=p.provider;if(p&&typeof p.request==='function'&&a.indexOf(p)<0)a.push(p);}; var e=window.ethereum; if(e&&Array.isArray(e.providers))e.providers.forEach(add); add(e); add(window.trustwallet); add(window.trustWallet); return a; }
+    var profileEip6963Providers = [];
+    try {
+        window.addEventListener('eip6963:announceProvider', function (event) {
+            var detail = event && event.detail;
+            if (!detail || !detail.provider) return;
+            if (!profileEip6963Providers.some(function (item) {
+                return item.provider === detail.provider ||
+                    (item.info && detail.info && item.info.uuid &&
+                     item.info.uuid === detail.info.uuid);
+            })) profileEip6963Providers.push(detail);
+        });
+        window.dispatchEvent(new Event('eip6963:requestProvider'));
+    } catch (_) {}
+    function profileProviderInfo(p) {
+        var item = profileEip6963Providers.find(function (entry) { return entry.provider === p; });
+        return (item && item.info) || {};
+    }
+    function isProfileTrustProvider(p) {
+        var info = profileProviderInfo(p);
+        return !!(p && (p.isTrust || p.isTrustWallet)) ||
+            /trustwallet|trust/i.test(String(info.rdns || '') + ' ' + String(info.name || ''));
+    }
+    function profileProviders() {
+        var a=[], add=function(p){
+            if(p&&p.provider)p=p.provider;
+            if(p&&p.ethereum&&typeof p.ethereum.request==='function')p=p.ethereum;
+            if(p&&typeof p.request==='function'&&a.indexOf(p)<0)a.push(p);
+        };
+        var e=window.ethereum;
+        if(e&&Array.isArray(e.providers))e.providers.forEach(add);
+        add(e); add(window.trustwallet); add(window.trustWallet);
+        profileEip6963Providers.forEach(function (entry) { add(entry.provider); });
+        return a;
+    }
+    function profileProviderOrder(providers) {
+        return providers.slice().sort(function (a, b) {
+            function score(p) {
+                if (isProfileTrustProvider(p)) return 40;
+                if (p && p.isMiniPay) return 30;
+                if (p && p.isMetaMask && !p.isBraveWallet) return 20;
+                return 10;
+            }
+            return score(b) - score(a);
+        });
+    }
     async function profileSignerProvider() {
         var method=String(BOOT.loginMethod||'').toLowerCase();
         if(method==='local'){ if(!window.GMLocalWallet)throw new Error('Your in-app wallet is still loading.'); if(!GMLocalWallet.isUnlocked()&&window._lwOpenUnlockModal)await window._lwOpenUnlockModal({title:'Sign transfer',subtitle:'Enter your PIN to send money',submitLabel:'Sign & Send',busyLabel:'Signing…'}); if(!GMLocalWallet.isUnlocked())throw new Error('Please unlock your in-app wallet first.'); return GMLocalWallet.getProvider(); }
         if(Array.isArray(window.GMPrivyWallets)){var pr=window.GMPrivyWallets.find(function(x){return x&&x.provider&&typeof x.provider.request==='function';});if(pr)return pr.provider;}
         if((method==='walletconnect'||(window.GMWalletConnect&&GMWalletConnect.isPreferred&&GMWalletConnect.isPreferred()))&&window.GMWalletConnect)return await GMWalletConnect.getProvider();
-        var ps=profileProviders(), wanted=String(BOOT.wallet||'').toLowerCase();
-        for(var i=0;i<ps.length;i++){var ac=[];try{ac=await ps[i].request({method:'eth_requestAccounts'})||[]}catch(_){} if(!ac.length)try{ac=await ps[i].request({method:'eth_accounts'})||[]}catch(_){} if(ac.some(function(x){return String(x).toLowerCase()===wanted;}))return ps[i];}
+        var wanted=String(BOOT.wallet||'').toLowerCase(), ps=[];
+        // Trust Wallet mobile may inject after this bundle parsed, so rediscover
+        // for a short bounded window instead of failing on the first tap.
+        var mobile=/android|iphone|ipad|ipod/i.test(String(navigator.userAgent||''));
+        var deadline=Date.now()+(mobile?4200:800);
+        do {
+            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+            ps=profileProviderOrder(profileProviders());
+            for(var i=0;i<ps.length;i++){
+                var ac=[];
+                try{ac=await ps[i].request({method:'eth_accounts'})||[]}catch(_){}
+                if(ac.some(function(x){return String(x).toLowerCase()===wanted;}))return ps[i];
+            }
+            if(!ps.length || Date.now()<deadline) await new Promise(function(resolve){setTimeout(resolve,120);});
+        } while(Date.now()<deadline);
+        // Only prompt the preferred provider once; probing every injected wallet
+        // can open multiple account sheets on phones with several providers.
+        if(ps.length){
+            var prompted=[];
+            try{prompted=await ps[0].request({method:'eth_requestAccounts'})||[]}catch(_){}
+            if(prompted.some(function(x){return String(x).toLowerCase()===wanted;}))return ps[0];
+        }
         throw new Error(ps.length?'Wrong wallet connected. Please switch to your GoodMarket wallet.':'No wallet detected. Please open MetaMask, Trust Wallet, MiniPay, or use WalletConnect.');
     }
     async function profileSendTransaction(provider,prep){
