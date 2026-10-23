@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import os
+import threading
+import time
+from collections import defaultdict, deque
+from flask import Blueprint, jsonify, redirect, render_template, request, session
+
+from . import service as svc
+
+messages_bp = Blueprint("community_messages", __name__)
+_SEND_RATE_SECONDS = max(1, int(os.getenv("COMMUNITY_DM_SEND_RATE_SECONDS", "2")))
+_SEND_HITS: dict[str, deque] = defaultdict(deque)
+_SEND_LOCK = threading.Lock()
+
+
+def _enabled() -> bool:
+    return (os.getenv("COMMUNITY_DIRECT_MESSAGES_ENABLED", "1") or "1").strip().lower() not in {"0", "false", "off", "no"}
+
+
+def _wallet() -> str | None:
+    wallet = session.get("wallet") or session.get("wallet_address")
+    if not wallet or not (session.get("verified") or session.get("ubi_verified")):
+        return None
+    return wallet
+
+
+def _auth_error():
+    return jsonify({"success": False, "code": "auth_required", "error": "Please log in to use Messages."}), 401
+
+
+def _result(result: dict):
+    status = 200 if result.get("success") else 400
+    if result.get("code") == "forbidden":
+        status = 403
+    if result.get("code") == "not_found":
+        status = 404
+    if result.get("code") == "db_unavailable":
+        status = 503
+    return jsonify(result), status
+
+
+def _send_allowed(wallet: str) -> bool:
+    now = time.time()
+    key = (wallet or "").lower()
+    with _SEND_LOCK:
+        hits = _SEND_HITS[key]
+        while hits and hits[0] <= now - _SEND_RATE_SECONDS:
+            hits.popleft()
+        if hits:
+            return False
+        hits.append(now)
+    return True
+
+
+@messages_bp.route("/messages")
+def messages_page():
+    if not _enabled():
+        return redirect("/community")
+    wallet = _wallet()
+    if not wallet:
+        return redirect("/")
+    return render_template("messages.html", wallet=wallet,
+                           viewer_username=svc.profile_service.get_username(wallet),
+                           initial_username=(request.args.get("with") or "").strip().lstrip("@"))
+
+
+@messages_bp.route("/api/messages/conversations", methods=["GET"])
+def conversations():
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled", "conversations": []}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    return _result(svc.list_conversations(wallet))
+
+
+@messages_bp.route("/api/messages/start", methods=["POST"])
+def start():
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    data = request.get_json(silent=True) or {}
+    return _result(svc.start_conversation(wallet, data.get("username") or ""))
+
+
+@messages_bp.route("/api/messages/conversations/<conversation_id>", methods=["GET"])
+def thread(conversation_id: str):
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    return _result(svc.get_thread(wallet, conversation_id, request.args.get("limit", type=int)))
+
+
+@messages_bp.route("/api/messages/conversations/<conversation_id>/messages", methods=["POST"])
+def post(conversation_id: str):
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    if not _send_allowed(wallet):
+        return jsonify({"success": False, "code": "rate_limited",
+                        "error": "Please wait a moment before sending another message."}), 429
+    data = request.get_json(silent=True) or {}
+    return _result(svc.send_message(wallet, conversation_id, data.get("body"), data.get("client_message_id")))
+
+
+@messages_bp.route("/api/messages/conversations/<conversation_id>/read", methods=["POST"])
+def read(conversation_id: str):
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    return _result(svc.mark_read(wallet, conversation_id))
+
+
+def init_messages(app):
+    app.register_blueprint(messages_bp)
+    return True
