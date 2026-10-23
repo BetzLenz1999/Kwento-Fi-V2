@@ -32,14 +32,12 @@ class LearnBlockchainService:
         self._wallet_key = os.getenv('LEARN_WALLET_PRIVATE_KEY')
         self.tx_receipt_timeout = get_env_int('TX_RECEIPT_TIMEOUT', 300)
 
-        self.w3 = Web3(Web3.HTTPProvider(self.celo_rpc_url, request_kwargs={'timeout': 30}))
+        # Bounded, non-probing provider: this object is built at import time
+        # (module-level singleton below), so it must not touch the network.
+        from chain_rpc import make_provider
+        self.w3 = Web3(make_provider(self.celo_rpc_url))
         self.contract = None
         self.owner_account = None
-
-        if self.w3.is_connected():
-            logger.info("Connected to Celo network for Learn & Earn")
-        else:
-            logger.error("Failed to connect to Celo network")
 
         self._initialize()
 
