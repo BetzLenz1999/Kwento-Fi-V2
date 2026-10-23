@@ -571,7 +571,10 @@
 
         const overlay = document.createElement('div');
         overlay.id = 'lwUnlockModalOverlay';
-        overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;align-items:center;justify-content:center;padding:1rem;';
+        // This prompt can be opened from another transaction sheet (for
+        // example Community Profile Send Money). Keep it above the caller so
+        // the PIN field remains focusable and tappable on mobile.
+        overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2147483000;align-items:center;justify-content:center;padding:1rem;';
         // Signing-oriented defaults — the modal almost always appears right
         // before a transaction signature, so say what the user is doing.
         // Callers may override via _lwOpenUnlockModal({title, subtitle, ...}).
