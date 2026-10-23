@@ -10,7 +10,7 @@
    - Images are re-encoded through a canvas before upload, which also STRIPS
      EXIF — a phone photo otherwise publishes the user's GPS coordinates.
    - The reaction count is optimistic for feel, then reconciled with the
-     server's number; a failure rolls both the chip and the count back. */
+     server's number; a failure rolls the selected reaction and count back. */
 
 (function () {
     'use strict';
@@ -44,6 +44,7 @@
     var _pending = [];         // composer attachments awaiting upload
     var _posting = false;
     var _reactionInFlight = {};  // post_id -> true (serialise per post)
+    var _activeReactionPicker = null;
     var _commentsOpen = {};    // post_id -> true
     var _commentCache = {};    // post_id -> [comments]
     var _earnBusy = false;     // one in-flight rewards fetch at a time
@@ -949,6 +950,29 @@
         }, 900);
     }
 
+    function closeReactionPicker(returnFocus) {
+        if (!_activeReactionPicker) return;
+        var active = _activeReactionPicker;
+        active.picker.hidden = true;
+        active.trigger.setAttribute('aria-expanded', 'false');
+        _activeReactionPicker = null;
+        if (returnFocus && active.trigger.focus) active.trigger.focus();
+    }
+
+    function openReactionPicker(trigger, picker, post, focusFirst) {
+        if (_activeReactionPicker
+                && _activeReactionPicker.picker !== picker) {
+            closeReactionPicker(false);
+        }
+        picker.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+        _activeReactionPicker = { trigger: trigger, picker: picker, postId: post.id };
+        if (focusFirst) {
+            var first = picker.querySelector('.cf-chip');
+            if (first && first.focus) first.focus();
+        }
+    }
+
     // `onSingle` runs when the tap turned out NOT to be a double tap.
     function onMediaTap(post, mediaWrap, url, kind, onSingle) {
         var now = Date.now();
@@ -966,23 +990,117 @@
         heartBurst(mediaWrap);
     }
 
-    /* Instagram's action row: heart · comment · share, with report pushed to the
-       right. The heart IS the `like` reaction — same optimistic path, same
-       rollback — so the row adds no new write. */
+    /* Action row: heart · comment · share, with report pushed to the right.
+       Tapping the heart toggles ❤️; holding it opens the existing reaction
+       choices. Every choice reuses react() and the same optimistic API path. */
     function buildActionRow(post, body) {
         var actions = el('div', 'cf-card-actions');
 
-        var liked = post.my_reaction === 'like';
-        var likeBtn = el('button', 'cf-action-btn' + (liked ? ' is-liked' : ''));
-        likeBtn.type = 'button';
-        likeBtn.appendChild(el('span', 'cf-act-icon', liked ? '❤️' : '🤍'));
-        likeBtn.setAttribute('aria-pressed', liked ? 'true' : 'false');
-        likeBtn.setAttribute('aria-label', liked ? 'Unlike this post' : 'Like this post');
-        likeBtn.onclick = function () {
-            // Tapping a liked heart clears it, exactly like the chip row.
-            react(post, liked ? null : 'like');
+        var hearted = post.my_reaction === 'love';
+        var reactionControl = el('div', 'cf-reaction-control');
+        var heartBtn = el('button', 'cf-action-btn cf-reaction-trigger'
+            + (hearted ? ' is-liked' : ''));
+        heartBtn.type = 'button';
+        heartBtn.appendChild(el('span', 'cf-act-icon', hearted ? '❤️' : '🤍'));
+        heartBtn.setAttribute('aria-pressed', hearted ? 'true' : 'false');
+        heartBtn.setAttribute('aria-expanded', 'false');
+        heartBtn.setAttribute('aria-controls', 'cf-reaction-picker-' + post.id);
+        heartBtn.setAttribute('aria-keyshortcuts', 'ArrowDown');
+        heartBtn.setAttribute('aria-label', hearted
+            ? 'Remove heart reaction; press and hold or press ArrowDown to choose another reaction'
+            : 'React with love; press and hold or press ArrowDown to choose a reaction');
+        heartBtn.title = 'Tap for a heart; press and hold or press ArrowDown to choose a reaction';
+
+        var picker = el('div', 'cf-reaction-picker');
+        picker.id = 'cf-reaction-picker-' + post.id;
+        picker.hidden = true;
+        picker.setAttribute('role', 'group');
+        picker.setAttribute('aria-label', 'Choose a reaction');
+        Object.keys(REACTIONS).forEach(function (key) {
+            var option = el('button', 'cf-chip', REACTIONS[key]);
+            option.type = 'button';
+            option.setAttribute('aria-label', 'React with ' + key);
+            option.setAttribute('aria-pressed', post.my_reaction === key ? 'true' : 'false');
+            option.onclick = function () {
+                closeReactionPicker(false);
+                react(post, key);
+            };
+            picker.appendChild(option);
+        });
+
+        var holdTimer = null;
+        var holdOpened = false;
+        var suppressNextClick = false;
+        var startX = 0;
+        var startY = 0;
+        function cancelHoldTimer() {
+            if (holdTimer !== null) {
+                clearTimeout(holdTimer);
+                holdTimer = null;
+            }
+        }
+        heartBtn.addEventListener('pointerdown', function (event) {
+            if (event.pointerType === 'mouse' && event.button !== 0) return;
+            cancelHoldTimer();
+            suppressNextClick = false;
+            holdOpened = false;
+            startX = Number(event.clientX) || 0;
+            startY = Number(event.clientY) || 0;
+            holdTimer = setTimeout(function () {
+                holdTimer = null;
+                holdOpened = true;
+                suppressNextClick = true;
+                openReactionPicker(heartBtn, picker, post, false);
+            }, 400);
+        });
+        heartBtn.addEventListener('pointermove', function (event) {
+            if (holdTimer === null) return;
+            var movedX = Math.abs((Number(event.clientX) || 0) - startX);
+            var movedY = Math.abs((Number(event.clientY) || 0) - startY);
+            if (movedX > 12 || movedY > 12) {
+                cancelHoldTimer();
+                suppressNextClick = true;
+            }
+        });
+        heartBtn.addEventListener('pointerleave', function () {
+            if (holdTimer === null) return;
+            cancelHoldTimer();
+            suppressNextClick = true;
+        });
+        heartBtn.addEventListener('pointerup', cancelHoldTimer);
+        heartBtn.addEventListener('pointercancel', function () {
+            cancelHoldTimer();
+            if (holdOpened) closeReactionPicker(false);
+            holdOpened = false;
+            suppressNextClick = true;
+        });
+        heartBtn.oncontextmenu = function (event) {
+            if (event && event.preventDefault) event.preventDefault();
+            cancelHoldTimer();
+            holdOpened = true;
+            suppressNextClick = true;
+            openReactionPicker(heartBtn, picker, post, false);
+            return false;
         };
-        actions.appendChild(likeBtn);
+        heartBtn.addEventListener('keydown', function (event) {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                openReactionPicker(heartBtn, picker, post, true);
+            }
+        });
+        heartBtn.onclick = function (event) {
+            if (suppressNextClick) {
+                suppressNextClick = false;
+                holdOpened = false;
+                if (event && event.preventDefault) event.preventDefault();
+                return;
+            }
+            closeReactionPicker(false);
+            react(post, hearted ? null : 'love');
+        };
+        reactionControl.appendChild(heartBtn);
+        reactionControl.appendChild(picker);
+        actions.appendChild(reactionControl);
 
         var commentBtn = el('button', 'cf-action-btn');
         commentBtn.type = 'button';
@@ -1146,21 +1264,6 @@
             : ''));
         engagement.appendChild(summary);
 
-        // Reaction bar — always visible, one tap; kept beside the action row.
-        var bar = el('div', 'cf-reactions');
-        bar.setAttribute('role', 'group');
-        bar.setAttribute('aria-label', 'Reactions');
-        Object.keys(REACTIONS).forEach(function (key) {
-            var chip = el('button', 'cf-chip', REACTIONS[key]);
-            chip.type = 'button';
-            // The emoji IS the label text, but aria-label gives screen readers
-            // the word ("React with love") instead of the glyph name.
-            chip.setAttribute('aria-label', 'React with ' + key);
-            chip.setAttribute('aria-pressed', post.my_reaction === key ? 'true' : 'false');
-            chip.onclick = function () { react(post, key); };
-            bar.appendChild(chip);
-        });
-        engagement.appendChild(bar);
         body.appendChild(engagement);
 
         card.appendChild(body);
@@ -1176,6 +1279,10 @@
 
     function rerenderPost(post) {
         var card = document.querySelector('[data-post-id="' + post.id + '"]');
+        if (_activeReactionPicker
+                && String(_activeReactionPicker.postId) === String(post.id)) {
+            closeReactionPicker(false);
+        }
         if (!card || !card.parentNode) { renderFeed(); return; }
         card.parentNode.replaceChild(buildCard(post), card);
     }
@@ -1185,9 +1292,9 @@
     function react(post, key) {
         if (!WALLET) { requiresLogin(); return; }
         var previous = post.my_reaction;
-        // A null/undefined key is an explicit REMOVAL, not a no-op: the action
-        // row's heart calls `react(post, null)` to un-like, and it must take the
-        // DELETE path rather than POST a reaction of `null`.
+        // A null/undefined key is an explicit REMOVAL, not a no-op: the heart
+        // calls `react(post, null)` to remove love, and it must take the DELETE
+        // path rather than POST a reaction of `null`.
         if (key === null || key === undefined) {
             if (!previous) return;
             key = previous;
@@ -2059,6 +2166,24 @@
             if (!target || target.id !== 'cfCaption') return;
             addFiles(event.clipboardData.files);
         });
+        document.addEventListener('pointerdown', function (event) {
+            if (!_activeReactionPicker) return;
+            var target = event && event.target;
+            if (target && (target === _activeReactionPicker.picker
+                    || target === _activeReactionPicker.trigger
+                    || _activeReactionPicker.picker.contains(target)
+                    || _activeReactionPicker.trigger.contains(target))) return;
+            closeReactionPicker(false);
+        });
+        document.addEventListener('focusin', function (event) {
+            if (!_activeReactionPicker) return;
+            var target = event && event.target;
+            if (target && (target === _activeReactionPicker.picker
+                    || target === _activeReactionPicker.trigger
+                    || _activeReactionPicker.picker.contains(target)
+                    || _activeReactionPicker.trigger.contains(target))) return;
+            closeReactionPicker(false);
+        });
         // Drag & drop onto the composer.
         var composer = $('cfComposer');
         if (composer) {
@@ -2073,6 +2198,11 @@
         }
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape') {
+                if (_activeReactionPicker) {
+                    closeReactionPicker(true);
+                    event.preventDefault();
+                    return;
+                }
                 closeLightbox(); closeEdit(); closeSheet(); closeSearch();
                 closeAirtime();
                 closeClaim();
