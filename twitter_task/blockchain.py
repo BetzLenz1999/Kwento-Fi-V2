@@ -39,12 +39,10 @@ class TwitterTaskBlockchain:
     def __init__(self):
         self.celo_rpc_url = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
         self.chain_id = get_env_int('CHAIN_ID', 42220)
-        self.w3 = Web3(Web3.HTTPProvider(self.celo_rpc_url))
-
-        if self.w3.is_connected():
-            logger.info("✅ Connected to Celo network for Twitter Task")
-        else:
-            logger.error("❌ Failed to connect to Celo network")
+        # Bounded, non-probing provider: this object is built at import time
+        # (module-level singleton below), so it must not touch the network.
+        from chain_rpc import make_provider
+        self.w3 = Web3(make_provider(self.celo_rpc_url))
 
         logger.info("🐦 Twitter Task Blockchain Service initialized (DAILYTASK_KEY direct-transfer mode)")
 
