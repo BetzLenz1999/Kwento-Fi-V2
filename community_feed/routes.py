@@ -113,6 +113,7 @@ def community_feed_home():
             wallet or "",
             session.get("login_method", ""),
             claim_only=True,
+            fv_return_to="/community",
         ),
         is_guest=not bool(wallet),
         display_name=svc.display_name(wallet) if wallet else None,
