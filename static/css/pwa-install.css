@@ -271,6 +271,28 @@ html.gm-pwa-gate-required .gm-pwa-gate { display: grid; }
     font-size: 0.9rem;
     font-variant-numeric: tabular-nums;
 }
+.gm-pwa-gate-progress-message {
+    min-height: 1.35em;
+    margin: 0.65rem 0 0;
+    color: rgba(226, 232, 240, 0.9);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+.gm-pwa-gate-progress-message::after {
+    content: ' Progress is approximate while your browser prepares the app.';
+    display: block;
+    margin-top: 0.25rem;
+    color: rgba(203, 213, 225, 0.64);
+    font-size: 0.7rem;
+}
+.gm-pwa-gate[data-state="installed-awaiting-launch"] .gm-pwa-gate-progress-message {
+    color: #fde68a;
+    font-weight: 700;
+}
+.gm-pwa-gate[data-state="installed-awaiting-launch"] .gm-pwa-gate-progress-message::after {
+    content: 'Open the installed app to finish setup.';
+    color: rgba(253, 230, 138, 0.76);
+}
 .gm-pwa-gate-progress progress {
     display: block;
     width: 100%;
