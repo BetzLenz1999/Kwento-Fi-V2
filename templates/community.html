@@ -478,8 +478,8 @@ window.GM_COMMUNITY_BOOT = {
    call `_assertEthers()` and throw "ethers.js is not loaded on this page."
    without it, and `showLocalWalletPanel()` bails out early — so "Create
    GoodMarket Wallet" and "Log in with email + PIN" were both dead ends for
-   guests. The member branch deliberately loads NO ethers (the feed signs
-   nothing); this tag is inside the guest branch only. #}
+   guests. The member branch also loads ethers because the shared claim-only
+   controller must support local-wallet PIN unlock and claim signing. #}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
         integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -495,6 +495,28 @@ window.GM_COMMUNITY_BOOT = {
 {% set get_started_boot = {'return_to': '/community'} %}
 {% include "_get_started_modal.html" %}
 {% else %}
+<script>
+// wallet-main.js is shared with /wallet; keep this payload identical in shape
+// so its live Identity/UBI availability and signing paths work in Community.
+window.GM_WALLET_BOOT = {
+    wallet: {{ wallet|tojson }},
+    loginMethod: {{ login_method|default('', true)|tojson }},
+    gdTokenAddress: {{ gd_token_address|default('', true)|tojson }},
+    raffleContractAddress: {{ raffle_contract_address|default('', true)|tojson }},
+    walletConnectProjectId: {{ walletconnect_project_id|default('', true)|tojson }},
+    assetVersion: {{ ASSET_VERSION|default('', true)|tojson }},
+    bridgeContract: {{ bridge_contract|default('', true)|tojson }},
+    celoGdTokenContract: {{ celo_gd_token_contract|default('', true)|tojson }},
+    xdcGdTokenContract: {{ xdc_gd_token_contract|default('', true)|tojson }},
+    xdcChainId: {{ xdc_chain_id|default(50, true)|tojson }},
+    celoChainId: {{ celo_chain_id|default(42220, true)|tojson }},
+    identityContractAddress: {{ identity_contract_address|default('', true)|tojson }},
+    ethereumRpc: {{ ethereum_rpc|default('', true)|tojson }},
+    ethereumRpcFallbacks: {{ ethereum_rpc_fallbacks|default('', true)|tojson }},
+    claimOnly: true,
+    embed: false
+};
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
         integrity="sha384-6Zl0Pc8zjSzK8vmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
