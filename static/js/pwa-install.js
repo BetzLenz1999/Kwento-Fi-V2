@@ -38,10 +38,12 @@
     var SW_SCOPE = '/';
     var INSTALLED_KEY = 'gmPwaInstalled_v1';
     var UPDATE_POLL_MS = 60000;
+    var DAPP_DETECTION_MS = 900;
 
     var _deferredPrompt = null;
     var _installedFlag = _readFlag(INSTALLED_KEY);
     var _swRegistered = false;
+    var _homepageGateReleased = false;
 
     // ── storage helpers (fail closed on blocked storage) ────────────────
     function _readFlag(key) {
@@ -86,6 +88,139 @@
         return iosDevice || iPadOs;
     }
 
+    // The homepage gate is bypassed for wallet/DApp browsers. Check the
+    // injected EIP-1193 provider synchronously first, then wait briefly for
+    // late provider injection and EIP-6963 announcements before blocking.
+    function _hasInjectedWallet() {
+        try {
+            var eth = window.ethereum;
+            if (eth && (typeof eth.request === 'function' || eth.isMetaMask
+                    || eth.isMiniPay || eth.isTrust || eth.isTrustWallet
+                    || eth.isCoinbaseWallet || eth.isBraveWallet
+                    || (Array.isArray(eth.providers) && eth.providers.length))) return true;
+            if (window.celo && typeof window.celo.request === 'function') return true;
+        } catch (_) { /* cross-origin or guarded provider getter */ }
+        return false;
+    }
+
+    function _hasDappBrowserSignal() {
+        if (_hasInjectedWallet()) return true;
+        var ua = (window.navigator && window.navigator.userAgent) || '';
+        if (/MiniPay|MetaMaskMobile|TrustWallet|CoinbaseWallet|TokenPocket|imToken|OKApp|Rainbow|Telegram/i.test(ua)) {
+            return true;
+        }
+        try {
+            var webApp = window.Telegram && window.Telegram.WebApp;
+            if (webApp && (webApp.initData || webApp.initDataUnsafe
+                    && Object.keys(webApp.initDataUnsafe).length)) return true;
+        } catch (_) { /* optional SDK */ }
+        return false;
+    }
+
+    function _waitForDappBrowser() {
+        if (_hasDappBrowserSignal()) return Promise.resolve(true);
+        return new Promise(function (resolve) {
+            var settled = false;
+            var pollTimer = null;
+            var timeoutTimer = null;
+            function cleanup() {
+                if (pollTimer !== null) clearTimeout(pollTimer);
+                if (timeoutTimer !== null) clearTimeout(timeoutTimer);
+                try { window.removeEventListener('eip6963:announceProvider', onProvider); } catch (_) {}
+                try { window.removeEventListener('ethereum#initialized', check); } catch (_) {}
+            }
+            function finish(found) {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(found);
+            }
+            function onProvider(event) {
+                // Any EIP-6963 provider is an explicit injected-wallet signal.
+                if (event && event.detail && event.detail.provider) finish(true);
+            }
+            function check() {
+                if (_hasDappBrowserSignal()) { finish(true); return; }
+                pollTimer = setTimeout(check, 100);
+            }
+            try { window.addEventListener('eip6963:announceProvider', onProvider); } catch (_) {}
+            try { window.addEventListener('ethereum#initialized', check); } catch (_) {}
+            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+            pollTimer = setTimeout(check, 100);
+            timeoutTimer = setTimeout(function () { finish(_hasDappBrowserSignal()); }, DAPP_DETECTION_MS);
+        });
+    }
+
+    function _homepageGate() {
+        return document.getElementById('gmPwaInstallGate');
+    }
+
+    function _releaseHomepageGate() {
+        _homepageGateReleased = true;
+        var root = document.documentElement;
+        var gate = _homepageGate();
+        if (root && root.classList) {
+            root.classList.remove('gm-pwa-gate-checking');
+            root.classList.remove('gm-pwa-gate-required');
+        }
+        if (gate) {
+            gate.hidden = true;
+            gate.setAttribute('data-state', 'released');
+            gate.setAttribute('aria-hidden', 'true');
+        }
+    }
+
+    function _requireHomepageInstall() {
+        if (_homepageGateReleased) return;
+        var root = document.documentElement;
+        var gate = _homepageGate();
+        if (root && root.classList) {
+            root.classList.remove('gm-pwa-gate-checking');
+            root.classList.add('gm-pwa-gate-required');
+        }
+        if (gate) {
+            gate.hidden = false;
+            gate.setAttribute('data-state', 'required');
+            gate.removeAttribute('aria-hidden');
+            var status = gate.querySelector('[data-gm-pwa-status]');
+            if (status) status.textContent = 'Install GoodMarket, then open it from your home screen or app launcher.';
+            var installButton = gate.querySelector('[data-gm-pwa-install]');
+            if (installButton && installButton.focus) installButton.focus();
+        }
+    }
+
+    function _initHomepageGate() {
+        if (!_homepageGate()) return Promise.resolve('not-applicable');
+        // Do not trust a local-storage "installed" marker for the gate: it
+        // only proves the prompt was accepted at some point, not that this
+        // browser tab is running as the installed app.
+        if (isStandalone()) {
+            _releaseHomepageGate();
+            return Promise.resolve('installed');
+        }
+        if (_hasDappBrowserSignal()) {
+            _releaseHomepageGate();
+            return Promise.resolve('dapp');
+        }
+        var gate = _homepageGate();
+        if (gate) {
+            gate.hidden = false;
+            gate.setAttribute('data-state', 'checking');
+        }
+        return _waitForDappBrowser().then(function (isDapp) {
+            if (isDapp) {
+                _releaseHomepageGate();
+                return 'dapp';
+            }
+            if (isStandalone()) {
+                _releaseHomepageGate();
+                return 'installed';
+            }
+            _requireHomepageInstall();
+            return 'install-required';
+        });
+    }
+
     function isInstalled() {
         return _installedFlag || isStandalone();
     }
@@ -123,6 +258,10 @@
                 if (outcome === 'accepted') {
                     _markInstalled();
                     hideAllBanners();
+                    var gateStatus = document.getElementById('gmPwaGateStatus');
+                    if (gateStatus) {
+                        gateStatus.textContent = 'Install request accepted. Waiting for the browser to confirm installation; if this page stays here, open GoodMarket from its new app icon.';
+                    }
                 }
                 _emit('gm-pwa-install-choice', { outcome: outcome });
                 return { outcome: outcome };
@@ -151,7 +290,9 @@
 
         return promptInstall().then(function (res) {
             if (res.outcome === 'accepted') {
-                setStatus('Installing GoodMarket…');
+                setStatus(_homepageGate()
+                    ? 'Install request accepted. Waiting for confirmation…'
+                    : 'Installing GoodMarket…');
                 return res;
             }
             if (res.outcome === 'dismissed') {
@@ -351,8 +492,17 @@
         window.addEventListener('appinstalled', function () {
             _markInstalled();
             hideAllBanners();
+            _releaseHomepageGate();
             _emit('gm-pwa-installed', {});
         });
+        // Some platforms return from the native install flow into the browser
+        // tab; reveal only if the browser now reports installed display mode.
+        function checkInstalledMode() {
+            if (isStandalone()) _releaseHomepageGate();
+        }
+        window.addEventListener('pageshow', checkInstalledMode);
+        window.addEventListener('focus', checkInstalledMode);
+        document.addEventListener('visibilitychange', checkInstalledMode);
 
         // Declarative click handling (no inline handlers → CSP-friendly).
         document.addEventListener('click', function (event) {
@@ -369,7 +519,8 @@
             var installBtn = target.closest('[data-gm-pwa-install]');
             if (installBtn) {
                 event.preventDefault();
-                var banner = installBtn.closest('[data-gm-pwa-banner]');
+                var banner = installBtn.closest('[data-gm-pwa-banner]')
+                    || installBtn.closest('[data-gm-pwa-gate]');
                 var statusEl = banner ? banner.querySelector('[data-gm-pwa-status]') : null;
                 handleInstallClick({ statusId: statusEl ? statusEl.id : null });
             }
@@ -381,6 +532,7 @@
         _wireGlobalListeners();
         _listenForUpdates();
         registerServiceWorker();
+        _initHomepageGate();
         initBanners();
     }
 
