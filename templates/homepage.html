@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if pwa_installable %} class="gm-pwa-gate-checking"{% endif %}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -32,6 +32,19 @@
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+        {% if pwa_installable %}
+        html.gm-pwa-gate-checking body > :not(#gmPwaInstallGate),
+        html.gm-pwa-gate-required body > :not(#gmPwaInstallGate) {
+            visibility: hidden !important; pointer-events: none !important;
+        }
+        html.gm-pwa-gate-checking body,
+        html.gm-pwa-gate-required body { overflow: hidden !important; }
+        html.gm-pwa-gate-checking #gmPwaInstallGate,
+        html.gm-pwa-gate-required #gmPwaInstallGate {
+            position: fixed; inset: 0; z-index: 2147483000; display: grid;
+        }
+        {% endif %}
 
         * {
             margin: 0;
@@ -2330,25 +2343,41 @@
     {% include "_wallet_guide_banner.html" %}
 
     {% if pwa_installable %}
-    <!-- ── Install GoodMarket app (homepage entry point) ──
-         Persistent (until installed or dismissed) so any visitor who wants the
-         app can install it. Revealed by static/js/pwa-install.js
-         (data-gm-pwa-* contract); starts display:none so it cannot flash before
-         the installed-state check. Hidden entirely when already installed. -->
-    <div id="pwaInstallBannerHome" class="gm-pwa-banner" data-gm-pwa-banner
-         data-gm-pwa-mode="persistent" data-gm-pwa-key="home"
-         role="region" aria-label="Install the GoodMarket app">
-        <div class="gm-pwa-icon" aria-hidden="true">📲</div>
-        <div class="gm-pwa-body">
-            <div class="gm-pwa-title">Install the GoodMarket app</div>
-            <div class="gm-pwa-copy">Add GoodMarket to your home screen for one-tap access — no need to type the address again. Works on Android and iPhone.</div>
+    <!-- Fullscreen install gate: the homepage stays hidden until installation
+         is confirmed, except for standalone apps and injected-wallet browsers. -->
+    <main id="gmPwaInstallGate" class="gm-pwa-gate" data-gm-pwa-gate
+          data-state="checking" role="dialog" aria-modal="true"
+          aria-labelledby="gmPwaGateTitle" aria-describedby="gmPwaGateCopy">
+        <div class="gm-pwa-gate-card">
+            <div class="gm-pwa-gate-icon" aria-hidden="true">📲</div>
+            <p class="gm-pwa-gate-eyebrow">GOODMARKET APP</p>
+            <h1 id="gmPwaGateTitle">Install GoodMarket to continue</h1>
+            <p id="gmPwaGateCopy" class="gm-pwa-gate-copy">
+                Add GoodMarket to your device, then open it from your home screen or app launcher to access the homepage.
+            </p>
+            <div class="gm-pwa-gate-stats" aria-label="GoodMarket community statistics">
+                <div class="gm-pwa-gate-stat">
+                    <span>Registered users</span>
+                    <strong>{{ homepage_stats.total_users_formatted|default('—') }}</strong>
+                </div>
+                <div class="gm-pwa-gate-stat">
+                    <span>Total G$ Distributed</span>
+                    <strong>{{ homepage_stats.total_g_disbursed_formatted|default('—') }}</strong>
+                </div>
+            </div>
+            <div class="gm-pwa-gate-actions">
+                <button type="button" id="gmPwaGateInstallButton"
+                        class="gm-pwa-install-btn" data-gm-pwa-install>
+                    Install GoodMarket
+                </button>
+            </div>
+            <p class="gm-pwa-gate-status" id="gmPwaGateStatus" data-gm-pwa-status
+               role="status" aria-live="polite">Checking whether this is an installed app or a wallet browser…</p>
+            <p class="gm-pwa-gate-note">
+                If no install prompt appears, follow the browser’s “Install app” or “Add to Home Screen” instructions. After installing, open GoodMarket from its new icon.
+            </p>
         </div>
-        <div class="gm-pwa-actions">
-            <button type="button" class="gm-pwa-install-btn" data-gm-pwa-install>⬇️ Install app</button>
-            <button type="button" class="gm-pwa-dismiss-btn" data-gm-pwa-dismiss aria-label="Dismiss install prompt">×</button>
-        </div>
-        <div class="gm-pwa-status" id="pwaInstallStatusHome" data-gm-pwa-status role="status" aria-live="polite"></div>
-    </div>
+    </main>
     {% endif %}
 
     <!-- Hero Section -->
