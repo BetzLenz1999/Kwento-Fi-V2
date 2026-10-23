@@ -267,6 +267,8 @@ def community_feed_profile(username: str):
         display_name=svc.display_name(wallet) if wallet else None,
         login_method=session.get("login_method", ""),
         walletconnect_project_id=os.getenv("WALLETCONNECT_PROJECT_ID", ""),
+        privy_app_id=os.getenv("PRIVY_APP_ID", ""),
+        privy_client_id=os.getenv("PRIVY_CLIENT_ID", ""),
         max_avatar_mb=svc.MAX_AVATAR_MB,
         storage_ready=storage.storage_available(),
     ), (200 if profile else 404)
@@ -337,6 +339,40 @@ def api_unfollow(username: str):
     result = svc.unfollow_user(_session_wallet(), username)
     return jsonify(result), (200 if result.get("success") else 400)
 
+
+@community_feed_bp.route("/api/profile/<username>/tip/prepare", methods=["POST"])
+def api_profile_tip_prepare(username: str):
+    """Prepare a non-custodial Celo transfer to this username."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    wait = _throttle(f"profile-tip:{wallet}", 10)
+    if wait:
+        return jsonify({"success": False, "error": "Please wait before preparing another transfer.",
+                        "code": "rate_limited", "retry_after": wait}), 429
+    from . import profile_tips
+    body = _json_body()
+    result = profile_tips.prepare(wallet, username, body.get("token"), body.get("amount"))
+    return jsonify(result), (200 if result.get("success") else 400)
+
+@community_feed_bp.route("/api/profile/<username>/tip/confirm", methods=["POST"])
+def api_profile_tip_confirm(username: str):
+    """Verify and record a signed Community Profile transfer."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    wait = _throttle(f"profile-tip-confirm:{wallet}", 10)
+    if wait:
+        return jsonify({"success": False, "error": "Please wait before confirming another transfer.",
+                        "code": "rate_limited", "retry_after": wait}), 429
+    from . import profile_tips
+    body = _json_body()
+    result = profile_tips.record(wallet, username, body.get("token"), body.get("amount"), body.get("tx_hash"))
+    return jsonify(result), (200 if result.get("success") else 400)
 
 @community_feed_bp.route("/api/profile/<username>/posts", methods=["GET"])
 def api_profile_posts(username: str):
