@@ -1,3 +1,4 @@
+
 // Extracted from templates/wallet.html inline <script> (load-perf refactor).
 // Per-request values come from window.GM_WALLET_BOOT (set inline in wallet.html).
 const WALLET = window.GM_WALLET_BOOT.wallet;
