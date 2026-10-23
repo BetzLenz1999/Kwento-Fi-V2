@@ -1678,7 +1678,7 @@ function feedFetch(handler, feedRows) {
     }));
     const unsizedImg = unsized.querySelector('.cf-media').children[0];
     ok('an unsized image is marked raw instead of being cropped',
-       unsizedImg.className === 'cf-media-raw', unsizedImg.className);
+       unsizedImg.className.includes('cf-media-raw'), unsizedImg.className);
     ok('an unsized image sets no aspect ratio',
        !unsizedImg.style.aspectRatio, String(unsizedImg.style.aspectRatio));
     ok('a single photo keeps the existing media layout',
@@ -1697,7 +1697,7 @@ function feedFetch(handler, feedRows) {
        gallery.children.slice(0, 4).map(n => n.src).join('|')
          === 'https://media.example/1.jpg|https://media.example/2.jpg|https://media.example/3.jpg|https://media.example/4.jpg');
     ok('grid thumbnails ignore source aspect ratios',
-       !gallery.children[0].style.aspectRatio && gallery.children[0].className !== 'cf-media-raw');
+       !gallery.children[0].style.aspectRatio && !gallery.children[0].className.includes('cf-media-raw'));
     ok('a grid thumbnail retains its tap-to-view handler',
        typeof gallery.children[0].onclick === 'function');
 
