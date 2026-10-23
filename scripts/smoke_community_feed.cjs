@@ -142,7 +142,7 @@ function run(opts) {
    'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
    'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
    'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame',
-   'cfClaimModal', 'cfClaimFrame',
+   'claimModal',
    'cfRail',
    'cfEarn', 'cfEarnChip', 'cfEarnAmount', 'cfEarnGoal', 'cfEarnBar',
    'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates', 'cfEarnRatesToggle',
@@ -169,10 +169,9 @@ function run(opts) {
   // its src parked on data-src so the store never loads until a tap.
   registry.cfAirtimeModal.hidden = true;
   registry.cfAirtimeFrame.setAttribute('data-src', '/reloadly/?embed=1#topup');
-  // Same shape for the claim dialog: hidden until opened, src parked on
-  // data-src so the framed wallet page never loads until a tap.
-  registry.cfClaimModal.hidden = true;
-  registry.cfClaimFrame.setAttribute('data-src', '/wallet?embed=claim&claim=1');
+  // The shared claim dialog is rendered directly and starts closed.
+  registry.claimModal.className = '';
+  registry.claimModal.setAttribute('aria-hidden', 'true');
 
   // Record document-level listeners so the real keydown handler can be driven
   // (Escape must close every dialog, including the claim modal).
@@ -1141,9 +1140,9 @@ function feedFetch(handler, feedRows) {
        connectCalls === 3, String(connectCalls));
     ok('a guest tapping Claim Free G$ is not navigated away', claimNavigated);
     ok('a guest tapping Claim Free G$ never opens the claim modal',
-       store.cfClaimModal.hidden === true);
-    ok('a guest tapping Claim Free G$ never loads the claim iframe',
-       !store.cfClaimFrame.src, String(store.cfClaimFrame.src));
+       !store.claimModal.className.includes('open'));
+    ok('a guest tapping Claim Free G$ never opens the shared claim modal',
+       !store.claimModal.className.includes('open'), String(store.claimModal.className));
 
     // Your Wallet is signed-in only as well.
     let walletNavigated = false;
@@ -1262,40 +1261,35 @@ function feedFetch(handler, feedRows) {
     const items = store.cfBottomNav.children;
     const claim = items.filter(n => /Claim Free G\$/.test(n.textContent))[0];
 
-    ok('the claim modal starts hidden', store.cfClaimModal.hidden === true);
-    ok('the claim iframe ships with no src (lazy load)',
-       !store.cfClaimFrame.src, String(store.cfClaimFrame.src));
-
-    // A member tap opens the dialog and loads the framed wallet claim sheet
-    // ONCE — the member is never navigated off the feed.
+    ok('the claim modal starts hidden', !store.claimModal.className.includes('open'));
+    // A member tap opens the shared claim sheet directly in the feed — the
+    // member is never navigated off the feed and no iframe is involved.
     let claimNavigated = false;
     claim.onclick({ preventDefault() { claimNavigated = true; } });
     ok('a member tapping Claim Free G$ is not navigated away', claimNavigated);
     ok('a member tapping Claim Free G$ opens the claim modal',
-       store.cfClaimModal.hidden === false);
-    ok('the claim iframe loads the embedded claim URL',
-       store.cfClaimFrame.src === '/wallet?embed=claim&claim=1',
-       String(store.cfClaimFrame.src));
+       store.claimModal.className.includes('open'));
+    ok('the shared claim modal renders in the feed',
+       store.claimModal.className.includes('open'));
     ok('opening the claim modal locks the page scroll',
        sandbox.document.body.classList.contains('cf-modal-open'));
 
-    // A second open must not reload the framed wallet page (src set once).
-    store.cfClaimFrame.src = 'sentinel';
+    // A second open reuses the same direct-rendered modal.
     api.closeClaim();
-    ok('closing the claim modal hides it', store.cfClaimModal.hidden === true);
+    ok('closing the claim modal hides it', !store.claimModal.className.includes('open'));
     ok('closing the claim modal unlocks the page scroll',
        !sandbox.document.body.classList.contains('cf-modal-open'));
     claim.onclick({ preventDefault() {} });
-    ok('reopening the claim modal does not reload the iframe',
-       store.cfClaimFrame.src === 'sentinel', String(store.cfClaimFrame.src));
+    ok('reopening the claim modal reuses the shared modal',
+       store.claimModal.className.includes('open'));
     api.closeClaim();
 
     // Escape closes it, like every other dialog on the page — drive the REAL
     // document keydown handler rather than calling closeClaim() directly.
     claim.onclick({ preventDefault() {} });
-    ok('the claim modal is open before Escape', store.cfClaimModal.hidden === false);
+    ok('the claim modal is open before Escape', store.claimModal.className.includes('open'));
     sandbox.document.dispatch('keydown', { key: 'Escape' });
-    ok('Escape closes the claim modal', store.cfClaimModal.hidden === true);
+    ok('Escape closes the claim modal', !store.claimModal.className.includes('open'));
 
     // The href is still a real link for a no-JS/middle-click fallback.
     ok('the Claim Free G$ item is still an anchor',
