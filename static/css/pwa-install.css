@@ -117,6 +117,131 @@
 
 .gm-pwa-status:empty { display: none; }
 
+/* ── Strict homepage install gate ──────────────────────────────────────
+   Only the homepage renders #gmPwaInstallGate. The early html class hides
+   all other body children until standalone mode or a wallet browser is found;
+   the wallet's in-flow banner above is unaffected. */
+.gm-pwa-gate {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    overflow-y: auto;
+    align-items: center;
+    justify-content: center;
+    padding: max(1.25rem, env(safe-area-inset-top, 0px)) 1rem
+        max(1.25rem, env(safe-area-inset-bottom, 0px));
+    background:
+        radial-gradient(circle at 18% 16%, rgba(59, 130, 246, 0.28), transparent 34%),
+        radial-gradient(circle at 84% 18%, rgba(124, 58, 237, 0.3), transparent 34%),
+        linear-gradient(145deg, #080b20 0%, #111038 55%, #1b1040 100%);
+    color: #f8fafc;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    text-align: center;
+}
+html.gm-pwa-gate-checking .gm-pwa-gate,
+html.gm-pwa-gate-required .gm-pwa-gate { display: grid; }
+.gm-pwa-gate-card {
+    width: min(100%, 34rem);
+    padding: clamp(1.6rem, 6vw, 3rem);
+    border: 1px solid rgba(196, 181, 253, 0.28);
+    border-radius: 28px;
+    background: rgba(8, 13, 35, 0.82);
+    box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+    backdrop-filter: blur(18px);
+}
+.gm-pwa-gate-icon {
+    display: grid;
+    place-items: center;
+    width: 76px;
+    height: 76px;
+    margin: 0 auto 1.1rem;
+    border: 1px solid rgba(251, 191, 36, 0.38);
+    border-radius: 24px;
+    background: rgba(251, 191, 36, 0.12);
+    font-size: 2.15rem;
+}
+.gm-pwa-gate-eyebrow {
+    margin-bottom: 0.65rem;
+    color: #fbbf24;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+}
+.gm-pwa-gate h1 {
+    margin: 0;
+    color: #fff;
+    font-size: clamp(1.65rem, 7vw, 2.35rem);
+    font-weight: 900;
+    line-height: 1.12;
+    letter-spacing: -0.04em;
+}
+.gm-pwa-gate-copy {
+    max-width: 29rem;
+    margin: 1rem auto 1.45rem;
+    color: rgba(226, 232, 240, 0.88);
+    font-size: clamp(0.92rem, 3vw, 1.04rem);
+    line-height: 1.65;
+}
+.gm-pwa-gate-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin: 0 auto 1.4rem;
+    text-align: left;
+}
+.gm-pwa-gate-stat {
+    min-width: 0;
+    padding: 0.85rem 0.9rem;
+    border: 1px solid rgba(196, 181, 253, 0.2);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.055);
+}
+.gm-pwa-gate-stat span {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: rgba(203, 213, 225, 0.78);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+.gm-pwa-gate-stat strong {
+    display: block;
+    color: #fbbf24;
+    font-size: clamp(1.05rem, 4vw, 1.4rem);
+    font-weight: 900;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+}
+.gm-pwa-gate-actions { display: flex; justify-content: center; }
+.gm-pwa-gate .gm-pwa-install-btn {
+    min-width: min(100%, 17rem);
+    justify-content: center;
+    padding: 0.9rem 1.5rem;
+    font-size: 1rem;
+    box-shadow: 0 10px 28px rgba(245, 158, 11, 0.24);
+}
+.gm-pwa-gate-status {
+    min-height: 1.4em;
+    margin: 1rem auto 0;
+    color: #fcd34d;
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+.gm-pwa-gate[data-state="checking"] .gm-pwa-gate-actions,
+.gm-pwa-gate[data-state="checking"] .gm-pwa-gate-note { visibility: hidden; }
+.gm-pwa-gate-note {
+    max-width: 29rem;
+    margin: 0.7rem auto 0;
+    color: rgba(203, 213, 225, 0.72);
+    font-size: 0.77rem;
+    line-height: 1.55;
+}
+.gm-pwa-gate .gm-pwa-install-btn:focus-visible {
+    outline: 3px solid #c4b5fd;
+    outline-offset: 4px;
+}
+
 @media (max-width: 560px) {
     .gm-pwa-banner { margin-left: 0.9rem; margin-right: 0.9rem; }
     .gm-pwa-actions { flex: 1 1 100%; justify-content: flex-start; }
@@ -168,4 +293,3 @@
 }
 
 .gm-pwa-update-toast button:focus-visible { outline: 2px solid #c4b5fd; outline-offset: 2px; }
-
