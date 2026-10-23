@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>Messages — GoodMarket Community</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/community-messages.css', v=ASSET_VERSION) }}">
+</head>
+<body>
+  <header class="gm-msg-topbar">
+    <a class="gm-msg-back" href="/community" aria-label="Back to Community">←</a>
+    <h1>Messages</h1>
+    <span class="gm-msg-total" id="gmMsgTotal" aria-live="polite"></span>
+  </header>
+  <main class="gm-msg-shell">
+    <section class="gm-msg-inbox" id="gmMsgInbox" aria-label="Message conversations">
+      <div class="gm-msg-loading" id="gmMsgInboxLoading">Loading messages…</div>
+      <div class="gm-msg-list" id="gmMsgList"></div>
+      <div class="gm-msg-empty" id="gmMsgEmpty" hidden>No messages yet. Visit a member profile to start a conversation.</div>
+      <button class="gm-msg-retry" id="gmMsgRetry" type="button" hidden>Try again</button>
+    </section>
+    <section class="gm-msg-thread" id="gmMsgThread" aria-label="Conversation" hidden>
+      <header class="gm-msg-thread-head">
+        <button class="gm-msg-thread-back" id="gmMsgThreadBack" type="button" aria-label="Back to messages">←</button>
+        <span class="gm-msg-avatar" id="gmMsgThreadAvatar" aria-hidden="true"></span>
+        <div><strong id="gmMsgThreadName">Conversation</strong><small id="gmMsgThreadStatus"></small></div>
+      </header>
+      <div class="gm-msg-log" id="gmMsgLog" role="log" aria-live="polite" aria-busy="false"></div>
+      <p class="gm-msg-thread-error" id="gmMsgThreadError" role="alert" hidden></p>
+      <form class="gm-msg-composer" id="gmMsgComposer">
+        <label class="gm-msg-sr" for="gmMsgInput">Write a message</label>
+        <textarea id="gmMsgInput" maxlength="2000" rows="1" placeholder="Write a message…" required></textarea>
+        <button type="submit" id="gmMsgSend">Send</button>
+      </form>
+    </section>
+  </main>
+  <div class="gm-msg-toast" id="gmMsgToast" role="status" aria-live="polite" hidden></div>
+  <script>
+    window.GM_MESSAGES_BOOT = {
+      initialUsername: {{ initial_username|default('', true)|tojson }},
+      viewerUsername: {{ viewer_username|default('', true)|tojson }},
+      maxMessage: 2000
+    };
+  </script>
+  <script src="{{ url_for('static', filename='js/community-messages.js', v=ASSET_VERSION) }}"></script>
+</body>
+</html>
