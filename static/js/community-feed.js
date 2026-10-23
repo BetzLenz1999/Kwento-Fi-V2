@@ -27,6 +27,8 @@
     var MAX_VIDEO_MB = BOOT.maxVideoMb || 100;
     var MAX_AVATAR_MB = BOOT.maxAvatarMb || 5;
     var STORAGE_READY = !!BOOT.storageReady;
+    var FOCUS_POST_ID = String(BOOT.focusPostId || '');
+    var FOCUS_POST = BOOT.focusPost || null;
 
     var LONG_EDGE = 2048;      // downscale target for images
     var JPEG_QUALITY = 0.85;
@@ -203,14 +205,26 @@
             if (match.index > last) {
                 node.appendChild(document.createTextNode(source.slice(last, match.index)));
             }
-            var href = match[0];
+            var raw = match[0];
+            var href = raw;
+            var trailing = '';
+            // Sentence punctuation should remain text, not become part of the
+            // destination. Keep this conservative so valid URL path/query
+            // characters are not rewritten.
+            while (/[.,!?;:)\]]$/.test(href)) {
+                trailing = href.slice(-1) + trailing;
+                href = href.slice(0, -1);
+            }
             var link = document.createElement('a');
             link.href = href;
             link.target = '_blank';
             link.rel = 'noopener noreferrer nofollow';
+            link.className = 'cf-inline-link';
             link.textContent = href;
+            link.onclick = function (event) { event.stopPropagation(); };
             node.appendChild(link);
-            last = match.index + href.length;
+            if (trailing) node.appendChild(document.createTextNode(trailing));
+            last = match.index + raw.length;
         }
         if (last < source.length) {
             node.appendChild(document.createTextNode(source.slice(last)));
@@ -824,10 +838,16 @@
     function buildRail() {
         var rail = $('cfRail');
         if (!rail) return;
+        var heading = $('cfDailyHeading');
         rail.textContent = '';
         var authors = railAuthors();
-        if (!authors.length) { rail.hidden = true; return; }
+        if (!authors.length) {
+            rail.hidden = true;
+            if (heading) heading.hidden = true;
+            return;
+        }
         rail.hidden = false;
+        if (heading) heading.hidden = false;
         authors.forEach(function (entry) {
             rail.appendChild(buildRailItem(entry));
         });
@@ -851,6 +871,21 @@
 
         _feed.forEach(function (post) { container.appendChild(buildCard(post)); });
         updateLoadMore();
+    }
+
+    function focusCanonicalPost() {
+        var id = FOCUS_POST_ID;
+        if (!id && window.location.hash && /^#post-\d+$/.test(window.location.hash)) {
+            id = window.location.hash.replace('#post-', '');
+        }
+        if (!id) return;
+        var card = document.querySelector('[data-post-id="' + id + '"]');
+        if (!card) return;
+        card.classList.add('is-focus');
+        window.setTimeout(function () {
+            if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 40);
+        window.setTimeout(function () { card.classList.remove('is-focus'); }, 2400);
     }
 
     function updateLoadMore() {
@@ -1645,10 +1680,14 @@
     }
 
     function sharePost(post) {
-        var url = window.location.origin + '/community#post-' + post.id;
+        var url = window.location.origin + '/community/p/' + encodeURIComponent(post.id);
         var text = post.body ? post.body.slice(0, 120) : 'Check out this post on GoodMarket Community';
         if (navigator.share) {
-            navigator.share({ title: 'GoodMarket Community', text: text, url: url }).catch(function () {});
+            navigator.share({
+                title: '@' + (post.username || 'member') + ' on GoodMarket Community',
+                text: text,
+                url: url,
+            }).catch(function () {});
             return;
         }
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1868,8 +1907,13 @@
             _nextCursor = result.data.next_cursor || null;
             // Guard a malformed payload: a server bug must not break the page.
             var rows = result.data.posts || [];
+            if (reset && FOCUS_POST && FOCUS_POST.id != null
+                    && !rows.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })) {
+                rows = [FOCUS_POST].concat(rows);
+            }
             _feed = reset ? rows : _feed.concat(rows);
             renderFeed();
+            focusCanonicalPost();
         }).catch(function (error) {
             var container = $('cfFeed');
             if (container) {
@@ -1935,6 +1979,12 @@
                 openSheet();
                 return;
             }
+            if (item.action === 'messages') {
+                if (event && event.preventDefault) event.preventDefault();
+                if (!WALLET) { requiresLogin(); return; }
+                window.location.href = '/messages';
+                return;
+            }
             if (item.action === 'airtime') {
                 // Buy Airtime opens the Reloadly store in the in-page modal
                 // instead of navigating: a member stays in the feed, exactly
@@ -1969,6 +2019,26 @@
         if (!bar) return;
         bar.textContent = '';
         NAV.forEach(function (item) { bar.appendChild(buildNavItem(item)); });
+    }
+    function setMessageUnread(count) {
+        var item = document.querySelector('[data-nav="messages"]');
+        if (!item) return;
+        var badge = item.querySelector('.cf-nav-unread');
+        if (!badge) {
+            badge = el('span', 'cf-nav-unread', '');
+            item.appendChild(badge);
+        }
+        var total = Math.max(0, Number(count) || 0);
+        badge.textContent = total > 99 ? '99+' : String(total);
+        badge.hidden = total === 0;
+        item.setAttribute('aria-label', total ? 'Messages, ' + total + ' unread' : 'Messages');
+    }
+    function loadMessageUnread() {
+        if (!WALLET || !NAV.some(function (item) { return item.action === 'messages'; })) return;
+        fetch('/api/messages/conversations', { credentials: 'same-origin' })
+            .then(function (response) { return response.ok ? response.json() : null; })
+            .then(function (data) { if (data && data.success) setMessageUnread(data.unread_total); })
+            .catch(function () {});
     }
 
     function openSearch() {
@@ -2251,16 +2321,9 @@
         // make that half a no-op; the feed wiring is what matters here.
         bind();
         renderNav();
+        loadMessageUnread();
         loadRewards();
         loadFeed(true);
-        if (window.location.hash && /^#post-\d+$/.test(window.location.hash)) {
-            var id = window.location.hash.replace('#post-', '');
-            var post = findPost(id);
-            if (post) {
-                var card = document.querySelector('[data-post-id="' + id + '"]');
-                if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center' });
-            }
-        }
     }
 
     window.GMCommunity = {
@@ -2300,6 +2363,7 @@
         closeAirtime: closeAirtime,
         openClaim: openClaim,
         closeClaim: closeClaim,
+        setMessageUnread: setMessageUnread,
         // Exposed for the test harness (drives the real bodies).
         _internals: {
             timeAgo: timeAgo,
@@ -2322,6 +2386,8 @@
             toggleFollow: toggleFollow,
             setFollowButton: setFollowButton,
             renderNav: renderNav,
+            setMessageUnread: setMessageUnread,
+            loadMessageUnread: loadMessageUnread,
             runSearch: runSearch,
             renderSearchResults: renderSearchResults,
             prepareImage: prepareImage,
