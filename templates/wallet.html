@@ -3570,6 +3570,7 @@
         "identityContractAddress": {{ identity_contract_address|default('', true)|tojson }},
         "ethereumRpc": {{ ethereum_rpc|default('', true)|tojson }},
         "ethereumRpcFallbacks": {{ ethereum_rpc_fallbacks|default('', true)|tojson }},
+        "fvReturnTo": {{ fv_return_to|default('/wallet', true)|tojson }},
         "claimOnly": {{ 'true' if claim_only|default(false, true) else 'false' }},
         {# True when the page is framed by the community feed's Claim Free G$
            dialog (?embed=claim). Full-page flows (Face Verification, logout)
