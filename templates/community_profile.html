@@ -126,6 +126,9 @@
            href="/messages?with={{ profile.username|urlencode }}"
            onclick="return GMProfile.openMessage(event)"
            aria-label="Message @{{ profile.username }}">Message</a>
+        <button type="button" class="cp-money" id="cpSendMoneyBtn"
+                onclick="GMProfile.openSendMoney()"
+                aria-label="Send money to @{{ profile.username }}">Send Money</button>
         {% endif %}
         <p class="cp-privacy">
             This public profile never shows a wallet address, balance, or private activity.
@@ -187,6 +190,28 @@
 </div>
 
 <div class="cp-toast" id="cpToast" role="status" aria-live="polite" hidden></div>
+<div class="cp-money-modal" id="cpSendMoneyModal" hidden role="dialog" aria-modal="true" aria-labelledby="cpSendMoneyTitle">
+  <div class="cp-money-card">
+    <button type="button" class="cp-money-close" onclick="GMProfile.closeSendMoney()" aria-label="Close">×</button>
+    <h2 id="cpSendMoneyTitle">Send Money</h2>
+    <p class="cp-money-sub">Send directly to <strong>@{{ profile.username if profile else '' }}</strong> on Celo.</p>
+    <label class="cp-money-label" for="cpTipToken">Token</label>
+    <select id="cpTipToken" class="cp-money-input"><option value="GD">G$</option><option value="CUSD">cUSD</option><option value="USDT">USDT</option><option value="CELO">CELO</option></select>
+    <label class="cp-money-label" for="cpTipAmount">Amount</label>
+    <input id="cpTipAmount" class="cp-money-input" inputmode="decimal" autocomplete="off" placeholder="0.00">
+    <p class="cp-money-note">Your wallet will ask you to review and sign the Celo transaction. GoodMarket never holds your funds.</p>
+    <p id="cpTipStatus" class="cp-money-status" role="status" aria-live="polite"></p>
+    <button type="button" class="cp-money-submit" id="cpTipSubmit" onclick="GMProfile.sendMoney()">Review &amp; Send</button>
+    <section id="cpTipSuccess" class="cp-money-success" hidden role="status" aria-live="polite">
+      <div class="cp-money-success-icon" aria-hidden="true">✓</div>
+      <div>
+        <strong>Transfer confirmed on Celo</strong>
+        <p id="cpTipSuccessSummary"></p>
+        <a id="cpTipSuccessLink" class="cp-money-link" href="#" target="_blank" rel="noopener noreferrer">View transaction on CeloScan</a>
+      </div>
+    </section>
+  </div>
+</div>
 
 {# The shared profile-picture modal, for the profile's OWNER. `GMCommunityAvatar`
    (loaded below) binds `#cpAvatarEdit` and the file input. #}
@@ -217,14 +242,21 @@ window.GM_PROFILE_BOOT = {
         followers: {{ (profile.followers if profile else 0)|default(0) }},
         following: {{ (profile.following if profile else 0)|default(0) }}
     },
+    assetVersion: {{ ASSET_VERSION|tojson }},
+    loginMethod: {{ (login_method or '')|tojson }},
+    walletConnectProjectId: {{ (walletconnect_project_id or '')|tojson }}
+};
+window.GM_WALLET_BOOT = {
+    wallet: {{ (wallet or '')|tojson }},
+    loginMethod: {{ (login_method or '')|tojson }},
+    walletConnectProjectId: {{ (walletconnect_project_id or '')|tojson }},
+    celoChainId: 42220,
     assetVersion: {{ ASSET_VERSION|tojson }}
 };
 </script>
 
 {% if is_guest %}
-{# The connect modal needs the WC bridge + in-app wallet, exactly like the feed
-   page. ethers MUST load first (`GMLocalWallet.create()` / `unlockWithKeystore()`
-   call `_assertEthers()` and `showLocalWalletPanel()` bails without it). #}
+{# Guests need the connect modal and its wallet dependencies. #}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
         integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -235,11 +267,37 @@ window.GM_PROFILE_BOOT = {
 {% set get_started_boot = {'return_to': request.path if request else '/community'} %}
 {% include "_get_started_modal.html" %}
 {% endif %}
-
-{# Loaded for BOTH guest and member: profiles are public, and this bundle is
-   what renders the posts and albums. It signs nothing, so it needs no ethers.
-   The shared avatar module comes FIRST: the profile bundle only renders; the
-   module owns the picture upload for the profile's owner. #}
+{% if not is_guest %}
+{# Signed-in members need the same wallet primitives for profile transfers. #}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
+        integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9BzsMM"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
+<script>
+if (window.GMWalletConnect) GMWalletConnect.configure({
+  walletAddress: (window.GM_PROFILE_BOOT && GM_PROFILE_BOOT.wallet) || '',
+  loginMethod: (window.GM_PROFILE_BOOT && GM_PROFILE_BOOT.loginMethod) || '',
+  projectId: (window.GM_PROFILE_BOOT && GM_PROFILE_BOOT.walletConnectProjectId) || '',
+  dappName: 'GoodMarket — Community Profile',
+  dappDescription: 'Send money on Celo',
+  assetVersion: (window.GM_PROFILE_BOOT && GM_PROFILE_BOOT.assetVersion) || ''
+});
+</script>
+{% if (login_method or '')|lower == 'privy' %}
+<div id="cpPrivyWalletMount" hidden></div>
+<script type="module">
+import React, {useEffect} from 'https://esm.sh/react@18.3.1';
+import {createRoot} from 'https://esm.sh/react-dom@18.3.1/client';
+import {PrivyProvider, usePrivy, useWallets} from 'https://esm.sh/@privy-io/react-auth@3.32.2?deps=react@18.3.1,react-dom@18.3.1';
+const cpPrivyChain = {id:42220, name:'Celo', network:'celo', nativeCurrency:{name:'CELO',symbol:'CELO',decimals:18}, rpcUrls:{default:{http:['https://forno.celo.org']},public:{http:['https://forno.celo.org']}}};
+function CPPrivyBridge(){const {ready,authenticated}=usePrivy();const {wallets}=useWallets();useEffect(()=>{window.GMPrivyReady=!!ready;window.GMPrivyAuthenticated=!!authenticated;window.GMPrivyWallets=wallets||[];window.dispatchEvent(new CustomEvent('gm:privy-wallets-updated'));},[ready,authenticated,wallets]);return null;}
+const mount=document.getElementById('cpPrivyWalletMount');
+if(mount && {{ (privy_app_id|default('', true))|tojson }}) createRoot(mount).render(React.createElement(PrivyProvider,{appId:{{ (privy_app_id|default('', true))|tojson }},clientId:{{ (privy_client_id|default('', true))|tojson }},config:{defaultChain:cpPrivyChain,supportedChains:[cpPrivyChain],embeddedWallets:{ethereum:{createOnLogin:'users-without-wallets'}}}},React.createElement(CPPrivyBridge)));
+</script>
+{% endif %}
+{% endif %}
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-profile.js', v=ASSET_VERSION) }}"></script>
 
