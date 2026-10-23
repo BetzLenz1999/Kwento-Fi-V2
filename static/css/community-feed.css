@@ -478,13 +478,15 @@ body {
 .cf-engagement { display: flex; flex-direction: column; gap: 0.2rem; }
 
 /* ── Action row (Instagram's icon row) ──────────────────────────────────────
-   heart · comment · share, with report pushed to the right. The row, counts,
-   reaction chips and expanded thread stay grouped below the post caption. */
+   heart · comment · share, with report pushed to the right. The reaction
+   picker is anchored to the heart; counts and the expanded thread stay grouped
+   below the post caption. */
 .cf-card-actions {
     display: flex; align-items: center; gap: 0.15rem;
     padding: 0.1rem 0 0;
 }
 .cf-card-actions .cf-action-btn:last-child { margin-left: auto; }
+.cf-reaction-control { position: relative; display: inline-flex; flex: 0 0 auto; }
 .cf-action-btn {
     font-family: inherit; font-size: 0.82rem; font-weight: 700;
     color: var(--cf-ink); background: transparent; border: none;
@@ -497,6 +499,17 @@ body {
 /* The liked heart is the one red thing on the card, exactly like Instagram. */
 .cf-action-btn.is-liked .cf-act-icon { color: var(--cf-danger); }
 .cf-action-btn.is-liked { color: var(--cf-danger); }
+.cf-reaction-trigger {
+    touch-action: pan-y; user-select: none; -webkit-touch-callout: none;
+}
+.cf-reaction-picker {
+    position: absolute; z-index: 30; left: 0; top: calc(100% + 0.25rem);
+    display: flex; align-items: center; gap: 0.16rem;
+    padding: 0.34rem; background: var(--cf-card);
+    border: 1px solid var(--cf-border); border-radius: 999px;
+    box-shadow: var(--cf-shadow); white-space: nowrap;
+}
+.cf-reaction-picker[hidden] { display: none; }
 
 /* Reaction summary line (read-only) */
 .cf-summary {
@@ -545,15 +558,8 @@ body {
 }
 .cf-meta { font-size: 0.72rem; color: var(--cf-ink-2); }
 
-/* Reaction bar — the six chips are ALWAYS visible (not behind a long-press):
-   a hidden gesture is undiscoverable on a cheap Android phone. The row sits on
-   a soft track so it reads as a toolbar, and the pressed chip lifts out of it
-   in G$ gold. */
-.cf-reactions {
-    display: flex; align-items: center; gap: 0.25rem;
-    border-top: 1px solid var(--cf-hairline); padding-top: 0.3rem;
-    flex-wrap: wrap;
-}
+/* The six reactions live in the heart's temporary picker, not in a permanent
+   toolbar row. A pressed reaction lifts out in G$ gold. */
 .cf-chip {
     font-family: inherit; font-size: 1.15rem; line-height: 1;
     background: var(--cf-field); border: 1px solid transparent;
@@ -920,10 +926,9 @@ body {
     .cf-action-btn { padding: 0.35rem 0.5rem 0.35rem 0; }
     .cf-action-btn .cf-act-icon { font-size: 1.45rem; }
 
-    /* Six reaction chips must stay on one row on a phone: a wrapped chip row
-       pushes Comment/Share off-screen and reads as a broken layout. */
-    .cf-reactions { gap: 0.15rem; }
-    .cf-chip { font-size: 1rem; padding: 0.3rem 0.42rem; }
+    /* Keep the temporary picker compact enough for the phone viewport. */
+    .cf-reaction-picker { gap: 0.08rem; padding: 0.25rem; }
+    .cf-chip { font-size: 1rem; padding: 0.3rem 0.36rem; }
     .cf-action-btn { font-size: 0.8rem; }
 
     /* (4) The caption line, Instagram-tight. */
