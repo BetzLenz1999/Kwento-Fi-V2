@@ -190,6 +190,14 @@ body.cf-modal-open { overflow: hidden; }
    own profile (is_self). */
 .cp-follow-wrap { margin-top: 0.6rem; }
 .cp-follow-wrap:empty { display: none; }
+.cp-message {
+    margin-top: 0.45rem; font-family: inherit; font-size: 0.85rem; font-weight: 800;
+    color: var(--cp-accent-ink); background: rgba(var(--cp-accent-rgb), 0.10);
+    border: 1px solid rgba(var(--cp-accent-rgb), 0.45); border-radius: 999px;
+    padding: 0.55rem 1.35rem; min-height: 42px; cursor: pointer; touch-action: manipulation;
+}
+.cp-message:hover { background: rgba(var(--cp-accent-rgb), 0.18); }
+.cp-message:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 2px; }
 .cp-follow {
     font-family: inherit; font-size: 0.85rem; font-weight: 800;
     color: #fff; background: var(--cp-accent);
