@@ -19,12 +19,10 @@ class DiscourseTaskBlockchain:
         # Discourse_Task key
         self.task_key = os.getenv('DISCOURSE_TASK_KEY')
 
-        self.w3 = Web3(Web3.HTTPProvider(self.celo_rpc_url))
-
-        if self.w3.is_connected():
-            logger.info("✅ Connected to Celo network for Discourse Task")
-        else:
-            logger.error("❌ Failed to connect to Celo network for Discourse Task")
+        # Bounded, non-probing provider: this object is built at import time
+        # (module-level singleton below), so it must not touch the network.
+        from chain_rpc import make_provider
+        self.w3 = Web3(make_provider(self.celo_rpc_url))
 
         logger.info("💬 Discourse Task Blockchain Service initialized")
 
