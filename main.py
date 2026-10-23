@@ -636,6 +636,15 @@ if not initialize_blockchain():
 app.register_blueprint(routes)
 logger.info("✅ Routes blueprint registered with API endpoints")
 
+# Private one-to-one Community Messages. The blueprint is always registered;
+# its feature flag and authentication checks fail closed at request time.
+try:
+    from community_messages import init_messages
+    if init_messages(app):
+        logger.info("✅ Community Messages blueprint registered")
+except Exception as e:
+    logger.error("❌ Community Messages initialization failed: %s", e)
+
 init_ai_agent(app)
 logger.info("✅ AI agent blueprint registered")
 
