@@ -460,3 +460,21 @@ body.cf-modal-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
     .cp-skeleton { animation: none; }
 }
+
+
+/* ── Community achievements ───────────────────────────────────────────────── */
+.cp-achievements { padding: 1.1rem; }
+.cp-achievements-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+.cp-achievements-kicker { color: var(--cp-accent-ink); font-size: 0.7rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+.cp-achievements h2 { margin-top: 0.2rem; font: 700 1.35rem var(--cp-serif); }
+.cp-badge-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.55rem; }
+.cp-badge-card { display: flex; align-items: flex-start; gap: 0.65rem; min-height: 76px; padding: 0.75rem; border: 1px solid var(--cp-border); border-radius: 12px; background: #fff; }
+.cp-badge-icon { display: grid; flex: 0 0 34px; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: rgba(var(--cp-accent-rgb), 0.09); color: var(--cp-accent-ink); font-weight: 900; }
+.cp-badge-copy { display: grid; gap: 0.18rem; min-width: 0; }
+.cp-badge-name { color: var(--cp-ink); font-size: 0.9rem; }
+.cp-badge-description,.cp-badge-date { color: var(--cp-dim); font-size: 0.78rem; line-height: 1.4; }
+.cp-badge-date { color: var(--cp-muted); font-size: 0.72rem; }
+.cp-badge-empty { color: var(--cp-dim); font-size: 0.88rem; }
+.cp-inline-badges { display: flex; flex-wrap: wrap; gap: 0.22rem; margin-top: 0.2rem; }
+.cp-inline-badge { width: fit-content; padding: 0.1rem 0.38rem; border: 1px solid rgba(180,120,20,.24); border-radius: 999px; background: #fff7e6; color: #5c3600; font-size: 0.66rem; font-weight: 800; }
+@media (max-width: 560px) { .cp-badge-list { grid-template-columns: 1fr; } }
