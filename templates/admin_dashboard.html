@@ -2688,6 +2688,34 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 </div>
 
                 <div class="content-box" style="margin-top: 1.5rem;">
+                    <h2 style="margin-bottom: 1rem;">💬 Community Daily Prompt</h2>
+                    <p style="margin-bottom:0.8rem;color:rgba(241,245,249,0.75);">Independent kill switch for the official daily social prompt. The Community Feed may remain visible while prompts are hidden.</p>
+                    <label style="display:block;margin-bottom:0.75rem;color:rgba(241,245,249,0.9);font-weight:600;">Visibility
+                        <select id="community-daily-prompt-visibility-select" style="display:block;width:100%;margin-top:0.4rem;padding:0.75rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#f1f5f9;font-size:1rem;">
+                            <option value="false" selected>🚫 Hidden — prompt card and responses are unavailable</option>
+                            <option value="true">✅ Visible — today's official prompt is available</option>
+                        </select>
+                    </label>
+                    <span id="community-daily-prompt-status-badge" style="display:inline-block;margin-bottom:0.75rem;padding:0.3rem 0.75rem;border-radius:6px;font-weight:600;font-size:0.85rem;"></span>
+                    <button class="btn btn-primary" onclick="saveFeatureVisibility('community_daily_prompt_feature', 'community-daily-prompt-visibility-select', 'community-daily-prompt-visibility-result')" style="width:100%;padding:0.9rem;font-size:1rem;">💾 Save Daily Prompt Setting</button>
+                    <div id="community-daily-prompt-visibility-result" style="margin-top:1rem;display:none;"></div>
+                </div>
+
+                <div class="content-box" style="margin-top: 1.5rem;">
+                    <h2 style="margin-bottom: 1rem;">📚 Community Daily Learn</h2>
+                    <p style="margin-bottom:0.8rem;color:rgba(241,245,249,0.75);">Independent emergency switch for the two-question Community cycle. It does not control the full 10-question Learn &amp; Earn experience.</p>
+                    <label style="display:block;margin-bottom:0.75rem;color:rgba(241,245,249,0.9);font-weight:600;">Visibility
+                        <select id="community-daily-learn-visibility-select" style="display:block;width:100%;margin-top:0.4rem;padding:0.75rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#f1f5f9;font-size:1rem;">
+                            <option value="false">🚫 Hidden — Community Daily Learn is unavailable</option>
+                            <option value="true" selected>✅ Visible — the Community 2-question cycle is available</option>
+                        </select>
+                    </label>
+                    <span id="community-daily-learn-status-badge" style="display:inline-block;margin-bottom:0.75rem;padding:0.3rem 0.75rem;border-radius:6px;font-weight:600;font-size:0.85rem;"></span>
+                    <button class="btn btn-primary" onclick="saveFeatureVisibility('community_daily_learn_feature', 'community-daily-learn-visibility-select', 'community-daily-learn-visibility-result')" style="width:100%;padding:0.9rem;font-size:1rem;">💾 Save Daily Learn Setting</button>
+                    <div id="community-daily-learn-visibility-result" style="margin-top:1rem;display:none;"></div>
+                </div>
+
+                <div class="content-box" style="margin-top: 1.5rem;">
                     <h2 style="margin-bottom: 1rem;">🪙 Community G$ Rewards</h2>
                     <div style="margin-bottom: 0.75rem; padding: 0.75rem 1rem; background: rgba(245,158,11,0.10); border-radius: 8px; border-left: 3px solid #f59e0b; font-size: 0.88rem; color: rgba(241,245,249,0.85);">
                         Weighted rates: <strong>2.5</strong> per comment received, <strong>1.5</strong> per comment given, <strong>0.5</strong> per reaction received, <strong>0.1</strong> per reaction given. The balance is the <strong>sum of an append-only ledger</strong> — it can never be edited, and there is no admin control to change anyone's balance. Shown <strong>only inside /community</strong>, never on the wallet page. <strong>v1 has no payout path</strong>: earnings accrue and display, nothing is withdrawable. Run <span style="font-family:monospace;">sql/community_reward_ledger.sql</span> first. <strong>Visible by default for signed-in members; guests do not see personal balances. Set COMMUNITY_REWARD_SHOW_BALANCE=0 to hide it. Rate details are collapsed until expanded.</strong>
@@ -3282,6 +3310,36 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     </div>
                 </div>
 
+                <div class="admin-card" style="margin-bottom:1rem;">
+                    <h3 style="margin:0 0 0.35rem;color:#f1f5f9;">Daily Prompt Manager</h3>
+                    <p style="color:rgba(241,245,249,0.65);margin:0 0 0.8rem;">Create, schedule, edit, or archive the official Community prompt. Active prompts are UTC-dated and accept one response per member.</p>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.6rem;margin-bottom:0.6rem;">
+                        <label style="color:#cbd5e1;font-size:0.8rem;">UTC date<input id="cfPromptDate" type="date" style="display:block;width:100%;margin-top:0.25rem;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem;border-radius:8px;"></label>
+                        <label style="color:#cbd5e1;font-size:0.8rem;">Title<input id="cfPromptTitle" maxlength="80" type="text" placeholder="Prompt title" style="display:block;width:100%;margin-top:0.25rem;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem;border-radius:8px;"></label>
+                        <label style="color:#cbd5e1;font-size:0.8rem;">Theme<select id="cfPromptTheme" style="display:block;width:100%;margin-top:0.25rem;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem;border-radius:8px;"><option value="reflection">Reflection</option><option value="helpful_tip">Helpful tip</option><option value="build_in_public">Build in public</option><option value="community_question">Community question</option><option value="celebration">Celebration</option></select></label>
+                        <label style="color:#cbd5e1;font-size:0.8rem;">Status<select id="cfPromptStatus" style="display:block;width:100%;margin-top:0.25rem;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem;border-radius:8px;"><option value="draft">Draft</option><option value="scheduled">Scheduled</option><option value="active">Active</option></select></label>
+                    </div>
+                    <label style="display:block;color:#cbd5e1;font-size:0.8rem;margin-bottom:0.6rem;">Prompt text<textarea id="cfPromptBody" maxlength="240" rows="3" placeholder="Keep it welcoming and never request sensitive personal or financial information." style="display:block;width:100%;margin-top:0.25rem;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem;border-radius:8px;resize:vertical;"></textarea></label>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.6rem;">
+                        <button class="btn" id="cfPromptSaveBtn" onclick="saveCommunityDailyPrompt()" style="background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.5);color:#86efac;padding:0.45rem 0.9rem;border-radius:8px;cursor:pointer;font-weight:700;">Create prompt</button>
+                        <button class="btn" id="cfPromptCancelEditBtn" onclick="cancelCommunityDailyPromptEdit()" hidden style="background:rgba(148,163,184,0.16);border:1px solid rgba(148,163,184,0.35);color:#cbd5e1;padding:0.45rem 0.9rem;border-radius:8px;cursor:pointer;">Cancel edit</button>
+                    </div>
+                    <p id="cfPromptAdminStatus" role="status" aria-live="polite" style="color:#cbd5e1;margin:0 0 0.6rem;"></p>
+                    <div id="cfDailyPromptsList" style="display:flex;flex-direction:column;gap:0.55rem;"><p style="color:rgba(241,245,249,0.6);">Loading prompts…</p></div>
+                </div>
+
+                <div class="admin-card" style="margin-bottom:1rem;">
+                    <h3 style="margin:0 0 0.35rem;color:#f1f5f9;">Badge Moderation</h3>
+                    <p style="color:rgba(241,245,249,0.65);margin:0 0 0.7rem;">Revoke a member’s badge only for a documented moderation reason. This action is audited.</p>
+                    <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+                        <input id="cfBadgeUsername" type="text" placeholder="Community username" style="flex:1;min-width:180px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem;border-radius:8px;">
+                        <select id="cfBadgeKey" style="flex:1;min-width:180px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem;border-radius:8px;"><option value="first_post">First Post</option><option value="first_reaction">First Reaction</option><option value="community_voice">Community Voice</option><option value="helpful_member">Helpful Member</option><option value="consistent_contributor">Consistent Contributor</option><option value="community_builder">Community Builder</option><option value="daily_learner">Daily Learner</option></select>
+                        <input id="cfBadgeReason" type="text" minlength="8" placeholder="Moderation reason (min 8 characters)" style="flex:2;min-width:220px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:0.6rem;border-radius:8px;">
+                        <button class="btn" onclick="revokeCommunityBadge()" style="background:#b91c1c;color:#fff;padding:0.6rem 1rem;border:none;border-radius:8px;cursor:pointer;font-weight:700;">Revoke badge</button>
+                    </div>
+                    <p id="cfBadgeAdminStatus" role="status" aria-live="polite" style="color:#cbd5e1;margin:0.6rem 0 0;"></p>
+                </div>
+
                 <div class="admin-card">
                     <h3 style="margin:0 0 0.8rem;color:#f1f5f9;">🚫 Banned Wallets</h3>
                     <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
@@ -3573,6 +3631,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     break;
                 case 'community-feed-moderation':
                     loadCommunityFeedReports();
+                    loadCommunityDailyPrompts();
                     break;
                 case 'local-wallet-verification':
                     loadLocalWalletVerification();
@@ -3689,6 +3748,160 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 alert('Wallet banned.');
                 loadCommunityFeedReports();
             } catch (e) { alert(e.message); }
+        }
+
+        let _editingCommunityDailyPromptId = null;
+
+        async function loadCommunityDailyPrompts() {
+            const list = document.getElementById('cfDailyPromptsList');
+            if (!list) return;
+            list.textContent = 'Loading prompts…';
+            try {
+                const response = await fetch('/community/api/admin/daily-prompts?limit=100', { credentials: 'same-origin' });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Could not load Daily Prompts.');
+                list.textContent = '';
+                const prompts = data.prompts || [];
+                if (!prompts.length) {
+                    list.textContent = 'No prompts yet.';
+                    return;
+                }
+                prompts.forEach(function (prompt) {
+                    const row = document.createElement('article');
+                    row.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:0.7rem 0.85rem;';
+                    const title = document.createElement('strong');
+                    title.style.color = '#f1f5f9';
+                    title.textContent = (prompt.title || 'Untitled prompt') + ' · ' + (prompt.prompt_date || '');
+                    const details = document.createElement('p');
+                    details.style.cssText = 'color:rgba(241,245,249,0.7);font-size:0.82rem;margin:0.3rem 0 0.55rem;white-space:pre-wrap;';
+                    details.textContent = (prompt.status || 'draft') + ' · ' + (prompt.theme || 'reflection') + ' · ' + (prompt.body || '');
+                    const actions = document.createElement('div');
+                    actions.style.cssText = 'display:flex;gap:0.45rem;flex-wrap:wrap;';
+                    const edit = document.createElement('button');
+                    edit.type = 'button'; edit.textContent = 'Edit';
+                    edit.style.cssText = 'background:rgba(59,130,246,0.2);border:1px solid rgba(59,130,246,0.5);color:#93c5fd;padding:0.35rem 0.7rem;border-radius:8px;cursor:pointer;';
+                    edit.onclick = function () { editCommunityDailyPrompt(prompt); };
+                    actions.appendChild(edit);
+                    if (prompt.status !== 'archived') {
+                        const archive = document.createElement('button');
+                        archive.type = 'button'; archive.textContent = 'Archive';
+                        archive.style.cssText = 'background:rgba(245,158,11,0.2);border:1px solid rgba(245,158,11,0.5);color:#fcd34d;padding:0.35rem 0.7rem;border-radius:8px;cursor:pointer;';
+                        archive.onclick = function () { archiveCommunityDailyPrompt(prompt.id); };
+                        actions.appendChild(archive);
+                    }
+                    row.appendChild(title); row.appendChild(details); row.appendChild(actions);
+                    list.appendChild(row);
+                });
+            } catch (error) {
+                list.textContent = (error && error.message) || 'Could not load Daily Prompts.';
+            }
+        }
+
+        function _setCommunityPromptAdminStatus(message, isError) {
+            const node = document.getElementById('cfPromptAdminStatus');
+            if (!node) return;
+            node.textContent = message || '';
+            node.style.color = isError ? '#fca5a5' : '#86efac';
+        }
+
+        function editCommunityDailyPrompt(prompt) {
+            _editingCommunityDailyPromptId = prompt.id;
+            document.getElementById('cfPromptDate').value = prompt.prompt_date || '';
+            document.getElementById('cfPromptTitle').value = prompt.title || '';
+            document.getElementById('cfPromptBody').value = prompt.body || '';
+            document.getElementById('cfPromptTheme').value = prompt.theme || 'reflection';
+            document.getElementById('cfPromptStatus').value = prompt.status || 'draft';
+            document.getElementById('cfPromptSaveBtn').textContent = 'Save changes';
+            document.getElementById('cfPromptCancelEditBtn').hidden = false;
+            _setCommunityPromptAdminStatus('Editing prompt for ' + (prompt.prompt_date || ''), false);
+            document.getElementById('cfPromptDate').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function cancelCommunityDailyPromptEdit() {
+            _editingCommunityDailyPromptId = null;
+            ['cfPromptDate', 'cfPromptTitle', 'cfPromptBody'].forEach(function (id) {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('cfPromptTheme').value = 'reflection';
+            document.getElementById('cfPromptStatus').value = 'draft';
+            document.getElementById('cfPromptSaveBtn').textContent = 'Create prompt';
+            document.getElementById('cfPromptCancelEditBtn').hidden = true;
+            _setCommunityPromptAdminStatus('', false);
+        }
+
+        async function saveCommunityDailyPrompt() {
+            const date = (document.getElementById('cfPromptDate').value || '').trim();
+            const title = (document.getElementById('cfPromptTitle').value || '').trim();
+            const body = (document.getElementById('cfPromptBody').value || '').trim();
+            if (!date || !title || !body) {
+                _setCommunityPromptAdminStatus('UTC date, title, and prompt text are required.', true);
+                return;
+            }
+            const payload = {
+                prompt_date: date,
+                title: title,
+                body: body,
+                theme: document.getElementById('cfPromptTheme').value,
+                status: document.getElementById('cfPromptStatus').value,
+                starts_at: date + 'T00:00:00Z',
+                ends_at: date + 'T23:59:59Z'
+            };
+            const editingId = _editingCommunityDailyPromptId;
+            try {
+                const response = await fetch(editingId
+                    ? '/community/api/admin/daily-prompts/' + encodeURIComponent(editingId)
+                    : '/community/api/admin/daily-prompts', {
+                    method: editingId ? 'PATCH' : 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Could not save the prompt.');
+                const successMessage = editingId ? 'Prompt updated.' : 'Prompt created.';
+                cancelCommunityDailyPromptEdit();
+                _setCommunityPromptAdminStatus(successMessage, false);
+                await loadCommunityDailyPrompts();
+            } catch (error) {
+                _setCommunityPromptAdminStatus((error && error.message) || 'Could not save the prompt.', true);
+            }
+        }
+
+        async function archiveCommunityDailyPrompt(promptId) {
+            if (!confirm('Archive this Community Daily Prompt? It will stop accepting new responses.')) return;
+            try {
+                const response = await fetch('/community/api/admin/daily-prompts/' + encodeURIComponent(promptId) + '/archive', {
+                    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}'
+                });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Could not archive the prompt.');
+                _setCommunityPromptAdminStatus('Prompt archived.', false);
+                await loadCommunityDailyPrompts();
+            } catch (error) {
+                _setCommunityPromptAdminStatus((error && error.message) || 'Could not archive the prompt.', true);
+            }
+        }
+
+        async function revokeCommunityBadge() {
+            const username = (document.getElementById('cfBadgeUsername').value || '').trim().replace(/^@/, '');
+            const badgeKey = document.getElementById('cfBadgeKey').value;
+            const reason = (document.getElementById('cfBadgeReason').value || '').trim();
+            if (!username || reason.length < 8) {
+                document.getElementById('cfBadgeAdminStatus').textContent = 'Enter a username and a moderation reason of at least 8 characters.';
+                return;
+            }
+            if (!confirm('Revoke ' + badgeKey + ' from @' + username + '? This action is recorded in the admin audit log.')) return;
+            try {
+                const response = await fetch('/community/api/admin/badges/revoke', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username, badge_key: badgeKey, reason: reason })
+                });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Could not revoke the badge.');
+                document.getElementById('cfBadgeAdminStatus').textContent = data.revoked ? 'Badge revoked and audited.' : 'No active badge award was found.';
+                document.getElementById('cfBadgeReason').value = '';
+            } catch (error) {
+                document.getElementById('cfBadgeAdminStatus').textContent = (error && error.message) || 'Could not revoke the badge.';
+            }
         }
 
         // ── Local Wallet Verification ──────────────────────────────────
@@ -4374,6 +4587,8 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 _applyVisibilityBadge('dapp-status-badge', data.dapp_connect_visible);
                 _applyVisibilityBadge('paluwagan-status-badge', data.paluwagan_visible);
                 _applyVisibilityBadge('community-feed-status-badge', data.community_feed_visible);
+                _applyVisibilityBadge('community-daily-prompt-status-badge', data.community_daily_prompt_visible);
+                _applyVisibilityBadge('community-daily-learn-status-badge', data.community_daily_learn_visible);
 
                 document.getElementById('swap-visibility-select').value = data.swap_visible !== false ? 'true' : 'false';
                 document.getElementById('wallet-visibility-select').value = data.wallet_visible !== false ? 'true' : 'false';
@@ -4389,6 +4604,10 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 document.getElementById('dapp-visibility-select').value = data.dapp_connect_visible === true ? 'true' : 'false';
                 document.getElementById('paluwagan-visibility-select').value = data.paluwagan_visible !== false ? 'true' : 'false';
                 document.getElementById('community-feed-visibility-select').value = data.community_feed_visible === true ? 'true' : 'false';
+                var _cdpSel = document.getElementById('community-daily-prompt-visibility-select');
+                if (_cdpSel) _cdpSel.value = data.community_daily_prompt_visible === true ? 'true' : 'false';
+                var _cdlSel = document.getElementById('community-daily-learn-visibility-select');
+                if (_cdlSel) _cdlSel.value = data.community_daily_learn_visible === true ? 'true' : 'false';
                 var _crSel = document.getElementById('community-rewards-visibility-select');
                 if (_crSel) _crSel.value = data.community_rewards_visible === true ? 'true' : 'false';
             } catch (e) {
