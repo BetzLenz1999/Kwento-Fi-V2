@@ -870,6 +870,17 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         const ua = (navigator.userAgent || '').toLowerCase();
         return ua.includes('trust') || ua.includes('trustwallet');
     }
+    function _isTrustWalletProvider(provider) {
+        if (!provider) return false;
+        if (provider.isTrust || provider.isTrustWallet) return true;
+        return _eip6963Providers().some(d => {
+            if (!d || d.provider !== provider) return false;
+            const info = d.info || {};
+            const rdns = String(info.rdns || '').toLowerCase();
+            const name = String(info.name || '').toLowerCase();
+            return rdns.includes('trustwallet') || name.includes('trust');
+        });
+    }
     function _isTrustWalletMobileContext() {
         const ua = (navigator.userAgent || '').toLowerCase();
         const touchMobile = /android|iphone|ipad|ipod/i.test(ua);
@@ -1102,9 +1113,13 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
             await new Promise(r => setTimeout(r, stepMs));
             const p = _getEthProvider();
-            if (p && (!mobileContext || p.isTrust || p.isTrustWallet || _isTrustWalletUA())) return p;
+            if (p && (!mobileContext || _isTrustWalletProvider(p) || _isMiniPayProvider(p) ||
+                p.isMetaMask || p.isBraveWallet || p.isCoinbaseWallet)) return p;
             if (p) first = p;
         }
+        // Some Trust dApp browsers expose only an unbranded generic provider.
+        // Accept that candidate only after the full mobile discovery window.
+        if (first && mobileContext && _isTrustWalletUA()) return first;
         // WalletConnect fallback: if no injected provider was found, try the
         // existing WC session so users who logged in via WalletConnect can
         // still sign transactions.
@@ -5496,7 +5511,10 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             const isLocal = login === 'local';
             const isWalletConnect = ['walletconnect', 'manual', 'manual_address'].includes(login) || !!(provider && provider.isWalletConnect);
             const isMetaMask = !!(provider && provider.isMetaMask) || !!(window.ethereum && window.ethereum.isMetaMask);
-            const isTrustWallet = _isTrustWalletMobileContext && _isTrustWalletMobileContext();
+            // Prefer selected-provider identity, while retaining Trust's own
+            // dApp-browser context as a fallback for older unbranded providers.
+            const isTrustWallet = _isTrustWalletProvider(provider) ||
+                (_isTrustWalletMobileContext && _isTrustWalletMobileContext());
             const hasInjected = !!provider || !!window.ethereum;
             const supportsXdc = isLocal || (!isMiniPay && !isTrustWallet && (isMetaMask || isWalletConnect || hasInjected));
             return { isMiniPay, isWalletConnect, isMetaMask, isTrustWallet, hasInjected, supportsFuse: false, supportsXdc };
