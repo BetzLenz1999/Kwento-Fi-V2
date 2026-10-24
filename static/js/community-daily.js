@@ -11,6 +11,8 @@
     var selectedAnswer = null;
     var lastResult = null;
     var _busy = false;
+    var lastReward = null;
+    var lastEarningsRefresh = null;
 
     function $(id) { return document.getElementById(id); }
     function el(tag, className, text) {
@@ -75,6 +77,62 @@
         }
     }
 
+    function rewardStatusMessage() {
+        if (!lastReward || !lastReward.status) return 'Reward status is not available yet.';
+        if (lastReward.status === 'credited') {
+            return lastEarningsRefresh === true
+                ? 'Your completion reward is now reflected in Community G$ Earnings.'
+                : (lastEarningsRefresh === false
+                    ? 'Your completion reward was credited, but Community G$ Earnings could not refresh. Reload later to verify your balance.'
+                    : 'Your completion reward was credited. Refreshing Community G$ Earnings…');
+        }
+        if (lastReward.status === 'already_credited') {
+            return lastEarningsRefresh === false
+                ? 'Your completion reward is already in the ledger, but Community G$ Earnings could not refresh. Reload later to verify your balance.'
+                : (lastEarningsRefresh === true
+                    ? 'Your completion reward is already included in Community G$ Earnings.'
+                    : 'Your completion reward is already in the ledger. Refreshing Community G$ Earnings…');
+        }
+        var reason = lastReward.reason;
+        var message = reason === 'daily_cap_reached'
+            ? 'Your completion is saved, but today’s Community G$ earning cap has been reached; no reward was added.'
+            : (reason === 'verified_wallet_required'
+                ? 'Your completion is saved, but only verified wallets can earn Community G$.'
+                : (reason === 'reward_disabled' || reason === 'rewards_disabled'
+                    ? 'Your completion is saved, but the Daily Learn reward is currently unavailable.'
+                    : 'Your completion is saved, but the reward could not be confirmed. Check Community G$ Earnings again later.'));
+        return lastEarningsRefresh === false &&
+            lastReward.reason !== 'rewards_disabled' && lastReward.reason !== 'reward_disabled'
+            ? message + ' The earnings card could not refresh.' : message;
+    }
+
+    function renderRewardStatus() {
+        var note = $('cfDailyLearnRewardStatus');
+        if (note) note.textContent = rewardStatusMessage();
+    }
+
+    function refreshCompletionEarnings(data) {
+        lastReward = data && data.reward ? data.reward : null;
+        lastEarningsRefresh = null;
+        renderRewardStatus();
+        var detail = { day_utc: data && data.day_utc, reward: lastReward };
+        window.dispatchEvent(new CustomEvent('gm:daily-learn-completed', { detail: detail }));
+        // The Community listener starts the card refresh and attaches its
+        // coalesced promise to this event detail. Fall back for isolated embeds.
+        var refresh = detail.refreshPromise ||
+            (window.GMCommunity && typeof window.GMCommunity.loadRewards === 'function'
+                ? window.GMCommunity.loadRewards() : Promise.resolve(false));
+        return Promise.resolve(refresh).then(function (ok) {
+            lastEarningsRefresh = ok === true;
+            renderRewardStatus();
+            return lastEarningsRefresh;
+        }).catch(function () {
+            lastEarningsRefresh = false;
+            renderRewardStatus();
+            return false;
+        });
+    }
+
     function renderCompleted(data) {
         var score = Number(data.score) || 0;
         var total = Number(data.total_questions) || 2;
@@ -86,6 +144,9 @@
         var note = el('p', 'cf-daily-learn-result',
             'Your completion is saved. Daily Learn resets at 00:00 UTC.');
         root.appendChild(note);
+        var rewardNote = el('p', 'cf-daily-learn-result', rewardStatusMessage());
+        rewardNote.id = 'cfDailyLearnRewardStatus';
+        root.appendChild(rewardNote);
         if (WALLET && window.GMCommunity && window.GMCommunity.prefillDailyLearnReflection) {
             var share = el('button', 'cf-daily-learn-share', 'Share to Feed');
             share.type = 'button';
@@ -112,6 +173,11 @@
         root.textContent = '';
         root.appendChild(el('p', 'cf-daily-learn-result', result.correct ? 'Correct.' : 'Not quite.'));
         if (result.explanation) root.appendChild(el('p', 'cf-daily-learn-result', result.explanation));
+        if (result.status === 'completed') {
+            var rewardNote = el('p', 'cf-daily-learn-result', rewardStatusMessage());
+            rewardNote.id = 'cfDailyLearnRewardStatus';
+            root.appendChild(rewardNote);
+        }
         var progress = $('cfDailyLearnProgress');
         if (progress) progress.textContent = (Number(result.completed_questions) || 0) + '/2 complete';
         var next = el('button', 'cf-daily-learn-next',
@@ -155,9 +221,7 @@
                 }
                 throw new Error(result.message || result.error || 'Your answer could not be saved. Please try again.');
             }
-            if (result.completed_new) {
-                window.dispatchEvent(new CustomEvent('gm:daily-learn-completed', { detail: { day_utc: result.day_utc } }));
-            }
+            if (result.status === 'completed') refreshCompletionEarnings(result);
             renderAnswerFeedback(result);
         }).catch(function (error) {
             renderLearnMessage((error && error.message) || 'Daily Learn is temporarily unavailable.');
@@ -237,6 +301,7 @@
             if (title) title.textContent = data.status === 'completed'
                 ? 'Daily Learn complete' : 'Answer today’s 2 questions';
             renderQuestion(data);
+            if (data.status === 'completed') refreshCompletionEarnings(data);
         }).catch(function () { card.hidden = true; });
     }
 
