@@ -868,7 +868,21 @@ try:
     else:
         logger.info("ℹ️ local-wallet FV reconciler not started (disabled)")
 except Exception as e:
-    logger.error(f"❌ local-wallet FV reconciler initialization failed: {e}")
+    logger.error(f"❌ local-wallet verification reconciler initialization failed: {e}")
+
+# Community Daily Learn reward reconciler (env-gated, default ON). Retries
+# persisted completed attempts whose idempotent Community G$ ledger credit was
+# unavailable at completion; the DB claim RPC coordinates multiple workers.
+try:
+    from community_feed.daily_learn_reconciler import init_daily_learn_reconciler
+    if _start_serverless_background_job(
+        "Community Daily Learn rewards", init_daily_learn_reconciler, app
+    ):
+        logger.info("✅ Community Daily Learn reward reconciler started")
+    else:
+        logger.info("ℹ️ Community Daily Learn reward reconciler not started (disabled)")
+except Exception as e:
+    logger.error(f"❌ Community Daily Learn reward reconciler initialization failed: {e}")
 
 # Initialize G$ Savings
 logger.info("💰 Initializing G$ Savings system...")
