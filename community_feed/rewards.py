@@ -90,8 +90,15 @@ _ENV_RATE_DEFAULTS = {
 #
 # The floor is 0 on purpose — setting a rate to 0 is the supported way to switch
 # an action off without a deploy (e.g. kill the tap reward during an incident).
-# The ceiling is well under the daily cap: a rate above DAILY_CAP would make
-# every credit unsatisfiable, which is a foot-gun, not a feature.
+# The ceiling is well under the shared daily cap: a rate above DAILY_CAP would
+# make every credit unsatisfiable, which is a foot-gun, not a feature.
+#
+# NOTE: Daily Learn is deliberately NOT in RATE_NAMES, so it is not bounded by
+# RATE_MAX. It has its own ceiling (DAILY_LEARN_RATE_MAX) AND its own daily
+# allowance (daily_learn_daily_cap), because a single Daily Learn cycle can be
+# worth more than the whole shared cap. Sharing one budget is what silently
+# voided the Daily Learn credit: a 2 x 25 G$ cycle exactly consumed the 50 G$
+# cap, so any reaction or comment in the same window blocked the reward.
 RATE_MAX = get_env_decimal("COMMUNITY_REWARD_RATE_MAX", "10")
 RATE_BOUNDS = {name: (Decimal("0"), RATE_MAX) for name in RATE_NAMES}
 
@@ -117,10 +124,74 @@ POST_CAP = get_env_decimal("COMMUNITY_REWARD_POST_CAP", "100")
 # proposal §6; it ships as an env var so it can be raised without a deploy.
 MIN_PAYOUT_GD = get_env_decimal("COMMUNITY_REWARD_MIN_PAYOUT_GD", "500")
 
-# Community Daily Learn uses its own Admin Quiz Settings rate (0–25 G$ per
+# Community Daily Learn uses its own Admin Quiz Settings rate (0–50 G$ per
 # correct answer), separate from the full Learn & Earn quiz's max-reward rate.
-DAILY_LEARN_RATE_MAX = Decimal("25")
+DAILY_LEARN_RATE_MAX = Decimal("50")
+DAILY_LEARN_EVENT = "daily_learn"
 DAILY_LEARN_CLAIM_RPC = "community_daily_learn_claim_uncredited_attempts"
+
+# Daily Learn gets its OWN 24h allowance instead of sharing DAILY_CAP.
+#
+# The owner's requirement is that a completed cycle ALWAYS credits. One cycle is
+# two questions, so the worst case is `2 x DAILY_LEARN_RATE_MAX` = 100 G$, which
+# is larger than the shared 50 G$ cap — sharing one budget could therefore never
+# satisfy the requirement. The two budgets are also summed over DISJOINT event
+# types, so a reaction can neither block Daily Learn nor be blocked by it.
+DEFAULT_DAILY_LEARN_CAP = Decimal("100")
+
+#: The event types the SHARED daily cap counts. Daily Learn is excluded on
+#: purpose: it is budgeted by ``daily_learn_daily_cap()`` instead, so a 100 G$
+#: Daily Learn credit can never swallow the reaction/comment budget.
+SHARED_CAP_EVENT_TYPES = ("reaction_in", "reaction_out", "comment_in", "comment_out")
+
+
+def daily_learn_daily_cap() -> Decimal:
+    """Daily Learn's own 24h allowance, in G$.
+
+    Read per call (not at import) so an operator can change it without a
+    redeploy, matching the repo convention for switches.
+
+    The floor is one full cycle (``2 x DAILY_LEARN_RATE_MAX``): a smaller
+    allowance would make a perfect 2/2 cycle partially or wholly unsatisfiable,
+    which is the exact failure this budget exists to prevent. A value below the
+    floor is raised to it and logged. ``rate = 0`` remains the supported way to
+    switch Daily Learn earning off.
+    """
+    floor = DAILY_LEARN_RATE_MAX * 2
+    configured = get_env_decimal(
+        "COMMUNITY_REWARD_DAILY_LEARN_CAP", str(DEFAULT_DAILY_LEARN_CAP))
+    if not configured.is_finite() or configured < floor:
+        logger.warning(
+            "community_rewards: COMMUNITY_REWARD_DAILY_LEARN_CAP=%s is below one "
+            "full Daily Learn cycle (%s); using the floor so a 2/2 completion "
+            "always credits", configured, floor)
+        return floor
+    return configured
+
+
+def daily_learn_window_start(now: datetime | None = None) -> datetime:
+    """Start of the current UTC day — the window Daily Learn is budgeted over.
+
+    Deliberately NOT the trailing-24h window the social cap uses. The Daily Learn
+    cycle itself is per UTC day (the ledger key is ``daily_learn:<day>:<wallet>``
+    and resets at 00:00 UTC), so a rolling window would let the two clocks drift
+    apart and block a user who completes the quiz at roughly the same time each
+    day. Aligning the budget to the cycle's own boundary is what makes "a
+    completed cycle always credits" true.
+    """
+    moment = now or datetime.now(timezone.utc)
+    return moment.astimezone(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+
+
+def daily_learn_budget() -> tuple[Decimal, datetime, tuple]:
+    """The Daily Learn cap, window start and the event types it covers.
+
+    One helper so the pre-check and the insertion-boundary check in ``_credit``
+    can never disagree about which budget applies.
+    """
+    return (daily_learn_daily_cap(), daily_learn_window_start(),
+            (DAILY_LEARN_EVENT,))
 
 # Whether the card shows the VIEWER'S OWN balance and goal. Default ON for
 # signed-in members; the client still withholds personal figures from guests.
@@ -572,20 +643,35 @@ def balance(wallet: str, *, _supabase=None) -> Decimal:
     return _balance_read(wallet, supabase)[0]
 
 
-def _credits_since(supabase, wallet: str, since: datetime) -> Decimal:
-    """Positive credits for one wallet since ``since`` (for the daily cap)."""
+def _credits_since(supabase, wallet: str, since: datetime,
+                   event_types: tuple | None = None,
+                   fail_closed_to: Decimal | None = None) -> Decimal:
+    """Positive credits for one wallet since ``since`` (for a daily cap).
+
+    ``event_types`` narrows the sum to a budget's own event types. Daily Learn
+    and the reaction/comment budget are summed over DISJOINT sets, so one can
+    never consume the other's allowance. ``None`` means "all event types", which
+    only the fail-closed path uses.
+
+    ``fail_closed_to`` is the value returned when the ledger cannot be read, so
+    an unreadable cap must not become "no cap". It defaults to ``DAILY_CAP`` for
+    callers using the shared budget; a caller measuring against a different
+    budget must pass that budget, otherwise the returned number has no relation
+    to the ceiling it is compared against.
+    """
     try:
-        result = (
+        query = (
             supabase.table(LEDGER)
-            .select("delta_gd,created_at")
+            .select("delta_gd,created_at,event_type")
             .ilike("wallet_address", wallet)
             .gte("created_at", since.isoformat())
-            .execute()
         )
+        if event_types:
+            query = query.in_("event_type", list(event_types))
+        result = query.execute()
     except Exception as exc:  # noqa: BLE001
-        # Fail CLOSED on the cap: an unreadable cap must not become "no cap".
         logger.warning("community_rewards: daily cap read failed: %s", exc)
-        return DAILY_CAP
+        return DAILY_CAP if fail_closed_to is None else fail_closed_to
     total = Decimal("0")
     for row in _rows(result):
         delta = _as_decimal(row.get("delta_gd"))
@@ -646,8 +732,13 @@ def _insert(supabase, row: dict) -> bool:
         # A unique-violation on idempotency_key means the event was already
         # credited (or a concurrent request won the race). That is the
         # invariant working, not an error.
-        logger.debug("community_rewards: ledger insert skipped (%s): %s",
-                     row.get("idempotency_key"), exc)
+        #
+        # Any OTHER failure here — most commonly a ledger CHECK constraint that
+        # was never widened for this event type — silently voids a real reward.
+        # WARNING (not DEBUG) so it is visible in normal production logs: a
+        # missing migration must not look like "the user earned nothing".
+        logger.warning("community_rewards: ledger insert skipped (%s, %s): %s",
+                       row.get("event_type"), row.get("idempotency_key"), exc)
         return False
 
 
@@ -686,8 +777,18 @@ def _credit(supabase, wallet: str, *, key: str, event_type: str, amount: Decimal
         return False
 
     now = datetime.now(timezone.utc)
-    if _credits_since(supabase, wallet, now - timedelta(hours=24)) + amount > DAILY_CAP:
-        logger.info("community_rewards: daily cap reached for %s", wallet[:10])
+    # Which daily budget applies. Daily Learn is budgeted by its OWN allowance,
+    # over its own UTC-day window, so a completed cycle always credits and can
+    # never consume (or be blocked by) the shared reaction/comment budget.
+    if event_type == DAILY_LEARN_EVENT:
+        daily_cap, window_start, cap_event_types = daily_learn_budget()
+    else:
+        daily_cap, window_start = DAILY_CAP, now - timedelta(hours=24)
+        cap_event_types = SHARED_CAP_EVENT_TYPES
+    if _credits_since(supabase, wallet, window_start, cap_event_types,
+                      fail_closed_to=daily_cap) + amount > daily_cap:
+        logger.info("community_rewards: daily cap reached for %s (%s)",
+                    wallet[:10], event_type)
         return False
     if post_id not in (None, "") and \
             _credits_for_post(supabase, post_id) + amount > POST_CAP:
@@ -799,12 +900,19 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None,
         if not is_rewardable(datetime.now(timezone.utc)):
             return {"status": "not_credited", "reason": "reward_unavailable"}
 
-        # Check the cap separately so the user can distinguish a cap from an
-        # unreadable ledger. _credit repeats the check at the insertion boundary.
+        # Check the Daily Learn allowance separately so the user can distinguish a
+        # cap from an unreadable ledger. _credit repeats the check at the
+        # insertion boundary. The window is the UTC day (not a rolling 24h), so
+        # the budget resets exactly when the quiz does; only `daily_learn` rows
+        # count, so reactions and comments can neither block the cycle nor be
+        # blocked by it.
+        daily_cap, window_start, cap_event_types = daily_learn_budget()
         try:
             cap_rows = _rows(db.table(LEDGER).select(
-                "delta_gd,created_at").ilike("wallet_address", identity).gte(
-                    "created_at", (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+                "delta_gd,created_at,event_type").ilike(
+                    "wallet_address", identity).eq(
+                        "event_type", DAILY_LEARN_EVENT).gte(
+                    "created_at", window_start.isoformat()
                 ).execute())
         except Exception as exc:  # noqa: BLE001
             logger.warning("community_rewards: Daily Learn cap read failed: %s", exc)
@@ -812,13 +920,13 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None,
         recent_credits = sum(
             (_as_decimal(row.get("delta_gd")) for row in cap_rows
              if _as_decimal(row.get("delta_gd")) > 0), Decimal("0"))
-        if recent_credits + amount > DAILY_CAP:
+        if recent_credits + amount > daily_cap:
             return {"status": "not_credited", "reason": "daily_cap_reached"}
 
         credited = _credit(
             db, identity,
             key=key,
-            event_type="daily_learn",
+            event_type=DAILY_LEARN_EVENT,
             amount=amount,
             event_created_at=datetime.now(timezone.utc),
         )
@@ -1086,6 +1194,7 @@ def summary(wallet: str | None, *, _supabase=None) -> dict:
             "balance_available": True,
             "rates": _rate_payload(_supabase),
             "daily_cap_gd": float(DAILY_CAP),
+            "daily_learn_cap_gd": float(daily_learn_daily_cap()),
             "show_balance": show_balance(),
         }
     supabase = _supabase or _get_supabase()
@@ -1122,6 +1231,9 @@ def summary(wallet: str | None, *, _supabase=None) -> dict:
         "rates": rates,
         "reward_per_action": float(max(rates.values())) if rates else 0.0,
         "daily_cap_gd": float(DAILY_CAP),
+        # Daily Learn is budgeted separately, so the card can explain both caps
+        # instead of letting a silent skip look like "the quiz paid nothing".
+        "daily_learn_cap_gd": float(daily_learn_daily_cap()),
         # Whether the card may show the balance block. Defaults on for members;
         # the client still withholds this personal figure from guests.
         "show_balance": show_balance(),
