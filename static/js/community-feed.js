@@ -1900,7 +1900,7 @@
                     ['Someone comments on your post', rates.comment_out],
                     ['Someone reacts to your post', rates.reaction_out],
                     ['You react to a post', rates.reaction_in],
-                    ['Complete Daily Learn (2/2)', rates.daily_learn_completion],
+                    ['Daily Learn (per correct answer)', rates.daily_learn_per_correct],
                 ];
                 ratesEl.textContent = '';
                 rows.forEach(function (row) {
