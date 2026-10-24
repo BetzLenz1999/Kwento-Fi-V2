@@ -360,6 +360,15 @@
         throw lastErr || new Error('All ' + chain.label + ' RPC endpoints failed.');
     }
 
+    async function _sendProvider(chain) {
+        // Select a live endpoint before signing/broadcasting. This is a health
+        // check only: an uncertain broadcast is never retried on another RPC,
+        // because the first node may already have accepted the transaction.
+        await _chainJsonRpc(chain, 'eth_blockNumber', []);
+        var index = _rpcIndexes[chain.label] || 0;
+        return new ethers.JsonRpcProvider(chain.rpcs[index], chain.id);
+    }
+
     // ── EIP-1193-style provider (Celo + XDC signer) ─────────────────────
 
     function supportedChainLabels() {
@@ -521,7 +530,7 @@
                 if (feeCurrency && chain.id === 42220) {
                     return await _sendFeeCurrencyTx(wallet1, chain, tx, feeCurrency);
                 }
-                var provider = new ethers.JsonRpcProvider(chain.rpcs[0], chain.id);
+                var provider = await _sendProvider(chain);
                 var signer = wallet1.connect(provider);
                 var sent = await signer.sendTransaction(tx);
                 return sent.hash;
