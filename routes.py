@@ -1462,7 +1462,7 @@ def public_feature_visibility():
         result = safe_supabase_operation(
             lambda: supabase.table('maintenance_settings')
                 .select('feature_name,is_maintenance')
-                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility', 'reserve_swap_feature', 'wallet_buy_eth', 'paluwagan_feature', 'community_feed_feature', 'community_rewards_feature'])
+                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility', 'reserve_swap_feature', 'wallet_buy_eth', 'paluwagan_feature', 'community_feed_feature', 'community_rewards_feature', 'community_daily_prompt_feature', 'community_daily_learn_feature'])
                 .execute(),
             operation_name="get feature visibility"
         )
@@ -1508,6 +1508,14 @@ def public_feature_visibility():
                     community_feed_visible = val
                 elif fn == 'community_rewards_feature':
                     community_rewards_visible = val
+        community_daily_prompt_visible = any(
+            row.get('feature_name') == 'community_daily_prompt_feature'
+            and not row.get('is_maintenance', False)
+            for row in (result.data if result and result.data else []))
+        community_daily_learn_visible = any(
+            row.get('feature_name') == 'community_daily_learn_feature'
+            and not row.get('is_maintenance', False)
+            for row in (result.data if result and result.data else []))
         data = {"success": True, "swap_visible": swap_visible, "wallet_visible": wallet_visible,
                 "savings_visible": savings_visible,
                 "topup_visible": topup_visible, "giftcard_visible": giftcard_visible,
@@ -1516,7 +1524,9 @@ def public_feature_visibility():
                 "buy_eth_visible": buy_eth_visible,
                 "paluwagan_visible": paluwagan_visible,
                 "community_feed_visible": community_feed_visible,
-                "community_rewards_visible": community_rewards_visible}
+                "community_rewards_visible": community_rewards_visible,
+                "community_daily_prompt_visible": community_daily_prompt_visible,
+                "community_daily_learn_visible": community_daily_learn_visible}
         _feature_visibility_cache["data"] = data
         _feature_visibility_cache["expires"] = now + _PUBLIC_ENDPOINT_CACHE_TTL
         return jsonify(data)
@@ -1539,7 +1549,7 @@ def get_feature_visibility():
         result = safe_supabase_operation(
             lambda: supabase.table('maintenance_settings')
                 .select('feature_name,is_maintenance')
-                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility', 'reserve_swap_feature', 'wallet_buy_eth', 'chatroom_feature', 'goodmarket_agent_feature', 'dapp_connect_feature', 'paluwagan_feature', 'community_feed_feature', 'community_rewards_feature'])
+                .in_('feature_name', ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility', 'reserve_swap_feature', 'wallet_buy_eth', 'chatroom_feature', 'goodmarket_agent_feature', 'dapp_connect_feature', 'paluwagan_feature', 'community_feed_feature', 'community_rewards_feature', 'community_daily_prompt_feature', 'community_daily_learn_feature'])
                 .execute(),
             operation_name="get feature visibility admin"
         )
@@ -1594,6 +1604,14 @@ def get_feature_visibility():
                     community_feed_visible = val
                 elif fn == 'community_rewards_feature':
                     community_rewards_visible = val
+        community_daily_prompt_visible = any(
+            row.get('feature_name') == 'community_daily_prompt_feature'
+            and not row.get('is_maintenance', False)
+            for row in (result.data if result and result.data else []))
+        community_daily_learn_visible = any(
+            row.get('feature_name') == 'community_daily_learn_feature'
+            and not row.get('is_maintenance', False)
+            for row in (result.data if result and result.data else []))
         return jsonify({"success": True, "swap_visible": swap_visible, "wallet_visible": wallet_visible,
                         "savings_visible": savings_visible,
                         "topup_visible": topup_visible, "giftcard_visible": giftcard_visible,
@@ -1605,7 +1623,9 @@ def get_feature_visibility():
                         "dapp_connect_visible": dapp_connect_visible,
                         "paluwagan_visible": paluwagan_visible,
                         "community_feed_visible": community_feed_visible,
-                        "community_rewards_visible": community_rewards_visible})
+                        "community_rewards_visible": community_rewards_visible,
+                        "community_daily_prompt_visible": community_daily_prompt_visible,
+                        "community_daily_learn_visible": community_daily_learn_visible})
     except Exception as e:
         logger.error(f"Admin feature visibility fetch error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
@@ -1625,7 +1645,7 @@ def set_feature_visibility():
         is_hidden = not visible
         admin_wallet = session.get('wallet')
 
-        if feature not in ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility', 'reserve_swap_feature', 'wallet_buy_eth', 'chatroom_feature', 'goodmarket_agent_feature', 'dapp_connect_feature', 'paluwagan_feature', 'community_feed_feature', 'community_rewards_feature']:
+        if feature not in ['swap_feature', 'wallet_feature', 'savings_feature', 'store_topup', 'store_giftcard', 'store_virtualcard', 'store_utility', 'reserve_swap_feature', 'wallet_buy_eth', 'chatroom_feature', 'goodmarket_agent_feature', 'dapp_connect_feature', 'paluwagan_feature', 'community_feed_feature', 'community_rewards_feature', 'community_daily_prompt_feature', 'community_daily_learn_feature']:
             return jsonify({"success": False, "error": "Invalid feature name"}), 400
 
         existing = safe_supabase_operation(
