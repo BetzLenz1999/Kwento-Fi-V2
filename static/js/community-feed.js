@@ -51,6 +51,7 @@
     var _commentCache = {};    // post_id -> [comments]
     var _earnBusy = false;     // one in-flight rewards fetch at a time
     var _earnDirty = false;    // a refresh arrived while one was in flight
+    var _earnPromise = null;   // callers can await the coalesced latest read
     var _dailyPrompt = null;
     var _promptModeId = null;
     var _promptFilterId = null;
@@ -1999,17 +2000,28 @@
         // showing the pre-react balance, which reads as "my reaction did not
         // count". One extra pass after the current one settles is enough: the
         // server is the source of truth, so the latest response wins.
-        if (_earnBusy) { _earnDirty = true; return Promise.resolve(); }
+        if (_earnBusy) { _earnDirty = true; return _earnPromise || Promise.resolve(false); }
         _earnBusy = true;
-        return api('/community/api/rewards').then(function (result) {
-            if (result.data && result.data.enabled) renderRewards(result.data);
+        _earnPromise = api('/community/api/rewards').then(function (result) {
+            var responseOk = !!(result.ok && result.data && result.data.success);
+            var refreshed = !!(responseOk && result.data.enabled &&
+                result.data.balance_available !== false);
+            if (responseOk && (!result.data.enabled || result.data.balance_available !== false)) {
+                renderRewards(result.data);
+            }
+            // A partial ledger read is not a fresh balance: keep the last good
+            // card value instead of replacing it with a misleading zero.
+            return refreshed;
         }).catch(function () {
             // A rewards read failure must not disturb the feed; the card just
             // stays as it was (hidden on first load).
-        }).then(function () {
+            return false;
+        }).then(function (refreshed) {
             _earnBusy = false;
             if (_earnDirty) { _earnDirty = false; return loadRewards(); }
+            return refreshed;
         });
+        return _earnPromise;
     }
 
     function loadFeed(reset) {
@@ -2442,13 +2454,19 @@
         renderNav();
         loadMessageUnread();
         loadRewards();
-        window.addEventListener('gm:daily-learn-completed', loadRewards);
+        if (typeof window.addEventListener === 'function') {
+            window.addEventListener('gm:daily-learn-completed', function (event) {
+                var refresh = loadRewards();
+                if (event && event.detail) event.detail.refreshPromise = refresh;
+            });
+        }
         loadFeed(true);
     }
 
     window.GMCommunity = {
         init: init,
         refresh: refresh,
+        loadRewards: loadRewards,
         loadMore: loadMore,
         submitPost: submitPost,
         setDailyPrompt: setDailyPrompt,
