@@ -14,6 +14,7 @@ reduces ownership to a boolean ``is_mine``.
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import threading
@@ -299,6 +300,25 @@ def api_daily_learn():
     tomorrow = datetime.now(timezone.utc).date() + timedelta(days=1)
     result["reset_at"] = datetime.combine(tomorrow, datetime.min.time(), tzinfo=timezone.utc).isoformat()
     return jsonify(result)
+
+
+@community_feed_bp.route("/api/cron/daily-learn-reconcile", methods=["GET"])
+def api_daily_learn_reconcile_cron():
+    """Vercel Cron entry point; never run without the configured shared secret."""
+    secret = os.getenv("CRON_SECRET", "")
+    authorization = request.headers.get("Authorization", "")
+    if not secret or not hmac.compare_digest(authorization, f"Bearer {secret}"):
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+    if not rewards.is_enabled():
+        return jsonify({"success": True, "skipped": "rewards_disabled"})
+    try:
+        result = rewards.reconcile_uncredited_daily_learn_attempts(batch_size=10)
+        if result.get("error"):
+            return jsonify({"success": False, "result": result}), 503
+        return jsonify({"success": True, "result": result})
+    except Exception as exc:  # noqa: BLE001 - the next scheduled run retries
+        logger.exception("Community Daily Learn cron reconciliation failed: %s", exc)
+        return jsonify({"success": False, "error": "Reconciliation failed"}), 503
 
 
 @community_feed_bp.route("/api/daily-learn/answer", methods=["POST"])
