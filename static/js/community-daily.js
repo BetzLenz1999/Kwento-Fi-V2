@@ -93,9 +93,14 @@
                     ? 'Your completion reward is already included in Community G$ Earnings.'
                     : 'Your completion reward is already in the ledger. Refreshing Community G$ Earnings…');
         }
+        if (lastReward.status === 'pending') {
+            return lastReward.reason === 'verified_wallet_required'
+                ? 'Your quiz is saved, but the remaining reward is pending because this wallet is not eligible to earn Community G$.'
+                : 'Your quiz is saved. The remaining question reward is pending and will be retried; check Community G$ Earnings again later.';
+        }
         var reason = lastReward.reason;
         var message = reason === 'daily_cap_reached'
-            ? 'Your completion is saved, but the Daily Learn daily allowance for the last 24 hours has already been used; no reward was added this time.'
+            ? 'Your completion is saved, but the separate Daily Learn allowance for this UTC day has been used; no additional reward was added.'
             : (reason === 'no_correct_answers'
                 ? 'Your completion is saved. No Community G$ was earned because there were no correct answers.'
                 : (reason === 'verified_wallet_required'
