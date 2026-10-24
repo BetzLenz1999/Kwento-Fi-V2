@@ -119,6 +119,32 @@
 
 <main class="cf-wrap">
 
+    <section class="cf-daily-prompt" id="cfDailyPrompt" aria-labelledby="cfDailyPromptTitle" hidden>
+        <div class="cf-daily-prompt-kicker">Today’s Community Prompt</div>
+        <h2 id="cfDailyPromptTitle"></h2>
+        <p id="cfDailyPromptBody"></p>
+        <div class="cf-daily-prompt-foot">
+            <span id="cfDailyPromptCount">0 responses</span>
+            <button type="button" class="cf-btn-primary" id="cfAnswerPromptBtn"
+                    onclick="GMCommunity.answerPrompt()">Answer prompt</button>
+            <button type="button" class="cf-btn-text" id="cfSeePromptBtn"
+                    onclick="GMCommunity.seePromptResponses()">See responses</button>
+        </div>
+    </section>
+
+    <section class="cf-daily-learn" id="cfDailyLearn" aria-labelledby="cfDailyLearnTitle" hidden>
+        <div class="cf-daily-learn-head">
+            <div>
+                <p class="cf-daily-learn-kicker">GoodMarket Daily Learn</p>
+                <h2 id="cfDailyLearnTitle">Answer today’s 2 questions</h2>
+            </div>
+            <span class="cf-daily-learn-progress" id="cfDailyLearnProgress"></span>
+        </div>
+        <div class="cf-daily-learn-content" id="cfDailyLearnContent" aria-live="polite"></div>
+        <p class="cf-daily-learn-reset" id="cfDailyLearnReset">Resets daily at 00:00 UTC.</p>
+    </section>
+    <p class="cf-full-learn-link"><a href="/learn-earn">Open the full Learn &amp; Earn quiz →</a></p>
+
     {% if is_guest %}
     <div class="cf-guest">
         {% with guest_card_icon='📸',
@@ -156,6 +182,12 @@
                 <strong>{{ username or 'You' }}</strong>
                 <span>Sharing publicly</span>
             </div>
+        </div>
+
+        <div class="cf-prompt-context" id="cfPromptContext" hidden>
+            <span id="cfPromptContextText">Answering today’s prompt</span>
+            <button type="button" onclick="GMCommunity.cancelPromptMode()"
+                    aria-label="Cancel prompt response mode">Cancel</button>
         </div>
 
         <label class="cf-sr-only" for="cfCaption">Caption</label>
@@ -285,6 +317,12 @@
              or guest asks to expand it. -->
         <ul class="cf-earn-rates" id="cfEarnRates" hidden></ul>
         <p class="cf-earn-note" id="cfEarnNote" hidden></p>
+        <div class="cf-earn-withdraw-row" id="cfEarnWithdrawRow" hidden>
+            <button type="button" class="cf-earn-withdraw" id="cfEarnWithdrawBtn"
+                    onclick="GMCommunity.checkWithdrawalEligibility()">Withdraw</button>
+            <p class="cf-earn-withdraw-status" id="cfEarnWithdrawStatus"
+               role="status" aria-live="polite" hidden></p>
+        </div>
     </section>
 
     <!-- ── Feed ────────────────────────────────────────────────────────────
@@ -557,6 +595,8 @@ window.GM_WALLET_BOOT = {
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
 {% endif %}
+
+<script src="{{ url_for('static', filename='js/community-daily.js', v=ASSET_VERSION) }}"></script>
 
 </body>
 </html>
