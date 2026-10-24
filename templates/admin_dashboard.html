@@ -1454,6 +1454,10 @@
                                     <p id="current-per-correct" style="font-size: 1.5rem; color: #fbbf24; margin-top: 0.5rem;">200 G$</p>
                                 </div>
                                 <div style="padding: 1rem; background: rgba(255, 255, 255, 0.03); border-radius: 8px;">
+                                    <strong>Community Daily Learn Rate:</strong>
+                                    <p id="current-community-daily-learn-rate" style="font-size: 1.5rem; color: #34d399; margin-top: 0.5rem;">1 G$ / correct</p>
+                                </div>
+                                <div style="padding: 1rem; background: rgba(255, 255, 255, 0.03); border-radius: 8px;">
                                     <strong>Cooldown:</strong>
                                     <p id="current-cooldown" style="font-size: 1.5rem; color: #a78bfa; margin-top: 0.5rem;">24 hours</p>
                                 </div>
@@ -1484,6 +1488,14 @@
                                 </small>
                                 <small id="reward-per-correct-preview" style="color: #fbbf24; display: block; margin-top: 0.5rem; font-weight: 700;">
                                     Example: 100 G$ ÷ 10 questions = 10 G$ per correct answer
+                                </small>
+                            </div>
+
+                            <div style="margin-bottom: 1.5rem; padding: 1rem; border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 8px;">
+                                <label for="community-daily-learn-reward-per-correct" style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Community Daily Learn reward per correct answer (0-25 G$)</label>
+                                <input type="number" id="community-daily-learn-reward-per-correct" min="0" max="25" step="0.0001" value="1" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
+                                <small style="color: rgba(241, 245, 249, 0.7); display: block; margin-top: 0.5rem;">
+                                    Applies only to the 2-question Community Daily Learn cycle. Credit = correct answers × this rate (0, 1, or 2 correct); the full Learn &amp; Earn quiz rate is separate. Maximum: 25 G$ per correct answer, subject to the Community daily cap.
                                 </small>
                             </div>
 
@@ -4785,11 +4797,13 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     document.getElementById('current-time').textContent = settings.time_per_question + 's';
                     document.getElementById('current-max-reward').textContent = settings.max_reward_per_quiz + ' G$';
                     document.getElementById('current-per-correct').textContent = formatQuizRewardAmount(settings.reward_per_correct);
+                    document.getElementById('current-community-daily-learn-rate').textContent = formatQuizRewardAmount(settings.community_daily_learn_reward_per_correct) + ' / correct';
                     document.getElementById('current-cooldown').textContent = formatQuizCooldownLabel(settings.cooldown_hours);
 
                     document.getElementById('questions-per-quiz').value = settings.questions_per_quiz;
                     document.getElementById('time-per-question').value = settings.time_per_question;
                     document.getElementById('max-reward-per-quiz').value = settings.max_reward_per_quiz;
+                    document.getElementById('community-daily-learn-reward-per-correct').value = settings.community_daily_learn_reward_per_correct;
                     document.getElementById('quiz-cooldown-hours').value = settings.cooldown_hours || 24;
                     updateRewardPerCorrectPreview();
 
@@ -4810,8 +4824,10 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 const timePerQuestion = parseInt(document.getElementById('time-per-question').value);
                 const maxRewardPerQuiz = parseInt(document.getElementById('max-reward-per-quiz').value);
                 const cooldownHours = parseInt(document.getElementById('quiz-cooldown-hours').value);
+                const communityDailyLearnReward = parseFloat(document.getElementById('community-daily-learn-reward-per-correct').value);
 
-                if (!questionsPerQuiz || !timePerQuestion || !maxRewardPerQuiz || !cooldownHours) {
+                if (!questionsPerQuiz || !timePerQuestion || !maxRewardPerQuiz || !cooldownHours ||
+                    !Number.isFinite(communityDailyLearnReward) || communityDailyLearnReward < 0 || communityDailyLearnReward > 25) {
                     alert('⚠️ Please fill in all fields');
                     return;
                 }
@@ -4823,7 +4839,8 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                         questions_per_quiz: questionsPerQuiz,
                         time_per_question: timePerQuestion,
                         max_reward_per_quiz: maxRewardPerQuiz,
-                        cooldown_hours: cooldownHours
+                        cooldown_hours: cooldownHours,
+                        community_daily_learn_reward_per_correct: communityDailyLearnReward
                     })
                 });
 
@@ -4836,6 +4853,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                           `⏱️ Time: ${timePerQuestion}s per question\n` +
                           `💰 Max Reward: ${formatQuizRewardAmount(maxRewardPerQuiz)}\n` +
                           `💎 Per Correct: ${formatQuizRewardAmount(rewardPerCorrect)}\n` +
+                          `🌱 Community Daily Learn: ${formatQuizRewardAmount(communityDailyLearnReward)} per correct answer\n` +
                           `⏳ Cooldown: ${formatQuizCooldownLabel(cooldownHours)}`);
                     await loadQuizSettings();
                 } else {
