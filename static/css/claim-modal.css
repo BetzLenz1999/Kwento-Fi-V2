@@ -55,3 +55,19 @@
    in the feed without creating a second claim implementation. */
 body.cf-page .gm-claim-sheet { --card: var(--cf-card, #fff); --card-soft: var(--cf-field, #f7f7f7); --card-border: var(--cf-border, #e9e2d6); --text: var(--cf-ink, #292524); --text-muted: var(--cf-muted, #8a8378); --accent: var(--cf-accent, #e8720a); }
 body.cf-page .gm-claim-modal { background: rgba(41, 37, 36, .48); }
+/* Keep the shared CTA refresh confined to Community. The controller's inline
+   violet background for Face ID states intentionally wins over this base. */
+body.cf-page .gm-claim-sheet > #ubiClaimBtn { display: flex; min-height: 54px; align-items: center; justify-content: center; gap: .5rem; padding: .8rem 1rem; border: 1px solid transparent; border-radius: 14px; background: linear-gradient(135deg, var(--cf-accent, #e8720a), #0f766e); color: #fff; font-family: inherit; font-size: 1.025rem; font-weight: 800; line-height: 1.2; box-shadow: 0 5px 14px rgba(41, 37, 36, .16); cursor: pointer; transition: background .18s ease, box-shadow .18s ease, transform .18s ease; }
+body.cf-page .gm-claim-sheet > #ubiClaimBtn:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(41, 37, 36, .2); }
+body.cf-page .gm-claim-sheet > #ubiClaimBtn:not(:disabled):active { transform: translateY(0); box-shadow: inset 0 2px 4px rgba(41, 37, 36, .2); }
+body.cf-page .gm-claim-sheet > #ubiClaimBtn.is-hot:not(:disabled) { border-color: #d97706; background: linear-gradient(110deg, #fbbf24, #fde68a 48%, #f59e0b); color: #422006; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .65), 0 5px 16px rgba(180, 83, 9, .24); }
+body.cf-page .gm-claim-sheet > #ubiClaimBtn:disabled { transform: none; border-color: #d6d3d1; background: #e7e5e4; color: #57534e; box-shadow: none; cursor: not-allowed; }
+body.cf-page .gm-claim-sheet > #ubiClaimBtn:focus-visible,
+body.cf-page .gm-reverify-hint button:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 3px; }
+body.cf-page .gm-reverify-hint button { min-height: 44px; margin-top: .45rem; padding: .6rem 1rem; border: 0; border-radius: 9px; background: #6d28d9; color: #fff; font-size: .8rem; font-weight: 750; line-height: 1.2; cursor: pointer; transition: background .18s ease, transform .18s ease; }
+body.cf-page .gm-reverify-hint button:hover { background: #5b21b6; }
+body.cf-page .gm-reverify-hint button:active { transform: translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+    body.cf-page .gm-claim-sheet > #ubiClaimBtn,
+    body.cf-page .gm-reverify-hint button { transition: none; }
+}
