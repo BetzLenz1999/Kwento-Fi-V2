@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 from community_feed import service as profile_service
+import web_push_service
 
 logger = logging.getLogger(__name__)
 MAX_MESSAGE = max(1, int(os.getenv("COMMUNITY_DM_MAX_MESSAGE", "2000")))
@@ -284,6 +285,28 @@ def _conversation(db, conversation_id: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def _other_participant(db, conversation_id: str, viewer: str) -> str | None:
+    people = _rows(db.table("community_dm_participants").select("wallet_address")
+                   .eq("conversation_id", conversation_id).execute())
+    for person in people:
+        wallet = _wallet(person.get("wallet_address"))
+        if wallet and wallet != _wallet(viewer):
+            return wallet
+    return None
+
+
+def _notify_recipient(db, conversation_id: str, viewer: str) -> None:
+    # Notification delivery is best-effort and must never make a saved message fail.
+    recipient = _other_participant(db, conversation_id, viewer)
+    if not recipient:
+        return
+    try:
+        web_push_service.notify_new_message(
+            recipient, profile_service.get_username(viewer) or "Community member", conversation_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_messages: push notification failed: %s", exc)
+
+
 def start_conversation(viewer_wallet: str, username: str) -> dict:
     db = _db()
     viewer = _wallet(viewer_wallet)
@@ -455,6 +478,7 @@ def send_message(viewer_wallet: str, conversation_id: str, body: str,
         now = datetime.now(timezone.utc).isoformat()
         preview = text[:160] if text else "Attachment"
         db.table("community_dm_conversations").update({"last_message_at": now, "last_message_preview": preview}).eq("id", conversation_id).execute()
+        _notify_recipient(db, conversation_id, viewer)
         return {"success": True, "message": {"id": message.get("id"), "body": text,
                 "created_at": message.get("created_at") or now, "is_me": True,
                 "attachment": _public_attachment(stored_attachment)}}
@@ -495,6 +519,7 @@ def send_transfer_message(viewer_wallet: str, username: str, tip: dict) -> dict:
         preview = f"On-chain transfer: {transfer['amount']} {transfer['token_label']}"
         db.table("community_dm_conversations").update({"last_message_at": now,
             "last_message_preview": preview}).eq("id", cid).execute()
+        _notify_recipient(db, cid, viewer)
         return {"success": True, "duplicate": False, "message": _public_message(row, viewer),
                 "conversation_id": cid}
     except Exception as exc:  # noqa: BLE001
