@@ -7,6 +7,7 @@ from collections import defaultdict, deque
 from flask import Blueprint, jsonify, redirect, render_template, request, session
 
 from . import service as svc
+import web_push_service
 
 messages_bp = Blueprint("community_messages", __name__)
 _SEND_RATE_SECONDS = max(1, int(os.getenv("COMMUNITY_DM_SEND_RATE_SECONDS", "2")))
@@ -62,7 +63,43 @@ def messages_page():
         return redirect("/")
     return render_template("messages.html", wallet=wallet,
                            viewer_username=svc.profile_service.get_username(wallet),
-                           initial_username=(request.args.get("with") or "").strip().lstrip("@"))
+                           initial_username=(request.args.get("with") or "").strip().lstrip("@"),
+                           initial_conversation_id=(request.args.get("conversation") or "").strip())
+
+
+@messages_bp.route("/api/messages/push/status", methods=["GET"])
+def push_status():
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled", "enabled": False}), 404
+    if not _wallet():
+        return _auth_error()
+    return jsonify({"success": True, "enabled": web_push_service.configured(),
+                    "public_key": web_push_service.public_key()})
+
+
+@messages_bp.route("/api/messages/push/subscribe", methods=["POST"])
+def push_subscribe():
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    if not web_push_service.configured():
+        return jsonify({"success": False, "code": "not_configured", "error": "Notifications are not configured yet."}), 503
+    data = request.get_json(silent=True) or {}
+    return _result(web_push_service.save_subscription(wallet, data.get("subscription"),
+                                                       request.headers.get("User-Agent")))
+
+
+@messages_bp.route("/api/messages/push/unsubscribe", methods=["POST"])
+def push_unsubscribe():
+    if not _enabled():
+        return jsonify({"success": False, "code": "disabled"}), 404
+    wallet = _wallet()
+    if not wallet:
+        return _auth_error()
+    data = request.get_json(silent=True) or {}
+    return _result(web_push_service.remove_subscription(wallet, data.get("endpoint")))
 
 
 @messages_bp.route("/api/messages/conversations", methods=["GET"])
