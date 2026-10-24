@@ -86,6 +86,9 @@ def _public_question(row: dict[str, Any], number: int) -> dict[str, Any]:
 def _server_question(row: dict[str, Any], number: int) -> dict[str, Any]:
     payload = _public_question(row, number)
     payload["correct_answer"] = ord(str(row["correct"]).upper()) - ord("A")
+    payload["explanation"] = str(
+        row.get("explanation") or row.get("explanation_text") or ""
+    ).strip()
     return payload
 
 
@@ -99,7 +102,14 @@ def _select_pair(rows: list[dict[str, Any]], day_utc: str, salt: str | None = No
         valid,
         key=lambda row: hashlib.sha256(f"{rotation_salt}:{day_utc}:{row['question_id']}".encode()).hexdigest(),
     )
-    return ranked[:2]
+    first = ranked[0]
+    first_category = str(first.get("category") or "general").strip().lower()
+    second = next(
+        (row for row in ranked[1:]
+         if str(row.get("category") or "general").strip().lower() != first_category),
+        None,
+    )
+    return [first, second] if second is not None else ranked[:2]
 
 
 def _read_snapshot(client, day_utc: str) -> dict[str, Any] | None:
@@ -147,7 +157,12 @@ def get_daily_snapshot(day: date | str | None = None, *, client=None) -> dict[st
             db.table(SNAPSHOT_TABLE).insert(row).execute()
         except Exception:
             logger.info("Daily Learn snapshot already published for %s", day_utc)
-        published = _read_snapshot(db, day_utc) or row
+        published = _read_snapshot(db, day_utc)
+        if not published:
+            # Never serve a local, unpublished fallback: answer submissions and
+            # completion rewards must be bound to the immutable stored row.
+            return {"success": False, "status": "unavailable",
+                    "message": "Daily Learn is temporarily unavailable."}
         return {"success": True, "status": SNAPSHOT_STATUS, "snapshot": published}
     except Exception as exc:  # the feed must remain usable if Daily Learn is down
         logger.exception("Daily Learn snapshot unavailable for %s: %s", day_utc, exc)
@@ -163,7 +178,10 @@ def public_snapshot(result: dict[str, Any]) -> dict[str, Any]:
     for key in ("question_1", "question_2"):
         question = snapshot.get(key)
         if isinstance(question, dict):
-            questions.append({k: v for k, v in question.items() if k != "correct_answer"})
+            questions.append({
+                k: v for k, v in question.items()
+                if k not in {"correct_answer", "explanation"}
+            })
     return {"success": True, "status": result.get("status", SNAPSHOT_STATUS), "day_utc": snapshot.get("day_utc"), "questions": questions}
 
 
