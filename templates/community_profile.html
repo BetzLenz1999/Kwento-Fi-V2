@@ -203,6 +203,14 @@
     <p class="cp-money-note">Your wallet will ask you to review and sign the Celo transaction. GoodMarket never holds your funds.</p>
     <p id="cpTipStatus" class="cp-money-status" role="status" aria-live="polite"></p>
     <button type="button" class="cp-money-submit" id="cpTipSubmit" onclick="GMProfile.sendMoney()">Review &amp; Send</button>
+    <section id="cpTipPending" class="cp-money-pending" hidden role="status" aria-live="polite">
+      <strong>Transaction submitted</strong>
+      <p id="cpTipPendingSummary">Waiting for Celo confirmation. Your funds were not sent again.</p>
+      <div class="cp-money-pending-actions">
+        <a id="cpTipPendingLink" class="cp-money-link" href="#" target="_blank" rel="noopener noreferrer">View on CeloScan</a>
+        <button type="button" id="cpTipCheck" class="cp-money-check" onclick="GMProfile.checkTipStatus()">Check Again</button>
+      </div>
+    </section>
     <section id="cpTipSuccess" class="cp-money-success" hidden role="status" aria-live="polite">
       <div class="cp-money-success-icon" aria-hidden="true">✓</div>
       <div>
