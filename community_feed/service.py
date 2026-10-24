@@ -458,7 +458,8 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
                  my_reaction: str | None = None,
                  is_following: bool = False,
                  avatar_url: str | None = None,
-                 reactions: dict[str, int] | None = None) -> dict:
+                 reactions: dict[str, int] | None = None,
+                 earned_badges: list[dict] | None = None) -> dict:
     """Shape a post for the browser.
 
     The wallet address is dropped and ownership is reduced to ``is_mine`` — a
@@ -480,6 +481,8 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         "reaction_count": int(row.get("reaction_count") or 0),
         "reaction_breakdown": _clean_breakdown(reactions),
         "comment_count": int(row.get("comment_count") or 0),
+        "prompt_id": row.get("prompt_id"),
+        "badges": list(earned_badges or [])[:3],
         "my_reaction": my_reaction,
         "is_mine": bool(viewer) and owner == viewer.lower(),
         "is_following": bool(is_following),
@@ -864,7 +867,8 @@ def get_follow_counts(username: str | None) -> dict:
 
 
 def get_feed(viewer: str | None = None, cursor: int | None = None,
-             limit: int | None = None, author: str | None = None) -> dict:
+             limit: int | None = None, author: str | None = None,
+             prompt_id: str | None = None) -> dict:
     """One keyset page of visible posts, newest first.
 
     Keyset (``id < cursor``) rather than OFFSET: offset paging over a live feed
@@ -889,6 +893,9 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
         )
         if author:
             query = query.ilike("wallet_address", author)
+        if prompt_id:
+            from .daily_prompts import filter_prompt_posts
+            query = filter_prompt_posts(query, prompt_id)
         if cursor:
             query = query.lt("id", int(cursor))
         # Fetch one extra row to know whether another page exists.
@@ -912,6 +919,11 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
         supabase, [r.get("wallet_address") for r in rows])
     # ONE batched query for which reactions each post received (tallies only).
     breakdowns = _reaction_breakdowns_for_posts(supabase, post_ids)
+    # ONE batched query for badge metadata; migrations being absent or a badge
+    # read failing only yields empty chips and never interrupts the feed.
+    from . import badges as community_badges
+    badges_by_wallet = community_badges.public_badges_for_wallets(
+        [r.get("wallet_address") for r in rows], client=supabase)
 
     posts = [
         _public_post(
@@ -920,6 +932,7 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
             is_following=(row.get("wallet_address") or "").lower() in followed,
             avatar_url=avatars.get((row.get("wallet_address") or "").lower()),
             reactions=breakdowns.get(row.get("id")),
+            earned_badges=badges_by_wallet.get((row.get("wallet_address") or "").lower(), []),
         )
         for row in rows
     ]
@@ -957,9 +970,13 @@ def get_post(post_id: int, viewer: str | None = None) -> dict:
             (row.get("wallet_address") or "").lower())
     breakdown = _reaction_breakdowns_for_posts(
         supabase, [row.get("id")]).get(row.get("id"))
+    from . import badges as community_badges
+    earned = community_badges.public_badges_for_wallet(
+        row.get("wallet_address"), client=supabase)[:3]
     return {"success": True,
             "post": _public_post(row, media, viewer, reactions.get(row.get("id")),
-                                 avatar_url=avatar, reactions=breakdown)}
+                                 avatar_url=avatar, reactions=breakdown,
+                                 earned_badges=earned)}
 
 
 # ── Public profile / per-user views ──────────────────────────────────────────
@@ -1408,7 +1425,8 @@ def _record_media(supabase, post_id: int, media_items: list[dict]) -> list[dict]
         return []
 
 
-def create_post(wallet: str, caption: str | None, media_items: list[dict]) -> dict:
+def create_post(wallet: str, caption: str | None, media_items: list[dict],
+                prompt_id: str | None = None) -> dict:
     """Create a post from already-verified media descriptors.
 
     ``media_items`` must have been through ``verify_uploaded_object`` — this
@@ -1443,6 +1461,14 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict]) -> di
                 "error": "Please write something or attach a photo/video.",
                 "code": "empty"}
 
+    if prompt_id:
+        from .daily_prompts import validate_prompt_response
+        prompt_check = validate_prompt_response(prompt_id, wallet)
+        if not prompt_check.get("success"):
+            return {"success": False,
+                    "error": prompt_check.get("error") or "This prompt is not accepting responses.",
+                    "code": "prompt_ineligible"}
+
     supabase = _get_supabase()
     if not supabase:
         return {"success": False, "error": "Database unavailable", "code": "db"}
@@ -1452,11 +1478,17 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict]) -> di
         "username": username,
         "body": clean or None,
     }
+    if prompt_id:
+        payload["prompt_id"] = prompt_id
     try:
         result = supabase.table("community_feed_posts").insert(payload).execute()
         rows = _rows(result)
     except Exception as exc:  # noqa: BLE001
         logger.error("community_feed: post insert failed: %s", exc)
+        if prompt_id and ("unique" in str(exc).lower() or "prompt_wallet_unique" in str(exc).lower()):
+            return {"success": False,
+                    "error": "You have already answered this prompt.",
+                    "code": "prompt_already_answered"}
         return {"success": False, "error": "Could not publish your post",
                 "code": "db"}
     if not rows:
@@ -1465,9 +1497,18 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict]) -> di
 
     post_row = rows[0]
     inserted = _record_media(supabase, post_row["id"], media_items)
+    try:
+        from . import badges as community_badges
+        community_badges.on_post_created(wallet, post_row.get("id"), client=supabase)
+    except Exception as exc:  # noqa: BLE001 - badges never fail a post
+        logger.info("community_feed: post badge evaluation skipped: %s", exc)
     avatar = _avatars_for_wallets(supabase, [wallet]).get((wallet or "").lower())
+    try:
+        earned = community_badges.public_badges_for_wallet(wallet, client=supabase)[:3]
+    except Exception:  # noqa: BLE001
+        earned = []
     post = _public_post(post_row, [_public_media(r) for r in inserted], wallet,
-                        avatar_url=avatar)
+                        avatar_url=avatar, earned_badges=earned)
     return {"success": True, "post": post}
 
 
@@ -1790,6 +1831,18 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
                 wallet, post_id, post.get("wallet_address"), _supabase=supabase)
         except Exception as exc:  # noqa: BLE001
             logger.warning("community_feed: reward credit failed: %s", exc)
+
+    # Badge evaluation is server-side and only follows a persisted reaction.
+    # Re-evaluate the recipient too so a newly earned Helpful Member badge can
+    # appear without waiting for another profile visit.
+    try:
+        from . import badges as community_badges
+        community_badges.on_reaction_added(wallet, post_id, client=supabase)
+        owner_wallet = (post.get("wallet_address") or "").lower()
+        if owner_wallet and owner_wallet != wallet.lower():
+            community_badges.on_reaction_added(owner_wallet, post_id, client=supabase)
+    except Exception as exc:  # noqa: BLE001 - badges never fail a reaction
+        logger.info("community_feed: reaction badge evaluation skipped: %s", exc)
 
     return {"success": True, "reaction_count": count, "my_reaction": reaction,
             "reaction_breakdown": _post_breakdown(supabase, post_id)}
@@ -2131,6 +2184,13 @@ def admin_hide_post(post_id: int, admin_wallet: str, hidden: bool = True) -> dic
     supabase = _get_supabase()
     if not supabase:
         return {"success": False, "error": "Database unavailable", "code": "db"}
+    owner = None
+    try:
+        rows = _rows(supabase.table("community_feed_posts").select(
+            "wallet_address").eq("id", int(post_id)).limit(1).execute())
+        owner = rows[0].get("wallet_address") if rows else None
+    except Exception:
+        pass
     try:
         supabase.table("community_feed_posts").update(
             {"is_hidden": bool(hidden)}).eq("id", int(post_id)).execute()
@@ -2139,6 +2199,12 @@ def admin_hide_post(post_id: int, admin_wallet: str, hidden: bool = True) -> dic
         return {"success": False, "error": "Could not update the post", "code": "db"}
     if hidden:
         _resolve_reports(supabase, post_id)
+    if owner:
+        try:
+            from . import badges as community_badges
+            community_badges.on_post_visibility_changed(owner, post_id, client=supabase)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("community_feed: moderation badge evaluation skipped: %s", exc)
     return {"success": True, "is_hidden": bool(hidden)}
 
 
@@ -2147,10 +2213,23 @@ def admin_delete_post(post_id: int, admin_wallet: str) -> dict:
     supabase = _get_supabase()
     if not supabase:
         return {"success": False, "error": "Database unavailable", "code": "db"}
+    owner = None
+    try:
+        rows = _rows(supabase.table("community_feed_posts").select(
+            "wallet_address").eq("id", int(post_id)).limit(1).execute())
+        owner = rows[0].get("wallet_address") if rows else None
+    except Exception:
+        pass
     keys = _media_keys(supabase, int(post_id))
     if not _mark_deleted(supabase, int(post_id), admin_wallet, hidden=True):
         return {"success": False, "error": "Could not delete the post", "code": "db"}
     _resolve_reports(supabase, post_id)
+    if owner:
+        try:
+            from . import badges as community_badges
+            community_badges.on_post_visibility_changed(owner, post_id, client=supabase)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("community_feed: moderation badge evaluation skipped: %s", exc)
     return {"success": True, "deleted_objects": _purge_objects(keys)}
 
 
