@@ -117,6 +117,12 @@ POST_CAP = get_env_decimal("COMMUNITY_REWARD_POST_CAP", "100")
 # proposal §6; it ships as an env var so it can be raised without a deploy.
 MIN_PAYOUT_GD = get_env_decimal("COMMUNITY_REWARD_MIN_PAYOUT_GD", "500")
 
+# A completed Community 2/2 Daily Learn cycle is a separate fixed ledger event.
+# The conservative default is 1 G$; set to 0 to disable it. It remains subject
+# to the existing per-wallet daily cap.
+DAILY_LEARN_COMPLETION_GD = get_env_decimal(
+    "COMMUNITY_REWARD_DAILY_LEARN_COMPLETION_GD", "1")
+
 # Whether the card shows the VIEWER'S OWN balance and goal. Default ON for
 # signed-in members; the client still withholds personal figures from guests.
 # The balance is not spendable or on-chain, so the card clearly says that no
@@ -690,6 +696,28 @@ def _credit(supabase, wallet: str, *, key: str, event_type: str, amount: Decimal
     })
 
 
+def on_daily_learn_completed(wallet: str, day_utc: str, *, _supabase=None) -> bool:
+    """Credit once for a persisted, verified 2/2 completion; never raises."""
+    try:
+        identity = (wallet or "").strip().lower()
+        parsed_day = datetime.fromisoformat(str(day_utc)).date().isoformat()
+        if not identity or parsed_day != str(day_utc) or DAILY_LEARN_COMPLETION_GD <= 0:
+            return False
+        db = _supabase or _get_supabase()
+        if db is None or not is_enabled(_supabase=db):
+            return False
+        return _credit(
+            db, identity,
+            key=f"daily_learn:{parsed_day}:{identity}",
+            event_type="daily_learn",
+            amount=DAILY_LEARN_COMPLETION_GD,
+            event_created_at=datetime.now(timezone.utc),
+        )
+    except Exception as exc:  # noqa: BLE001 - rewards must never break learning
+        logger.warning("community_rewards: Daily Learn credit skipped: %s", exc)
+        return False
+
+
 def _reverse(supabase, original: dict, *, actor_wallet: str) -> bool:
     """Write the compensating negative row for a credit, at most once.
 
@@ -855,7 +883,10 @@ def _rate_payload() -> dict:
     Read from the same resolver the ledger uses, so the page can never quote a
     rate the ledger does not actually pay — including an admin override.
     """
-    return {name: float(rate) for name, rate in effective_rates().items()}
+    payload = {name: float(rate) for name, rate in effective_rates().items()}
+    payload["daily_learn_completion"] = float(max(
+        Decimal("0"), min(DAILY_LEARN_COMPLETION_GD, DAILY_CAP)))
+    return payload
 
 
 def summary(wallet: str | None, *, _supabase=None) -> dict:
