@@ -1,0 +1,34 @@
+.gm-msg-notifications {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin: .8rem 1rem 0;
+  padding: .75rem .9rem;
+  border: 1px solid rgba(16, 42, 67, .12);
+  border-radius: 14px;
+  background: #f8fbfd;
+  color: #52606d;
+  font-size: .84rem;
+}
+.gm-msg-notifications[hidden] { display: none; }
+.gm-msg-notifications-copy { min-width: 0; }
+.gm-msg-notifications-copy strong { display: block; color: #102a43; font-size: .88rem; }
+.gm-msg-notifications-copy small { display: block; margin-top: .16rem; line-height: 1.35; }
+.gm-msg-push-button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: .55rem .78rem;
+  background: #18a9df;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.gm-msg-push-button[disabled] { opacity: .58; cursor: wait; }
+.gm-msg-push-button.is-enabled { background: #3dbb77; }
+@media (max-width: 520px) {
+  .gm-msg-notifications { align-items: flex-start; }
+  .gm-msg-push-button { padding-inline: .65rem; }
+}
