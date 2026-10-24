@@ -478,3 +478,103 @@ body.cf-modal-open { overflow: hidden; }
 .cp-inline-badges { display: flex; flex-wrap: wrap; gap: 0.22rem; margin-top: 0.2rem; }
 .cp-inline-badge { width: fit-content; padding: 0.1rem 0.38rem; border: 1px solid rgba(180,120,20,.24); border-radius: 999px; background: #fff7e6; color: #5c3600; font-size: 0.66rem; font-weight: 800; }
 @media (max-width: 560px) { .cp-badge-list { grid-template-columns: 1fr; } }
+
+/* ── Community profile visual refresh ────────────────────────────────────── */
+:root {
+    --cp-muted: #655b50;
+    --cp-accent: #a84300;
+    --cp-accent-rgb: 168, 67, 0;
+    --cp-focus: #1d4ed8;
+}
+
+.cp-wrap { max-width: 760px; }
+.cp-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(230px, 0.85fr);
+    grid-template-areas: "identity actions" "privacy privacy" "stats stats";
+    align-items: center; gap: 0.65rem 1rem; text-align: left;
+}
+.cp-profile-identity {
+    grid-area: identity; display: flex; align-items: center; gap: 1rem;
+    min-width: 0;
+}
+.cp-profile-copy { min-width: 0; }
+.cp-profile-copy h1 { overflow-wrap: anywhere; }
+.cp-avatar { background: linear-gradient(135deg, #c2410c, #9a3412); }
+.cp-profile-identity .cp-avatar { margin-bottom: 0; }
+.cp-profile-actions {
+    grid-area: actions; display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: flex-end; gap: 0.55rem; min-width: 0;
+}
+.cp-profile-actions .cp-follow-wrap,
+.cp-profile-actions .cp-message,
+.cp-profile-actions .cp-money { margin: 0; }
+.cp-profile-actions .cp-follow { min-height: 44px; }
+.cp-follow, .cp-money {
+    color: #fff; background: #a84300; border-color: #a84300;
+}
+.cp-money { background: linear-gradient(135deg, #a84300, #9a3412); }
+.cp-follow:hover { background: #8f2d0b; }
+.cp-message { min-height: 44px; }
+.cp-privacy { grid-area: privacy; margin-top: 0; color: var(--cp-muted); }
+.cp-stats {
+    grid-area: stats; grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.55rem; margin-top: 0.15rem;
+}
+.cp-stats:has(#cpMessageStat:not([hidden])) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.cp-stat { min-width: 0; padding: 0.75rem 0.4rem; }
+.cp-number { font-size: clamp(0.95rem, 2.2vw, 1.3rem); }
+.cp-label {
+    display: block; line-height: 1.25; color: var(--cp-dim);
+    overflow-wrap: anywhere;
+}
+.cp-joined, .cp-empty, .cp-post-who span, .cp-album-count, .cp-badge-date {
+    color: var(--cp-muted);
+}
+
+/* A single, consistent keyboard ring plus comfortable pointer targets. */
+.cp-avatar-button:focus-visible, .cp-avatar-edit:focus-visible,
+.cp-message:focus-visible, .cp-money:focus-visible,
+.cp-money-submit:focus-visible, .cp-follow:focus-visible,
+.cp-tab:focus-visible, .cp-album-tile:focus-visible,
+.cp-video-frame:focus-visible,
+.cp-nav-btn:focus-visible, .cp-load-more:focus-visible,
+.cp-cta:focus-visible, .cp-lightbox-close:focus-visible,
+.cp-money-close:focus-visible, .cp-money-check:focus-visible,
+.cp-money-input:focus-visible, .cp-post-link:focus-visible,
+.cp-money-link:focus-visible, .cf-btn-ghost:focus-visible,
+.cf-file-btn:focus-visible {
+    outline: 3px solid var(--cp-focus); outline-offset: 3px;
+}
+.cp-nav-btn, .cp-follow, .cp-message, .cp-money, .cp-tab,
+.cp-load-more, .cp-cta, .cp-lightbox-close, .cp-money-close,
+.cp-money-check, .cf-btn-ghost, .cf-file-btn {
+    min-height: 44px; touch-action: manipulation;
+}
+.cp-avatar-edit { width: 44px; height: 44px; }
+.cp-money-close { width: 44px; height: 44px; display: grid; place-items: center; }
+
+@media (max-width: 640px) {
+    .cp-hero {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "identity" "actions" "privacy" "stats";
+        text-align: center;
+    }
+    .cp-profile-identity { flex-direction: column; gap: 0.25rem; }
+    .cp-profile-actions { justify-content: center; }
+    .cp-profile-copy { width: 100%; }
+    .cp-stats { gap: 0.35rem; }
+    .cp-stat { padding: 0.65rem 0.25rem; }
+    .cp-number { font-size: clamp(0.9rem, 3.5vw, 1.15rem); }
+    .cp-label { font-size: 0.68rem; }
+    .cp-stats:has(#cpMessageStat:not([hidden])) .cp-label { font-size: 0.63rem; }
+}
+
+@media (max-width: 380px) {
+    .cp-hero { padding-inline: 0.7rem; }
+    .cp-stats { gap: 0.25rem; }
+    .cp-stat { padding-inline: 0.15rem; }
+    .cp-label { font-size: 0.64rem; }
+}
