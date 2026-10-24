@@ -67,18 +67,43 @@ def save_subscription(wallet: str, subscription: dict, user_agent: str | None = 
     if not db:
         return {"success": False, "code": "db_unavailable", "error": "Notifications are temporarily unavailable."}
     try:
-        db.table(_TABLE).upsert({
+        result = db.table(_TABLE).upsert({
             "wallet_address": viewer,
             "endpoint": payload["endpoint"],
             "p256dh": payload["p256dh"],
             "auth": payload["auth"],
             "user_agent": str(user_agent or "")[:500],
             "revoked_at": None,
-        }, on_conflict="wallet_address,endpoint").execute()
-        return {"success": True, "enabled": configured()}
+        }, on_conflict="wallet_address,endpoint").select("endpoint").execute()
+        rows = getattr(result, "data", None) or []
+        if not any((row.get("endpoint") or "") == payload["endpoint"] for row in rows if isinstance(row, dict)):
+            return {"success": False, "code": "db_unavailable", "error": "Could not verify the saved notification subscription."}
+        return {"success": True, "enabled": configured(), "subscribed": True}
     except Exception as exc:  # noqa: BLE001
         logger.warning("web push: subscription save failed: %s", exc)
         return {"success": False, "code": "db_error", "error": "Could not enable notifications."}
+
+
+def has_subscription(wallet: str, endpoint: str) -> bool | None:
+    """Return whether this exact device endpoint is active for this wallet.
+
+    ``None`` means the server could not verify state; callers must not present
+    an unknown database result as either enabled or definitively disabled.
+    """
+    viewer = _clean_wallet(wallet)
+    endpoint = str(endpoint or "").strip()
+    if not viewer or not _valid_endpoint(endpoint):
+        return False
+    db = _db()
+    if not db:
+        return None
+    try:
+        result = (db.table(_TABLE).select("id").eq("wallet_address", viewer)
+                  .eq("endpoint", endpoint).is_("revoked_at", "null").limit(1).execute())
+        return bool(getattr(result, "data", None) or [])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("web push: subscription status lookup failed: %s", exc)
+        return None
 
 
 def remove_subscription(wallet: str, endpoint: str | None) -> dict:
