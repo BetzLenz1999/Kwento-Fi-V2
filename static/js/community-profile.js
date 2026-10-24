@@ -264,6 +264,18 @@
         who.appendChild(el('strong', null, post.username || 'Community member'));
         who.appendChild(el('span', null, timeAgo(post.created_at)
             + (post.is_edited ? ' · edited' : '')));
+        var postBadges = Array.isArray(post.badges) ? post.badges.slice(0, 3) : [];
+        if (postBadges.length) {
+            var inlineBadges = el('span', 'cp-inline-badges');
+            postBadges.forEach(function (badge) {
+                if (!badge || !badge.name) return;
+                var chip = el('span', 'cp-inline-badge', badge.name);
+                chip.title = badge.description || badge.name;
+                chip.setAttribute('aria-label', badge.name + ': ' + (badge.description || 'Community badge'));
+                inlineBadges.appendChild(chip);
+            });
+            if (inlineBadges.childNodes.length) who.appendChild(inlineBadges);
+        }
         head.appendChild(who);
         card.appendChild(head);
 
@@ -898,6 +910,48 @@
     }
     // ── Init ───────────────────────────────────────────────────────────────
 
+    function renderBadges(rows) {
+        var container = $('cpBadges');
+        if (!container) return;
+        container.textContent = '';
+        if (!Array.isArray(rows) || !rows.length) {
+            container.appendChild(el('p', 'cp-badge-empty', 'No Community achievements yet.'));
+            return;
+        }
+        var icons = {
+            first_post: '✍', first_reaction: '♥', community_voice: '🎤',
+            helpful_member: '✦', consistent_contributor: '✓',
+            community_builder: '◈', daily_learner: '▣'
+        };
+        rows.forEach(function (badge) {
+            if (!badge || !badge.name) return;
+            var item = el('article', 'cp-badge-card');
+            item.appendChild(el('span', 'cp-badge-icon', icons[badge.key] || '✦'));
+            var text = el('span', 'cp-badge-copy');
+            text.appendChild(el('strong', 'cp-badge-name', badge.name));
+            if (badge.description) text.appendChild(el('span', 'cp-badge-description', badge.description));
+            if (badge.awarded_at) {
+                var date = new Date(badge.awarded_at);
+                if (!isNaN(date.getTime())) text.appendChild(el('span', 'cp-badge-date', 'Earned ' + date.toLocaleDateString()));
+            }
+            item.appendChild(text);
+            container.appendChild(item);
+        });
+    }
+
+    function loadBadges() {
+        var section = $('cpAchievements');
+        if (!section || !FEED_ENABLED || !USERNAME) return Promise.resolve();
+        var url = '/community/api/profile/' + encodeURIComponent(USERNAME) + '/badges';
+        return api(url).then(function (result) {
+            if (!result.data || !result.data.success) throw new Error('Badges unavailable');
+            renderBadges(result.data.badges || []);
+            section.hidden = false;
+        }).catch(function () {
+            section.hidden = true;
+        });
+    }
+
     function init() {
         // Guests read profiles too — profiles are public, only writing is
         // gated (and this view is read-only: media + a link back to the feed).
@@ -907,6 +961,7 @@
         bindProfileAvatar();
         followButton();
         loadPosts(true);
+        loadBadges();
         loadMessageCount();
     }
 
