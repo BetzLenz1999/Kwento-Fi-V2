@@ -4901,6 +4901,8 @@ def update_quiz_settings():
         time_per_question = data.get('time_per_question')
         max_reward_per_quiz = data.get('max_reward_per_quiz')
         cooldown_hours = data.get('cooldown_hours')
+        community_daily_learn_reward_per_correct = data.get(
+            'community_daily_learn_reward_per_correct')
 
         # Validate inputs
         if questions_per_quiz is not None and (questions_per_quiz < 5 or questions_per_quiz > 30):
@@ -4926,12 +4928,30 @@ def update_quiz_settings():
                 "success": False,
                 "error": "Quiz cooldown must be between 1 and 720 hours"
             }), 400
+        if community_daily_learn_reward_per_correct is not None:
+            try:
+                daily_learn_rate = Decimal(str(community_daily_learn_reward_per_correct))
+            except (InvalidOperation, TypeError, ValueError):
+                return jsonify({
+                    "success": False,
+                    "error": "Community Daily Learn reward must be a number between 0 and 25 G$"
+                }), 400
+            if (isinstance(community_daily_learn_reward_per_correct, bool)
+                    or not daily_learn_rate.is_finite()
+                    or daily_learn_rate < 0 or daily_learn_rate > 25):
+                return jsonify({
+                    "success": False,
+                    "error": "Community Daily Learn reward must be between 0 and 25 G$ per correct answer"
+                }), 400
+            community_daily_learn_reward_per_correct = float(
+                daily_learn_rate.quantize(Decimal('0.0001')))
 
         result = quiz_manager.update_quiz_settings(
             questions_per_quiz=questions_per_quiz,
             time_per_question=time_per_question,
             max_reward_per_quiz=max_reward_per_quiz,
-            cooldown_hours=cooldown_hours
+            cooldown_hours=cooldown_hours,
+            community_daily_learn_reward_per_correct=community_daily_learn_reward_per_correct
         )
 
         if result.get('success'):
@@ -4944,7 +4964,8 @@ def update_quiz_settings():
                     "questions_per_quiz": questions_per_quiz,
                     "time_per_question": time_per_question,
                     "max_reward_per_quiz": max_reward_per_quiz,
-                    "cooldown_hours": cooldown_hours
+                    "cooldown_hours": cooldown_hours,
+                    "community_daily_learn_reward_per_correct": community_daily_learn_reward_per_correct
                 }
             )
 
