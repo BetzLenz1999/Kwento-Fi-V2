@@ -117,11 +117,10 @@ POST_CAP = get_env_decimal("COMMUNITY_REWARD_POST_CAP", "100")
 # proposal §6; it ships as an env var so it can be raised without a deploy.
 MIN_PAYOUT_GD = get_env_decimal("COMMUNITY_REWARD_MIN_PAYOUT_GD", "500")
 
-# A completed Community 2/2 Daily Learn cycle is a separate fixed ledger event.
-# The conservative default is 1 G$; set to 0 to disable it. It remains subject
-# to the existing per-wallet daily cap.
-DAILY_LEARN_COMPLETION_GD = get_env_decimal(
-    "COMMUNITY_REWARD_DAILY_LEARN_COMPLETION_GD", "1")
+# Community Daily Learn uses its own Admin Quiz Settings rate (0–25 G$ per
+# correct answer), separate from the full Learn & Earn quiz's max-reward rate.
+DAILY_LEARN_RATE_MAX = Decimal("25")
+DAILY_LEARN_CLAIM_RPC = "community_daily_learn_claim_uncredited_attempts"
 
 # Whether the card shows the VIEWER'S OWN balance and goal. Default ON for
 # signed-in members; the client still withholds personal figures from guests.
@@ -705,20 +704,52 @@ def _credit(supabase, wallet: str, *, key: str, event_type: str, amount: Decimal
     })
 
 
-def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None) -> dict:
-    """Credit a persisted 2/2 completion and return a small safe outcome.
+def _daily_learn_attempt(db, wallet: str, day_utc: str) -> dict | None:
+    """Read the persisted completion; never trust a client-supplied score."""
+    try:
+        rows = _rows(db.table("community_daily_learn_attempts")
+                     .select("status,score,reward_rate_gd")
+                     .ilike("wallet_address", wallet)
+                     .eq("day_utc", day_utc)
+                     .limit(1).execute())
+        if rows and rows[0].get("status") == "completed":
+            return rows[0]
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_rewards: Daily Learn attempt read failed: %s", exc)
+        return None
 
-    The idempotency key remains wallet/day scoped. ``already_credited`` is only
-    returned after finding that exact key in the ledger; an unreadable ledger or
-    failed insert is reported as temporary rather than as a successful credit.
+
+def _configured_daily_learn_rate(db) -> Decimal | None:
+    """Read the Admin Quiz Settings rate; a DB failure must not mint a fallback."""
+    try:
+        rows = _rows(db.table("quiz_settings")
+                     .select("community_daily_learn_reward_per_correct")
+                     .order("id").limit(1).execute())
+        rate = _as_decimal(
+            rows[0].get("community_daily_learn_reward_per_correct") if rows else 1)
+        if not rate.is_finite() or rate < 0 or rate > DAILY_LEARN_RATE_MAX:
+            logger.error("community_rewards: invalid Community Daily Learn rate: %s", rate)
+            return None
+        return rate
+    except Exception as exc:  # noqa: BLE001 - configuration read fails closed
+        logger.warning("community_rewards: Daily Learn rate read failed: %s", exc)
+        return None
+
+
+def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None,
+                                  _attempt: dict | None = None) -> dict:
+    """Credit correct answers from a persisted completion using its rate snapshot.
+
+    The wallet/day idempotency key is shared by page-load repair and the
+    background reconciler. New completions use the DB-snapshotted Admin rate;
+    older completed attempts without a snapshot use the current configured rate.
     """
     try:
         identity = (wallet or "").strip().lower()
         parsed_day = datetime.fromisoformat(str(day_utc)).date().isoformat()
         if not identity or parsed_day != str(day_utc):
             return {"status": "not_credited", "reason": "invalid_completion"}
-        if DAILY_LEARN_COMPLETION_GD <= 0:
-            return {"status": "not_credited", "reason": "reward_disabled"}
         db = _supabase or _get_supabase()
         if db is None:
             return {"status": "not_credited", "reason": "temporarily_unavailable"}
@@ -739,13 +770,37 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None) 
             logger.error("community_rewards: Daily Learn key belongs to unexpected wallet")
             return {"status": "not_credited", "reason": "temporarily_unavailable"}
 
+        attempt = _attempt or _daily_learn_attempt(db, identity, parsed_day)
+        if not attempt:
+            return {"status": "not_credited", "reason": "completion_not_found"}
+        try:
+            score = int(attempt.get("score") or 0)
+        except (TypeError, ValueError):
+            return {"status": "not_credited", "reason": "temporarily_unavailable"}
+        if score <= 0:
+            return {"status": "not_credited", "reason": "no_correct_answers"}
+        if score > 2:
+            logger.error("community_rewards: invalid Daily Learn score %s for %s", score, identity[:10])
+            return {"status": "not_credited", "reason": "temporarily_unavailable"}
+
+        raw_rate = attempt.get("reward_rate_gd")
+        rate = (_as_decimal(raw_rate) if raw_rate is not None
+                else _configured_daily_learn_rate(db))
+        if (rate is None or not rate.is_finite()
+                or rate < 0 or rate > DAILY_LEARN_RATE_MAX):
+            return {"status": "not_credited", "reason": "temporarily_unavailable"}
+        if rate == 0:
+            return {"status": "not_credited", "reason": "reward_disabled"}
+        amount = rate * Decimal(score)
+        if amount <= 0:
+            return {"status": "not_credited", "reason": "reward_disabled"}
         if not is_eligible(identity):
             return {"status": "not_credited", "reason": "verified_wallet_required"}
         if not is_rewardable(datetime.now(timezone.utc)):
             return {"status": "not_credited", "reason": "reward_unavailable"}
 
-        # Read the cap here as well as in _credit so this public outcome can
-        # distinguish a true cap from a failed database read.
+        # Check the cap separately so the user can distinguish a cap from an
+        # unreadable ledger. _credit repeats the check at the insertion boundary.
         try:
             cap_rows = _rows(db.table(LEDGER).select(
                 "delta_gd,created_at").ilike("wallet_address", identity).gte(
@@ -757,21 +812,21 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None) 
         recent_credits = sum(
             (_as_decimal(row.get("delta_gd")) for row in cap_rows
              if _as_decimal(row.get("delta_gd")) > 0), Decimal("0"))
-        if recent_credits + DAILY_LEARN_COMPLETION_GD > DAILY_CAP:
+        if recent_credits + amount > DAILY_CAP:
             return {"status": "not_credited", "reason": "daily_cap_reached"}
 
         credited = _credit(
             db, identity,
             key=key,
             event_type="daily_learn",
-            amount=DAILY_LEARN_COMPLETION_GD,
+            amount=amount,
             event_created_at=datetime.now(timezone.utc),
         )
         if credited:
             return {"status": "credited"}
 
-        # A concurrent completion can win the unique-key race after the first
-        # lookup. Confirm the ledger row before describing it as a duplicate.
+        # A concurrent request may have won the unique-key race. Confirm its row
+        # before reporting success; never infer credit from a failed insert.
         try:
             existing = _rows(db.table(LEDGER).select(
                 "wallet_address,idempotency_key").eq("idempotency_key", key)
@@ -781,19 +836,8 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None) 
             return {"status": "not_credited", "reason": "temporarily_unavailable"}
         if existing and _same_wallet(existing[0].get("wallet_address"), identity):
             return {"status": "already_credited"}
-        try:
-            cap_rows = _rows(db.table(LEDGER).select(
-                "delta_gd,created_at").ilike("wallet_address", identity).gte(
-                    "created_at", (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-                ).execute())
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("community_rewards: Daily Learn cap confirmation failed: %s", exc)
-            return {"status": "not_credited", "reason": "temporarily_unavailable"}
-        recent_credits = sum(
-            (_as_decimal(row.get("delta_gd")) for row in cap_rows
-             if _as_decimal(row.get("delta_gd")) > 0), Decimal("0"))
-        if recent_credits + DAILY_LEARN_COMPLETION_GD > DAILY_CAP:
-            return {"status": "not_credited", "reason": "daily_cap_reached"}
+        if not is_eligible(identity):
+            return {"status": "not_credited", "reason": "verified_wallet_required"}
         return {"status": "not_credited", "reason": "temporarily_unavailable"}
     except Exception as exc:  # noqa: BLE001 - rewards must never break learning
         logger.warning("community_rewards: Daily Learn credit skipped: %s", exc)
@@ -804,6 +848,53 @@ def on_daily_learn_completed(wallet: str, day_utc: str, *, _supabase=None) -> bo
     """Backward-compatible boolean hook for a persisted 2/2 completion."""
     return daily_learn_completion_status(wallet, day_utc, _supabase=_supabase).get(
         "status") == "credited"
+
+
+def reconcile_uncredited_daily_learn_attempts(*, _supabase=None,
+                                              batch_size: int = 100) -> dict:
+    """Retry a bounded batch of saved completions that have no ledger credit."""
+    db = _supabase or _get_supabase()
+    if db is None:
+        return {"claimed": 0, "credited": 0, "already_credited": 0,
+                "not_credited": 0, "error": "database_unavailable"}
+    if not is_enabled(_supabase=db):
+        return {"claimed": 0, "credited": 0, "already_credited": 0,
+                "not_credited": 0, "skipped": "rewards_disabled"}
+    try:
+        result = db.rpc(DAILY_LEARN_CLAIM_RPC, {
+            "p_limit": max(1, min(int(batch_size), 500)),
+        }).execute()
+        attempts = _rows(result)
+    except Exception as exc:  # noqa: BLE001 - reconciler retries next interval
+        logger.warning("community_rewards: Daily Learn reconciliation claim failed: %s", exc)
+        return {"claimed": 0, "credited": 0, "already_credited": 0,
+                "not_credited": 0, "error": "claim_failed"}
+
+    summary = {"claimed": len(attempts), "credited": 0,
+               "already_credited": 0, "not_credited": 0}
+    for attempt in attempts:
+        wallet = str(attempt.get("attempt_wallet_address") or "").strip().lower()
+        day_utc = str(attempt.get("attempt_day_utc") or "")
+        internal_attempt = {
+            "status": "completed",
+            "score": attempt.get("attempt_score"),
+            "reward_rate_gd": attempt.get("attempt_reward_rate_gd"),
+        }
+        outcome = daily_learn_completion_status(
+            wallet, day_utc, _supabase=db, _attempt=internal_attempt)
+        status = outcome.get("status")
+        if status in summary:
+            summary[status] += 1
+        else:
+            summary["not_credited"] += 1
+    if summary["claimed"]:
+        logger.info(
+            "community_rewards: Daily Learn reconciliation claimed=%s credited=%s "
+            "already=%s pending=%s",
+            summary["claimed"], summary["credited"], summary["already_credited"],
+            summary["not_credited"],
+        )
+    return summary
 
 
 def _reverse(supabase, original: dict, *, actor_wallet: str) -> bool:
@@ -965,15 +1056,16 @@ def on_comment_removed(wallet: str, comment_id, post_owner: str | None = None, *
 
 # ── Display ──────────────────────────────────────────────────────────────────
 
-def _rate_payload() -> dict:
-    """The four rates in force, as plain floats, for the card.
+def _rate_payload(_supabase=None) -> dict:
+    """Return the reward rates in force as plain floats for the card.
 
     Read from the same resolver the ledger uses, so the page can never quote a
     rate the ledger does not actually pay — including an admin override.
     """
     payload = {name: float(rate) for name, rate in effective_rates().items()}
-    payload["daily_learn_completion"] = float(max(
-        Decimal("0"), min(DAILY_LEARN_COMPLETION_GD, DAILY_CAP)))
+    db = _supabase or _get_supabase()
+    daily_rate = _configured_daily_learn_rate(db) if db else None
+    payload["daily_learn_per_correct"] = float(daily_rate or Decimal("0"))
     return payload
 
 
@@ -992,7 +1084,7 @@ def summary(wallet: str | None, *, _supabase=None) -> dict:
             "can_withdraw": False,
             "eligible": False,
             "balance_available": True,
-            "rates": _rate_payload(),
+            "rates": _rate_payload(_supabase),
             "daily_cap_gd": float(DAILY_CAP),
             "show_balance": show_balance(),
         }
@@ -1004,7 +1096,7 @@ def summary(wallet: str | None, *, _supabase=None) -> dict:
         progress = float(min(current, minimum) / minimum * 100)
     # Read the rates ONCE and reuse them, so `rates` and the headline figure
     # cannot come from two different reads of a value an admin can change.
-    rates = _rate_payload()
+    rates = _rate_payload(supabase)
     # An unverified viewer sees a card that says WHY it is zero. Without this the
     # card would show 0 and stay silent, which reads as "rewards are broken"
     # rather than "you have not verified yet".
