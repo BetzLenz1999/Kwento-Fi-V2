@@ -1492,10 +1492,10 @@
                             </div>
 
                             <div style="margin-bottom: 1.5rem; padding: 1rem; border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 8px;">
-                                <label for="community-daily-learn-reward-per-correct" style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Community Daily Learn reward per correct answer (0-25 G$)</label>
-                                <input type="number" id="community-daily-learn-reward-per-correct" min="0" max="25" step="0.0001" value="1" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
+                                <label for="community-daily-learn-reward-per-correct" style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Community Daily Learn reward per correct answer (0-50 G$)</label>
+                                <input type="number" id="community-daily-learn-reward-per-correct" min="0" max="50" step="0.0001" value="50" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
                                 <small style="color: rgba(241, 245, 249, 0.7); display: block; margin-top: 0.5rem;">
-                                    Applies only to the 2-question Community Daily Learn cycle. Credit = correct answers × this rate (0, 1, or 2 correct); the full Learn &amp; Earn quiz rate is separate. Maximum: 25 G$ per correct answer, subject to the Community daily cap.
+                                    Applies only to the 2-question Community Daily Learn cycle. Credit = correct answers × this rate (0, 1, or 2 correct); the full Learn &amp; Earn quiz rate is separate. Maximum: 50 G$ per correct answer. Daily Learn has its own daily allowance (default 100 G$) and is <strong>not</strong> limited by the shared Community daily cap, so a completed cycle always credits.
                                 </small>
                             </div>
 
@@ -4827,7 +4827,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 const communityDailyLearnReward = parseFloat(document.getElementById('community-daily-learn-reward-per-correct').value);
 
                 if (!questionsPerQuiz || !timePerQuestion || !maxRewardPerQuiz || !cooldownHours ||
-                    !Number.isFinite(communityDailyLearnReward) || communityDailyLearnReward < 0 || communityDailyLearnReward > 25) {
+                    !Number.isFinite(communityDailyLearnReward) || communityDailyLearnReward < 0 || communityDailyLearnReward > 50) {
                     alert('⚠️ Please fill in all fields');
                     return;
                 }
