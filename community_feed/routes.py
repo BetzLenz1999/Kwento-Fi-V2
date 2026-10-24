@@ -19,6 +19,7 @@ import os
 import threading
 import time
 from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, Response, jsonify, redirect, render_template, request, session
 
@@ -223,6 +224,34 @@ def api_rewards():
     return jsonify(svc.rewards_summary(wallet))
 
 
+@community_feed_bp.route("/api/rewards/withdrawal-eligibility", methods=["GET"])
+def api_withdrawal_eligibility():
+    """Read-only threshold check; no withdrawal row or payout is created.
+
+    The Community vault/relayer contract is still review-gated by the rewards
+    proposal. This endpoint intentionally cannot initiate or authorize a payout.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    summary = rewards.summary(wallet)
+    balance = float(summary.get("balance_gd") or 0)
+    minimum = float(summary.get("min_payout_gd") or 500)
+    remaining = max(0.0, minimum - balance)
+    if remaining > 0:
+        return jsonify({
+            "success": True, "threshold_met": False, "can_request": False,
+            "remaining_gd": round(remaining, 6),
+            "message": f"You need to reach {minimum:g} G$ to withdraw. You still need {remaining:g} G$.",
+        })
+    return jsonify({
+        "success": True, "threshold_met": True, "can_request": False,
+        "message": "You reached the 500 G$ threshold. Withdrawals are not available yet while the vault integration is under review.",
+    })
+
+
 @community_feed_bp.route("/api/daily-learn", methods=["GET"])
 def api_daily_learn():
     """Return today's server-published two-question snapshot.
@@ -234,9 +263,147 @@ def api_daily_learn():
     if not svc.is_enabled():
         return _disabled_response()
     from .daily_learn import get_daily_snapshot, public_snapshot
+    from .daily_learn_attempts import get_attempt
 
     result = public_snapshot(get_daily_snapshot())
+    if not result.get("success"):
+        return jsonify(result), 503
+    wallet = _session_wallet()
+    today = datetime.now(timezone.utc).date().isoformat()
+    result["day_utc"] = today
+    result["snapshot_status"] = result.get("status", "published")
+    result["total_questions"] = 2
+    result["completed_questions"] = 0
+    result["score"] = 0
+    if wallet:
+        attempt = get_attempt(wallet, today)
+        if not attempt.get("success"):
+            return jsonify({"success": False, "status": "unavailable",
+                            "message": "Daily Learn is temporarily unavailable."}), 503
+        result.update({
+            "status": attempt.get("status", "available"),
+            "completed_questions": int(attempt.get("completed_questions") or 0),
+            "score": int(attempt.get("score") or 0),
+        })
+        if result["status"] == "completed":
+            result["questions"] = []
+        else:
+            position = min(result["completed_questions"], 1)
+            result["questions"] = (result.get("questions") or [])[position:position + 1]
+    else:
+        result["status"] = "available"
+        result["questions"] = (result.get("questions") or [])[:1]
+    tomorrow = datetime.now(timezone.utc).date() + timedelta(days=1)
+    result["reset_at"] = datetime.combine(tomorrow, datetime.min.time(), tzinfo=timezone.utc).isoformat()
+    return jsonify(result)
+
+
+@community_feed_bp.route("/api/daily-learn/answer", methods=["POST"])
+def api_daily_learn_answer():
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Connect a verified wallet to answer."}), 401
+    wait = _throttle(f"daily-learn:{wallet}", 60, allow=10)
+    if wait:
+        return jsonify({"success": False, "error": "Please wait before submitting another answer.",
+                        "code": "rate_limited", "retry_after": wait}), 429
+    if not rewards.is_eligible(wallet):
+        return jsonify({"success": False, "error": "A verified wallet is required to submit Daily Learn answers.",
+                        "code": "verified_wallet_required"}), 403
+    body = _json_body()
+    from .daily_learn_attempts import submit_answer
+
+    result = submit_answer(
+        wallet, body.get("day_utc"), body.get("question_id"), body.get("answer"))
+    if result.get("success") and result.get("status") == "completed":
+        # Both hooks are idempotent/best-effort. Replaying the final answer is a
+        # safe repair path if a prior process died after saving completion.
+        rewards.on_daily_learn_completed(wallet, result.get("day_utc"))
+        try:
+            from . import badges
+            badges.on_daily_learn_completed(wallet, result.get("day_utc"))
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Daily Learn badge evaluation skipped: %s", exc)
+    if result.get("success"):
+        return jsonify(result)
+    status = 503 if result.get("status") == "unavailable" else (
+        401 if result.get("code") == "invalid_wallet" else 400)
+    return jsonify(result), status
+
+
+@community_feed_bp.route("/api/daily-prompt", methods=["GET"])
+def api_daily_prompt():
+    """Return today's social prompt; this is separate from Daily Learn."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    from .daily_prompts import get_active_prompt
+
+    result = get_active_prompt(_session_wallet())
     return jsonify(result), (200 if result.get("success") else 503)
+
+
+@community_feed_bp.route("/api/admin/daily-prompts", methods=["GET"])
+def api_admin_list_daily_prompts():
+    admin = _admin_wallet()
+    if not admin:
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    from .daily_prompts import list_prompts
+
+    result = list_prompts(
+        prompt_date=request.args.get("prompt_date"),
+        status=request.args.get("status"),
+        limit=request.args.get("limit", 30),
+    )
+    return jsonify(result), (200 if result.get("success") else 503)
+
+
+@community_feed_bp.route("/api/admin/daily-prompts", methods=["POST"])
+def api_admin_create_daily_prompt():
+    admin = _admin_wallet()
+    if not admin:
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    from .daily_prompts import create_prompt
+
+    result = create_prompt(_json_body(), admin)
+    if result.get("success"):
+        prompt = result.get("prompt") or {}
+        _log_admin_action(admin, "community_daily_prompt_create", {
+            "prompt_id": prompt.get("id"), "prompt_date": prompt.get("prompt_date"),
+            "status": prompt.get("status"),
+        })
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@community_feed_bp.route("/api/admin/daily-prompts/<prompt_id>", methods=["PATCH"])
+def api_admin_update_daily_prompt(prompt_id: str):
+    admin = _admin_wallet()
+    if not admin:
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    from .daily_prompts import update_prompt
+
+    result = update_prompt(prompt_id, _json_body(), admin)
+    if result.get("success"):
+        prompt = result.get("prompt") or {}
+        _log_admin_action(admin, "community_daily_prompt_update", {
+            "prompt_id": prompt_id, "prompt_date": prompt.get("prompt_date"),
+            "status": prompt.get("status"),
+        })
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@community_feed_bp.route("/api/admin/daily-prompts/<prompt_id>/archive", methods=["POST"])
+def api_admin_archive_daily_prompt(prompt_id: str):
+    admin = _admin_wallet()
+    if not admin:
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    from .daily_prompts import archive_prompt
+
+    result = archive_prompt(prompt_id, admin)
+    if result.get("success"):
+        _log_admin_action(admin, "community_daily_prompt_archive", {"prompt_id": prompt_id})
+    return jsonify(result), (200 if result.get("success") else 400)
 
 
 @community_feed_bp.route("/api/admin/reward-rates", methods=["GET"])
@@ -292,7 +459,9 @@ def api_feed():
     viewer = _session_wallet()
     cursor = request.args.get("cursor", type=int)
     limit = request.args.get("limit", type=int)
-    return jsonify(svc.get_feed(viewer=viewer, cursor=cursor, limit=limit))
+    return jsonify(svc.get_feed(
+        viewer=viewer, cursor=cursor, limit=limit,
+        prompt_id=request.args.get("prompt_id") or None))
 
 
 @community_feed_bp.route("/api/users/search", methods=["GET"])
@@ -356,6 +525,29 @@ def api_profile(username: str):
         return _disabled_response()
     result = svc.get_public_profile(username, viewer=_session_wallet())
     return jsonify(result), (200 if result.get("success") else 404)
+
+
+@community_feed_bp.route("/api/profile/<username>/badges", methods=["GET"])
+def api_profile_badges(username: str):
+    if not svc.is_enabled():
+        return _disabled_response()
+    normalized = svc.normalize_username(username)
+    wallet = svc.wallet_for_username(normalized)
+    if not wallet:
+        return jsonify({"success": False, "badges": []}), 404
+    from . import badges
+    return jsonify({"success": True, "badges": badges.public_badges_for_wallet(wallet)})
+
+
+@community_feed_bp.route("/api/me/badges", methods=["GET"])
+def api_my_badges():
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    from . import badges
+    return jsonify({"success": True, "badges": badges.public_badges_for_wallet(wallet)})
 
 
 @community_feed_bp.route("/api/profile/<username>/avatar", methods=["GET"])
@@ -517,7 +709,10 @@ def api_create_post():
             return jsonify({"success": False, "code": "media", "error": error}), 400
         verified.append(clean)
 
-    result = svc.create_post(wallet, body.get("caption"), verified)
+    prompt_id = body.get("prompt_id")
+    if prompt_id is not None and (not isinstance(prompt_id, str) or len(prompt_id) > 64):
+        return jsonify({"success": False, "error": "Invalid prompt reference."}), 400
+    result = svc.create_post(wallet, body.get("caption"), verified, prompt_id=prompt_id)
     return jsonify(result), (200 if result.get("success") else 400)
 
 
@@ -560,6 +755,10 @@ def api_set_reaction(post_id: int):
     wallet = _session_wallet()
     if not wallet:
         return jsonify({"success": False, "error": "Not authenticated"}), 401
+    wait = _throttle(f"reaction:{wallet}", 30, allow=30)
+    if wait:
+        return jsonify({"success": False, "error": "Please wait before reacting again.",
+                        "code": "rate_limited", "retry_after": wait}), 429
     result = svc.set_reaction(wallet, post_id, _json_body().get("reaction"))
     if result.get("success"):
         return jsonify(result)
@@ -574,6 +773,10 @@ def api_clear_reaction(post_id: int):
     wallet = _session_wallet()
     if not wallet:
         return jsonify({"success": False, "error": "Not authenticated"}), 401
+    wait = _throttle(f"reaction:{wallet}", 30, allow=30)
+    if wait:
+        return jsonify({"success": False, "error": "Please wait before reacting again.",
+                        "code": "rate_limited", "retry_after": wait}), 429
     result = svc.clear_reaction(wallet, post_id)
     status = 200 if result.get("success") else (
         404 if result.get("code") == "not_found" else 400)
@@ -838,6 +1041,36 @@ def api_admin_recount(post_id: int):
         return jsonify({"success": False, "error": "Admin access required"}), 403
     return jsonify({"success": True,
                     "reaction_count": svc.recount_reaction_count(post_id)})
+
+
+@community_feed_bp.route("/api/admin/badges/revoke", methods=["POST"])
+def api_admin_revoke_badge():
+    admin = _admin_wallet()
+    if not admin:
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    body = _json_body()
+    username = svc.normalize_username(body.get("username"))
+    badge_key = body.get("badge_key")
+    reason = body.get("reason")
+    if (not username or not isinstance(badge_key, str) or not isinstance(reason, str)
+            or len(reason.strip()) < 8):
+        return jsonify({"success": False, "error":
+                        "A username, badge, and moderation reason (at least 8 characters) are required."}), 400
+    target_wallet = svc.wallet_for_username(username)
+    if not target_wallet:
+        return jsonify({"success": False, "error": "Member not found."}), 404
+    from . import badges
+
+    result = badges.revoke_badge(
+        target_wallet, badge_key, actor=admin, reason=reason.strip())
+    if result.get("success") and result.get("revoked"):
+        _log_admin_action(admin, "community_badge_revoke", {
+            "username": username, "badge_key": badge_key,
+            "reason": reason.strip(),
+        })
+    return jsonify({"success": bool(result.get("success")),
+                    "revoked": bool(result.get("revoked"))}), (
+                        200 if result.get("success") else 400)
 
 
 def _log_admin_action(admin_wallet: str, action: str, details: dict) -> None:
