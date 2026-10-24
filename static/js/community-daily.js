@@ -95,7 +95,7 @@
         }
         var reason = lastReward.reason;
         var message = reason === 'daily_cap_reached'
-            ? 'Your completion is saved, but today’s Community G$ earning cap has been reached; no reward was added.'
+            ? 'Your completion is saved, but the Daily Learn daily allowance for the last 24 hours has already been used; no reward was added this time.'
             : (reason === 'no_correct_answers'
                 ? 'Your completion is saved. No Community G$ was earned because there were no correct answers.'
                 : (reason === 'verified_wallet_required'
