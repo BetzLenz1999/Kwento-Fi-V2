@@ -1494,6 +1494,3 @@ body.cf-modal-open { overflow: hidden; }
 .cf-daily-learn[hidden],
 .cf-prompt-context[hidden],
 .cf-earn-withdraw-row[hidden] { display: none !important; }
-
-.cf-full-learn-link { margin: 0.25rem 0 0.9rem; text-align: right; font-size: 0.84rem; }
-.cf-full-learn-link a { color: var(--cf-accent-ink); font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
