@@ -286,6 +286,9 @@ def api_daily_learn():
             "score": int(attempt.get("score") or 0),
         })
         if result["status"] == "completed":
+            # A completed GET is also a safe repair path when the answer was
+            # saved but the best-effort credit hook failed or the process died.
+            result["reward"] = rewards.daily_learn_completion_status(wallet, today)
             result["questions"] = []
         else:
             position = min(result["completed_questions"], 1)
@@ -320,7 +323,8 @@ def api_daily_learn_answer():
     if result.get("success") and result.get("status") == "completed":
         # Both hooks are idempotent/best-effort. Replaying the final answer is a
         # safe repair path if a prior process died after saving completion.
-        rewards.on_daily_learn_completed(wallet, result.get("day_utc"))
+        result["reward"] = rewards.daily_learn_completion_status(
+            wallet, result.get("day_utc"))
         try:
             from . import badges
             badges.on_daily_learn_completed(wallet, result.get("day_utc"))
