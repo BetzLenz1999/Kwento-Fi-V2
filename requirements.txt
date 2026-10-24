@@ -27,3 +27,4 @@ websockets>=15.0.1
 email_validator
 flask-sqlalchemy
 psycopg2-binary
+pywebpush>=2.0.3
