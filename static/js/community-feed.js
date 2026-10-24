@@ -1853,8 +1853,8 @@
             } else if (showBalance && minimum > 0 && amount >= minimum) {
                 leadEl.textContent = 'You reached the 500 G$ goal. Withdrawals are pending vault review.';
             } else {
-                leadEl.textContent = 'Earn G$ when the community reacts to your '
-                    + 'posts and comments.';
+                leadEl.textContent = 'Earn G$ from reactions, comments and the '
+                    + 'daily quiz.';
             }
         }
 
