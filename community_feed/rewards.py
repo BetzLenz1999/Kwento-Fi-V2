@@ -128,7 +128,7 @@ MIN_PAYOUT_GD = get_env_decimal("COMMUNITY_REWARD_MIN_PAYOUT_GD", "500")
 # correct answer), separate from the full Learn & Earn quiz's max-reward rate.
 DAILY_LEARN_RATE_MAX = Decimal("50")
 DAILY_LEARN_EVENT = "daily_learn"
-DAILY_LEARN_CLAIM_RPC = "community_daily_learn_claim_uncredited_attempts"
+DAILY_LEARN_CLAIM_RPC = "community_daily_learn_claim_uncredited_questions"
 
 # Daily Learn gets its OWN 24h allowance instead of sharing DAILY_CAP.
 #
@@ -743,7 +743,8 @@ def _insert(supabase, row: dict) -> bool:
 
 
 def _credit(supabase, wallet: str, *, key: str, event_type: str, amount: Decimal,
-            post_id=None, comment_id=None, event_created_at=None) -> bool:
+            post_id=None, comment_id=None, event_created_at=None,
+            source_question_id=None) -> bool:
     """Credit ``amount`` G$, honouring the fences and the caps. Never raises.
 
     ``amount`` is explicit rather than read from a module global so the caller
@@ -795,21 +796,25 @@ def _credit(supabase, wallet: str, *, key: str, event_type: str, amount: Decimal
         logger.info("community_rewards: post cap reached for post %s", post_id)
         return False
 
-    return _insert(supabase, {
+    row = {
         "wallet_address": wallet.lower(),
         "delta_gd": str(amount),
         "event_type": event_type,
         "idempotency_key": key,
         "post_id": int(post_id) if post_id not in (None, "") else None,
         "comment_id": int(comment_id) if comment_id not in (None, "") else None,
-    })
+    }
+    if source_question_id is not None:
+        row["source_question_id"] = source_question_id
+    return _insert(supabase, row)
 
 
 def _daily_learn_attempt(db, wallet: str, day_utc: str) -> dict | None:
     """Read the persisted completion; never trust a client-supplied score."""
     try:
         rows = _rows(db.table("community_daily_learn_attempts")
-                     .select("status,score,reward_rate_gd")
+                     .select("status,score,reward_rate_gd,question_1_id,correct_1,"
+                             "question_2_id,correct_2")
                      .ilike("wallet_address", wallet)
                      .eq("day_utc", day_utc)
                      .limit(1).execute())
@@ -838,13 +843,35 @@ def _configured_daily_learn_rate(db) -> Decimal | None:
         return None
 
 
+def _daily_learn_ledger_row_matches(row: dict, wallet: str, amount: Decimal,
+                                   question_id: str) -> bool:
+    """Validate the full identity and amount before calling a question paid."""
+    try:
+        delta = _as_decimal(row.get("delta_gd"))
+    except Exception:  # noqa: BLE001 - malformed ledger data is not success
+        return False
+    return (
+        _same_wallet(row.get("wallet_address"), wallet)
+        and row.get("event_type") == DAILY_LEARN_EVENT
+        and delta == amount
+        and str(row.get("source_question_id") or "") == question_id
+    )
+
+
+def _daily_learn_ledger_row(db, key: str) -> dict | None:
+    rows = _rows(db.table(LEDGER).select(
+        "wallet_address,delta_gd,event_type,idempotency_key,source_question_id"
+    ).eq("idempotency_key", key).limit(1).execute())
+    return rows[0] if rows else None
+
+
 def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None,
                                   _attempt: dict | None = None) -> dict:
-    """Credit correct answers from a persisted completion using its rate snapshot.
+    """Credit each correct question from a persisted completion exactly once.
 
-    The wallet/day idempotency key is shared by page-load repair and the
-    background reconciler. New completions use the DB-snapshotted Admin rate;
-    older completed attempts without a snapshot use the current configured rate.
+    Question-level idempotency keys are shared by completion, page-load repair,
+    and the background reconciler. A legacy cycle-level row is recognized as
+    paid to avoid retroactively paying existing completions a second time.
     """
     try:
         identity = (wallet or "").strip().lower()
@@ -856,20 +883,6 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None,
             return {"status": "not_credited", "reason": "temporarily_unavailable"}
         if not is_enabled(_supabase=db):
             return {"status": "not_credited", "reason": "rewards_disabled"}
-
-        key = f"daily_learn:{parsed_day}:{identity}"
-        try:
-            existing = _rows(db.table(LEDGER).select(
-                "wallet_address,idempotency_key").eq("idempotency_key", key)
-                .limit(1).execute())
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("community_rewards: Daily Learn ledger lookup failed: %s", exc)
-            return {"status": "not_credited", "reason": "temporarily_unavailable"}
-        if existing:
-            if _same_wallet(existing[0].get("wallet_address"), identity):
-                return {"status": "already_credited"}
-            logger.error("community_rewards: Daily Learn key belongs to unexpected wallet")
-            return {"status": "not_credited", "reason": "temporarily_unavailable"}
 
         attempt = _attempt or _daily_learn_attempt(db, identity, parsed_day)
         if not attempt:
@@ -884,6 +897,41 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None,
             logger.error("community_rewards: invalid Daily Learn score %s for %s", score, identity[:10])
             return {"status": "not_credited", "reason": "temporarily_unavailable"}
 
+        correct_questions = []
+        for suffix in ("1", "2"):
+            if attempt.get(f"correct_{suffix}") is True:
+                question_id = str(attempt.get(f"question_{suffix}_id") or "").strip()
+                if not question_id:
+                    return {"status": "not_credited", "reason": "temporarily_unavailable"}
+                correct_questions.append(question_id)
+        if len(correct_questions) != score:
+            logger.error("community_rewards: Daily Learn score/correctness mismatch for %s",
+                         identity[:10])
+            return {"status": "not_credited", "reason": "temporarily_unavailable"}
+        if not correct_questions:
+            return {"status": "not_credited", "reason": "no_correct_answers"}
+
+        # Preserve older one-row-per-cycle credits. Historical attempt rows may
+        # have a NULL rate snapshot, so validate the immutable key, wallet, type,
+        # and positive amount rather than comparing with today's admin rate.
+        legacy_key = f"daily_learn:{parsed_day}:{identity}"
+        try:
+            legacy = _daily_learn_ledger_row(db, legacy_key)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("community_rewards: legacy Daily Learn lookup failed: %s", exc)
+            return {"status": "not_credited", "reason": "temporarily_unavailable"}
+        if legacy:
+            if (_same_wallet(legacy.get("wallet_address"), identity)
+                    and legacy.get("event_type") == DAILY_LEARN_EVENT
+                    and _as_decimal(legacy.get("delta_gd")) > 0
+                    and not legacy.get("source_question_id")):
+                return {"status": "already_credited",
+                        "credited_questions": len(correct_questions),
+                        "credited_gd": float(_as_decimal(legacy.get("delta_gd")))}
+            logger.error("community_rewards: invalid legacy Daily Learn ledger row for %s",
+                         identity[:10])
+            return {"status": "not_credited", "reason": "ledger_integrity_error"}
+
         raw_rate = attempt.get("reward_rate_gd")
         rate = (_as_decimal(raw_rate) if raw_rate is not None
                 else _configured_daily_learn_rate(db))
@@ -892,9 +940,30 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None,
             return {"status": "not_credited", "reason": "temporarily_unavailable"}
         if rate == 0:
             return {"status": "not_credited", "reason": "reward_disabled"}
-        amount = rate * Decimal(score)
-        if amount <= 0:
-            return {"status": "not_credited", "reason": "reward_disabled"}
+
+        question_keys = {
+            question_id: f"daily_learn:{parsed_day}:{identity}:{question_id}"
+            for question_id in correct_questions
+        }
+        existing_rows = {}
+        try:
+            for question_id, key in question_keys.items():
+                row = _daily_learn_ledger_row(db, key)
+                if row:
+                    if not _daily_learn_ledger_row_matches(row, identity, rate, question_id):
+                        logger.error("community_rewards: invalid Daily Learn row for %s (%s)",
+                                     identity[:10], question_id)
+                        return {"status": "not_credited", "reason": "ledger_integrity_error"}
+                    existing_rows[question_id] = row
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("community_rewards: question credit lookup failed: %s", exc)
+            return {"status": "not_credited", "reason": "temporarily_unavailable"}
+
+        missing_questions = [q for q in correct_questions if q not in existing_rows]
+        if not missing_questions:
+            return {"status": "already_credited",
+                    "credited_questions": len(correct_questions),
+                    "credited_gd": float(rate * len(correct_questions))}
         if not is_eligible(identity):
             return {"status": "not_credited", "reason": "verified_wallet_required"}
         if not is_rewardable(datetime.now(timezone.utc)):
@@ -920,33 +989,41 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None,
         recent_credits = sum(
             (_as_decimal(row.get("delta_gd")) for row in cap_rows
              if _as_decimal(row.get("delta_gd")) > 0), Decimal("0"))
-        if recent_credits + amount > daily_cap:
+        missing_amount = rate * len(missing_questions)
+        if recent_credits + missing_amount > daily_cap:
             return {"status": "not_credited", "reason": "daily_cap_reached"}
 
-        credited = _credit(
-            db, identity,
-            key=key,
-            event_type=DAILY_LEARN_EVENT,
-            amount=amount,
-            event_created_at=datetime.now(timezone.utc),
-        )
-        if credited:
-            return {"status": "credited"}
+        newly_credited = 0
+        for question_id in missing_questions:
+            key = question_keys[question_id]
+            inserted = _credit(
+                db, identity, key=key, event_type=DAILY_LEARN_EVENT,
+                amount=rate, event_created_at=datetime.now(timezone.utc),
+                source_question_id=question_id)
+            if inserted:
+                newly_credited += 1
+                continue
+            # An idempotent race is success only after validating the winning row.
+            try:
+                existing = _daily_learn_ledger_row(db, key)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("community_rewards: Daily Learn confirmation failed: %s", exc)
+                return {"status": "pending", "reason": "temporarily_unavailable",
+                        "credited_questions": len(existing_rows) + newly_credited}
+            if existing and _daily_learn_ledger_row_matches(
+                    existing, identity, rate, question_id):
+                existing_rows[question_id] = existing
+                continue
+            if existing:
+                return {"status": "not_credited", "reason": "ledger_integrity_error"}
+            reason = ("verified_wallet_required" if not is_eligible(identity)
+                      else "temporarily_unavailable")
+            return {"status": "pending", "reason": reason,
+                    "credited_questions": len(existing_rows) + newly_credited}
 
-        # A concurrent request may have won the unique-key race. Confirm its row
-        # before reporting success; never infer credit from a failed insert.
-        try:
-            existing = _rows(db.table(LEDGER).select(
-                "wallet_address,idempotency_key").eq("idempotency_key", key)
-                .limit(1).execute())
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("community_rewards: Daily Learn confirmation failed: %s", exc)
-            return {"status": "not_credited", "reason": "temporarily_unavailable"}
-        if existing and _same_wallet(existing[0].get("wallet_address"), identity):
-            return {"status": "already_credited"}
-        if not is_eligible(identity):
-            return {"status": "not_credited", "reason": "verified_wallet_required"}
-        return {"status": "not_credited", "reason": "temporarily_unavailable"}
+        return {"status": "credited" if newly_credited else "already_credited",
+                "credited_questions": len(correct_questions),
+                "credited_gd": float(rate * len(correct_questions))}
     except Exception as exc:  # noqa: BLE001 - rewards must never break learning
         logger.warning("community_rewards: Daily Learn credit skipped: %s", exc)
         return {"status": "not_credited", "reason": "temporarily_unavailable"}
@@ -987,6 +1064,10 @@ def reconcile_uncredited_daily_learn_attempts(*, _supabase=None,
             "status": "completed",
             "score": attempt.get("attempt_score"),
             "reward_rate_gd": attempt.get("attempt_reward_rate_gd"),
+            "question_1_id": attempt.get("attempt_question_1_id"),
+            "correct_1": attempt.get("attempt_correct_1"),
+            "question_2_id": attempt.get("attempt_question_2_id"),
+            "correct_2": attempt.get("attempt_correct_2"),
         }
         outcome = daily_learn_completion_status(
             wallet, day_utc, _supabase=db, _attempt=internal_attempt)
