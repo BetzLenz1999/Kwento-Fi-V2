@@ -329,29 +329,85 @@
         return SUPPORTED_CHAINS[_activeChainKey];
     }
 
+    // Bound each endpoint attempt so a stalled fetch/body read cannot hold up
+    // RPC failover indefinitely. The Promise.race remains bounded even in
+    // browsers without AbortController (or fetch implementations ignoring it).
+    var RPC_REQUEST_TIMEOUT_MS = 8000;
+
+    async function _fetchJsonRpc(url, options) {
+        var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        if (controller) options.signal = controller.signal;
+        var timer = null;
+        var timeout = new Promise(function (_, reject) {
+            timer = setTimeout(function () {
+                if (controller) {
+                    try { controller.abort(); } catch (_) { /* safe fallback */ }
+                }
+                var err = new Error('RPC request timed out after ' + RPC_REQUEST_TIMEOUT_MS + 'ms.');
+                err.code = 'GM_RPC_TIMEOUT';
+                reject(err);
+            }, RPC_REQUEST_TIMEOUT_MS);
+        });
+        var request = Promise.resolve().then(async function () {
+            var resp = await fetch(url, options);
+            if (!resp || resp.ok === false ||
+                (typeof resp.status === 'number' && (resp.status < 200 || resp.status >= 300))) {
+                var status = resp && typeof resp.status === 'number' ? ' (HTTP ' + resp.status + ')' : '';
+                throw new Error('RPC HTTP request failed' + status + '.');
+            }
+            var data;
+            try {
+                data = await resp.json();
+            } catch (_) {
+                throw new Error('RPC returned invalid JSON.');
+            }
+            return data;
+        });
+        try {
+            return await Promise.race([request, timeout]);
+        } finally {
+            if (timer !== null) clearTimeout(timer);
+        }
+    }
+
     async function _chainJsonRpc(chain, method, params) {
         _applyChainOverridesOnce();
         var lastErr = null;
         var idx = _rpcIndexes[chain.label] || 0;
+        var isBroadcast = method === 'eth_sendRawTransaction';
         for (var i = 0; i < chain.rpcs.length; i++) {
             var url = chain.rpcs[(idx + i) % chain.rpcs.length];
             try {
-                var resp = await fetch(url, {
+                var data = await _fetchJsonRpc(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: method, params: params || [] })
                 });
-                var data = await resp.json();
-                if (data.error) {
+                if (!data || typeof data !== 'object' || Array.isArray(data) ||
+                    data.jsonrpc !== '2.0' || data.id !== 1) {
+                    throw new Error('RPC returned a malformed JSON-RPC response.');
+                }
+                if (Object.prototype.hasOwnProperty.call(data, 'error')) {
+                    if (!data.error || typeof data.error !== 'object' ||
+                        typeof data.error.code !== 'number' || typeof data.error.message !== 'string' ||
+                        Object.prototype.hasOwnProperty.call(data, 'result')) {
+                        throw new Error('RPC returned a malformed JSON-RPC error.');
+                    }
                     var err = new Error(data.error.message || 'RPC error');
                     err.code = data.error.code;
                     err.data = data.error.data; // keep revert bytes for tx-error.js decoding
                     throw err;
                 }
+                if (!Object.prototype.hasOwnProperty.call(data, 'result')) {
+                    throw new Error('RPC response has neither a result nor an error.');
+                }
                 _rpcIndexes[chain.label] = (idx + i) % chain.rpcs.length;
                 return data.result;
             } catch (e) {
                 lastErr = e;
+                // Once a raw transaction may have reached a node, the result is
+                // ambiguous. Never broadcast it to another endpoint automatically.
+                if (isBroadcast) throw e;
                 // A revert WITH data is deterministic — retrying another RPC
                 // will not change it, so surface it immediately.
                 if (e && e.data) throw e;
