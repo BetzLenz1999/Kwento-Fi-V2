@@ -96,11 +96,13 @@
         var reason = lastReward.reason;
         var message = reason === 'daily_cap_reached'
             ? 'Your completion is saved, but today’s Community G$ earning cap has been reached; no reward was added.'
-            : (reason === 'verified_wallet_required'
-                ? 'Your completion is saved, but only verified wallets can earn Community G$.'
-                : (reason === 'reward_disabled' || reason === 'rewards_disabled'
-                    ? 'Your completion is saved, but the Daily Learn reward is currently unavailable.'
-                    : 'Your completion is saved, but the reward could not be confirmed. Check Community G$ Earnings again later.'));
+            : (reason === 'no_correct_answers'
+                ? 'Your completion is saved. No Community G$ was earned because there were no correct answers.'
+                : (reason === 'verified_wallet_required'
+                    ? 'Your completion is saved, but only verified wallets can earn Community G$.'
+                    : (reason === 'reward_disabled' || reason === 'rewards_disabled'
+                        ? 'Your completion is saved, but the Daily Learn reward is currently unavailable.'
+                        : 'Your completion is saved, but the reward could not be confirmed. Check Community G$ Earnings again later.')));
         return lastEarningsRefresh === false &&
             lastReward.reason !== 'rewards_disabled' && lastReward.reason !== 'reward_disabled'
             ? message + ' The earnings card could not refresh.' : message;
