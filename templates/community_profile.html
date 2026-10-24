@@ -93,44 +93,50 @@
         {# Profile picture. The shared avatar module paints the same row used by
            feed cards; the button opens this public image in the profile viewer.
            The owner's camera control stays separate and owner-only. #}
-        <div class="cp-avatar-wrap">
-            <button type="button" class="cp-avatar cp-avatar-button" id="cpProfileAvatar"
-                    aria-haspopup="dialog" aria-controls="cpLightbox"
-                    aria-label="Profile picture of @{{ profile.username }}"
-                    {% if not profile.avatar_url %}disabled{% endif %}>
-                {%- if profile.avatar_url -%}
-                <img class="cp-avatar-img"
-                     src="{{ url_for('community_feed.api_profile_avatar', username=profile.username) }}"
-                     alt="" loading="eager" fetchpriority="high" decoding="async"
-                     referrerpolicy="no-referrer">
-                {%- else -%}
-                {{ (profile.username or 'A')[0]|upper }}
-                {%- endif -%}
-            </button>
-            {% if profile.is_self %}
-            <button type="button" class="cp-avatar-edit" id="cpAvatarEdit"
-                    aria-label="Change your profile picture">📷</button>
-            {% endif %}
+        <div class="cp-profile-identity">
+            <div class="cp-avatar-wrap">
+                <button type="button" class="cp-avatar cp-avatar-button" id="cpProfileAvatar"
+                        aria-haspopup="dialog" aria-controls="cpLightbox"
+                        aria-label="Profile picture of @{{ profile.username }}"
+                        {% if not profile.avatar_url %}disabled{% endif %}>
+                    {%- if profile.avatar_url -%}
+                    <img class="cp-avatar-img"
+                         src="{{ url_for('community_feed.api_profile_avatar', username=profile.username) }}"
+                         alt="" loading="eager" fetchpriority="high" decoding="async"
+                         referrerpolicy="no-referrer">
+                    {%- else -%}
+                    {{ (profile.username or 'A')[0]|upper }}
+                    {%- endif -%}
+                </button>
+                {% if profile.is_self %}
+                <button type="button" class="cp-avatar-edit" id="cpAvatarEdit"
+                        aria-label="Change your profile picture">📷</button>
+                {% endif %}
+            </div>
+            <div class="cp-profile-copy">
+                <h1 id="cpProfileName">@{{ profile.username }}</h1>
+                <p class="cp-sub">GoodMarket community member</p>
+                <p class="cp-joined">
+                    {% if profile.joined_at %}Member since {{ profile.joined_at[:10] }}{% else %}GoodMarket member{% endif %}
+                </p>
+            </div>
         </div>
-        <h1 id="cpProfileName">@{{ profile.username }}</h1>
-        <p class="cp-sub">GoodMarket community member</p>
-        <p class="cp-joined">
-            {% if profile.joined_at %}Member since {{ profile.joined_at[:10] }}{% else %}GoodMarket member{% endif %}
-        </p>
         {# Follow button. Built by the bundle (it needs the viewer's own
            is_following / is_self from the boot object); the wrap is the
            mount point, so nothing is rendered for a guest's own profile or
            for the member looking at themselves. #}
-        <div class="cp-follow-wrap" id="cpFollowWrap"></div>
-        {% if not profile.is_self %}
-        <a class="cp-message" id="cpMessageBtn"
-           href="/messages?with={{ profile.username|urlencode }}"
-           onclick="return GMProfile.openMessage(event)"
-           aria-label="Message @{{ profile.username }}">Message</a>
-        <button type="button" class="cp-money" id="cpSendMoneyBtn"
-                onclick="GMProfile.openSendMoney()"
-                aria-label="Send money to @{{ profile.username }}">Send Money</button>
-        {% endif %}
+        <div class="cp-profile-actions">
+            <div class="cp-follow-wrap" id="cpFollowWrap"></div>
+            {% if not profile.is_self %}
+            <a class="cp-message" id="cpMessageBtn"
+               href="/messages?with={{ profile.username|urlencode }}"
+               onclick="return GMProfile.openMessage(event)"
+               aria-label="Message @{{ profile.username }}">Message</a>
+            <button type="button" class="cp-money" id="cpSendMoneyBtn"
+                    onclick="GMProfile.openSendMoney()"
+                    aria-label="Send money to @{{ profile.username }}">Send Money</button>
+            {% endif %}
+        </div>
         <p class="cp-privacy">
             This public profile never shows a wallet address, balance, or private activity.
         </p>
