@@ -26,7 +26,8 @@
   font-weight: 800;
   cursor: pointer;
 }
-.gm-msg-push-button[disabled] { opacity: .58; cursor: wait; }
+.gm-msg-push-button[disabled] { opacity: .58; cursor: not-allowed; }
+.gm-msg-push-button.is-busy { cursor: wait; }
 .gm-msg-push-button.is-enabled { background: #3dbb77; }
 @media (max-width: 520px) {
   .gm-msg-notifications { align-items: flex-start; }
