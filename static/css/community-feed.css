@@ -1330,3 +1330,170 @@ body.cf-modal-open { overflow: hidden; }
     .cf-earn::before { animation: none; }
     .cf-earn-bar-fill { transition: none; }
 }
+
+
+/* ── Daily Community Prompt and Daily Learn ───────────────────────────────── */
+.cf-daily-prompt,
+.cf-daily-learn {
+    width: 100%;
+    background: var(--cf-card);
+    border: 1px solid var(--cf-hairline);
+    border-radius: 16px;
+    padding: 1rem 1.1rem;
+    box-shadow: var(--cf-shadow);
+}
+.cf-daily-prompt-kicker,
+.cf-daily-learn-kicker {
+    color: var(--cf-accent-ink);
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.cf-daily-prompt h2,
+.cf-daily-learn h2 {
+    margin-top: 0.25rem;
+    color: var(--cf-ink);
+    font-size: 1.12rem;
+    line-height: 1.35;
+}
+.cf-daily-prompt > p {
+    margin-top: 0.35rem;
+    color: var(--cf-dim);
+    font-size: 0.92rem;
+    line-height: 1.45;
+}
+.cf-daily-prompt-foot,
+.cf-daily-learn-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.7rem;
+    margin-top: 0.8rem;
+}
+.cf-daily-prompt-foot > span,
+.cf-daily-learn-progress,
+.cf-daily-learn-reset {
+    color: var(--cf-dim);
+    font-size: 0.82rem;
+}
+.cf-btn-primary,
+.cf-earn-withdraw {
+    min-height: 44px;
+    padding: 0.58rem 1rem;
+    border: 0;
+    border-radius: 999px;
+    background: var(--cf-accent);
+    color: #fff;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+.cf-btn-text {
+    min-height: 44px;
+    padding: 0.55rem 0.75rem;
+    border: 0;
+    background: transparent;
+    color: var(--cf-accent-ink);
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+.cf-prompt-context {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0.25rem 0 0.6rem;
+    padding: 0.5rem 0.7rem;
+    border-left: 3px solid var(--cf-accent);
+    border-radius: 6px;
+    background: rgba(var(--cf-accent-rgb), 0.07);
+    color: var(--cf-accent-ink);
+    font-size: 0.84rem;
+    font-weight: 800;
+}
+.cf-prompt-context button {
+    min-height: 40px;
+    border: 0;
+    background: transparent;
+    color: var(--cf-dim);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.cf-daily-learn-content { margin-top: 0.65rem; }
+.cf-daily-learn-question { font-weight: 800; line-height: 1.5; }
+.cf-daily-learn-options { display: grid; gap: 0.45rem; margin-top: 0.7rem; }
+.cf-daily-learn-option {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 44px;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--cf-border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--cf-ink);
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+}
+.cf-daily-learn-option[aria-pressed="true"] {
+    border-color: var(--cf-accent);
+    background: rgba(var(--cf-accent-rgb), 0.06);
+}
+.cf-daily-learn-submit,
+.cf-daily-learn-next,
+.cf-daily-learn-share {
+    min-height: 44px;
+    margin-top: 0.7rem;
+    padding: 0.55rem 0.9rem;
+    border: 1px solid var(--cf-border);
+    border-radius: 10px;
+    background: var(--cf-field);
+    color: var(--cf-ink);
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+.cf-daily-learn-submit { background: var(--cf-accent); color: #fff; border-color: var(--cf-accent); }
+.cf-daily-learn-result { margin-top: 0.7rem; line-height: 1.5; }
+.cf-daily-learn-reset { margin-top: 0.7rem; }
+.cf-earn-withdraw-row { display: flex; align-items: flex-start; gap: 0.7rem; margin-top: 0.8rem; }
+.cf-earn-withdraw { background: var(--cf-earn-accent); color: #fff; }
+.cf-earn-withdraw:disabled { opacity: 0.65; cursor: wait; }
+.cf-earn-withdraw-status { align-self: center; color: var(--cf-earn-ink); font-size: 0.88rem; line-height: 1.45; }
+
+/* Larger targets and a readable tooltip/title on every reaction option. */
+.cf-chip { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+
+@media (max-width: 620px) {
+    .cf-daily-prompt,
+    .cf-daily-learn { padding: 0.85rem; border-radius: 12px; }
+    .cf-daily-prompt-foot { flex-wrap: wrap; justify-content: flex-start; }
+    .cf-daily-prompt-foot > span { flex-basis: 100%; }
+    .cf-daily-learn-head { align-items: flex-start; }
+    .cf-daily-learn h2 { font-size: 1rem; }
+}
+
+
+.cf-badge-row { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.22rem; }
+.cf-badge-chip {
+    display: inline-flex; align-items: center; gap: 0.2rem;
+    max-width: 100%; padding: 0.12rem 0.42rem;
+    border: 1px solid rgba(180, 120, 20, 0.24); border-radius: 999px;
+    background: #fff7e6; color: #5c3600; font-size: 0.67rem; font-weight: 800;
+}
+.cf-badge-icon { color: var(--cf-accent-ink); font-size: 0.72rem; }
+.cf-badge-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-card-who .cf-badge-row { align-self: flex-start; }
+.cf-summary { margin: 0.15rem 0 0.35rem; }
+
+.cf-daily-prompt[hidden],
+.cf-daily-learn[hidden],
+.cf-prompt-context[hidden],
+.cf-earn-withdraw-row[hidden] { display: none !important; }
+
+.cf-full-learn-link { margin: 0.25rem 0 0.9rem; text-align: right; font-size: 0.84rem; }
+.cf-full-learn-link a { color: var(--cf-accent-ink); font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
