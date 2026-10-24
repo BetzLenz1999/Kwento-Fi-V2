@@ -45,6 +45,40 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) {}
+  const title = String(data.title || 'GoodMarket message').slice(0, 120);
+  const body = String(data.body || 'You have a new community message.').slice(0, 240);
+  const target = String(data.url || '/messages');
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: '/static/icons/goodmarket-icon.png',
+    badge: '/static/icons/icon-192x192.png',
+    tag: String(data.tag || 'community-message').slice(0, 120),
+    renotify: true,
+    data: { url: target.startsWith('/') ? target : '/messages' }
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = event.notification.data && event.notification.data.url || '/messages';
+  event.waitUntil((async () => {
+    const absolute = new URL(target, self.location.origin).href;
+    const openClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of openClients) {
+      if ('focus' in client) {
+        await client.focus();
+        if ('navigate' in client) await client.navigate(absolute);
+        return;
+      }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(absolute);
+  })());
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 
