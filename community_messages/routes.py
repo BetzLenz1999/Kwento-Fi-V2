@@ -67,14 +67,27 @@ def messages_page():
                            initial_conversation_id=(request.args.get("conversation") or "").strip())
 
 
-@messages_bp.route("/api/messages/push/status", methods=["GET"])
+@messages_bp.route("/api/messages/push/status", methods=["GET", "POST"])
 def push_status():
     if not _enabled():
         return jsonify({"success": False, "code": "disabled", "enabled": False}), 404
-    if not _wallet():
+    wallet = _wallet()
+    if not wallet:
         return _auth_error()
-    return jsonify({"success": True, "enabled": web_push_service.configured(),
-                    "public_key": web_push_service.public_key()})
+    configured = web_push_service.configured()
+    body = {}
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+    endpoint = str(body.get("endpoint") or "").strip()
+    subscribed = False
+    if endpoint and configured:
+        subscribed = web_push_service.has_subscription(wallet, endpoint)
+        if subscribed is None:
+            return jsonify({"success": False, "code": "status_unavailable",
+                            "error": "Could not verify this device’s notification setup."}), 503
+    return jsonify({"success": True, "enabled": configured,
+                    "public_key": web_push_service.public_key(),
+                    "subscribed": subscribed})
 
 
 @messages_bp.route("/api/messages/push/subscribe", methods=["POST"])
