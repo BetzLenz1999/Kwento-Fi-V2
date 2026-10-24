@@ -4929,19 +4929,27 @@ def update_quiz_settings():
                 "error": "Quiz cooldown must be between 1 and 720 hours"
             }), 400
         if community_daily_learn_reward_per_correct is not None:
+            # The ceiling lives in ONE place (community_feed.rewards) so the admin
+            # route can never drift from the ledger's own bound.
+            try:
+                from community_feed.rewards import DAILY_LEARN_RATE_MAX
+            except Exception:  # noqa: BLE001 - never block the admin on an import
+                DAILY_LEARN_RATE_MAX = Decimal("50")
             try:
                 daily_learn_rate = Decimal(str(community_daily_learn_reward_per_correct))
             except (InvalidOperation, TypeError, ValueError):
                 return jsonify({
                     "success": False,
-                    "error": "Community Daily Learn reward must be a number between 0 and 25 G$"
+                    "error": (f"Community Daily Learn reward must be a number "
+                              f"between 0 and {DAILY_LEARN_RATE_MAX:g} G$")
                 }), 400
             if (isinstance(community_daily_learn_reward_per_correct, bool)
                     or not daily_learn_rate.is_finite()
-                    or daily_learn_rate < 0 or daily_learn_rate > 25):
+                    or daily_learn_rate < 0 or daily_learn_rate > DAILY_LEARN_RATE_MAX):
                 return jsonify({
                     "success": False,
-                    "error": "Community Daily Learn reward must be between 0 and 25 G$ per correct answer"
+                    "error": (f"Community Daily Learn reward must be between 0 and "
+                              f"{DAILY_LEARN_RATE_MAX:g} G$ per correct answer")
                 }), 400
             community_daily_learn_reward_per_correct = float(
                 daily_learn_rate.quantize(Decimal('0.0001')))
