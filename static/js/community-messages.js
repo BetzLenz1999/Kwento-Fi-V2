@@ -1,7 +1,7 @@
 /* Private Community Messages. User text and filenames are always assigned with textContent. */
 (function () {
   'use strict';
-  var BOOT = window.GM_MESSAGES_BOOT || {}; 
+  var BOOT = window.GM_MESSAGES_BOOT || {};
   var state = { conversations: [], current: null, currentUser: null, timer: null, view: 'inbox', attachment: null };
 
   function $(id) { return document.getElementById(id); }
@@ -45,6 +45,72 @@
     node.textContent = message; node.hidden = false; clearTimeout(node._timer);
     node._timer = setTimeout(function () { node.hidden = true; }, 2800);
   }
+  function pushButton() { return $('gmMsgPushButton'); }
+  function pushPanel() { return $('gmMsgNotifications'); }
+  function pushStatusNode() { return $('gmMsgPushStatus'); }
+  function base64ToBytes(value) {
+    var padding = '='.repeat((4 - value.length % 4) % 4);
+    var raw = atob((value + padding).replace(/-/g, '+').replace(/_/g, '/'));
+    var bytes = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    return bytes;
+  }
+  function pushRegistration() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return Promise.reject(new Error('Push notifications are not supported on this device.'));
+    return navigator.serviceWorker.getRegistration('/').then(function (reg) {
+      return reg || navigator.serviceWorker.register('/static/service-worker.js', { scope: '/' });
+    });
+  }
+  function setPushUi(enabled, subscribed, busy) {
+    var panel = pushPanel(), button = pushButton(), status = pushStatusNode();
+    if (!panel || !button) return;
+    panel.hidden = !enabled;
+    button.disabled = !!busy;
+    button.classList.toggle('is-enabled', !!subscribed);
+    button.textContent = busy ? 'Working…' : (subscribed ? 'Enabled' : 'Enable');
+    if (status) status.textContent = subscribed ? 'You will be notified when someone messages you.' : 'Get notified when someone messages you.';
+  }
+  function loadPushStatus() {
+    api('/api/messages/push/status').then(function (data) {
+      if (!data.enabled || !data.public_key) { setPushUi(false, false, false); return; }
+      return pushRegistration().then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (subscription) {
+        setPushUi(true, !!subscription, false);
+      });
+    }).catch(function () { setPushUi(false, false, false); });
+  }
+  function enablePush() {
+    var button = pushButton(); if (button) button.disabled = true;
+    api('/api/messages/push/status').then(function (data) {
+      if (!data.enabled || !data.public_key) throw new Error('Notifications are not configured yet.');
+      if (!('Notification' in window)) throw new Error('Notifications are not supported on this device.');
+      return Notification.requestPermission().then(function (permission) {
+        if (permission !== 'granted') throw new Error('Notification permission was not granted.');
+        return pushRegistration().then(function (reg) { return reg.pushManager.getSubscription().then(function (current) {
+          return current || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64ToBytes(data.public_key) });
+        }); });
+      }).then(function (subscription) {
+        return api('/api/messages/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: subscription.toJSON() }) });
+      });
+    }).then(function () { setPushUi(true, true, false); toast('Message notifications enabled.'); })
+      .catch(function (error) { setPushUi(true, false, false); toast(error.message || 'Could not enable notifications.'); });
+  }
+  function disablePush() {
+    var button = pushButton(); if (button) button.disabled = true;
+    pushRegistration().then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (subscription) {
+      if (!subscription) return null;
+      return api('/api/messages/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: subscription.endpoint }) })
+        .then(function () { return subscription.unsubscribe(); });
+    }).then(function () { setPushUi(true, false, false); toast('Message notifications disabled.'); })
+      .catch(function (error) { setPushUi(true, true, false); toast(error.message || 'Could not disable notifications.'); });
+  }
+  function setupPushNotifications() {
+    var button = pushButton(); if (!button) return;
+    button.onclick = function () {
+      if (button.classList.contains('is-enabled')) disablePush(); else enablePush();
+    };
+    loadPushStatus();
+  }
+
   function setView(view) {
     state.view = view === 'thread' ? 'thread' : 'inbox';
     var inbox = $('gmMsgInbox'), thread = $('gmMsgThread');
@@ -205,6 +271,6 @@
   if (back) back.onclick = showInbox; if (retry) retry.onclick = loadInbox; if (composer) composer.onsubmit = send;
   if (attach && file) attach.onclick = function () { file.click(); }; if (file) file.onchange = function () { uploadFile(file.files && file.files[0]); };
   if (remove) remove.onclick = removeAttachment;
-  startInitial(); if (!BOOT.initialUsername) { showInbox(); }
+  setupPushNotifications(); if (BOOT.initialConversationId) { openThread(BOOT.initialConversationId); } else { startInitial(); if (!BOOT.initialUsername) { showInbox(); } }
   window.GMCommunityMessages = { openThread: openThread, loadInbox: loadInbox, setView: setView };
 }());
