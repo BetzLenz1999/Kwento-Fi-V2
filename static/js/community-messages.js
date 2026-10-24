@@ -3,6 +3,7 @@
   'use strict';
   var BOOT = window.GM_MESSAGES_BOOT || {};
   var state = { conversations: [], current: null, currentUser: null, timer: null, view: 'inbox', attachment: null };
+  var pushMode = 'checking', pushSyncToken = 0;
 
   function $(id) { return document.getElementById(id); }
   function api(path, options) {
@@ -56,57 +57,162 @@
     return bytes;
   }
   function pushRegistration() {
+    if (window.isSecureContext === false) return Promise.reject(new Error('Push notifications require a secure HTTPS connection.'));
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return Promise.reject(new Error('Push notifications are not supported on this device.'));
     return navigator.serviceWorker.getRegistration('/').then(function (reg) {
       return reg || navigator.serviceWorker.register('/static/service-worker.js', { scope: '/' });
     });
   }
-  function setPushUi(enabled, subscribed, busy) {
+  function pushSupported() {
+    return window.isSecureContext !== false && 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+  }
+  function verifyPushEndpoint(endpoint) {
+    return api('/api/messages/push/status', {
+      method: 'POST', body: JSON.stringify({ endpoint: endpoint })
+    });
+  }
+  function setPushUi(mode, busy, message, visible) {
     var panel = pushPanel(), button = pushButton(), status = pushStatusNode();
     if (!panel || !button) return;
-    panel.hidden = !enabled;
-    button.disabled = !!busy;
-    button.classList.toggle('is-enabled', !!subscribed);
-    button.textContent = busy ? 'Working…' : (subscribed ? 'Enabled' : 'Enable');
-    if (status) status.textContent = subscribed ? 'You will be notified when someone messages you.' : 'Get notified when someone messages you.';
+    pushMode = mode;
+    panel.hidden = visible === false || mode === 'disabled';
+    button.disabled = !!busy || mode === 'permission-blocked' || mode === 'unsupported';
+    button.classList.toggle('is-enabled', mode === 'enabled');
+    button.classList.toggle('is-busy', !!busy);
+    button.setAttribute('aria-pressed', mode === 'enabled' ? 'true' : 'false');
+    var labels = {
+      checking: 'Checking…', enabling: 'Setting up…', disabling: 'Turning off…',
+      enabled: 'Enabled', ready: 'Enable', 'setup-needed': 'Finish setup',
+      'permission-blocked': 'Permission blocked', unsupported: 'Unavailable',
+      'sync-error': 'Retry check'
+    };
+    button.textContent = busy ? (mode === 'enabling' ? 'Setting up…' : mode === 'disabling' ? 'Turning off…' : 'Checking…') : (labels[mode] || 'Enable');
+    var messages = {
+      checking: 'Checking this device’s notification setup…',
+      enabling: 'Complete the browser permission prompt to continue.',
+      disabling: 'Turning off notifications for this device…',
+      enabled: 'This device is registered and allowed to receive message notifications.',
+      ready: 'Get notified when someone messages you.',
+      'setup-needed': 'This device is not fully registered yet. Finish setup to turn notifications on.',
+      'permission-blocked': 'Browser permission is blocked. Allow notifications for this site in browser settings, then reload.',
+      unsupported: 'This browser or connection does not support Web Push notifications.',
+      'sync-error': 'Could not verify this device’s notification setup. Retry to check again.'
+    };
+    if (status) status.textContent = message || messages[mode] || messages.ready;
   }
   function loadPushStatus() {
+    var token = ++pushSyncToken;
+    setPushUi('checking', true, null, true);
     api('/api/messages/push/status').then(function (data) {
-      if (!data.enabled || !data.public_key) { setPushUi(false, false, false); return; }
+      if (token !== pushSyncToken) return;
+      if (!data || data.success !== true || !data.enabled || !data.public_key) {
+        setPushUi('disabled', false, null, false); return;
+      }
+      if (!pushSupported()) { setPushUi('unsupported', false, null, true); return; }
+      if (Notification.permission === 'denied') { setPushUi('permission-blocked', false, null, true); return; }
       return pushRegistration().then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (subscription) {
-        setPushUi(true, !!subscription, false);
+        if (token !== pushSyncToken) return;
+        if (!subscription) { setPushUi('ready', false, null, true); return; }
+        if (Notification.permission !== 'granted') {
+          setPushUi('setup-needed', false, 'A saved browser subscription is present, but permission is not granted. Enable permission and finish setup.', true);
+          return;
+        }
+        return verifyPushEndpoint(subscription.endpoint).then(function (status) {
+          if (token !== pushSyncToken) return;
+          if (status && status.success === true && status.enabled && status.subscribed === true) {
+            setPushUi('enabled', false, null, true);
+          } else {
+            setPushUi('setup-needed', false, null, true);
+          }
+        });
       });
-    }).catch(function () { setPushUi(false, false, false); });
+    }).catch(function () {
+      if (token === pushSyncToken) setPushUi('sync-error', false, null, true);
+    });
   }
   function enablePush() {
-    var button = pushButton(); if (button) button.disabled = true;
-    api('/api/messages/push/status').then(function (data) {
-      if (!data.enabled || !data.public_key) throw new Error('Notifications are not configured yet.');
-      if (!('Notification' in window)) throw new Error('Notifications are not supported on this device.');
-      return Notification.requestPermission().then(function (permission) {
-        if (permission !== 'granted') throw new Error('Notification permission was not granted.');
-        return pushRegistration().then(function (reg) { return reg.pushManager.getSubscription().then(function (current) {
-          return current || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64ToBytes(data.public_key) });
-        }); });
-      }).then(function (subscription) {
-        return api('/api/messages/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: subscription.toJSON() }) });
+    if (!pushSupported()) { setPushUi('unsupported', false, null, true); return; }
+    if (Notification.permission === 'denied') { setPushUi('permission-blocked', false, null, true); return; }
+    var token = ++pushSyncToken;
+    setPushUi('enabling', true, null, true);
+    var permissionRequest;
+    try {
+      // Must run synchronously in the button's click handler, before any fetch,
+      // so the browser still recognizes the request as a user gesture.
+      permissionRequest = Notification.requestPermission();
+    } catch (error) {
+      setPushUi('setup-needed', false, error.message || 'Could not request browser permission.', true);
+      toast(error.message || 'Could not request notification permission.');
+      return;
+    }
+    Promise.resolve(permissionRequest).then(function (permission) {
+      if (token !== pushSyncToken) return null;
+      if (permission !== 'granted' || Notification.permission !== 'granted') {
+        var blocked = permission === 'denied' || Notification.permission === 'denied';
+        var denied = new Error(blocked ? 'Allow notifications for this site in your browser settings, then reload.' : 'Notification permission was not granted.');
+        denied.permissionBlocked = blocked; throw denied;
+      }
+      return api('/api/messages/push/status').then(function (data) {
+        if (!data || data.success !== true || !data.enabled || !data.public_key) throw new Error('Notifications are not configured on the server yet.');
+        return pushRegistration().then(function (reg) {
+          return reg.pushManager.getSubscription().then(function (current) {
+            return current || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64ToBytes(data.public_key) });
+          });
+        });
       });
-    }).then(function () { setPushUi(true, true, false); toast('Message notifications enabled.'); })
-      .catch(function (error) { setPushUi(true, false, false); toast(error.message || 'Could not enable notifications.'); });
+    }).then(function (subscription) {
+      if (!subscription || token !== pushSyncToken) return null;
+      if (Notification.permission !== 'granted') throw new Error('Browser notification permission is no longer granted.');
+      var payload = subscription.toJSON();
+      if (!payload || !payload.endpoint || !payload.keys) throw new Error('The browser did not return a valid push subscription.');
+      return api('/api/messages/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription: payload }) }).then(function (result) {
+        if (!result || result.success !== true || result.enabled !== true || result.subscribed !== true) {
+          throw new Error((result && result.error) || 'The server could not verify this device subscription.');
+        }
+        return verifyPushEndpoint(subscription.endpoint).then(function (status) {
+          if (!status || status.success !== true || status.enabled !== true || status.subscribed !== true) {
+            throw new Error('Could not confirm that this device was registered. Please retry.');
+          }
+          return status;
+        });
+      });
+    }).then(function (result) {
+      if (!result || token !== pushSyncToken) return;
+      setPushUi('enabled', false, null, true);
+      toast('Message notifications enabled on this device.');
+    }).catch(function (error) {
+      if (token !== pushSyncToken) return;
+      var blocked = !!(error && error.permissionBlocked) || (pushSupported() && Notification.permission === 'denied');
+      setPushUi(blocked ? 'permission-blocked' : 'setup-needed', false,
+        (error && error.message) || 'Setup could not be verified. Please retry.', true);
+      toast((error && error.message) || 'Could not enable notifications. Please retry.');
+    });
   }
   function disablePush() {
-    var button = pushButton(); if (button) button.disabled = true;
+    var token = ++pushSyncToken;
+    setPushUi('disabling', true, null, true);
     pushRegistration().then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (subscription) {
-      if (!subscription) return null;
-      return api('/api/messages/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: subscription.endpoint }) })
-        .then(function () { return subscription.unsubscribe(); });
-    }).then(function () { setPushUi(true, false, false); toast('Message notifications disabled.'); })
-      .catch(function (error) { setPushUi(true, true, false); toast(error.message || 'Could not disable notifications.'); });
+      if (!subscription) throw new Error('This browser no longer has a local subscription.');
+      return api('/api/messages/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: subscription.endpoint }) }).then(function (result) {
+        if (!result || result.success !== true) throw new Error((result && result.error) || 'The server could not disable this device.');
+        return subscription.unsubscribe().catch(function () { return false; });
+      });
+    }).then(function () {
+      if (token !== pushSyncToken) return;
+      setPushUi('ready', false, 'Message notifications are off for this device.', true);
+      toast('Message notifications disabled on this device.');
+    }).catch(function (error) {
+      if (token !== pushSyncToken) return;
+      toast((error && error.message) || 'Could not disable notifications.');
+      loadPushStatus();
+    });
   }
   function setupPushNotifications() {
     var button = pushButton(); if (!button) return;
     button.onclick = function () {
-      if (button.classList.contains('is-enabled')) disablePush(); else enablePush();
+      if (pushMode === 'enabled') disablePush();
+      else if (pushMode === 'sync-error') loadPushStatus();
+      else enablePush();
     };
     loadPushStatus();
   }
