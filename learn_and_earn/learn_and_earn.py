@@ -411,6 +411,7 @@ class LearnEarnQuizManager:
         self.questions_per_quiz = 10
         self.time_per_question = 20
         self.max_reward_per_quiz = 2000
+        self.community_daily_learn_reward_per_correct = 1.0
         self.max_retries = 3
         self.cooldown_hours = 24  # 24-hour cooldown between rewarded quizzes
 
@@ -427,13 +428,16 @@ class LearnEarnQuizManager:
                 logger.warning("⚠️ Supabase not available - using default quiz settings")
                 return
 
-            result = supabase.table('quiz_settings').select('*').limit(1).execute()
+            result = supabase.table('quiz_settings').select('*').order('id').limit(1).execute()
 
             if result.data and len(result.data) > 0:
                 settings = result.data[0]
                 self.questions_per_quiz = settings.get('questions_per_quiz', 10)
                 self.time_per_question = settings.get('time_per_question', 20)
                 self.max_reward_per_quiz = settings.get('max_reward_per_quiz', 2000)
+                self.community_daily_learn_reward_per_correct = float(
+                    settings.get('community_daily_learn_reward_per_correct', 1) or 0
+                )
                 self.cooldown_hours = max(1, int(settings.get('cooldown_hours',24)))
                 logger.info(f"✅ Loaded quiz settings: {self.questions_per_quiz} questions, {self.time_per_question}s per question, {self.max_reward_per_quiz} G$ max reward, {self.cooldown_hours}h cooldown")
             else:
@@ -442,6 +446,7 @@ class LearnEarnQuizManager:
                     'questions_per_quiz': 10,
                     'time_per_question': 20,
                     'max_reward_per_quiz': 2000,
+                    'community_daily_learn_reward_per_correct': 1,
                     'cooldown_hours': 24
                 }
                 supabase.table('quiz_settings').insert(default_settings).execute()
@@ -454,11 +459,14 @@ class LearnEarnQuizManager:
             'questions_per_quiz': self.questions_per_quiz,
             'time_per_question': self.time_per_question,
             'max_reward_per_quiz': self.max_reward_per_quiz,
+            'community_daily_learn_reward_per_correct': self.community_daily_learn_reward_per_correct,
             'cooldown_hours': self.cooldown_hours,
             'reward_per_correct': self.reward_per_correct
         }
 
-    def update_quiz_settings(self, questions_per_quiz=None, time_per_question=None, max_reward_per_quiz=None, cooldown_hours=None):
+    def update_quiz_settings(self, questions_per_quiz=None, time_per_question=None,
+                             max_reward_per_quiz=None, cooldown_hours=None,
+                             community_daily_learn_reward_per_correct=None):
         try:
             supabase = get_supabase_client()
             if not supabase:
@@ -474,6 +482,10 @@ class LearnEarnQuizManager:
             if max_reward_per_quiz is not None:
                 update_data['max_reward_per_quiz'] = max_reward_per_quiz
                 self.max_reward_per_quiz = max_reward_per_quiz
+            if community_daily_learn_reward_per_correct is not None:
+                reward_rate = round(float(community_daily_learn_reward_per_correct), 4)
+                update_data['community_daily_learn_reward_per_correct'] = reward_rate
+                self.community_daily_learn_reward_per_correct = reward_rate
             if cooldown_hours is not None:
                 update_data['cooldown_hours'] = max(1, int(cooldown_hours))
                 self.cooldown_hours = max(1, int(cooldown_hours))
@@ -482,7 +494,7 @@ class LearnEarnQuizManager:
                 return {'success': False, 'error': 'No settings to update'}
 
             # Update or insert settings
-            result = supabase.table('quiz_settings').select('*').limit(1).execute()
+            result = supabase.table('quiz_settings').select('*').order('id').limit(1).execute()
 
             if result.data and len(result.data) > 0:
                 # Update existing settings
