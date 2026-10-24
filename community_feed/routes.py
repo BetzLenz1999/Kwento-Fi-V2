@@ -223,6 +223,22 @@ def api_rewards():
     return jsonify(svc.rewards_summary(wallet))
 
 
+@community_feed_bp.route("/api/daily-learn", methods=["GET"])
+def api_daily_learn():
+    """Return today's server-published two-question snapshot.
+
+    This endpoint is intentionally independent from the full Learn & Earn page
+    maintenance flag. The snapshot service owns the Community kill switch and
+    strips answer keys before the payload reaches the browser.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+    from .daily_learn import get_daily_snapshot, public_snapshot
+
+    result = public_snapshot(get_daily_snapshot())
+    return jsonify(result), (200 if result.get("success") else 503)
+
+
 @community_feed_bp.route("/api/admin/reward-rates", methods=["GET"])
 def api_admin_reward_rates():
     """The rates in force, plus the bounds the editor must respect.
