@@ -712,9 +712,9 @@ function feedFetch(handler, feedRows) {
        order.length === 4, JSON.stringify(order));
     ok('the caption sits BELOW the media', at('cf-media') < at('cf-caption'),
        JSON.stringify(order));
-    ok('actions and summary follow the caption in order',
-       at('cf-caption') < at('cf-card-actions')
-         && at('cf-card-actions') < at('cf-summary'),
+    ok('summary and actions follow the caption in order',
+       at('cf-caption') < at('cf-summary')
+         && at('cf-summary') < at('cf-card-actions'),
        JSON.stringify(order));
     const picker = card.querySelector('.cf-reaction-picker');
     ok('the picker is inside the action row and hidden by default',
@@ -1805,13 +1805,13 @@ function feedFetch(handler, feedRows) {
       enabled: true, is_guest: false, balance_gd: 47,
       min_payout_gd: 500, progress: 9.4, status: 'pending', can_withdraw: false,
       show_balance: true,
-      rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
+      rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1, daily_learn_per_correct: 1.5 },
     });
     ok('the earn card is revealed when enabled', store.cfEarn.hidden === false);
     ok('the earn card shows the server balance',
        store.cfEarnAmount.textContent === '47', String(store.cfEarnAmount.textContent));
     ok('the earn card keeps a status chip',
-       store.cfEarnChip.textContent === 'Pending',
+       store.cfEarnChip.textContent === 'Pending to withdraw',
        String(store.cfEarnChip.textContent));
     ok('the earn card names the threshold',
        /500 G\$/.test(store.cfEarnGoal.textContent),
@@ -1840,7 +1840,7 @@ function feedFetch(handler, feedRows) {
        store.cfEarnRates.hidden === false
          && store.cfEarnRatesToggle.getAttribute('aria-expanded') === 'true');
     const rateRows = store.cfEarnRates.children.map(li => li.textContent);
-    ok('the earn card lists all four rates', rateRows.length === 4,
+    ok('the earn card lists all five rates', rateRows.length === 5,
        JSON.stringify(rateRows));
     ok('the commenter rate is 1.5',
        rateRows.some(t => /Comment on a post/.test(t) && /\+1\.5 G\$/.test(t)),
@@ -1854,6 +1854,9 @@ function feedFetch(handler, feedRows) {
     ok('the given-reaction rate is 0.1',
        rateRows.some(t => /You react to a post/.test(t) && /\+0\.1 G\$/.test(t)),
        JSON.stringify(rateRows));
+    ok('the Daily Learn rate is per correct answer',
+       rateRows.some(t => /Daily Learn \(per correct answer\)/.test(t) && /\+1\.5 G\$/.test(t)),
+       JSON.stringify(rateRows));
     ok('the rates list remains revealed after opening',
        store.cfEarnRates.hidden === false);
     ok('the progress bar reflects the server progress',
@@ -1865,8 +1868,8 @@ function feedFetch(handler, feedRows) {
     ok('the pending state does not offer a withdrawal action',
        !/ready to withdraw/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
-    ok('a member is told Community G$ cannot be withdrawn yet',
-       /cannot be withdrawn yet/i.test(store.cfEarnNote.textContent),
+    ok('a member is told withdrawals are not live',
+       /withdrawals are not live yet/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
   }
 
@@ -1877,7 +1880,7 @@ function feedFetch(handler, feedRows) {
       enabled: true, is_guest: false, balance_gd: 47,
       min_payout_gd: 500, progress: 9.4, status: 'pending', can_withdraw: false,
       show_balance: false,
-      rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
+      rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1, daily_learn_per_correct: 1.5 },
     });
     ok('an explicit opt-out hides the balance block',
        store.cfEarnBalance.hidden === true,
@@ -1894,15 +1897,15 @@ function feedFetch(handler, feedRows) {
        String(store.cfEarnBalance.hidden));
   }
 
-  // ── 20b. The card flips to Ready at the threshold ────────────────────────
+  // ── 20b. Reaching the threshold does not imply withdrawals are live ──────
   {
     const { api, store } = run({ boot: MEMBER });
     api._internals.renderRewards({
       enabled: true, is_guest: false, balance_gd: 512,
       min_payout_gd: 500, progress: 100, status: 'ready', can_withdraw: false,
     });
-    ok('a balance at the threshold flips the chip to Ready',
-       store.cfEarnChip.textContent === 'Ready',
+    ok('a balance at the threshold remains pending while withdrawals are unavailable',
+       store.cfEarnChip.textContent === 'Pending to withdraw',
        String(store.cfEarnChip.textContent));
     ok('a reached goal says so',
        /reached/i.test(store.cfEarnGoal.textContent),
@@ -1937,8 +1940,8 @@ function feedFetch(handler, feedRows) {
     ok('the note says the feed still works, so it does not read as a lockout',
        /still post/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
-    ok('the unverified-wallet note explains withdrawal is unavailable',
-       /cannot be withdrawn yet/i.test(store.cfEarnNote.textContent),
+    ok('the unverified-wallet note does not promise withdrawal access',
+       !/withdraw/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
   }
 
@@ -1961,8 +1964,8 @@ function feedFetch(handler, feedRows) {
     ok('a guest does not get the personal balance block',
        store.cfEarnBalance.hidden === true,
        String(store.cfEarnBalance.hidden));
-    ok('a guest is told Community G$ cannot be withdrawn yet',
-       /cannot be withdrawn yet/i.test(store.cfEarnNote.textContent),
+    ok('a guest is told withdrawals are not live',
+       /withdrawals are not live yet/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
 
     api._internals.renderRewards({ enabled: false });
@@ -1975,7 +1978,7 @@ function feedFetch(handler, feedRows) {
     api._internals.renderRewards({
       enabled: true, is_guest: false, balance_gd: 47, min_payout_gd: 500,
       progress: 9.4, status: 'pending', can_withdraw: false,
-      rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
+      rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1, daily_learn_per_correct: 1.5 },
     });
     const text = store.cfEarn.textContent;
     ok('no wallet address reaches the earn card',
@@ -2003,7 +2006,7 @@ function feedFetch(handler, feedRows) {
                 balance_gd: balances[idx] !== undefined ? balances[idx] : 11,
                 min_payout_gd: 500, progress: 2.0, status: 'pending',
                 can_withdraw: false,
-                rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1 },
+                rates: { comment_in: 1.5, comment_out: 2.5, reaction_out: 0.5, reaction_in: 0.1, daily_learn_per_correct: 1.5 },
               }),
             }));
           });
