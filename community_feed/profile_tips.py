@@ -12,6 +12,10 @@ from . import service as svc
 logger = logging.getLogger(__name__)
 CELO_CHAIN_ID = int(os.getenv("CELO_MAINNET_CHAIN_ID", "42220"))
 CELO_RPC = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
+CELO_RPC_FALLBACKS = [u.strip() for u in os.getenv(
+    "CELO_RPC_FALLBACKS",
+    "https://forno.celo.org,https://rpc.ankr.com/celo,https://celo.drpc.org",
+).split(",") if u.strip()]
 MAX_AMOUNT = get_env_decimal("COMMUNITY_PROFILE_TIP_MAX_AMOUNT", "1000000")
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 TRANSFER_SELECTOR = "a9059cbb"
@@ -78,35 +82,58 @@ def _hex(value):
     raw = value.hex() if hasattr(value, "hex") else str(value)
     return raw if raw.startswith("0x") else "0x" + raw
 
+def _celo_rpc_urls():
+    """Return the configured primary followed by unique Celo fallbacks."""
+    urls = [CELO_RPC]
+    for url in CELO_RPC_FALLBACKS:
+        if url not in urls:
+            urls.append(url)
+    return urls
+
 def verify(tx_hash, token, sender, recipient, amount):
     meta = TOKENS.get(token); parsed = parse_amount(amount)
     if not meta or parsed is None: return {"ok":False, "error":"Invalid transfer details."}
     expected = _wei(parsed, meta["decimals"])
-    try:
-        from web3 import Web3
-        w3 = Web3(Web3.HTTPProvider(CELO_RPC, request_kwargs={"timeout":12}))
-        receipt = w3.eth.get_transaction_receipt(tx_hash)
-        if not receipt or receipt.get("status") != 1: return {"ok":False, "error":"Transaction is not confirmed successfully on Celo."}
-        sender, recipient = sender.lower(), recipient.lower()
-        if meta["native"]:
-            tx = w3.eth.get_transaction(tx_hash)
-            if (tx.get("from") or "").lower() != sender or (tx.get("to") or "").lower() != recipient:
-                return {"ok":False, "error":"The transaction sender or recipient does not match this profile."}
-            if int(tx.get("value") or 0) != expected: return {"ok":False, "error":"The confirmed amount does not match."}
-            return {"ok":True}
-        received = 0
-        for log in receipt.get("logs") or []:
-            if (log.get("address") or "").lower() != meta["address"].lower(): continue
-            topics = log.get("topics") or []
-            if len(topics) < 3 or _hex(topics[0]).lower() != TRANSFER_TOPIC: continue
-            frm, to = "0x" + _hex(topics[1])[-40:], "0x" + _hex(topics[2])[-40:]
-            if frm.lower() == sender and to.lower() == recipient:
-                received += int(_hex(log.get("data") or "0x0"), 16)
-        if received != expected: return {"ok":False, "error":"No exact matching token transfer was confirmed."}
-        return {"ok":True}
-    except Exception as exc:
-        logger.warning("profile tip verification failed: %s", exc)
-        return {"ok":False, "error":"Transaction is still confirming or the Celo RPC is temporarily unavailable."}
+    from web3 import Web3
+    saw_pending = False
+    last_error = None
+    sender, recipient = sender.lower(), recipient.lower()
+    for rpc_url in _celo_rpc_urls():
+        try:
+            w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout":12}))
+            receipt = w3.eth.get_transaction_receipt(tx_hash)
+            if not receipt:
+                saw_pending = True
+                continue
+            if receipt.get("status") != 1:
+                return {"ok":False, "status":"reverted", "error":"The Celo transaction was reverted. No successful transfer was detected."}
+            if meta["native"]:
+                tx = w3.eth.get_transaction(tx_hash)
+                if (tx.get("from") or "").lower() != sender or (tx.get("to") or "").lower() != recipient:
+                    return {"ok":False, "status":"mismatch", "error":"The transaction sender or recipient does not match this profile."}
+                if int(tx.get("value") or 0) != expected:
+                    return {"ok":False, "status":"mismatch", "error":"The confirmed amount does not match."}
+                return {"ok":True, "status":"confirmed"}
+            received = 0
+            for log in receipt.get("logs") or []:
+                if (log.get("address") or "").lower() != meta["address"].lower(): continue
+                topics = log.get("topics") or []
+                if len(topics) < 3 or _hex(topics[0]).lower() != TRANSFER_TOPIC: continue
+                frm, to = "0x" + _hex(topics[1])[-40:], "0x" + _hex(topics[2])[-40:]
+                if frm.lower() == sender and to.lower() == recipient:
+                    received += int(_hex(log.get("data") or "0x0"), 16)
+            if received != expected:
+                return {"ok":False, "status":"mismatch", "error":"No exact matching token transfer was confirmed."}
+            return {"ok":True, "status":"confirmed"}
+        except Exception as exc:
+            last_error = exc
+            logger.warning("profile tip verification failed on %s: %s", rpc_url, exc)
+    if saw_pending:
+        return {"ok":False, "status":"pending", "retryable":True,
+                "error":"Transaction submitted. Waiting for Celo confirmation."}
+    logger.warning("profile tip verification unavailable after %d RPCs: %s", len(_celo_rpc_urls()), last_error)
+    return {"ok":False, "status":"rpc_unavailable", "retryable":True,
+            "error":"Celo confirmation is temporarily unavailable. We will keep checking."}
 
 def record(sender_wallet, username, token, amount, tx_hash):
     """Verify a transfer and return its receipt details without writing state."""
@@ -117,7 +144,9 @@ def record(sender_wallet, username, token, amount, tx_hash):
     recipient, name = _username_wallet(username)
     checked = verify(tx_hash, prepared["token"], sender_wallet, recipient, prepared["amount"])
     if not checked.get("ok"):
-        return {"success":False, "error":checked.get("error"), "code":"verify"}
+        status = checked.get("status") or "verify_failed"
+        return {"success":False, "status":status, "retryable":bool(checked.get("retryable")),
+                "error":checked.get("error"), "code":status}
     return {"success":True, "verified":True, "tip":{"token":prepared["token"], "token_label":prepared["token_label"],
             "amount":prepared["amount"], "recipient_username":name, "tx_hash":tx_hash,
             "explorer_url":"https://celoscan.io/tx/"+tx_hash}}
