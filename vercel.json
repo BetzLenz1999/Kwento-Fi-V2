@@ -8,5 +8,11 @@
       "excludeFiles": "{tests/**,docs/**,scripts/**,contracts/**,node_modules/**,.git/**}",
       "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/community/api/cron/daily-learn-reconcile",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }
