@@ -1,4 +1,3 @@
-
 /* GoodMarket shared public profile — a member's posts + media ALBUM.
 
    Used by BOTH the Community Feed profile (`/community/u/<username>`) and the
@@ -625,6 +624,9 @@
 
     // ── Send Money / Profile tip ──────────────────────────────────────────
     var tipBusy = false;
+    var tipPendingHash = null;
+    var tipPendingMeta = null;
+    var TIP_PENDING_KEY = 'gm_profile_tip_pending_v1';
     function tipStatus(text, error) { var node=$('cpTipStatus'); if (!node) return; node.textContent=text||''; node.className='cp-money-status'+(error?' is-error':''); }
     function resetTipSuccess() {
         var panel = $('cpTipSuccess');
@@ -633,6 +635,41 @@
         if (summary) summary.textContent = '';
         var link = $('cpTipSuccessLink');
         if (link) { link.hidden = false; link.removeAttribute('href'); }
+        var pending = $('cpTipPending');
+        if (pending) pending.hidden = true;
+        var pendingLink = $('cpTipPendingLink');
+        if (pendingLink) pendingLink.removeAttribute('href');
+    }
+    function savePendingTip(meta, hash) {
+        meta.hash = hash;
+        tipPendingMeta = meta;
+        tipPendingHash = hash;
+        try { sessionStorage.setItem(TIP_PENDING_KEY, JSON.stringify({ meta: meta, hash: hash })); } catch (_) {}
+    }
+    function clearPendingTip() {
+        tipPendingMeta = null;
+        tipPendingHash = null;
+        try { sessionStorage.removeItem(TIP_PENDING_KEY); } catch (_) {}
+    }
+    function showTipPending(hash, message) {
+        var panel = $('cpTipPending');
+        var summary = $('cpTipPendingSummary');
+        var link = $('cpTipPendingLink');
+        if (summary) summary.textContent = message || 'Waiting for Celo confirmation. Your funds were not sent again.';
+        if (link) { link.href = 'https://celoscan.io/tx/' + hash; link.hidden = false; }
+        if (panel) panel.hidden = false;
+    }
+    function restorePendingTip() {
+        try {
+            var raw = sessionStorage.getItem(TIP_PENDING_KEY);
+            var saved = raw ? JSON.parse(raw) : null;
+            if (saved && saved.hash && saved.meta && saved.meta.username === USERNAME) {
+                savePendingTip(saved.meta, saved.hash);
+                showTipPending(saved.hash, 'A previous transfer is still awaiting confirmation.');
+                return true;
+            }
+        } catch (_) {}
+        return false;
     }
     function showTipSuccess(tip) {
         var panel = $('cpTipSuccess');
@@ -651,7 +688,12 @@
     function openSendMoney() {
         if (!BOOT.wallet) { requiresLogin(); return; }
         var m = $('cpSendMoneyModal');
-        if (m) { m.hidden = false; document.body.classList.add('cp-money-open'); resetTipSuccess(); }
+        if (m) {
+            m.hidden = false;
+            document.body.classList.add('cp-money-open');
+            resetTipSuccess();
+            restorePendingTip();
+        }
     }
     function closeSendMoney() {
         var m = $('cpSendMoneyModal');
@@ -765,7 +807,95 @@
         if(method!=='local'){var chain=await provider.request({method:'eth_chainId'}).catch(function(){return null;});if(String(chain||'').toLowerCase()!=='0xa4ec'){try{await provider.request({method:'wallet_switchEthereumChain',params:[{chainId:'0xa4ec'}]});}catch(e){if(e&&e.code===4902)await provider.request({method:'wallet_addEthereumChain',params:[{chainId:'0xa4ec',chainName:'Celo Mainnet',nativeCurrency:{name:'CELO',symbol:'CELO',decimals:18},rpcUrls:['https://forno.celo.org'],blockExplorerUrls:['https://celoscan.io']}]});else throw e;}}}
         var tx={from:from,to:prep.to,data:prep.data||'0x',value:prep.value||'0x0'}; if(method==='local')tx.chainId=prep.chain_id; if(provider.isMiniPay&&method!=='local'&&prep.minipay_fee_currencies)tx.feeCurrency=prep.minipay_fee_currencies.cusd; return provider.request({method:'eth_sendTransaction',params:[tx]});
     }
-    async function sendMoney(){if(tipBusy)return;if(!BOOT.wallet){requiresLogin();return;}var token=$('cpTipToken')&&$('cpTipToken').value,amount=$('cpTipAmount')&&$('cpTipAmount').value.trim(),button=$('cpTipSubmit');if(!amount||Number(amount)<=0){tipStatus('Enter a valid amount.',true);return;}tipBusy=true;if(button)button.disabled=true;try{tipStatus('Preparing transfer…');var pr=await api('/community/api/profile/'+encodeURIComponent(USERNAME)+'/tip/prepare',{method:'POST',body:JSON.stringify({token:token,amount:amount})});if(!pr.ok||!pr.data.success)throw new Error((pr.data&&pr.data.error)||'Could not prepare transfer.');tipStatus('Confirm the transaction in your wallet…');var provider=await profileSignerProvider(),hash=await profileSendTransaction(provider,pr.data);if(!hash)throw new Error('Your wallet did not return a transaction hash.');tipStatus('Verifying on Celo…');var cf=await api('/community/api/profile/'+encodeURIComponent(USERNAME)+'/tip/confirm',{method:'POST',body:JSON.stringify({token:token,amount:amount,tx_hash:hash})});if(!cf.ok||!cf.data.success)throw new Error((cf.data&&cf.data.error)||'Transfer verification failed.');var saved=await api('/api/messages/profile/'+encodeURIComponent(USERNAME)+'/onchain-transfer',{method:'POST',body:JSON.stringify({token:token,amount:amount,tx_hash:hash})}).catch(function(){return {ok:false};});showTipSuccess(cf.data.tip);if(!saved.ok)tipStatus('Transfer confirmed, but it could not be added to Messages.',true);if($('cpTipAmount'))$('cpTipAmount').value='';}catch(e){tipStatus((e&&e.message)||'Transfer failed. Please try again.',true);}finally{tipBusy=false;if(button)button.disabled=false;}}
+    async function confirmTipOnce(meta, hash) {
+        var result = await api('/community/api/profile/' + encodeURIComponent(USERNAME) + '/tip/confirm', {
+            method: 'POST', body: JSON.stringify({ token: meta.token, amount: meta.amount, tx_hash: hash })
+        });
+        if (result.data && result.data.success) return { kind: 'confirmed', data: result.data };
+        var status = result.data && result.data.status;
+        if (status === 'pending' || status === 'rpc_unavailable' || (result.data && result.data.retryable)) {
+            return { kind: 'retry', message: (result.data && result.data.error) || 'Waiting for Celo confirmation.' };
+        }
+        var error = new Error((result.data && result.data.error) || 'Transfer verification failed.');
+        error.permanent = status === 'reverted' || status === 'mismatch' || status === 'verify_failed';
+        throw error;
+    }
+    async function saveConfirmedTip(meta, result) {
+        var saved = await api('/api/messages/profile/' + encodeURIComponent(USERNAME) + '/onchain-transfer', {
+            method: 'POST', body: JSON.stringify({ token: meta.token, amount: meta.amount, tx_hash: meta.hash })
+        }).catch(function () { return { ok: false }; });
+        clearPendingTip();
+        showTipSuccess(result.data.tip);
+        if (!saved.ok) tipStatus('Transfer confirmed, but it could not be added to Messages.', true);
+        if ($('cpTipAmount')) $('cpTipAmount').value = '';
+    }
+    async function pollTipConfirmation(meta, hash) {
+        var delays = [0, 2000, 4000, 7000, 12000, 20000];
+        for (var i = 0; i < delays.length; i++) {
+            if (delays[i]) await new Promise(function (resolve) { setTimeout(resolve, delays[i]); });
+            tipStatus(i ? 'Still checking Celo…' : 'Checking Celo confirmation…');
+            var result = await confirmTipOnce(meta, hash);
+            if (result.kind === 'confirmed') return result;
+            showTipPending(hash, result.message);
+        }
+        showTipPending(hash, 'Confirmation is taking longer than usual. Your funds were not sent again.');
+        tipStatus('Transaction submitted. You can check again without sending another transfer.');
+        return { kind: 'pending' };
+    }
+    async function checkTipStatus() {
+        if (tipBusy || !tipPendingHash || !tipPendingMeta) return;
+        tipBusy = true;
+        var button = $('cpTipCheck');
+        if (button) button.disabled = true;
+        try {
+            var result = await pollTipConfirmation(tipPendingMeta, tipPendingHash);
+            if (result.kind === 'confirmed') await saveConfirmedTip(tipPendingMeta, result);
+        } catch (e) {
+            if (e && e.permanent) {
+                clearPendingTip();
+                resetTipSuccess();
+                tipStatus(e.message || 'Transfer verification failed.', true);
+            } else {
+                showTipPending(tipPendingHash, (e && e.message) || 'Confirmation is still unavailable.');
+            }
+        } finally {
+            tipBusy = false;
+            if (button) button.disabled = false;
+        }
+    }
+    async function sendMoney() {
+        if (tipBusy) return;
+        if (tipPendingHash) { checkTipStatus(); return; }
+        if (!BOOT.wallet) { requiresLogin(); return; }
+        var token = $('cpTipToken') && $('cpTipToken').value;
+        var amount = $('cpTipAmount') && $('cpTipAmount').value.trim();
+        var button = $('cpTipSubmit');
+        if (!amount || Number(amount) <= 0) { tipStatus('Enter a valid amount.', true); return; }
+        tipBusy = true;
+        if (button) button.disabled = true;
+        try {
+            tipStatus('Preparing transfer…');
+            var pr = await api('/community/api/profile/' + encodeURIComponent(USERNAME) + '/tip/prepare', {
+                method: 'POST', body: JSON.stringify({ token: token, amount: amount })
+            });
+            if (!pr.ok || !pr.data.success) throw new Error((pr.data && pr.data.error) || 'Could not prepare transfer.');
+            tipStatus('Confirm the transaction in your wallet…');
+            var provider = await profileSignerProvider();
+            var hash = await profileSendTransaction(provider, pr.data);
+            if (!hash) throw new Error('Your wallet did not return a transaction hash.');
+            var meta = { token: token, amount: amount, username: USERNAME };
+            savePendingTip(meta, hash);
+            showTipPending(hash, 'Transaction submitted. Waiting for Celo confirmation.');
+            var result = await pollTipConfirmation(meta, hash);
+            if (result.kind === 'confirmed') await saveConfirmedTip(meta, result);
+        } catch (e) {
+            if (e && e.permanent) { clearPendingTip(); resetTipSuccess(); }
+            tipStatus((e && e.message) || 'Transfer failed. Please try again.', true);
+        } finally {
+            tipBusy = false;
+            if (button) button.disabled = false;
+        }
+    }
     // ── Init ───────────────────────────────────────────────────────────────
 
     function init() {
@@ -785,6 +915,7 @@
         openSendMoney: openSendMoney,
         closeSendMoney: closeSendMoney,
         sendMoney: sendMoney,
+        checkTipStatus: checkTipStatus,
         init: init,
         showTab: showTab,
         loadMorePosts: loadMorePosts,
