@@ -51,6 +51,9 @@
     var _commentCache = {};    // post_id -> [comments]
     var _earnBusy = false;     // one in-flight rewards fetch at a time
     var _earnDirty = false;    // a refresh arrived while one was in flight
+    var _dailyPrompt = null;
+    var _promptModeId = null;
+    var _promptFilterId = null;
 
     // ── Small helpers ──────────────────────────────────────────────────────
 
@@ -689,6 +692,69 @@
         updatePostButton();
     }
 
+    function setDailyPrompt(prompt) { _dailyPrompt = prompt || null; }
+
+    function answerPrompt() {
+        if (!_dailyPrompt || !_dailyPrompt.id) return;
+        if (!WALLET) { requiresLogin(); return; }
+        if (needsUsername()) {
+            focusUsernameInput();
+            toast('Please choose a username before answering.', 'error');
+            return;
+        }
+        if (_dailyPrompt.has_responded) {
+            toast('You have already answered today’s prompt.', 'error');
+            return;
+        }
+        _promptModeId = String(_dailyPrompt.id);
+        var context = $('cfPromptContext');
+        var contextText = $('cfPromptContextText');
+        var input = $('cfCaption');
+        if (context) context.hidden = false;
+        if (contextText) contextText.textContent = 'Answering: ' + (_dailyPrompt.title || 'today’s prompt');
+        if (input) {
+            input.placeholder = _dailyPrompt.composer_placeholder || 'Write your response to today’s prompt…';
+            input.focus();
+            input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+
+    function cancelPromptMode() {
+        _promptModeId = null;
+        var context = $('cfPromptContext');
+        var input = $('cfCaption');
+        if (context) context.hidden = true;
+        if (input) input.placeholder = 'What happened today?';
+    }
+
+    function seePromptResponses() {
+        if (!_dailyPrompt || !_dailyPrompt.id) return;
+        _promptFilterId = _promptFilterId === String(_dailyPrompt.id)
+            ? null : String(_dailyPrompt.id);
+        var button = $('cfSeePromptBtn');
+        if (button) button.textContent = _promptFilterId ? 'Show all posts' : 'See responses';
+        loadFeed(true);
+        var feed = $('cfFeed');
+        if (feed) feed.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function prefillDailyLearnReflection() {
+        if (!WALLET) { requiresLogin(); return; }
+        // Sharing a learning reflection is not an official Daily Prompt
+        // response, even if the member was previously composing one.
+        cancelPromptMode();
+        var input = $('cfCaption');
+        if (!input) { toast('Open the Community feed to share your result.', 'error'); return; }
+        var reflection = 'I completed today’s Daily Learn. One thing I’ll remember: ';
+        input.value = input.value.trim()
+            ? input.value.trimEnd() + '\n\n' + reflection
+            : reflection;
+        updateCounter();
+        updatePostButton();
+        input.focus();
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
     function submitPost() {
         if (!WALLET) { requiresLogin(); return; }
         if (_posting) return;
@@ -733,9 +799,11 @@
         // attach their public URLs to the media descriptors.
         uploadPosters(done).then(function (posters) {
             posters.forEach(function (url, index) { media[index].poster_url = url; });
+            var postBody = { caption: caption, media: media };
+            if (_promptModeId) postBody.prompt_id = _promptModeId;
             return api('/community/api/posts', {
                 method: 'POST',
-                body: JSON.stringify({ caption: caption, media: media }),
+                body: JSON.stringify(postBody),
             });
         }).then(function (result) {
             if (!result.data || !result.data.success) {
@@ -744,9 +812,13 @@
             _posting = false;
             setUploadStatus('');
             resetComposer();
+            cancelPromptMode();
             // Prepend from the local object — no refetch needed.
             _feed.unshift(result.data.post);
             renderFeed();
+            window.dispatchEvent(new CustomEvent('gm:community-post-created', {
+                detail: { prompt_id: result.data.post && result.data.post.prompt_id }
+            }));
             toast('Posted!', 'ok');
         }).catch(function (error) {
             _posting = false;
@@ -1230,6 +1302,25 @@
             if (exactTime) time.title = exactTime;
         }
         who.appendChild(time);
+        var earnedBadges = Array.isArray(post.badges) ? post.badges.slice(0, 3) : [];
+        if (earnedBadges.length) {
+            var badgeRow = el('span', 'cf-badge-row');
+            var badgeIcons = {
+                first_post: '✍', first_reaction: '♥', community_voice: '🎤',
+                helpful_member: '✦', consistent_contributor: '✓',
+                community_builder: '◈', daily_learner: '▣'
+            };
+            earnedBadges.forEach(function (badge) {
+                if (!badge || !badge.name) return;
+                var chip = el('span', 'cf-badge-chip');
+                chip.title = badge.description || badge.name;
+                chip.setAttribute('aria-label', badge.name + ': ' + (badge.description || 'Community badge'));
+                chip.appendChild(el('span', 'cf-badge-icon', badgeIcons[badge.key] || '✦'));
+                chip.appendChild(el('span', 'cf-badge-name', badge.name));
+                badgeRow.appendChild(chip);
+            });
+            if (badgeRow.childNodes.length) who.appendChild(badgeRow);
+        }
         profile.appendChild(who);
         head.appendChild(profile);
         // Follow pill: only for ANOTHER member's post. Your own post never
@@ -1324,12 +1415,8 @@
             });
         }
 
-        // Keep all engagement controls together directly below the caption.
-        // The comment button appends its expanded thread into this same group.
-        var engagement = el('div', 'cf-engagement');
-        engagement.appendChild(buildActionRow(post, engagement));
-
-        // Reaction + comment summary
+        // Reaction + comment counts are post metadata and sit ABOVE the action
+        // row, keeping the separate engagement controls directly below them.
         var summary = el('div', 'cf-summary');
         var left = el('div', 'cf-summary-left');
         left.appendChild(buildSummaryEmojis(post));
@@ -1341,8 +1428,11 @@
         summary.appendChild(el('span', null, countLabel(post.comment_count)
             ? countLabel(post.comment_count) + ' comment' + (post.comment_count === 1 ? '' : 's')
             : ''));
-        engagement.appendChild(summary);
+        body.appendChild(summary);
 
+        // The comment button appends its expanded thread into this same group.
+        var engagement = el('div', 'cf-engagement');
+        engagement.appendChild(buildActionRow(post, engagement));
         body.appendChild(engagement);
 
         card.appendChild(body);
@@ -1760,7 +1850,7 @@
             } else if (data.eligible === false) {
                 leadEl.textContent = 'Verify your identity to start earning G$.';
             } else if (showBalance && minimum > 0 && amount >= minimum) {
-                leadEl.textContent = 'You reached the payout goal — keep earning.';
+                leadEl.textContent = 'You reached the 500 G$ goal. Withdrawals are pending vault review.';
             } else {
                 leadEl.textContent = 'Earn G$ when the community reacts to your '
                     + 'posts and comments.';
@@ -1787,13 +1877,13 @@
         if (chip) {
             // The chip is ALWAYS present: a bare number invites "I can send
             // this", which is false — it is not spendable and not on-chain.
-            var state = data.status === 'ready' ? 'ready'
-                : (data.status === 'guest' ? 'guest'
-                    : (data.status === 'unverified' ? 'unverified' : 'pending'));
+            var state = data.is_guest ? 'guest'
+                : (data.eligible === false ? 'unverified'
+                    : (showBalance && minimum > 0 && amount >= minimum ? 'ready' : 'pending'));
             chip.setAttribute('data-state', state);
-            chip.textContent = state === 'ready' ? 'Ready'
+            chip.textContent = state === 'ready' ? 'Pending vault review'
                 : (state === 'guest' ? 'Guest'
-                    : (state === 'unverified' ? 'Verify to earn' : 'Pending'));
+                    : (state === 'unverified' ? 'Verify to earn' : 'Pending to withdraw'));
         }
 
         // The rates come from the server payload, never hard-coded, so the page
@@ -1809,6 +1899,7 @@
                     ['Someone comments on your post', rates.comment_out],
                     ['Someone reacts to your post', rates.reaction_out],
                     ['You react to a post', rates.reaction_in],
+                    ['Complete Daily Learn (2/2)', rates.daily_learn_completion],
                 ];
                 ratesEl.textContent = '';
                 rows.forEach(function (row) {
@@ -1857,16 +1948,43 @@
 
         var note = $('cfEarnNote');
         if (note) {
-            // v1 has no payout path: say so plainly rather than showing a dead
-            // button. The threshold is a goal, not a promise of a transfer.
             note.hidden = false;
-            note.textContent = data.can_withdraw
-                ? 'Ready to withdraw to your wallet.'
-                : (data.eligible === false
-                    ? 'Only verified wallets earn Community G$. Community G$ cannot be withdrawn yet. You can still post, comment and react.'
-                    : 'Community G$ cannot be withdrawn yet; earnings stay in the community.');
+            note.textContent = data.eligible === false
+                ? 'Only verified wallets earn Community G$. You can still post, comment and react.'
+                : (showBalance && minimum > 0 && amount >= minimum
+                    ? 'The 500 G$ threshold is met, but vault withdrawals are not live yet. No payout will be submitted.'
+                    : 'Your Community G$ accrues in the ledger. Withdrawals are not live yet.');
         }
+        var withdrawRow = $('cfEarnWithdrawRow');
+        var withdrawStatus = $('cfEarnWithdrawStatus');
+        if (withdrawRow) {
+            withdrawRow.hidden = !!data.is_guest || data.eligible === false || !showBalance;
+        }
+        if (withdrawStatus) withdrawStatus.hidden = true;
         card.hidden = false;
+    }
+
+    function checkWithdrawalEligibility() {
+        if (!WALLET) { requiresLogin(); return Promise.resolve(); }
+        var button = $('cfEarnWithdrawBtn');
+        var status = $('cfEarnWithdrawStatus');
+        if (button) { button.disabled = true; button.textContent = 'Checking…'; }
+        if (status) { status.hidden = true; status.textContent = ''; }
+        return api('/community/api/rewards/withdrawal-eligibility').then(function (result) {
+            var data = result && result.data;
+            if (!data || !data.success) throw new Error((data && data.error) || 'Could not check the withdrawal threshold.');
+            if (status) {
+                status.textContent = data.message || 'Withdrawal eligibility checked.';
+                status.hidden = false;
+            }
+        }).catch(function (error) {
+            if (status) {
+                status.textContent = (error && error.message) || 'Could not check the withdrawal threshold.';
+                status.hidden = false;
+            }
+        }).then(function () {
+            if (button) { button.disabled = false; button.textContent = 'Withdraw'; }
+        });
     }
 
     function formatGd(value) {
@@ -1898,6 +2016,7 @@
         if (_loading) return Promise.resolve();
         _loading = true;
         var url = '/community/api/feed?limit=10';
+        if (_promptFilterId) url += '&prompt_id=' + encodeURIComponent(_promptFilterId);
         if (!reset && _nextCursor) url += '&cursor=' + encodeURIComponent(_nextCursor);
 
         return api(url).then(function (result) {
@@ -2323,6 +2442,7 @@
         renderNav();
         loadMessageUnread();
         loadRewards();
+        window.addEventListener('gm:daily-learn-completed', loadRewards);
         loadFeed(true);
     }
 
@@ -2331,6 +2451,12 @@
         refresh: refresh,
         loadMore: loadMore,
         submitPost: submitPost,
+        setDailyPrompt: setDailyPrompt,
+        answerPrompt: answerPrompt,
+        seePromptResponses: seePromptResponses,
+        cancelPromptMode: cancelPromptMode,
+        prefillDailyLearnReflection: prefillDailyLearnReflection,
+        checkWithdrawalEligibility: checkWithdrawalEligibility,
         react: react,
         toggleComments: toggleComments,
         openLightbox: openLightbox,
