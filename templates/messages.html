@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#ffffff">
   <title>Messages — GoodMarket Community</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/community-messages.css', v=ASSET_VERSION) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/community-message-notifications.css', v=ASSET_VERSION) }}">
 </head>
 <body>
   <header class="gm-msg-topbar">
@@ -13,6 +14,13 @@
     <h1>Messages</h1>
     <span class="gm-msg-total" id="gmMsgTotal" aria-live="polite"></span>
   </header>
+  <div class="gm-msg-notifications" id="gmMsgNotifications" hidden>
+    <div class="gm-msg-notifications-copy">
+      <strong>Message notifications</strong>
+      <small id="gmMsgPushStatus">Get notified when someone messages you.</small>
+    </div>
+    <button class="gm-msg-push-button" id="gmMsgPushButton" type="button">Enable</button>
+  </div>
   <main class="gm-msg-shell">
     <section class="gm-msg-inbox" id="gmMsgInbox" aria-label="Message conversations">
       <div class="gm-msg-loading" id="gmMsgInboxLoading">Loading messages…</div>
@@ -50,6 +58,7 @@
   <script>
     window.GM_MESSAGES_BOOT = {
       initialUsername: {{ initial_username|default('', true)|tojson }},
+      initialConversationId: {{ initial_conversation_id|default('', true)|tojson }},
       viewerUsername: {{ viewer_username|default('', true)|tojson }},
       maxMessage: 2000
     };
