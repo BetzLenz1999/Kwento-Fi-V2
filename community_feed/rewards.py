@@ -124,25 +124,69 @@ POST_CAP = get_env_decimal("COMMUNITY_REWARD_POST_CAP", "100")
 # proposal §6; it ships as an env var so it can be raised without a deploy.
 MIN_PAYOUT_GD = get_env_decimal("COMMUNITY_REWARD_MIN_PAYOUT_GD", "500")
 
-# Community Daily Learn uses its own Admin Quiz Settings rate (0–50 G$ per
-# correct answer), separate from the full Learn & Earn quiz's max-reward rate.
-DAILY_LEARN_RATE_MAX = Decimal("50")
+# Community Daily Learn uses its own Admin Quiz Settings rate (G$ per correct
+# answer), separate from the full Learn & Earn quiz's max-reward rate.
+#
+# The ceiling is operator-configurable (COMMUNITY_DAILY_LEARN_RATE_MAX). It used
+# to be a hardcoded Decimal("50"), which meant the bound could not be raised
+# without a code change AND - worse - a database rate above the code ceiling was
+# silently rejected at credit time: the member completed a 2/2 cycle and received
+# nothing. One source of truth is what prevents that mismatch.
+#
+# This is the DEFAULT only. Read the live value through daily_learn_rate_max().
+DAILY_LEARN_RATE_MAX_DEFAULT = Decimal("50")
+
+#: The database CHECK constraints are the last line of defence and are NOT
+#: env-driven on purpose: a bug in the application must not be able to persist a
+#: rate beyond this bound. Keep ``COMMUNITY_DAILY_LEARN_RATE_MAX`` at or below
+#: the deployed constraint (see sql/community_daily_learn_rate_ceiling.sql).
+DAILY_LEARN_RATE_DB_BOUND = Decimal("500")
 DAILY_LEARN_EVENT = "daily_learn"
 DAILY_LEARN_CLAIM_RPC = "community_daily_learn_claim_uncredited_questions"
 
 # Daily Learn gets its OWN 24h allowance instead of sharing DAILY_CAP.
 #
 # The owner's requirement is that a completed cycle ALWAYS credits. One cycle is
-# two questions, so the worst case is `2 x DAILY_LEARN_RATE_MAX` = 100 G$, which
-# is larger than the shared 50 G$ cap — sharing one budget could therefore never
-# satisfy the requirement. The two budgets are also summed over DISJOINT event
-# types, so a reaction can neither block Daily Learn nor be blocked by it.
+# two questions, so the worst case is `2 x rate ceiling` G$, which can be larger
+# than the shared cap — sharing one budget could therefore never satisfy the
+# requirement. The two budgets are also summed over DISJOINT event types, so a
+# reaction can neither block Daily Learn nor be blocked by it.
 DEFAULT_DAILY_LEARN_CAP = Decimal("100")
 
 #: The event types the SHARED daily cap counts. Daily Learn is excluded on
-#: purpose: it is budgeted by ``daily_learn_daily_cap()`` instead, so a 100 G$
+#: purpose: it is budgeted by ``daily_learn_daily_cap()`` instead, so a large
 #: Daily Learn credit can never swallow the reaction/comment budget.
 SHARED_CAP_EVENT_TYPES = ("reaction_in", "reaction_out", "comment_in", "comment_out")
+
+
+def daily_learn_rate_max() -> Decimal:
+    """The per-correct-answer ceiling, in G$.
+
+    Read per call (not at import) so an operator can raise it without a
+    redeploy, matching the repo convention for switches.
+
+    A malformed, negative or non-finite value falls back to the default rather
+    than to 0: a bad env var must not silently switch Daily Learn earning off
+    (``rate = 0`` is the supported way to do that deliberately).
+
+    The value is capped at ``DAILY_LEARN_RATE_DB_BOUND``. Exceeding the database
+    CHECK would let the admin form accept a rate that the insert then rejects
+    with a raw constraint violation, so clamp here and say so.
+    """
+    configured = get_env_decimal(
+        "COMMUNITY_DAILY_LEARN_RATE_MAX", str(DAILY_LEARN_RATE_MAX_DEFAULT))
+    if not configured.is_finite() or configured < 0:
+        logger.warning(
+            "community_rewards: COMMUNITY_DAILY_LEARN_RATE_MAX=%s is not a "
+            "usable ceiling; using %s", configured, DAILY_LEARN_RATE_MAX_DEFAULT)
+        return DAILY_LEARN_RATE_MAX_DEFAULT
+    if configured > DAILY_LEARN_RATE_DB_BOUND:
+        logger.warning(
+            "community_rewards: COMMUNITY_DAILY_LEARN_RATE_MAX=%s exceeds the "
+            "database bound (%s); using the bound",
+            configured, DAILY_LEARN_RATE_DB_BOUND)
+        return DAILY_LEARN_RATE_DB_BOUND
+    return configured
 
 
 def daily_learn_daily_cap() -> Decimal:
@@ -151,13 +195,13 @@ def daily_learn_daily_cap() -> Decimal:
     Read per call (not at import) so an operator can change it without a
     redeploy, matching the repo convention for switches.
 
-    The floor is one full cycle (``2 x DAILY_LEARN_RATE_MAX``): a smaller
+    The floor is one full cycle (``2 x daily_learn_rate_max()``): a smaller
     allowance would make a perfect 2/2 cycle partially or wholly unsatisfiable,
     which is the exact failure this budget exists to prevent. A value below the
     floor is raised to it and logged. ``rate = 0`` remains the supported way to
     switch Daily Learn earning off.
     """
-    floor = DAILY_LEARN_RATE_MAX * 2
+    floor = daily_learn_rate_max() * 2
     configured = get_env_decimal(
         "COMMUNITY_REWARD_DAILY_LEARN_CAP", str(DEFAULT_DAILY_LEARN_CAP))
     if not configured.is_finite() or configured < floor:
@@ -834,7 +878,7 @@ def _configured_daily_learn_rate(db) -> Decimal | None:
                      .order("id").limit(1).execute())
         rate = _as_decimal(
             rows[0].get("community_daily_learn_reward_per_correct") if rows else 1)
-        if not rate.is_finite() or rate < 0 or rate > DAILY_LEARN_RATE_MAX:
+        if not rate.is_finite() or rate < 0 or rate > daily_learn_rate_max():
             logger.error("community_rewards: invalid Community Daily Learn rate: %s", rate)
             return None
         return rate
@@ -936,8 +980,19 @@ def daily_learn_completion_status(wallet: str, day_utc: str, *, _supabase=None,
         rate = (_as_decimal(raw_rate) if raw_rate is not None
                 else _configured_daily_learn_rate(db))
         if (rate is None or not rate.is_finite()
-                or rate < 0 or rate > DAILY_LEARN_RATE_MAX):
-            return {"status": "not_credited", "reason": "temporarily_unavailable"}
+                or rate < 0 or rate > daily_learn_rate_max()):
+            # Name the reason: a rate above the ceiling is an operator
+            # misconfiguration, not an outage. Without this line the member sees
+            # a completed 2/2 cycle credit nothing and the log says only
+            # "temporarily_unavailable", which is the silent-failure shape this
+            # change exists to remove.
+            logger.error(
+                "community_rewards: Daily Learn rate %s for %s is outside 0..%s; "
+                "credit skipped. Raise COMMUNITY_DAILY_LEARN_RATE_MAX (database "
+                "bound %s) or lower the Admin Quiz Settings rate.",
+                raw_rate if raw_rate is not None else "(unreadable)",
+                identity[:10], daily_learn_rate_max(), DAILY_LEARN_RATE_DB_BOUND)
+            return {"status": "not_credited", "reason": "rate_out_of_range"}
         if rate == 0:
             return {"status": "not_credited", "reason": "reward_disabled"}
 
@@ -1255,6 +1310,9 @@ def _rate_payload(_supabase=None) -> dict:
     db = _supabase or _get_supabase()
     daily_rate = _configured_daily_learn_rate(db) if db else None
     payload["daily_learn_per_correct"] = float(daily_rate or Decimal("0"))
+    # The live ceiling, so an admin surface can render its bound from ONE source
+    # instead of pinning the number in the markup.
+    payload["daily_learn_rate_max"] = float(daily_learn_rate_max())
     return payload
 
 
@@ -1276,6 +1334,7 @@ def summary(wallet: str | None, *, _supabase=None) -> dict:
             "rates": _rate_payload(_supabase),
             "daily_cap_gd": float(DAILY_CAP),
             "daily_learn_cap_gd": float(daily_learn_daily_cap()),
+            "daily_learn_rate_max": float(daily_learn_rate_max()),
             "show_balance": show_balance(),
         }
     supabase = _supabase or _get_supabase()
@@ -1317,6 +1376,8 @@ def summary(wallet: str | None, *, _supabase=None) -> dict:
         # Daily Learn is budgeted separately, so the card can explain both caps
         # instead of letting a silent skip look like "the quiz paid nothing".
         "daily_learn_cap_gd": float(daily_learn_daily_cap()),
+        # The live per-answer ceiling, so no surface has to pin the number.
+        "daily_learn_rate_max": float(daily_learn_rate_max()),
         # Whether the card may show the balance block. Defaults on for members;
         # the client still withholds this personal figure from guests.
         "show_balance": show_balance(),
