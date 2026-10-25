@@ -6785,6 +6785,10 @@ def admin_dashboard():
     response = make_response(render_template(
         "admin_dashboard.html",
         wallet=wallet,
+        login_method=session.get("login_method", ""),
+        walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
+        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
+        privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
     ))
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
