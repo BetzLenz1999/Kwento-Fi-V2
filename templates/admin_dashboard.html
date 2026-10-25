@@ -4715,10 +4715,46 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                         '</div>';
                 }).join('') +
                 '<p style="font-size:0.8rem; color:rgba(241,245,249,0.6);">Allowed range: ' +
-                data.min + '–' + data.max + ' G$. Values outside it are clamped.</p>';
+                data.min + '–' + data.max + ' G$. Values outside it are clamped.</p>' +
+                '<p style="font-size:0.8rem; color:rgba(241,245,249,0.6);">' +
+                'Daily allowance: ' + data.daily_cap + ' G$ per wallet per 24h &middot; ' +
+                'Per-post allowance: ' + data.post_cap + ' G$.</p>' +
+                _rewardRateCeilingNote(data) +
+                _rewardRateOrderNote(data.rates || {});
             } catch (e) {
                 fields.innerHTML = '<p style="color:#ef4444;">❌ Could not load the rates</p>';
             }
+        }
+
+        // The ceiling is min(configured max, daily allowance, per-post
+        // allowance). When one of the allowances is the binding constraint the
+        // form shows a smaller max than the operator configured, which reads as
+        // a bug unless we name the reason.
+        function _rewardRateCeilingNote(data) {
+            if (data.max >= data.rate_max) return '';
+            var binding = data.daily_cap <= data.post_cap
+                ? 'the daily allowance (' + data.daily_cap + ' G$)'
+                : 'the per-post allowance (' + data.post_cap + ' G$)';
+            return '<p style="font-size:0.8rem; color:#fbbf24;">⚠ The configured ' +
+                'ceiling is ' + data.rate_max + ' G$, but rates are limited to ' +
+                data.max + ' G$ by ' + binding + '. A higher rate could never be ' +
+                'credited. Raise that allowance to allow higher rates.</p>';
+        }
+
+        // The four rates are deliberately NOT equal: reaction_in is the farm
+        // vector (paying for a tap on a stranger's post, with no content left to
+        // audit) and is priced lowest on purpose. Setting them all equal is a
+        // legitimate choice, but it should never be an accidental one.
+        function _rewardRateOrderNote(rates) {
+            var rin = parseFloat(rates.reaction_in);
+            var rout = parseFloat(rates.reaction_out);
+            var cin = parseFloat(rates.comment_in);
+            if (isNaN(rin) || isNaN(rout) || isNaN(cin)) return '';
+            if (rin < rout && rin < cin) return '';
+            return '<p style="font-size:0.8rem; color:#fbbf24;">⚠ "You react to a ' +
+                'post" pays at least as much as reacting to you or commenting. ' +
+                'That rate is the cheapest action to farm (a tap leaves nothing ' +
+                'to review), so it is normally the smallest.</p>';
         }
 
         async function saveRewardRates() {
