@@ -4606,6 +4606,16 @@ def get_quiz_settings():
         from learn_and_earn.learn_and_earn import quiz_manager
 
         settings = quiz_manager.get_quiz_settings()
+        # Ship the live ceiling with the settings so the admin form renders its
+        # bound from the server instead of a pinned literal. Raising
+        # COMMUNITY_DAILY_LEARN_RATE_MAX then needs no markup change.
+        try:
+            from community_feed.rewards import (
+                daily_learn_rate_max as _daily_learn_rate_max)
+            settings = dict(settings or {})
+            settings["daily_learn_rate_max"] = float(_daily_learn_rate_max())
+        except Exception as exc:  # noqa: BLE001 - never break the settings read
+            logger.warning("Could not resolve the Daily Learn rate ceiling: %s", exc)
         return jsonify({
             "success": True,
             "settings": settings
@@ -4930,26 +4940,32 @@ def update_quiz_settings():
             }), 400
         if community_daily_learn_reward_per_correct is not None:
             # The ceiling lives in ONE place (community_feed.rewards) so the admin
-            # route can never drift from the ledger's own bound.
+            # route can never drift from the ledger's own bound. Resolved through
+            # the live accessor, not a pinned literal: a hardcoded fallback here
+            # would be a second source of truth that silently re-imposes the old
+            # bound if the import ever fails.
             try:
-                from community_feed.rewards import DAILY_LEARN_RATE_MAX
+                from community_feed.rewards import (
+                    daily_learn_rate_max as _daily_learn_rate_max)
+                daily_learn_ceiling = _daily_learn_rate_max()
             except Exception:  # noqa: BLE001 - never block the admin on an import
-                DAILY_LEARN_RATE_MAX = Decimal("50")
+                from community_feed.rewards import DAILY_LEARN_RATE_MAX_DEFAULT
+                daily_learn_ceiling = DAILY_LEARN_RATE_MAX_DEFAULT
             try:
                 daily_learn_rate = Decimal(str(community_daily_learn_reward_per_correct))
             except (InvalidOperation, TypeError, ValueError):
                 return jsonify({
                     "success": False,
                     "error": (f"Community Daily Learn reward must be a number "
-                              f"between 0 and {DAILY_LEARN_RATE_MAX:g} G$")
+                              f"between 0 and {daily_learn_ceiling:g} G$")
                 }), 400
             if (isinstance(community_daily_learn_reward_per_correct, bool)
                     or not daily_learn_rate.is_finite()
-                    or daily_learn_rate < 0 or daily_learn_rate > DAILY_LEARN_RATE_MAX):
+                    or daily_learn_rate < 0 or daily_learn_rate > daily_learn_ceiling):
                 return jsonify({
                     "success": False,
                     "error": (f"Community Daily Learn reward must be between 0 and "
-                              f"{DAILY_LEARN_RATE_MAX:g} G$ per correct answer")
+                              f"{daily_learn_ceiling:g} G$ per correct answer")
                 }), 400
             community_daily_learn_reward_per_correct = float(
                 daily_learn_rate.quantize(Decimal('0.0001')))
