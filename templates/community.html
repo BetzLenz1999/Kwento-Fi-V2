@@ -62,7 +62,12 @@
         @media (max-width: 480px) {
             .cf-nav { gap: 0.4rem; padding-left: 0.7rem; padding-right: 0.7rem; }
             .cf-nav-right { flex-shrink: 0; }
-            .cf-brand span:not(.cf-brand-mark) { font-size: 0.92rem; }
+            /* The row has to carry the two-line brand AND Refresh / Your Wallet
+               (or Get Started). The brand itself is tightened in
+               community-feed.css where the rest of the lockup lives; the date
+               chip is dropped here because it is the most expendable item and
+               this block is the overflow guard. Measured in a browser. */
+            .cf-today { display: none; }
         }
     </style>
 </head>
@@ -71,9 +76,18 @@
 <header class="cf-nav">
     <a class="cf-brand" href="/wallet">
         <img class="cf-brand-mark goodmarket-mark" src="{{ url_for('static', filename='branding/goodmarket/goodmarket-mark.svg', v=ASSET_VERSION) }}" alt="" width="32" height="32">
-        <span>GoodMarket <strong>Community</strong></span>
+        <span class="cf-brand-text">
+            <span class="cf-brand-org">GoodMarket</span>
+            <span class="cf-brand-page">
+                <span class="cf-brand-dot" aria-hidden="true"></span>Community Feed
+            </span>
+        </span>
     </a>
     <div class="cf-nav-right">
+        {# The feed is a daily surface: Daily Learn resets at 00:00 UTC, so the
+           day boundary is real and worth showing. Hidden below 480px, where the
+           row also has to carry Refresh + Your Wallet. #}
+        <span class="cf-today" id="cfToday" title="Today (UTC)">{{ today_label }}</span>
         {% if is_guest %}
         <!-- Persistent connect entry point so closing the modal doesn't
              strand a guest — same flow as the homepage. Without it the only
@@ -193,6 +207,23 @@
         <textarea id="cfCaption" class="cf-caption-input" rows="2"
                   placeholder="What happened today?"
                   maxlength="{{ max_caption }}"></textarea>
+
+        {# Daily Learn, once today's quiz is done. The full card used to stay on
+           screen all day retitled "Daily Learn complete", which pushed the
+           composer down for no reason. The completion state and the reward
+           reason still have to be reachable — the reason is how a member learns
+           WHY they were not paid (daily cap, no correct answers, unverified
+           wallet) — so it collapses into one line here and the detail opens on
+           tap. Written by the bundle from the same /api/daily-learn payload. #}
+        <div class="cf-learn-done" id="cfLearnDone" hidden>
+            <span class="cf-learn-done-mark" aria-hidden="true">✅</span>
+            <span class="cf-learn-done-text" id="cfLearnDoneText">Daily Learn done today</span>
+            <button type="button" class="cf-learn-done-toggle" id="cfLearnDoneToggle"
+                    aria-controls="cfLearnDoneDetail" aria-expanded="false"
+                    onclick="GMCommunity.toggleLearnDoneDetail()">Details</button>
+        </div>
+        <p class="cf-learn-done-detail" id="cfLearnDoneDetail" role="status"
+           aria-live="polite" hidden></p>
 
         {# Username gate. Shown only when the signed-in wallet has no username
            yet — the composer stays visible so the user can see what they are
