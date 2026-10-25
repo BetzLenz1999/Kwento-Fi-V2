@@ -17,16 +17,21 @@ from __future__ import annotations
 import hmac
 import logging
 import os
+import re
+import secrets
 import threading
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from urllib.parse import urlsplit
 
 from flask import Blueprint, Response, jsonify, redirect, render_template, request, session
 
 from . import rewards
 from . import service as svc
 from . import storage
+from . import withdrawals as withdrawal_vault
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +95,110 @@ def _disabled_response():
 def _json_body() -> dict:
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else {}
+
+
+def _withdrawal_origin_ok() -> bool:
+    """Reject cross-origin cookie-authenticated mutation requests."""
+    origin = request.headers.get("Origin", "")
+    try:
+        parsed = urlsplit(origin)
+        return parsed.scheme in {"https", "http"} and bool(parsed.netloc) \
+            and hmac.compare_digest(parsed.netloc.casefold(), request.host.casefold())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _withdrawal_admin_db():
+    """Money-moving withdrawal state requires the service-role Supabase client."""
+    from supabase_client import get_supabase_admin_client
+
+    db = get_supabase_admin_client()
+    if not db:
+        raise RuntimeError("Service-role database client is unavailable")
+    return db
+
+
+def _withdrawal_rows(result) -> list[dict]:
+    data = getattr(result, "data", None)
+    if isinstance(data, list):
+        return [row for row in data if isinstance(row, dict)]
+    if isinstance(data, dict):
+        return [data]
+    return []
+
+
+def _withdrawal_rpc(db, name: str, args: dict):
+    result = db.rpc(name, args).execute()
+    data = getattr(result, "data", None)
+    if isinstance(data, list):
+        data = data[0] if data else None
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Database RPC {name} returned no state")
+    return data
+
+
+def _open_withdrawal(db, wallet: str) -> dict | None:
+    result = (db.table("community_reward_withdrawals")
+              .select("*")
+              .ilike("wallet_address", wallet.lower())
+              .in_("status", ["pending", "claimed"])
+              .order("id", desc=True).limit(1).execute())
+    rows = _withdrawal_rows(result)
+    return rows[0] if rows else None
+
+
+def _fresh_withdrawal_identity(wallet: str) -> tuple[bool, bool]:
+    """Return (verified, chain_available), bypassing the identity read cache."""
+    try:
+        from blockchain import is_identity_verified
+
+        result = is_identity_verified(wallet, force=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community withdrawal identity check unavailable: %s", exc)
+        return False, False
+    if result.get("error"):
+        return False, False
+    return bool(result.get("verified")), True
+
+
+def _authorization_payload(row: dict) -> dict:
+    return {
+        "recipient": row["wallet_address"],
+        "amount": str(row["amount_base_units"]),
+        "withdrawalId": row["withdrawal_id"],
+        "nonce": str(row["authorization_nonce"]),
+        "deadline": int(row["authorization_deadline"]),
+        "projectId": row["project_id"],
+    }
+
+
+def _sign_reserved_withdrawal(db, runtime, row: dict) -> dict:
+    authorization = _authorization_payload(row)
+    signature = str(row.get("authorization_signature") or "")
+    if not signature:
+        signature = withdrawal_vault.sign_authorization(
+            runtime.issuer_private_key,
+            domain={"verifyingContract": runtime.vault_address},
+            message=authorization,
+        )
+        saved = _withdrawal_rpc(db, "community_reward_withdrawal_authorize", {
+            "p_withdrawal_id": row["withdrawal_id"],
+            "p_signature": signature,
+        })
+        row = saved
+    return {
+        "success": True,
+        "status": "authorized",
+        "withdrawal_id": row["withdrawal_id"],
+        "authorization": authorization,
+        "signature": signature,
+        "amount_gd": str(row["amount_gd"]),
+        "vault_address": runtime.vault_address,
+        "token_address": runtime.token_address,
+        "chain_id": withdrawal_vault.CELO_CHAIN_ID,
+        "token_decimals": runtime.decimals,
+        "tx_hash": row.get("tx_hash"),
+    }
 
 
 # ── Page ─────────────────────────────────────────────────────────────────────
@@ -227,30 +336,436 @@ def api_rewards():
 
 @community_feed_bp.route("/api/rewards/withdrawal-eligibility", methods=["GET"])
 def api_withdrawal_eligibility():
-    """Read-only threshold check; no withdrawal row or payout is created.
-
-    The Community vault/relayer contract is still review-gated by the rewards
-    proposal. This endpoint intentionally cannot initiate or authorize a payout.
-    """
+    """Read-only, fail-closed readiness check for the direct user-paid vault."""
     if not svc.is_enabled():
         return _disabled_response()
     wallet = _session_wallet()
     if not wallet:
         return jsonify({"success": False, "error": "Not authenticated"}), 401
+    try:
+        db = _withdrawal_admin_db()
+        open_row = _open_withdrawal(db, wallet)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community withdrawal reservation lookup failed: %s", exc)
+        return jsonify({"success": True, "threshold_met": False,
+                        "can_request": False,
+                        "message": "Withdrawal readiness could not be verified. Please retry shortly."})
+    if open_row and (open_row.get("authorization_signature") or open_row.get("tx_hash")):
+        try:
+            resume_runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
+            is_paused = bool(resume_runtime.vault.functions.paused().call())
+            if is_paused and not open_row.get("tx_hash"):
+                return jsonify({"success": True, "threshold_met": True,
+                                "can_request": False, "status": "paused",
+                                "message": "Community withdrawals are temporarily paused."})
+            return jsonify({"success": True, "threshold_met": True,
+                            "can_request": True,
+                            "status": "transaction_submitted" if open_row.get("tx_hash") else "resume",
+                            "withdrawal_id": open_row.get("withdrawal_id"),
+                            "tx_hash": open_row.get("tx_hash"),
+                            "amount_gd": str(open_row.get("amount_gd") or "0"),
+                            "message": "An existing Community withdrawal is reserved. Continuing will safely resume or confirm that same request."})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("community withdrawal resume check failed: %s", exc)
+            return jsonify({"success": True, "threshold_met": True,
+                            "can_request": False,
+                            "message": "The existing withdrawal needs a fresh vault check before it can be resumed."})
     summary = rewards.summary(wallet)
-    balance = float(summary.get("balance_gd") or 0)
-    minimum = float(summary.get("min_payout_gd") or 500)
-    remaining = max(0.0, minimum - balance)
+    if not summary.get("balance_available"):
+        return jsonify({"success": True, "threshold_met": False,
+                        "can_request": False,
+                        "message": "Your Community balance could not be fully verified. Please retry shortly."})
+    if not summary.get("eligible"):
+        return jsonify({"success": True, "threshold_met": False,
+                        "can_request": False,
+                        "message": "A currently verified GoodDollar identity is required to withdraw."})
+    balance = Decimal(str(summary.get("balance_gd") or "0"))
+    minimum = Decimal(str(summary.get("min_payout_gd") or "500"))
+    remaining = max(Decimal("0"), minimum - balance)
     if remaining > 0:
         return jsonify({
             "success": True, "threshold_met": False, "can_request": False,
-            "remaining_gd": round(remaining, 6),
+            "remaining_gd": str(remaining),
             "message": f"You need to reach {minimum:g} G$ to withdraw. You still need {remaining:g} G$.",
         })
+    try:
+        runtime = withdrawal_vault.build_runtime()
+        if open_row:
+            if not open_row.get("tx_hash") and runtime.vault.functions.paused().call():
+                return jsonify({"success": True, "threshold_met": True,
+                                "can_request": False, "status": "paused",
+                                "message": "Community withdrawals are temporarily paused."})
+            return jsonify({"success": True, "threshold_met": True,
+                            "can_request": True,
+                            "status": "transaction_submitted" if open_row.get("tx_hash") else "resume",
+                            "withdrawal_id": open_row.get("withdrawal_id"),
+                            "tx_hash": open_row.get("tx_hash"),
+                            "amount_gd": str(open_row.get("amount_gd") or balance),
+                            "message": "An existing Community withdrawal is reserved. Continuing will safely resume or confirm that same request."})
+        if runtime.vault.functions.paused().call():
+            return jsonify({"success": True, "threshold_met": True,
+                            "can_request": False,
+                            "message": "Community withdrawals are temporarily paused."})
+    except withdrawal_vault.WithdrawalConfigError:
+        return jsonify({"success": True, "threshold_met": True,
+                        "can_request": False,
+                        "message": "Community withdrawals are not enabled or the vault configuration is not ready."})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community withdrawal readiness check failed: %s", exc)
+        return jsonify({"success": True, "threshold_met": True,
+                        "can_request": False,
+                        "message": "Withdrawal readiness could not be verified. Please retry shortly."})
     return jsonify({
-        "success": True, "threshold_met": True, "can_request": False,
-        "message": "You reached the 500 G$ threshold. Withdrawals are not available yet while the vault integration is under review.",
+        "success": True, "threshold_met": True, "can_request": True,
+        "amount_gd": str(balance),
+        "message": "Your full available Community balance is ready for a direct wallet withdrawal. You will pay Celo gas.",
     })
+
+
+@community_feed_bp.route("/api/rewards/withdrawals/authorize", methods=["POST"])
+def api_withdrawal_authorize():
+    """Reserve the full server-derived balance and issue the issuer EIP-712 signature."""
+    if not _withdrawal_origin_ok():
+        return jsonify({"success": False, "error": "Cross-origin withdrawal request rejected"}), 403
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    retry = _throttle("withdraw-auth:" + wallet, 60, allow=3)
+    if retry:
+        return jsonify({"success": False, "error": "Too many withdrawal requests. Please wait and retry."}), 429
+    try:
+        from web3 import Web3
+
+        member = Web3.to_checksum_address(wallet)
+        db = _withdrawal_admin_db()
+        existing = _open_withdrawal(db, member)
+        if existing:
+            resume_runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
+            if existing.get("tx_hash"):
+                return jsonify({"success": False, "status": "transaction_submitted",
+                                "withdrawal_id": existing["withdrawal_id"], "tx_hash": existing["tx_hash"],
+                                "error": "A transaction is already linked to this withdrawal. Confirm it before retrying."}), 409
+
+            chain_now = int(resume_runtime.web3.eth.get_block("latest")["timestamp"])
+            row_nonce = int(existing.get("authorization_nonce") or 0)
+            current_nonce = int(resume_runtime.vault.functions.nonces(member).call())
+            row_deadline = int(existing.get("authorization_deadline") or 0)
+            has_signature = bool(existing.get("authorization_signature"))
+            if has_signature and current_nonce != row_nonce:
+                recovered_hash = None
+                if current_nonce > row_nonce:
+                    recovered_hash = withdrawal_vault.find_withdrawal_transaction(resume_runtime, existing)
+                if recovered_hash:
+                    _withdrawal_rpc(db, "community_reward_withdrawal_set_tx", {
+                        "p_withdrawal_id": existing["withdrawal_id"], "p_tx_hash": recovered_hash,
+                    })
+                    return jsonify({"success": False, "status": "transaction_submitted",
+                                    "withdrawal_id": existing["withdrawal_id"], "tx_hash": recovered_hash,
+                                    "error": "Recovered the submitted withdrawal transaction. Confirming its receipt."}), 409
+                return jsonify({"success": False, "status": "reconciliation_required",
+                                "withdrawal_id": existing.get("withdrawal_id"),
+                                "error": "The on-chain nonce changed. The existing signed request needs reconciliation; do not submit it again."}), 409
+
+            if row_deadline <= chain_now:
+                _withdrawal_rpc(db, "community_reward_withdrawal_fail", {
+                    "p_withdrawal_id": existing["withdrawal_id"],
+                    "p_reason": "Unsubmitted authorization expired on Celo",
+                    "p_tx_hash": None,
+                })
+                existing = None
+            elif has_signature:
+                if resume_runtime.vault.functions.paused().call():
+                    return jsonify({"success": False, "status": "paused",
+                                    "error": "Community withdrawals are temporarily paused."}), 409
+                return jsonify(_sign_reserved_withdrawal(db, resume_runtime, existing))
+            elif current_nonce != row_nonce:
+                _withdrawal_rpc(db, "community_reward_withdrawal_fail", {
+                    "p_withdrawal_id": existing["withdrawal_id"],
+                    "p_reason": "Unissued reservation nonce was superseded on Celo",
+                    "p_tx_hash": None,
+                })
+                existing = None
+
+        runtime = withdrawal_vault.build_runtime()
+        verified, chain_available = _fresh_withdrawal_identity(member)
+        if not chain_available:
+            return jsonify({"success": False, "error": "GoodDollar identity verification is temporarily unavailable."}), 503
+        if not verified:
+            return jsonify({"success": False, "error": "A currently verified GoodDollar identity is required to withdraw."}), 403
+        balance, complete = rewards._balance_read(member, db)
+        if not complete:
+            return jsonify({"success": False, "error": "The full Community ledger could not be read. No authorization was issued."}), 503
+        if balance <= 0:
+            return jsonify({"success": False, "error": "There is no available Community G$ balance to withdraw."}), 409
+        amount_base = withdrawal_vault.amount_to_base_units(balance, runtime.decimals)
+        min_gd = withdrawal_vault.base_units_to_gd(runtime.min_amount, runtime.decimals)
+        required_minimum = max(rewards.MIN_PAYOUT_GD, min_gd)
+        if balance < required_minimum or amount_base < runtime.min_amount:
+            return jsonify({"success": False, "error": f"At least {required_minimum:g} G$ is required to withdraw."}), 409
+        if amount_base > runtime.max_amount:
+            return jsonify({"success": False, "error": "Your full balance exceeds this vault's per-withdrawal limit. Partial withdrawals are not enabled."}), 409
+        db_row = _open_withdrawal(db, member)
+        latest = runtime.web3.eth.get_block("latest")
+        chain_now = int(latest["timestamp"])
+        if db_row:
+            if db_row.get("tx_hash"):
+                return jsonify({"success": False, "status": "transaction_submitted",
+                                "withdrawal_id": db_row["withdrawal_id"], "tx_hash": db_row["tx_hash"],
+                                "error": "A transaction is already linked to this withdrawal. Confirm it before retrying."}), 409
+            row_nonce = int(db_row.get("authorization_nonce") or 0)
+            current_nonce = int(runtime.vault.functions.nonces(member).call())
+            row_deadline = int(db_row.get("authorization_deadline") or 0)
+            has_signature = bool(db_row.get("authorization_signature"))
+            if has_signature and current_nonce != row_nonce:
+                recovered_hash = None
+                if current_nonce > row_nonce:
+                    recovered_hash = withdrawal_vault.find_withdrawal_transaction(runtime, db_row)
+                if recovered_hash:
+                    _withdrawal_rpc(db, "community_reward_withdrawal_set_tx", {
+                        "p_withdrawal_id": db_row["withdrawal_id"], "p_tx_hash": recovered_hash,
+                    })
+                    return jsonify({"success": False, "status": "transaction_submitted",
+                                    "withdrawal_id": db_row["withdrawal_id"], "tx_hash": recovered_hash,
+                                    "error": "Recovered the submitted withdrawal transaction. Confirming its receipt."}), 409
+                return jsonify({"success": False, "status": "reconciliation_required",
+                                "withdrawal_id": db_row.get("withdrawal_id"),
+                                "error": "The on-chain withdrawal nonce changed. Reconcile the existing request before retrying."}), 409
+            if row_deadline <= chain_now:
+                _withdrawal_rpc(db, "community_reward_withdrawal_fail", {
+                    "p_withdrawal_id": db_row["withdrawal_id"],
+                    "p_reason": "Unsubmitted authorization expired on Celo",
+                    "p_tx_hash": None,
+                })
+                db_row = None
+            elif not has_signature and current_nonce != row_nonce:
+                _withdrawal_rpc(db, "community_reward_withdrawal_fail", {
+                    "p_withdrawal_id": db_row["withdrawal_id"],
+                    "p_reason": "Unissued reservation nonce was superseded on Celo",
+                    "p_tx_hash": None,
+                })
+                db_row = None
+            elif not has_signature and (
+                int(db_row.get("amount_base_units") or 0) != amount_base
+                or Decimal(str(db_row.get("amount_gd") or "0")) != balance
+            ):
+                _withdrawal_rpc(db, "community_reward_withdrawal_fail", {
+                    "p_withdrawal_id": db_row["withdrawal_id"],
+                    "p_reason": "Community ledger balance changed before authorization",
+                    "p_tx_hash": None,
+                })
+                db_row = None
+            if db_row:
+                if runtime.vault.functions.paused().call():
+                    return jsonify({"success": False, "error": "Community withdrawals are temporarily paused."}), 409
+                return jsonify(_sign_reserved_withdrawal(db, runtime, db_row))
+
+        if runtime.vault.functions.paused().call():
+            return jsonify({"success": False, "error": "Community withdrawals are temporarily paused."}), 409
+        daily_remaining = int(runtime.vault.functions.currentUtcDayRemaining().call())
+        if amount_base > daily_remaining:
+            return jsonify({"success": False, "error": "The vault's remaining daily limit is below your full Community balance. Please retry after the UTC daily limit resets."}), 409
+        nonce = int(runtime.vault.functions.nonces(member).call())
+        deadline = min(chain_now + 10 * 60,
+                       chain_now + withdrawal_vault.MAX_AUTHORIZATION_LIFETIME_SECONDS)
+        withdrawal_id = "0x" + secrets.token_hex(32)
+        prepared = _withdrawal_rpc(db, "community_reward_withdrawal_prepare", {
+            "p_wallet_address": member.lower(),
+            "p_amount_gd": str(balance),
+            "p_amount_base_units": str(amount_base),
+            "p_withdrawal_id": withdrawal_id,
+            "p_idempotency_key": "community_withdrawal:" + withdrawal_id.lower(),
+            "p_authorization_nonce": str(nonce),
+            "p_authorization_deadline": deadline,
+            "p_project_id": withdrawal_vault.COMMUNITY_PROJECT_ID,
+            "p_chain_id": withdrawal_vault.CELO_CHAIN_ID,
+            "p_vault_address": runtime.vault_address,
+            "p_token_address": runtime.token_address,
+            "p_onchain_daily_remaining": str(daily_remaining),
+        })
+        row = prepared.get("withdrawal") if isinstance(prepared.get("withdrawal"), dict) else prepared
+        if not row.get("withdrawal_id"):
+            raise RuntimeError("Withdrawal reservation did not return its persisted row")
+        if row.get("status") not in {"pending", "claimed"}:
+            raise RuntimeError("Withdrawal reservation is not open")
+        if not prepared.get("created", True):
+            if row.get("tx_hash"):
+                return jsonify({"success": False, "status": "transaction_submitted",
+                                "withdrawal_id": row["withdrawal_id"], "tx_hash": row["tx_hash"],
+                                "error": "A transaction is already linked to this withdrawal."}), 409
+            if int(runtime.vault.functions.nonces(member).call()) != int(row.get("authorization_nonce") or 0):
+                return jsonify({"success": False, "status": "reconciliation_required",
+                                "withdrawal_id": row["withdrawal_id"],
+                                "error": "The on-chain withdrawal nonce changed. Reconcile the existing request before retrying."}), 409
+            if int(row.get("authorization_deadline") or 0) <= chain_now:
+                return jsonify({"success": False, "status": "expired",
+                                "withdrawal_id": row["withdrawal_id"],
+                                "error": "The existing authorization expired. Retry after the request is safely released."}), 409
+        return jsonify(_sign_reserved_withdrawal(db, runtime, row))
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        logger.warning("community withdrawal authorization unavailable: %s", exc)
+        return jsonify({"success": False, "error": "Community withdrawals are not enabled or the vault configuration is not ready."}), 503
+    except withdrawal_vault.WithdrawalPolicyError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 409
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community withdrawal authorization failed: %s", exc)
+        return jsonify({"success": False, "error": "Could not prepare a Community withdrawal. No payout was submitted."}), 503
+
+
+@community_feed_bp.route("/api/rewards/withdrawals/confirm", methods=["POST"])
+def api_withdrawal_confirm():
+    """Verify the member's exact vault transaction before finalizing its ledger debit."""
+    if not _withdrawal_origin_ok():
+        return jsonify({"success": False, "error": "Cross-origin withdrawal request rejected"}), 403
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    body = _json_body()
+    withdrawal_id = str(body.get("withdrawal_id") or "").strip().lower()
+    tx_hash = str(body.get("tx_hash") or "").strip().lower()
+    if not re.fullmatch(r"0x[0-9a-f]{64}", withdrawal_id) or not re.fullmatch(r"0x[0-9a-f]{64}", tx_hash):
+        return jsonify({"success": False, "error": "A valid withdrawal ID and transaction hash are required."}), 400
+    retry = _throttle("withdraw-confirm:" + wallet, 60, allow=10)
+    if retry:
+        return jsonify({"success": False, "error": "Too many confirmation checks. Please wait and retry."}), 429
+    try:
+        from web3 import Web3
+
+        runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
+        db = _withdrawal_admin_db()
+        result = (db.table("community_reward_withdrawals").select("*")
+                  .eq("withdrawal_id", withdrawal_id)
+                  .ilike("wallet_address", wallet.lower()).limit(1).execute())
+        rows = _withdrawal_rows(result)
+        if not rows:
+            return jsonify({"success": False, "error": "Community withdrawal not found."}), 404
+        row = rows[0]
+        if row.get("status") == "completed":
+            if str(row.get("tx_hash") or "").lower() != tx_hash:
+                return jsonify({"success": False, "error": "Completed withdrawal transaction hash does not match."}), 409
+            return jsonify({"success": True, "status": "completed", "tx_hash": row.get("tx_hash")})
+        if row.get("status") != "claimed" or not row.get("authorization_signature"):
+            return jsonify({"success": False, "error": "Community withdrawal is not authorized."}), 409
+        if row.get("tx_hash") and str(row["tx_hash"]).lower() != tx_hash:
+            return jsonify({"success": False, "error": "A different transaction is already linked to this withdrawal."}), 409
+        try:
+            tx = runtime.web3.eth.get_transaction(tx_hash)
+        except Exception:
+            return jsonify({"success": True, "status": "pending", "tx_hash": tx_hash,
+                            "message": "Transaction is not visible on Celo yet. Keep this page open or retry confirmation."}), 202
+        withdrawal_vault.decode_withdrawal_transaction(runtime, tx, row)
+        if not row.get("tx_hash"):
+            _withdrawal_rpc(db, "community_reward_withdrawal_set_tx", {
+                "p_withdrawal_id": withdrawal_id, "p_tx_hash": tx_hash,
+            })
+            row["tx_hash"] = tx_hash
+        try:
+            receipt = runtime.web3.eth.get_transaction_receipt(tx_hash)
+        except Exception:
+            return jsonify({"success": True, "status": "pending", "tx_hash": tx_hash,
+                            "message": "Transaction is awaiting a Celo receipt."}), 202
+        status = int(receipt.get("status", 0))
+        if status != 1:
+            _withdrawal_rpc(db, "community_reward_withdrawal_fail", {
+                "p_withdrawal_id": withdrawal_id,
+                "p_reason": "Member transaction reverted on Celo",
+                "p_tx_hash": tx_hash,
+            })
+            return jsonify({"success": False, "status": "failed", "tx_hash": tx_hash,
+                            "error": "The withdrawal transaction reverted. Your Community ledger balance was not debited."}), 409
+        if not withdrawal_vault.verify_withdrawal_receipt(runtime, receipt, row):
+            return jsonify({"success": False, "status": "reconciliation_required",
+                            "tx_hash": tx_hash,
+                            "error": "The successful receipt did not contain the exact expected vault payout event. The ledger was not changed; support review is required."}), 409
+        confirmations = int(runtime.web3.eth.block_number) - int(receipt["blockNumber"]) + 1
+        if confirmations < runtime.confirmations:
+            return jsonify({"success": True, "status": "confirming", "tx_hash": tx_hash,
+                            "confirmations": confirmations,
+                            "required_confirmations": runtime.confirmations}), 202
+        completed = _withdrawal_rpc(db, "community_reward_withdrawal_finalize", {
+            "p_withdrawal_id": withdrawal_id, "p_tx_hash": tx_hash,
+        })
+        return jsonify({"success": True, "status": "completed", "tx_hash": tx_hash,
+                        "amount_gd": str(completed.get("amount_gd") or row.get("amount_gd"))})
+    except withdrawal_vault.WithdrawalConfigError:
+        return jsonify({"success": False, "error": "Vault configuration is unavailable for receipt verification."}), 503
+    except withdrawal_vault.WithdrawalPolicyError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community withdrawal confirmation failed: %s", exc)
+        return jsonify({"success": False, "error": "Could not verify the transaction. The withdrawal remains open for safe reconciliation."}), 503
+
+
+@community_feed_bp.route("/api/admin/withdrawal-vault/config", methods=["GET"])
+def api_admin_withdrawal_vault_config():
+    """Public vault addresses and pooled balance for dashboard-authorized funders."""
+    if not _admin_wallet():
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    try:
+        runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
+        balance_base = int(runtime.token.functions.balanceOf(runtime.vault_address).call())
+        return jsonify({
+            **withdrawal_vault.public_config(runtime),
+            "withdrawal_enabled": withdrawal_vault.feature_enabled(),
+            "vault_balance_base_units": str(balance_base),
+            "vault_balance_gd": str(withdrawal_vault.base_units_to_gd(balance_base, runtime.decimals)),
+            "paused": bool(runtime.vault.functions.paused().call()),
+        })
+    except withdrawal_vault.WithdrawalConfigError:
+        return jsonify({"success": False, "enabled": False,
+                        "error": "Community vault funding is unavailable until runtime configuration is complete."}), 503
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community vault funding config read failed: %s", exc)
+        return jsonify({"success": False, "error": "Could not verify the Community vault on Celo."}), 503
+
+
+@community_feed_bp.route("/api/admin/withdrawal-vault/fund/confirm", methods=["POST"])
+def api_admin_withdrawal_vault_fund_confirm():
+    """Verify and idempotently record a G$ transfer signed by the admin wallet."""
+    if not _withdrawal_origin_ok():
+        return jsonify({"success": False, "error": "Cross-origin funding confirmation rejected"}), 403
+    admin_wallet = _admin_wallet()
+    if not admin_wallet:
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    tx_hash = str(_json_body().get("tx_hash") or "").strip().lower()
+    if not re.fullmatch(r"0x[0-9a-f]{64}", tx_hash):
+        return jsonify({"success": False, "error": "A valid transaction hash is required."}), 400
+    try:
+        runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
+        try:
+            tx = runtime.web3.eth.get_transaction(tx_hash)
+        except Exception:
+            return jsonify({"success": True, "status": "pending", "tx_hash": tx_hash}), 202
+        try:
+            receipt = runtime.web3.eth.get_transaction_receipt(tx_hash)
+        except Exception:
+            return jsonify({"success": True, "status": "pending", "tx_hash": tx_hash}), 202
+        amount_base = withdrawal_vault.verify_funding_receipt(runtime, receipt, tx, admin_wallet)
+        confirmations = int(runtime.web3.eth.block_number) - int(receipt["blockNumber"]) + 1
+        if confirmations < runtime.confirmations:
+            return jsonify({"success": True, "status": "confirming", "tx_hash": tx_hash,
+                            "confirmations": confirmations,
+                            "required_confirmations": runtime.confirmations}), 202
+        db = _withdrawal_admin_db()
+        recorded = _withdrawal_rpc(db, "community_reward_vault_funding_record", {
+            "p_funder_wallet": admin_wallet.lower(),
+            "p_amount_gd": str(withdrawal_vault.base_units_to_gd(amount_base, runtime.decimals)),
+            "p_amount_base_units": str(amount_base),
+            "p_tx_hash": tx_hash,
+            "p_block_number": int(receipt["blockNumber"]),
+            "p_token_address": runtime.token_address,
+            "p_vault_address": runtime.vault_address,
+        })
+        return jsonify({"success": True, "status": "confirmed", "tx_hash": tx_hash,
+                        "amount_gd": str(recorded.get("amount_gd") or withdrawal_vault.base_units_to_gd(amount_base, runtime.decimals))})
+    except withdrawal_vault.WithdrawalConfigError:
+        return jsonify({"success": False, "error": "Vault configuration is unavailable for funding verification."}), 503
+    except withdrawal_vault.WithdrawalPolicyError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community vault funding confirmation failed: %s", exc)
+        return jsonify({"success": False, "error": "Could not verify or record this funding transaction. The on-chain transfer, if successful, remains in the vault."}), 503
 
 
 @community_feed_bp.route("/api/daily-learn", methods=["GET"])
