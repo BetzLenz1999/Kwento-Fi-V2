@@ -1498,10 +1498,10 @@
                             </div>
 
                             <div style="margin-bottom: 1.5rem; padding: 1rem; border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 8px;">
-                                <label for="community-daily-learn-reward-per-correct" style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Community Daily Learn reward per correct answer (0-50 G$)</label>
+                                <label for="community-daily-learn-reward-per-correct" style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Community Daily Learn reward per correct answer (<span id="community-daily-learn-rate-range">0-50</span> G$)</label>
                                 <input type="number" id="community-daily-learn-reward-per-correct" min="0" max="50" step="0.0001" value="50" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
                                 <small style="color: rgba(241, 245, 249, 0.7); display: block; margin-top: 0.5rem;">
-                                    Applies only to the 2-question Community Daily Learn cycle. Credit = correct answers × this rate (0, 1, or 2 correct); the full Learn &amp; Earn quiz rate is separate. Maximum: 50 G$ per correct answer. Daily Learn has its own daily allowance (default 100 G$) and is <strong>not</strong> limited by the shared Community daily cap, so a completed cycle always credits.
+                                    Applies only to the 2-question Community Daily Learn cycle. Credit = correct answers × this rate (0, 1, or 2 correct); the full Learn &amp; Earn quiz rate is separate. Maximum: <span id="community-daily-learn-rate-max-note">50</span> G$ per correct answer (set by <code>COMMUNITY_DAILY_LEARN_RATE_MAX</code>). Daily Learn has its own daily allowance (at least 2× the maximum) and is <strong>not</strong> limited by the shared Community daily cap, so a completed cycle always credits.
                                 </small>
                             </div>
 
@@ -4835,6 +4835,22 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
             preview.textContent = `Per correct answer: ${formatQuizRewardAmount(maxRewardPerQuiz)} ÷ ${questionsPerQuiz} questions = ${formatQuizRewardAmount(rewardPerCorrect)} per correct answer`;
         }
 
+        // The Daily Learn per-answer ceiling is server-provided so the bound is
+        // never pinned in the markup. A missing value keeps the existing bound
+        // (old cached HTML + new JS must not silently widen the limit).
+        let communityDailyLearnRateMax = 50;
+        function applyDailyLearnRateCeiling(value) {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed) || parsed <= 0) return;
+            communityDailyLearnRateMax = parsed;
+            const label = document.getElementById('community-daily-learn-rate-range');
+            if (label) label.textContent = '0-' + parsed;
+            const note = document.getElementById('community-daily-learn-rate-max-note');
+            if (note) note.textContent = String(parsed);
+            const input = document.getElementById('community-daily-learn-reward-per-correct');
+            if (input) input.max = String(parsed);
+        }
+
         async function loadQuizSettings() {
             try {
                 const response = await fetch('/api/admin/quiz-settings');
@@ -4858,6 +4874,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     document.getElementById('max-reward-per-quiz').value = settings.max_reward_per_quiz;
                     document.getElementById('community-daily-learn-reward-per-correct').value = settings.community_daily_learn_reward_per_correct;
                     document.getElementById('quiz-cooldown-hours').value = settings.cooldown_hours || 24;
+                    applyDailyLearnRateCeiling(settings.daily_learn_rate_max);
                     updateRewardPerCorrectPreview();
 
                     statusDiv.style.display = 'none';
@@ -4880,8 +4897,9 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 const communityDailyLearnReward = parseFloat(document.getElementById('community-daily-learn-reward-per-correct').value);
 
                 if (!questionsPerQuiz || !timePerQuestion || !maxRewardPerQuiz || !cooldownHours ||
-                    !Number.isFinite(communityDailyLearnReward) || communityDailyLearnReward < 0 || communityDailyLearnReward > 50) {
-                    alert('⚠️ Please fill in all fields');
+                    !Number.isFinite(communityDailyLearnReward) || communityDailyLearnReward < 0 ||
+                    communityDailyLearnReward > communityDailyLearnRateMax) {
+                    alert(`⚠️ Please fill in all fields. The Community Daily Learn reward must be between 0 and ${communityDailyLearnRateMax} G$ per correct answer.`);
                     return;
                 }
 
