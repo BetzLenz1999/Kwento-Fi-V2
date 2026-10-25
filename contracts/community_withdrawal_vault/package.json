@@ -1,0 +1,21 @@
+{
+  "name": "community-withdrawal-vault-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Community Withdrawal Vault contract tests and gated Celo deployment script",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:celo": "hardhat run deploy.cjs --network celo"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "2.0.8",
+    "@nomicfoundation/hardhat-ethers": "3.0.8",
+    "@openzeppelin/contracts": "5.1.0",
+    "chai": "4.5.0",
+    "ethers": "6.13.5",
+    "hardhat": "2.22.18",
+    "solc": "0.8.24"
+  }
+}
