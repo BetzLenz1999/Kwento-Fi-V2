@@ -2828,3 +2828,58 @@ python -c "import time; t=time.time(); import main; print(time.time()-t)"
 To reproduce a serverless cold-start failure locally, patch
 `requests.Session.request` to sleep then raise, and time `import main`. If the
 time tracks the injected latency, the import path is network-bound.
+
+## Community withdrawal vault - a config failure must name the fixable reason (2026-10)
+
+Every vault misconfiguration collapsed into ONE sentence - "Community
+withdrawals are not enabled or the vault configuration is not ready." - so an
+operator could not tell a disabled feature from a wrong chain ID from an
+undeployed contract. `community_feed/withdrawals.py` now raises
+`WithdrawalConfigError(message, code=..., hint=...)` and `build_runtime`
+classifies all 22 raises; `operator_detail(exc)` returns `message + hint`.
+
+**The split is the design, not a detail:**
+
+- **Admin surfaces** (`/community/api/admin/withdrawal-vault/config` and
+  `.../fund/confirm`) return the reason as `detail` plus a stable `code`. The
+  dashboard prefers `data.detail || data.error`, so the operator is told which
+  env var to change.
+- **Member surfaces** (eligibility, authorize, confirm) return the shared
+  `MEMBER_CONFIG_ERROR` - deliberately generic. A member cannot act on an
+  operator's configuration, and naming an env var or a contract getter leaks
+  deployment detail without helping them.
+- **Every member-facing failure is still LOGGED** via `operator_detail(exc)`, so
+  a member-reported failure is diagnosable from the logs. Losing that log line
+  would re-create the original defect for the common case.
+
+**The withdrawal MINIMUM / MAXIMUM / DAILY CAP are NOT env vars.** They are
+`immutable` in the vault bytecode (`minimumWithdrawalAmount`,
+`maximumWithdrawalAmount`, `dailyOutflowCap`), read from the contract into
+`Runtime.min_amount` / `max_amount` / `daily_cap`. No env var, restart or
+redeploy of the APP changes them - **only deploying a new vault does**. There is
+deliberately no fallback to an env value, so the contract is the single source
+of truth. This is a security property: immutable limits bound the damage even if
+`COMMUNITY_ISSUER_PRIVATE_KEY` is compromised, which is why the app validates
+`onchain["minimum"] <= 0 or maximum < minimum or daily_cap < maximum` and
+refuses to run rather than trusting a setting. The Admin Dashboard now renders
+the three live immutable limits (base units -> G$ via a **string-based**
+formatter; `Number()` would lose precision past 2^53 on an 18-decimal value) so
+an operator can see that the CONTRACT governs the minimum.
+
+**`COMMUNITY_WITHDRAWAL_ENABLED` and vault FUNDING are separate switches.**
+Funding the vault does not enable withdrawals; the disabled message says so
+explicitly, because that was a real source of confusion.
+
+**Rules:** any new `raise WithdrawalConfigError` must pass a `code=` (a test
+scans for unclassified raises - it caught one the first pass missed); keep
+member copy free of env-var names; keep the operator log line on every
+member-facing catch.
+
+Tests: `tests/test_withdrawal_config_error_detail_content.py` (25 tests, no deps
+- drives the REAL `build_runtime` for each classified failure, asserts the
+admin/member split, the dashboard detail + immutable limits + formatter
+precision, and that `.env.example` documents all nine vault variables and warns
+that the limits are immutable). 16 of them fail on the unfixed code. All nine
+vault env vars are now documented in `.env.example` (they were undocumented,
+which is how this got misconfigured). Run with
+`python -m pytest tests/test_withdrawal_config_error_detail_content.py`.
