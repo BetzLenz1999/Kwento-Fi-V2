@@ -270,8 +270,8 @@
 
          Signed-in members see their balance/goal by default; operators can hide
          it with COMMUNITY_REWARD_SHOW_BALANCE=0. Guests never see a personal
-         balance. The figure is not spendable or on-chain, and the card says that
-         no withdrawal path is available yet. Earning-rate details start
+         balance. The figure is a server-side ledger balance until a direct
+         wallet withdrawal is confirmed on Celo. Earning-rate details start
          collapsed behind an accessible toggle and come only from the server.
 
          Starts `hidden` and is revealed by the bundle only when the feature is
@@ -591,6 +591,8 @@ window.GM_WALLET_BOOT = {
         integrity="sha384-0d+Gr7vM4Drod8E3hXKgciWJSWbjD/opKLLygI9ktiWbuvlDwQLzU46wJ9s5gsp7"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="{{ url_for('static', filename='js/wallet-main.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/minipay-fee-currency.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/p2p/p2p-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
 {% endif %}
