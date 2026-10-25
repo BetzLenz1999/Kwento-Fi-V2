@@ -122,6 +122,10 @@
         lastReward = data && data.reward ? data.reward : null;
         lastEarningsRefresh = null;
         renderRewardStatus();
+        // The done strip quotes rewardStatusMessage(), and lastReward only exists
+        // from here on — re-render it so the reason is right rather than the
+        // "not available yet" placeholder showLearnDone() had to use.
+        syncLearnDoneDetail();
         var detail = { day_utc: data && data.day_utc, reward: lastReward };
         window.dispatchEvent(new CustomEvent('gm:daily-learn-completed', { detail: detail }));
         // The Community listener starts the card refresh and attaches its
@@ -132,12 +136,21 @@
         return Promise.resolve(refresh).then(function (ok) {
             lastEarningsRefresh = ok === true;
             renderRewardStatus();
+            // The message changes once we know whether the earnings card
+            // refreshed ("credited" vs "could not refresh"), so sync again.
+            syncLearnDoneDetail();
             return lastEarningsRefresh;
         }).catch(function () {
             lastEarningsRefresh = false;
             renderRewardStatus();
+            syncLearnDoneDetail();
             return false;
         });
+    }
+
+    function syncLearnDoneDetail() {
+        var detail = $('cfLearnDoneDetail');
+        if (detail) detail.textContent = learnDoneDetailText();
     }
 
     function renderCompleted(data) {
@@ -300,22 +313,101 @@
             var data = response.data || {};
             if (!response.ok || !data.success) {
                 card.hidden = true;
+                hideLearnDone();
                 return;
             }
             learn = data;
+            if (data.status === 'completed') {
+                // Done for today, so the card goes away instead of sitting on
+                // the feed all day. It comes back on its own when the UTC day
+                // rolls over: the snapshot is keyed on `day_utc`, so tomorrow's
+                // attempt is a fresh, incomplete one and this branch is skipped.
+                // Deliberately NOT reopened if an admin republishes the quiz
+                // mid-day — re-asking a member a quiz they already finished is a
+                // worse experience than waiting for the reset.
+                card.hidden = true;
+                showLearnDone(data);
+                // Still refreshes the Community G$ card and still dispatches
+                // gm:daily-learn-completed — do not drop this call, it is the
+                // only thing that credits/announces the completion.
+                refreshCompletionEarnings(data);
+                return;
+            }
+            hideLearnDone();
             card.hidden = false;
             var title = $('cfDailyLearnTitle');
-            if (title) title.textContent = data.status === 'completed'
-                ? 'Daily Learn complete' : 'Answer today’s 2 questions';
+            if (title) title.textContent = 'Answer today’s 2 questions';
             renderQuestion(data);
-            if (data.status === 'completed') refreshCompletionEarnings(data);
         }).catch(function () { card.hidden = true; });
+    }
+
+    /* ── "Daily Learn done today" strip ──────────────────────────────────────
+       The one-line replacement for the card. It carries the reward reason, which
+       is the only place a member can find out why a completion did not pay
+       (daily allowance used, no correct answers, wallet not verified, rewards
+       off). Collapsed by default so the composer stays clean. */
+    function learnDoneDetailText() {
+        var score = learn && learn.score != null ? learn.score : null;
+        var total = learn && learn.total_questions ? learn.total_questions : 2;
+        var head = score != null
+            ? 'You scored ' + score + '/' + total + ' today. '
+            : 'Today’s Daily Learn is complete. ';
+        return head + rewardStatusMessage();
+    }
+
+    function showLearnDone(data) {
+        var strip = $('cfLearnDone');
+        if (!strip) return;
+        var text = $('cfLearnDoneText');
+        if (text) {
+            var score = data && data.score != null ? data.score : null;
+            var total = data && data.total_questions ? data.total_questions : 2;
+            text.textContent = score != null
+                ? 'Daily Learn done today · ' + score + '/' + total
+                : 'Daily Learn done today';
+        }
+        strip.hidden = false;
+        var detail = $('cfLearnDoneDetail');
+        if (detail) {
+            detail.textContent = learnDoneDetailText();
+            // Keep it collapsed: the strip is the summary, the detail is opt-in.
+            detail.hidden = true;
+        }
+        var toggle = $('cfLearnDoneToggle');
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function hideLearnDone() {
+        var strip = $('cfLearnDone');
+        if (strip) strip.hidden = true;
+        var detail = $('cfLearnDoneDetail');
+        if (detail) detail.hidden = true;
+        var toggle = $('cfLearnDoneToggle');
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function toggleLearnDoneDetail() {
+        var detail = $('cfLearnDoneDetail');
+        var toggle = $('cfLearnDoneToggle');
+        if (!detail || !toggle) return;
+        var next = detail.hidden;
+        detail.hidden = !next;
+        toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
+        if (next) detail.textContent = learnDoneDetailText();
     }
 
     function init() {
         window.addEventListener('gm:community-post-created', loadPrompt);
         loadPrompt();
         loadLearn();
+    }
+
+    /* The done strip's Details toggle is wired with an inline onclick, which
+       resolves on `window`. community-feed.js loads first and assigns
+       `GMCommunity` synchronously, so attaching here is safe — and the guard
+       keeps this bundle importable on its own (an isolated embed). */
+    if (window.GMCommunity) {
+        window.GMCommunity.toggleLearnDoneDetail = toggleLearnDoneDetail;
     }
 
     if (document.readyState === 'loading') {
