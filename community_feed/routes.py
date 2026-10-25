@@ -237,6 +237,12 @@ def community_feed_home():
         max_video_mb=svc.MAX_VIDEO_MB,
         max_avatar_mb=svc.MAX_AVATAR_MB,
         storage_ready=storage.storage_available(),
+        # The "Today" chip is stamped SERVER-side on purpose. The feed is a
+        # daily surface and the Daily Learn card already resets on the UTC
+        # clock, so the date the page shows must come from that same clock — a
+        # client-rendered date would disagree with the reset for anyone whose
+        # device is not on UTC.
+        today_label=datetime.now(timezone.utc).strftime("%d %b").lstrip("0"),
     )
 
 
