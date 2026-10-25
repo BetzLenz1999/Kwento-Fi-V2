@@ -9832,7 +9832,13 @@ async function loadMinigamesMaintenance() {
                     headers: { 'Accept': 'application/json' }, credentials: 'same-origin'
                 });
                 const data = await response.json();
-                if (!response.ok || !data.success) throw new Error(data.error || 'Vault is not configured.');
+                if (!response.ok || !data.success) {
+                    // The route now returns the fixable reason as `detail`. Show
+                    // it: without it the operator only saw one generic sentence
+                    // and could not tell which setting to change.
+                    const reason = data.detail || data.error || 'Vault is not configured.';
+                    throw new Error(reason);
+                }
                 _communityVaultAdminConfig = data;
                 communityVaultAdminSetStatus(data.paused ? 'Vault verified on Celo; withdrawals are paused.'
                     : (data.withdrawal_enabled ? 'Vault verified on Celo Mainnet; new withdrawals are enabled.'
@@ -9847,13 +9853,32 @@ async function loadMinigamesMaintenance() {
                         + '\nImmutable issuer signer: ' + data.issuer_signer_address
                         + '\nCurrent vault balance: ' + data.vault_balance_gd + ' G$'
                         + '\nNew withdrawal signing: ' + (data.withdrawal_enabled ? 'enabled' : 'disabled')
-                        + '\nWithdrawal state: ' + (data.paused ? 'paused' : 'active');
+                        + '\nWithdrawal state: ' + (data.paused ? 'paused' : 'active')
+                        // Immutable vault limits. Shown because they CANNOT be
+                        // changed by an env var: a mismatch with the app's
+                        // expectation is fixed by a redeploy, not a setting.
+                        + '\nImmutable withdrawal minimum: ' + communityVaultFormatBaseUnits(data.minimum_base_units, data.decimals) + ' G$'
+                        + '\nImmutable withdrawal maximum: ' + communityVaultFormatBaseUnits(data.maximum_base_units, data.decimals) + ' G$'
+                        + '\nImmutable daily outflow cap: ' + communityVaultFormatBaseUnits(data.daily_cap_base_units, data.decimals) + ' G$';
                 }
             } catch (error) {
                 _communityVaultAdminConfig = null;
                 communityVaultAdminSetStatus((error && error.message) || 'Could not verify vault configuration.', 'error');
                 if (details) details.textContent = 'Funding is unavailable until the vault address and verified runtime settings are configured.';
             }
+        }
+
+        // Render an immutable vault limit (base units) as a G$ figure. Kept
+        // string-based to avoid precision loss on 18-decimal values.
+        function communityVaultFormatBaseUnits(value, decimals) {
+            const raw = String(value == null ? '' : value).trim();
+            if (!/^\d+$/.test(raw)) return String(value == null ? '' : value);
+            const places = Number(decimals);
+            if (!Number.isInteger(places) || places < 0 || places > 36) return raw;
+            const padded = raw.padStart(places + 1, '0');
+            const whole = padded.slice(0, padded.length - places) || '0';
+            const fraction = places ? padded.slice(padded.length - places).replace(/0+$/, '') : '';
+            return fraction ? whole + '.' + fraction : whole;
         }
 
         function communityVaultAmountToBaseUnits(value, decimals) {
