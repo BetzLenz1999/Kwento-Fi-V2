@@ -730,7 +730,40 @@ function feedFetch(handler, feedRows) {
        !!engagement.querySelector('.cf-comments'));
   }
 
-  // ── 9c. A caption-only post still renders its caption (no media branch) ───
+  // ── 9c. Multi-level replies retain parent mentions and render as text ──────
+  {
+    const { api, document } = run({ boot: MEMBER });
+    const post = { id: 77, comment_count: 1 };
+    const wrap = document.createElement('div');
+    api._internals.setComments(77, [
+      { id: 1, parent_comment_id: null, username: 'wewe', body: 'Root', is_mine: false, is_post_author: false },
+      { id: 2, parent_comment_id: 1, reply_to_username: 'wewe', username: 'betz', body: 'Thanks', is_mine: true, is_post_author: true },
+      { id: 3, parent_comment_id: 2, reply_to_username: 'betz', username: 'wewe', body: '<img src=x onerror=alert(1)>', is_mine: false, is_post_author: false },
+    ]);
+    api._internals.renderComments(post, wrap);
+    const nodes = wrap.querySelectorAll('.cf-comment-node');
+    const nodeFor = (id) => nodes.find(n => n.getAttribute('data-comment-id') === String(id));
+    ok('three comment nodes render from the nested thread data', nodes.length === 3,
+       String(nodes.length));
+    ok('reply-to-reply keeps the direct @mention',
+       nodeFor(3) && nodeFor(3).querySelector('.cf-reply-mention')
+         && nodeFor(3).querySelector('.cf-reply-mention').textContent === '@betz');
+    ok('the post author\'s reply receives the Author badge',
+       nodeFor(2) && nodeFor(2).querySelector('.cf-author-badge')
+         && nodeFor(2).querySelector('.cf-author-badge').textContent === 'Author');
+    ok('reply content is text and cannot create an image node',
+       !wrap.querySelector('img') && wrap.textContent.includes('<img src=x onerror=alert(1)>'));
+    ok('thread shows a direct replies collapse control',
+       nodeFor(1) && nodeFor(1).querySelector('.cf-replies-toggle')
+         && nodeFor(1).querySelector('.cf-replies-toggle').textContent.includes('1 reply'));
+    const rootReply = nodeFor(1) && nodeFor(1).querySelector('.cf-comment-action');
+    if (rootReply && rootReply.onclick) rootReply.onclick();
+    ok('reply action opens an inline composer naming its direct target',
+       wrap.querySelector('.cf-replying-to')
+         && wrap.querySelector('.cf-replying-to').textContent === 'Replying to @wewe');
+  }
+
+  // ── 9d. A caption-only post still renders its caption (no media branch) ───
   {
     const { api } = run({ boot: MEMBER });
     const card = api._internals.buildCard(makePost({
