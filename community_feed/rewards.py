@@ -90,8 +90,10 @@ _ENV_RATE_DEFAULTS = {
 #
 # The floor is 0 on purpose — setting a rate to 0 is the supported way to switch
 # an action off without a deploy (e.g. kill the tap reward during an incident).
-# The ceiling is well under the shared daily cap: a rate above DAILY_CAP would
-# make every credit unsatisfiable, which is a foot-gun, not a feature.
+# The ceiling must stay PAYABLE. A credit larger than the daily allowance (or
+# the per-post allowance) is refused by the cap check further down, so a rate
+# above either is unsatisfiable — a foot-gun, not a feature. RATE_BOUNDS
+# therefore uses RATE_MAX_EFFECTIVE, defined next to the caps it depends on.
 #
 # NOTE: Daily Learn is deliberately NOT in RATE_NAMES, so it is not bounded by
 # RATE_MAX. It has its own ceiling (DAILY_LEARN_RATE_MAX) AND its own daily
@@ -99,8 +101,7 @@ _ENV_RATE_DEFAULTS = {
 # worth more than the whole shared cap. Sharing one budget is what silently
 # voided the Daily Learn credit: a 2 x 25 G$ cycle exactly consumed the 50 G$
 # cap, so any reaction or comment in the same window blocked the reward.
-RATE_MAX = get_env_decimal("COMMUNITY_REWARD_RATE_MAX", "10")
-RATE_BOUNDS = {name: (Decimal("0"), RATE_MAX) for name in RATE_NAMES}
+RATE_MAX = get_env_decimal("COMMUNITY_REWARD_RATE_MAX", "100")
 
 #: Where the admin overrides live. Stored as a JSON blob in the existing
 #: ``maintenance_settings`` table, the same place ``community_stories_config``
@@ -116,8 +117,35 @@ _rates_cache: tuple = (None, 0.0)
 
 # Caps. A daily cap is the single most effective control: it bounds the worst
 # case per account per day no matter how many reactions an attacker fabricates.
-DAILY_CAP = get_env_decimal("COMMUNITY_REWARD_DAILY_CAP", "50")
+#
+# The daily allowance is 100 so the full 0-100 G$ rate range is PAYABLE: a
+# single credit must fit inside it, so a cap below the ceiling would make the
+# top of the range unpayable (see RATE_MAX_EFFECTIVE). At the shipped rate
+# defaults (2.5 / 1.5 / 0.5 / 0.1) this does NOT change what a member earns in
+# practice — reaching 100 G$ needs tens of events a day — it only removes the
+# ceiling that would block a deliberately higher rate.
+DAILY_CAP = get_env_decimal("COMMUNITY_REWARD_DAILY_CAP", "100")
 POST_CAP = get_env_decimal("COMMUNITY_REWARD_POST_CAP", "100")
+
+# The highest rate that can ACTUALLY be paid: a single credit must fit inside
+# both allowances, or the cap check refuses it and the member silently earns
+# nothing. This is what RATE_BOUNDS enforces, so the admin form can never offer
+# a rate the caps would reject.
+#
+# Why derive instead of trusting RATE_MAX: the two are set independently (one
+# env var each), so an operator can raise COMMUNITY_REWARD_RATE_MAX to 100 while
+# COMMUNITY_REWARD_DAILY_CAP is still 50. Clamping here means that combination
+# yields a payable ceiling of 50 rather than a rate that never credits.
+#
+# This is deliberately a clamp, not a startup error and not an auto-raise:
+#   - an error would take the app down over a tuning value;
+#   - raising the cap to match the rate would silently widen daily outflow,
+#     which is the opposite of what a cap is for.
+# The admin dashboard shows both numbers and names the binding one, so a clamped
+# ceiling is visible rather than mysterious.
+RATE_MAX_EFFECTIVE = min(RATE_MAX, DAILY_CAP, POST_CAP)
+
+RATE_BOUNDS = {name: (Decimal("0"), RATE_MAX_EFFECTIVE) for name in RATE_NAMES}
 
 # The payout minimum. v1 does not pay out (no payout path ships), so this is
 # the goal the card shows. 500 G$ is the gas-justified figure from the
