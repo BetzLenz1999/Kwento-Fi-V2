@@ -525,17 +525,24 @@ def _public_media(row: dict) -> dict:
 
 
 def _public_comment(row: dict, viewer: str | None,
-                    avatar_url: str | None = None) -> dict:
+                    avatar_url: str | None = None,
+                    post_owner: str | None = None) -> dict:
     owner = (row.get("wallet_address") or "").lower()
     # Strip a stored `@` for the same reason as `_public_post`: the UI draws
     # the prefix itself, so a legacy row must not render `@@betz`.
     username = (row.get("username") or "").strip().lstrip("@")
+    deleted = bool(row.get("is_deleted"))
+    mention = (row.get("reply_to_username_snapshot") or "").strip().lstrip("@")
     return {
         "id": row.get("id"),
-        "username": username or ANON_LABEL,
-        "body": row.get("body") or "",
-        "avatar_url": public_avatar_path(username) if avatar_url else None,
-        "is_mine": bool(viewer) and owner == viewer.lower(),
+        "parent_comment_id": row.get("parent_comment_id"),
+        "reply_to_username": mention or None,
+        "username": "Deleted comment" if deleted else (username or ANON_LABEL),
+        "body": "This comment was deleted." if deleted else (row.get("body") or ""),
+        "avatar_url": public_avatar_path(username) if avatar_url and not deleted else None,
+        "is_mine": not deleted and bool(viewer) and owner == viewer.lower(),
+        "is_post_author": bool(post_owner) and owner == post_owner.lower() and not deleted,
+        "is_deleted": deleted,
         "created_at": row.get("created_at"),
     }
 
@@ -569,6 +576,34 @@ def _avatars_for_wallets(supabase, wallets: list[str]) -> dict[str, bool]:
         # feed: avatars are decoration, posts are the product.
         logger.warning("community_feed: avatar batch failed: %s", exc)
         return {}
+
+
+def _current_usernames_for_wallets(supabase, wallets: list[str]) -> dict[str, str]:
+    """Batch current profile names for reply mentions; snapshots are fallback."""
+    wanted = sorted({str(wallet or "").lower() for wallet in wallets
+                     if re.fullmatch(r"0x[a-f0-9]{40}", str(wallet or ""), re.I)})
+    names: dict[str, str] = {}
+    # Keep PostgREST OR filters bounded; wallet values are strictly validated
+    # EVM addresses before being interpolated into the filter expression.
+    for start in range(0, len(wanted), 100):
+        batch = wanted[start:start + 100]
+        clause = ",".join(f"wallet_address.ilike.{address}" for address in batch)
+        try:
+            result = (
+                supabase.table("user_data")
+                .select("wallet_address,username")
+                .or_(clause)
+                .limit(len(batch))
+                .execute()
+            )
+            for row in _rows(result):
+                wallet = str(row.get("wallet_address") or "").lower()
+                username = (row.get("username") or "").strip().lstrip("@")
+                if wallet in batch and username:
+                    names[wallet] = username
+        except Exception as exc:  # noqa: BLE001
+            logger.info("community_feed: batch mention-name lookup skipped: %s", exc)
+    return names
 
 
 def get_avatar_url(wallet: str | None) -> str | None:
@@ -1968,7 +2003,8 @@ def _load_visible_post(supabase, post_id: int) -> dict | None:
 
 # ── Comments ─────────────────────────────────────────────────────────────────
 
-def add_comment(wallet: str, post_id: int, body: str) -> dict:
+def add_comment(wallet: str, post_id: int, body: str,
+                parent_comment_id=None) -> dict:
     if not wallet:
         return {"success": False, "error": "Not authenticated", "code": "auth"}
     if is_banned(wallet):
@@ -1994,12 +2030,52 @@ def add_comment(wallet: str, post_id: int, body: str) -> dict:
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
 
+    parent = None
+    if parent_comment_id not in (None, ""):
+        if isinstance(parent_comment_id, bool):
+            return {"success": False, "error": "Invalid reply target.",
+                    "code": "parent"}
+        if isinstance(parent_comment_id, float) and not parent_comment_id.is_integer():
+            return {"success": False, "error": "Invalid reply target.",
+                    "code": "parent"}
+        try:
+            parent_id = int(parent_comment_id)
+        except (TypeError, ValueError):
+            return {"success": False, "error": "Invalid reply target.",
+                    "code": "parent"}
+        if parent_id <= 0 or parent_id > 9_223_372_036_854_775_807:
+            return {"success": False, "error": "Invalid reply target.",
+                    "code": "parent"}
+        try:
+            parent_result = (
+                supabase.table("community_feed_comments")
+                .select("id,post_id,wallet_address,username,is_deleted")
+                .eq("id", parent_id)
+                .eq("post_id", int(post_id))
+                .limit(1)
+                .execute()
+            )
+            parent_rows = _rows(parent_result)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("community_feed: reply parent lookup failed: %s", exc)
+            return {"success": False, "error": "Could not verify the reply target.",
+                    "code": "db"}
+        if not parent_rows or parent_rows[0].get("is_deleted"):
+            return {"success": False, "error": "Reply target not found.",
+                    "code": "parent_not_found"}
+        parent = parent_rows[0]
+
     try:
         result = supabase.table("community_feed_comments").insert({
             "post_id": int(post_id),
             "wallet_address": wallet.lower(),
             "username": username,
             "body": clean,
+            "parent_comment_id": int(parent.get("id")) if parent else None,
+            # Never accept a mention recipient from the browser. The trigger
+            # independently recomputes both fields from this same parent row.
+            "reply_to_wallet": parent.get("wallet_address") if parent else None,
+            "reply_to_username_snapshot": parent.get("username") if parent else None,
         }).execute()
         rows = _rows(result)
     except Exception as exc:  # noqa: BLE001
@@ -2010,7 +2086,8 @@ def add_comment(wallet: str, post_id: int, body: str) -> dict:
         return {"success": False, "error": "Could not post your comment",
                 "code": "db"}
 
-    _bump_comment_count(supabase, post_id, +1)
+    if parent is None:
+        _bump_comment_count(supabase, post_id, +1)
     # A new comment earns for BOTH sides — the commenter (COMMENT_IN_RATE) and
     # the post owner (COMMENT_OUT_RATE, the larger rate); self-activity credits
     # nobody. Best-effort, and after the comment is persisted, so a rewards
@@ -2021,9 +2098,56 @@ def add_comment(wallet: str, post_id: int, body: str) -> dict:
             _supabase=supabase)
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_feed: reward credit failed: %s", exc)
+    if parent is not None:
+        _notify_comment_reply(
+            actor_wallet=wallet, actor_username=username,
+            parent=parent, post=post, post_id=post_id)
     avatar = _avatars_for_wallets(supabase, [wallet]).get((wallet or "").lower())
+    mention = (get_username(parent.get("wallet_address")) or parent.get("username")
+               if parent else None)
+    public_comment = _public_comment(
+        rows[0], wallet, avatar_url=avatar,
+        post_owner=post.get("wallet_address"))
+    public_comment["reply_to_username"] = (
+        (mention or "").strip().lstrip("@") or None)
     return {"success": True,
-            "comment": _public_comment(rows[0], wallet, avatar_url=avatar)}
+            "comment": public_comment}
+
+
+def _notify_comment_reply(*, actor_wallet: str, actor_username: str,
+                          parent: dict, post: dict, post_id: int) -> None:
+    """Best-effort Telegram alerts through the user's linked notification channel."""
+    actor = (actor_wallet or "").lower()
+    parent_wallet = (parent.get("wallet_address") or "").lower()
+    post_wallet = (post.get("wallet_address") or "").lower()
+    recipients: dict[str, str] = {}
+    if parent_wallet and parent_wallet != actor:
+        recipients[parent_wallet] = "parent"
+    if post_wallet and post_wallet != actor:
+        recipients.setdefault(post_wallet, "post")
+    if not recipients:
+        return
+    try:
+        from html import escape
+        from telegram_notify import notify_user_by_wallet_async
+        actor_label = escape((actor_username or "Community member").strip().lstrip("@")[:80])
+        post_label = escape((post.get("username") or "Community member").strip().lstrip("@")[:80])
+        post_url = f"{os.getenv('PRODUCTION_DOMAIN', 'https://goodmarketph.live').rstrip('/')}/community/p/{int(post_id)}"
+        safe_post_url = escape(post_url, quote=True)
+        for recipient, kind in recipients.items():
+            if kind == "parent":
+                text = (f"<b>@{actor_label}</b> replied to your comment on "
+                        f"<b>@{post_label}'s</b> post. "
+                        f'<a href="{safe_post_url}">View thread</a>')
+            else:
+                text = (f"<b>@{actor_label}</b> replied in your Community post. "
+                        f'<a href="{safe_post_url}">View thread</a>')
+            try:
+                notify_user_by_wallet_async(recipient, text)
+            except Exception as exc:  # noqa: BLE001
+                logger.info("community_feed: reply notification failed: %s", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("community_feed: reply notification skipped: %s", exc)
 
 
 def _bump_comment_count(supabase, post_id: int, delta: int) -> None:
@@ -2044,31 +2168,60 @@ def _bump_comment_count(supabase, post_id: int, delta: int) -> None:
         logger.warning("community_feed: comment count write failed: %s", exc)
 
 
-def get_comments(post_id: int, viewer: str | None = None, limit: int = 50) -> dict:
+def get_comments(post_id: int, viewer: str | None = None, limit: int = 1000) -> dict:
     supabase = _get_supabase()
     if not supabase:
         return {"success": False, "error": "Database unavailable", "comments": []}
+    post = _load_visible_post(supabase, post_id)
+    if not post:
+        return {"success": False, "error": "Post not found", "code": "not_found",
+                "comments": []}
     try:
         result = (
             supabase.table("community_feed_comments")
             .select("*")
             .eq("post_id", int(post_id))
-            .eq("is_deleted", False)
             .order("id")
-            .limit(max(1, min(200, int(limit or 50))))
+            .limit(max(1, min(1000, int(limit or 1000))))
             .execute()
         )
-        rows = _rows(result)
+        all_rows = _rows(result)
     except Exception as exc:  # noqa: BLE001
         logger.error("community_feed: comment list failed: %s", exc)
         return {"success": False, "error": "Could not load comments", "comments": []}
+    by_id = {str(row.get("id")): row for row in all_rows
+             if row.get("id") is not None}
+    included = {key for key, row in by_id.items() if not row.get("is_deleted")}
+    # Preserve a deleted ancestor as a content-free placeholder while any live
+    # descendant still points to it, so soft deletion never breaks the tree.
+    for row in list(by_id.values()):
+        if row.get("is_deleted"):
+            continue
+        parent_id = row.get("parent_comment_id")
+        visited = set()
+        while parent_id not in (None, "") and str(parent_id) not in visited:
+            key = str(parent_id)
+            visited.add(key)
+            parent = by_id.get(key)
+            if not parent:
+                break
+            included.add(key)
+            parent_id = parent.get("parent_comment_id")
+    rows = [row for row in all_rows if str(row.get("id")) in included]
     avatars = _avatars_for_wallets(
-        supabase, [r.get("wallet_address") for r in rows])
+        supabase, [r.get("wallet_address") for r in rows if not r.get("is_deleted")])
+    mention_names = _current_usernames_for_wallets(
+        supabase, [r.get("reply_to_wallet") for r in rows])
     return {"success": True,
             "comments": [
                 _public_comment(r, viewer,
                                 avatar_url=avatars.get(
-                                    (r.get("wallet_address") or "").lower()))
+                                    (r.get("wallet_address") or "").lower()),
+                                post_owner=post.get("wallet_address"))
+                | {"reply_to_username": (
+                    (mention_names.get((r.get("reply_to_wallet") or "").lower())
+                     or r.get("reply_to_username_snapshot") or "").strip().lstrip("@") or None
+                )}
                 for r in rows
             ]}
 
@@ -2082,7 +2235,7 @@ def delete_comment(wallet: str, comment_id: int) -> dict:
     try:
         result = (
             supabase.table("community_feed_comments")
-            .select("post_id,wallet_address,is_deleted")
+            .select("post_id,wallet_address,is_deleted,parent_comment_id")
             .eq("id", int(comment_id))
             .limit(1)
             .execute()
@@ -2102,7 +2255,8 @@ def delete_comment(wallet: str, comment_id: int) -> dict:
     except Exception as exc:  # noqa: BLE001
         logger.error("community_feed: comment delete failed: %s", exc)
         return {"success": False, "error": "Could not delete the comment", "code": "db"}
-    _bump_comment_count(supabase, rows[0].get("post_id"), -1)
+    if rows[0].get("parent_comment_id") in (None, ""):
+        _bump_comment_count(supabase, rows[0].get("post_id"), -1)
     # Deleting a comment reverses both sides of the credit it produced, so the
     # owner's rate must be resolved here to find the owner's row.
     try:
