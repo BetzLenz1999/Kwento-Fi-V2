@@ -1868,8 +1868,8 @@ function feedFetch(handler, feedRows) {
     ok('the pending state does not offer a withdrawal action',
        !/ready to withdraw/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
-    ok('a member is told withdrawals are not live',
-       /withdrawals are not live yet/i.test(store.cfEarnNote.textContent),
+    ok('a member is told withdrawals require the threshold and an enabled vault',
+       /full balance becomes withdrawable after the minimum is reached and the vault is enabled/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
   }
 
@@ -1964,8 +1964,8 @@ function feedFetch(handler, feedRows) {
     ok('a guest does not get the personal balance block',
        store.cfEarnBalance.hidden === true,
        String(store.cfEarnBalance.hidden));
-    ok('a guest is told withdrawals are not live',
-       /withdrawals are not live yet/i.test(store.cfEarnNote.textContent),
+    ok('a guest is told withdrawals require the threshold and an enabled vault',
+       /full balance becomes withdrawable after the minimum is reached and the vault is enabled/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
 
     api._internals.renderRewards({ enabled: false });
