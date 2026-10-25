@@ -49,6 +49,8 @@
     var _activeReactionPicker = null;
     var _commentsOpen = {};    // post_id -> true
     var _commentCache = {};    // post_id -> [comments]
+    var _replyingTo = {};      // post_id -> comment/reply id
+    var _collapsedReplies = {}; // post_id -> {comment_id: true}
     var _earnBusy = false;     // one in-flight rewards fetch at a time
     var _earnDirty = false;    // a refresh arrived while one was in flight
     var _earnPromise = null;   // callers can await the coalesced latest read
@@ -1549,7 +1551,12 @@
 
     function toggleComments(post, body) {
         var existing = body.querySelector('.cf-comments');
-        if (existing) { existing.remove(); delete _commentsOpen[post.id]; return; }
+        if (existing) {
+            existing.remove();
+            delete _commentsOpen[post.id];
+            delete _replyingTo[post.id];
+            return;
+        }
         _commentsOpen[post.id] = true;
 
         var wrap = el('div', 'cf-comments');
@@ -1570,23 +1577,26 @@
     function renderComments(post, wrap) {
         wrap.textContent = '';
         var comments = _commentCache[post.id] || [];
+        var byId = {};
+        var children = {};
+        var roots = [];
+        comments.forEach(function (comment) { byId[String(comment.id)] = comment; });
         comments.forEach(function (comment) {
-            var row = el('div', 'cf-comment');
-            row.appendChild(avatarNode(comment.avatar_url, comment.username,
-                'cf-comment-avatar'));
-            var bubble = el('div', 'cf-comment-body');
-            bubble.appendChild(el('strong', null, comment.username));
-            bubble.appendChild(document.createTextNode(comment.body));
-            row.appendChild(bubble);
-            if (comment.is_mine) {
-                var remove = el('button', 'cf-action-btn', '×');
-                remove.type = 'button';
-                remove.setAttribute('aria-label', 'Delete comment');
-                remove.onclick = function () { deleteComment(post, comment, wrap); };
-                row.appendChild(remove);
+            var parentId = comment.parent_comment_id == null
+                ? '' : String(comment.parent_comment_id);
+            if (parentId && byId[parentId]) {
+                if (!children[parentId]) children[parentId] = [];
+                children[parentId].push(comment);
+            } else {
+                roots.push(comment);
             }
-            wrap.appendChild(row);
         });
+        roots.sort(function (a, b) { return Number(a.id) - Number(b.id); });
+        var thread = el('div', 'cf-comment-thread');
+        roots.forEach(function (comment) {
+            thread.appendChild(renderCommentNode(post, comment, children, 0, wrap));
+        });
+        wrap.appendChild(thread);
 
         if (!WALLET) {
             wrap.appendChild(el('div', 'cf-comment', 'Log in to comment.'));
@@ -1606,27 +1616,130 @@
         input.onkeydown = function (event) {
             if (event.key === 'Enter' && input.value.trim()) { submit.click(); }
         };
-        submit.onclick = function () { addComment(post, input, submit, wrap); };
+        submit.onclick = function () { addComment(post, input, submit, wrap, null); };
         form.appendChild(input);
         form.appendChild(submit);
         wrap.appendChild(form);
     }
 
-    function addComment(post, input, submit, wrap) {
+    function renderCommentNode(post, comment, children, depth, wrap) {
+        var node = el('div', 'cf-comment-node');
+        node.setAttribute('data-comment-id', String(comment.id));
+        var row = el('div', 'cf-comment');
+        if (!comment.is_deleted) {
+            row.appendChild(avatarNode(comment.avatar_url, comment.username,
+                'cf-comment-avatar'));
+        } else {
+            row.appendChild(el('span', 'cf-comment-avatar cf-comment-deleted-avatar', '…'));
+        }
+        var bubble = el('div', 'cf-comment-body');
+        var authorLine = el('div', 'cf-comment-author-line');
+        authorLine.appendChild(el('strong', null, comment.username));
+        if (comment.is_post_author) authorLine.appendChild(el('span', 'cf-author-badge', 'Author'));
+        bubble.appendChild(authorLine);
+        if (comment.reply_to_username) {
+            bubble.appendChild(el('span', 'cf-reply-mention', '@' + comment.reply_to_username));
+            bubble.appendChild(document.createTextNode(' '));
+        }
+        bubble.appendChild(document.createTextNode(comment.body || ''));
+        row.appendChild(bubble);
+
+        var actions = el('div', 'cf-comment-actions');
+        if (WALLET && !comment.is_deleted) {
+            var reply = el('button', 'cf-comment-action', 'Reply');
+            reply.type = 'button';
+            reply.setAttribute('aria-label', 'Reply to @' + (comment.username || 'member'));
+            reply.onclick = function () {
+                _replyingTo[post.id] = String(comment.id);
+                renderComments(post, wrap);
+            };
+            actions.appendChild(reply);
+        }
+        var replies = children[String(comment.id)] || [];
+        var collapsed = !!((_collapsedReplies[post.id] || {})[String(comment.id)]);
+        if (replies.length) {
+            var toggle = el('button', 'cf-comment-action cf-replies-toggle',
+                replies.length + (replies.length === 1 ? ' reply · ' : ' replies · ') +
+                (collapsed ? 'Expand' : 'Collapse'));
+            toggle.type = 'button';
+            toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            toggle.onclick = function () {
+                if (!_collapsedReplies[post.id]) _collapsedReplies[post.id] = {};
+                _collapsedReplies[post.id][String(comment.id)] = !collapsed;
+                renderComments(post, wrap);
+            };
+            actions.appendChild(toggle);
+        }
+        if (comment.is_mine && !comment.is_deleted) {
+            var remove = el('button', 'cf-comment-action cf-comment-delete', 'Delete');
+            remove.type = 'button';
+            remove.setAttribute('aria-label', 'Delete comment');
+            remove.onclick = function () { deleteComment(post, comment, wrap); };
+            actions.appendChild(remove);
+        }
+        if (actions.children.length) row.appendChild(actions);
+        node.appendChild(row);
+
+        if (String(_replyingTo[post.id] || '') === String(comment.id)) {
+            node.appendChild(buildReplyComposer(post, comment, wrap));
+        }
+        if (replies.length && !collapsed) {
+            var nested = el('div', 'cf-comment-children');
+            nested.setAttribute('data-depth', String(Math.min(depth + 1, 4)));
+            replies.sort(function (a, b) { return Number(a.id) - Number(b.id); });
+            replies.forEach(function (replyComment) {
+                nested.appendChild(renderCommentNode(post, replyComment, children, depth + 1, wrap));
+            });
+            node.appendChild(nested);
+        }
+        return node;
+    }
+
+    function buildReplyComposer(post, parent, wrap) {
+        var form = el('div', 'cf-comment-form cf-reply-form');
+        form.appendChild(el('span', 'cf-replying-to', 'Replying to @' + (parent.username || 'member')));
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Write a reply…';
+        input.maxLength = 500;
+        input.setAttribute('aria-label', 'Reply to @' + (parent.username || 'member'));
+        var cancel = el('button', 'cf-comment-cancel', 'Cancel');
+        cancel.type = 'button';
+        cancel.onclick = function () { delete _replyingTo[post.id]; renderComments(post, wrap); };
+        var submit = el('button', 'cf-comment-submit', 'Reply');
+        submit.type = 'button';
+        submit.disabled = true;
+        input.oninput = function () { submit.disabled = !input.value.trim(); };
+        input.onkeydown = function (event) {
+            if (event.key === 'Enter' && input.value.trim()) submit.click();
+            if (event.key === 'Escape') cancel.click();
+        };
+        submit.onclick = function () { addComment(post, input, submit, wrap, parent.id); };
+        form.appendChild(input);
+        form.appendChild(cancel);
+        form.appendChild(submit);
+        return form;
+    }
+
+    function addComment(post, input, submit, wrap, parentCommentId) {
         var body = input.value.trim();
         if (!body) return;
         submit.disabled = true;
+        var submitLabel = parentCommentId == null ? 'Send' : 'Reply';
         submit.textContent = '…';
         api('/community/api/posts/' + post.id + '/comments', {
             method: 'POST',
-            body: JSON.stringify({ body: body }),
+            body: JSON.stringify({ body: body, parent_comment_id: parentCommentId }),
         }).then(function (result) {
             if (!result.data || !result.data.success) {
                 throw new Error((result.data && result.data.error) || 'Could not post your comment.');
             }
             input.value = '';
             _commentCache[post.id] = (_commentCache[post.id] || []).concat([result.data.comment]);
-            post.comment_count = (Number(post.comment_count) || 0) + 1;
+            if (parentCommentId == null) {
+                post.comment_count = (Number(post.comment_count) || 0) + 1;
+            }
+            delete _replyingTo[post.id];
             renderComments(post, wrap);
             rerenderPost(post);
             loadRewards();
@@ -1634,7 +1747,7 @@
             toast((error && error.message) || 'Could not post your comment.', 'error');
         }).then(function () {
             submit.disabled = false;
-            submit.textContent = 'Send';
+            submit.textContent = submitLabel;
         });
     }
 
@@ -2646,6 +2759,8 @@
             updateUploadStatus: updateUploadStatus,
             renderPreviews: renderPreviews,
             renderFeed: renderFeed,
+            renderComments: renderComments,
+            setComments: function (postId, rows) { _commentCache[postId] = rows || []; },
             loadRewards: loadRewards,
             renderRewards: renderRewards,
             formatGd: formatGd,
