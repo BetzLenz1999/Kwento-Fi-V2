@@ -1328,7 +1328,8 @@ def api_clear_reaction(post_id: int):
 def api_get_comments(post_id: int):
     if not svc.is_enabled():
         return _disabled_response()
-    return jsonify(svc.get_comments(post_id, viewer=_session_wallet()))
+    result = svc.get_comments(post_id, viewer=_session_wallet())
+    return jsonify(result), (404 if result.get("code") == "not_found" else 200)
 
 
 @community_feed_bp.route("/api/posts/<int:post_id>/comments", methods=["POST"])
@@ -1348,10 +1349,15 @@ def api_add_comment(post_id: int):
             "retry_after": wait,
         }), 429
 
-    result = svc.add_comment(wallet, post_id, _json_body().get("body"))
+    data = _json_body()
+    result = svc.add_comment(
+        wallet, post_id, data.get("body"),
+        parent_comment_id=data.get("parent_comment_id"),
+    )
     if result.get("success"):
         return jsonify(result)
-    status = {"not_found": 404, "banned": 403}.get(result.get("code"), 400)
+    status = {"not_found": 404, "parent_not_found": 404,
+              "banned": 403}.get(result.get("code"), 400)
     return jsonify(result), status
 
 
