@@ -830,6 +830,12 @@
                     </a>
                 </li>
                 <li class="menu-item">
+                    <a class="menu-link" onclick="showSection('community-withdrawal-vault-section')">
+                        <span class="menu-icon">🛡️</span>
+                        <span>Community Vault</span>
+                    </a>
+                </li>
+                <li class="menu-item">
                     <a class="menu-link" onclick="showSection('cusd-faucet-section')">
                         <span class="menu-icon">💧</span>
                         <span>cUSD Faucet</span>
@@ -3048,6 +3054,53 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     <div id="treasuryRecipientsTable">
                         <div class="loading"><div class="spinner"></div><p>Loading recipients...</p></div>
                     </div>
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════════════════════ -->
+            <!-- Community Withdrawal Vault funding                          -->
+            <!-- ═══════════════════════════════════════════════════════════ -->
+            <section id="community-withdrawal-vault-section" class="section">
+                <div class="page-header">
+                    <h1 class="page-title">🛡️ Community Withdrawal Vault</h1>
+                    <p style="color:rgba(241,245,249,0.7);">
+                        Fund the Community G$ withdrawal vault with a direct transfer from your connected wallet.
+                        The sender pays gas; this does not create a reward or withdrawal entitlement.
+                    </p>
+                </div>
+                <div class="content-box" style="margin-bottom:1.5rem;">
+                    <h2 style="margin-bottom:0.6rem;">Vault status</h2>
+                    <div id="communityVaultAdminStatus" role="status" aria-live="polite">Loading verified Celo vault details…</div>
+                    <div id="communityVaultAdminDetails" style="margin-top:1rem;"></div>
+                    <button type="button" onclick="loadCommunityVaultAdminStatus()" class="admin-btn"
+                            style="margin-top:1rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);">
+                        Refresh vault status
+                    </button>
+                </div>
+                <div class="content-box">
+                    <h2 style="margin-bottom:0.5rem;">Fund with G$</h2>
+                    <p style="color:rgba(241,245,249,0.65);font-size:0.88rem;margin-bottom:1rem;">
+                        Connect the same wallet used for this admin session, enter the amount, review the vault address,
+                        and approve a single <code>transfer(vault, amount)</code> in your wallet. No allowance and no
+                        backend private key are used. Anyone with Admin Dashboard access may contribute.
+                    </p>
+                    <label for="communityVaultFundAmount" style="display:block;margin-bottom:0.4rem;font-weight:700;">Amount (G$)</label>
+                    <input id="communityVaultFundAmount" class="admin-input" type="text" inputmode="decimal"
+                           placeholder="e.g. 100" autocomplete="off" style="max-width:280px;">
+                    <div style="margin-top:1rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
+                        <button type="button" onclick="fundCommunityVault()" class="admin-btn"
+                                style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;font-weight:800;">
+                            Review &amp; Fund Vault
+                        </button>
+                    </div>
+                    <label for="communityVaultFundingTxHash" style="display:block;margin:1.25rem 0 0.4rem;font-weight:700;">Resume funding receipt verification</label>
+                    <input id="communityVaultFundingTxHash" class="admin-input" type="text" inputmode="text"
+                           placeholder="0x transaction hash" autocomplete="off" style="max-width:520px;">
+                    <button type="button" onclick="verifyCommunityVaultFundingTx()" class="admin-btn"
+                            style="margin-top:0.6rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);">
+                        Verify transaction hash
+                    </button>
+                    <div id="communityVaultFundStatus" role="status" aria-live="polite" style="margin-top:1rem;"></div>
                 </div>
             </section>
 
@@ -9276,6 +9329,42 @@ async function loadMinigamesMaintenance() {
         }
     </script>
 
+    <script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
+    <script>window.GMEthersLoader.load().catch(function () {});</script>
+    <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+    {% if (login_method or '')|lower == 'local' %}
+    <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
+    {% endif %}
+    {% if (login_method or '')|lower == 'privy' %}
+    <div id="communityVaultPrivyWalletMount" hidden></div>
+    <script type="module">
+        import React, { useEffect } from 'https://esm.sh/react@18.3.1';
+        import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
+        import { PrivyProvider, usePrivy, useWallets } from 'https://esm.sh/@privy-io/react-auth@3.32.2?deps=react@18.3.1,react-dom@18.3.1';
+        const adminPrivyChain = { id: 42220, name: 'Celo', network: 'celo', nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 }, rpcUrls: { default: { http: ['https://forno.celo.org'] }, public: { http: ['https://forno.celo.org'] } } };
+        function CommunityVaultPrivyBridge() {
+            const { ready, authenticated } = usePrivy();
+            const { wallets } = useWallets();
+            useEffect(() => {
+                window.GMPrivyReady = !!ready;
+                window.GMPrivyAuthenticated = !!authenticated;
+                window.GMPrivyWallets = wallets || [];
+                window.dispatchEvent(new CustomEvent('gm:privy-wallets-updated'));
+            }, [ready, authenticated, wallets]);
+            return null;
+        }
+        const adminPrivyMount = document.getElementById('communityVaultPrivyWalletMount');
+        const adminPrivyAppId = {{ (privy_app_id|default('', true))|tojson }};
+        if (adminPrivyMount && adminPrivyAppId) {
+            createRoot(adminPrivyMount).render(React.createElement(PrivyProvider, {
+                appId: adminPrivyAppId,
+                clientId: {{ (privy_client_id|default('', true))|tojson }},
+                config: { defaultChain: adminPrivyChain, supportedChains: [adminPrivyChain], embeddedWallets: { ethereum: { createOnLogin: 'users-without-wallets' } } }
+            }, React.createElement(CommunityVaultPrivyBridge)));
+        }
+    </script>
+    {% endif %}
+
     <script>
         async function adminLoadVoucherStatus() {
             const box = document.getElementById('voucherStatusBox');
@@ -9668,7 +9757,220 @@ async function loadMinigamesMaintenance() {
             if (sectionId === 'cusd-faucet-section') {
                 loadCusdFaucetStatus();
             }
+            if (sectionId === 'community-withdrawal-vault-section') {
+                loadCommunityVaultAdminStatus();
+            }
         };
+
+        // ─── Community Withdrawal Vault funding (direct admin wallet tx) ───
+        const COMMUNITY_VAULT_ADMIN_WALLET = {{ wallet|tojson }};
+        const COMMUNITY_VAULT_LOGIN_METHOD = {{ login_method|default('', true)|tojson }};
+        const COMMUNITY_VAULT_WC_PROJECT_ID = {{ walletconnect_project_id|default('', true)|tojson }};
+        let _communityVaultAdminConfig = null;
+
+        async function communityVaultFundingProvider() {
+            const method = String(COMMUNITY_VAULT_LOGIN_METHOD || '').toLowerCase();
+            if (method === 'local') {
+                if (window.GMEthersLoader && typeof window.GMEthersLoader.load === 'function') {
+                    await window.GMEthersLoader.load();
+                }
+                if (!window.GMLocalWallet) throw new Error('The in-app GoodMarket wallet is not ready. Refresh and retry.');
+                if (!window.GMLocalWallet.isUnlocked()) {
+                    if (typeof window._lwOpenUnlockModal !== 'function') throw new Error('Unlock your GoodMarket wallet before funding.');
+                    await window._lwOpenUnlockModal({
+                        title: 'Unlock to fund the Community vault',
+                        subtitle: 'Your local wallet will submit and pay gas for this G$ contribution.'
+                    });
+                }
+                return window.GMLocalWallet.getProvider();
+            }
+            if (['walletconnect', 'manual', 'manual_address'].indexOf(method) >= 0) {
+                if (!window.GMWalletConnect) throw new Error('WalletConnect is not available. Refresh the Admin Dashboard and retry.');
+                window.GMWalletConnect.configure({
+                    walletAddress: COMMUNITY_VAULT_ADMIN_WALLET,
+                    loginMethod: method,
+                    projectId: COMMUNITY_VAULT_WC_PROJECT_ID,
+                    dappName: 'GoodMarket Admin — Community Vault',
+                    dappDescription: 'Fund the Community G$ withdrawal vault on Celo.',
+                    assetVersion: {{ ASSET_VERSION|tojson }}
+                });
+                return await window.GMWalletConnect.getProvider();
+            }
+            if (method === 'privy') {
+                const started = Date.now();
+                while (Date.now() - started < 10000) {
+                    const wallets = Array.isArray(window.GMPrivyWallets) ? window.GMPrivyWallets : [];
+                    const selected = wallets.find(w => String((w && w.address) || '').toLowerCase() === String(COMMUNITY_VAULT_ADMIN_WALLET).toLowerCase());
+                    if (selected && typeof selected.getEthereumProvider === 'function') return await selected.getEthereumProvider();
+                    if (selected && selected.provider && typeof selected.provider.request === 'function') return selected.provider;
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                throw new Error('The authenticated Privy wallet is not available in this Admin Dashboard session.');
+            }
+            if (method && method !== 'injected') {
+                throw new Error('Direct vault funding is not supported by this login method. Reopen Admin Dashboard with your wallet provider connected.');
+            }
+            const provider = typeof farmingAdminProvider === 'function' ? farmingAdminProvider() : window.ethereum;
+            if (!provider || typeof provider.request !== 'function') throw new Error('Open the Admin Dashboard in your connected wallet browser.');
+            return provider;
+        }
+
+        function communityVaultAdminSetStatus(message, type) {
+            const el = document.getElementById('communityVaultAdminStatus');
+            if (!el) return;
+            el.textContent = message;
+            el.style.color = type === 'error' ? '#f87171' : type === 'ok' ? '#34d399' : 'rgba(241,245,249,0.75)';
+        }
+
+        async function loadCommunityVaultAdminStatus() {
+            const status = document.getElementById('communityVaultAdminStatus');
+            const details = document.getElementById('communityVaultAdminDetails');
+            if (status) communityVaultAdminSetStatus('Loading verified Celo vault details…');
+            if (details) details.textContent = '';
+            try {
+                const response = await fetch('/community/api/admin/withdrawal-vault/config', {
+                    headers: { 'Accept': 'application/json' }, credentials: 'same-origin'
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.error || 'Vault is not configured.');
+                _communityVaultAdminConfig = data;
+                communityVaultAdminSetStatus(data.paused ? 'Vault verified on Celo; withdrawals are paused.'
+                    : (data.withdrawal_enabled ? 'Vault verified on Celo Mainnet; new withdrawals are enabled.'
+                        : 'Vault verified on Celo Mainnet; funding is available but new withdrawals remain disabled.'), data.paused ? 'error' : 'ok');
+                if (details) {
+                    details.style.whiteSpace = 'pre-line';
+                    details.style.fontFamily = 'monospace';
+                    details.style.fontSize = '0.85rem';
+                    details.textContent = 'Vault: ' + data.vault_address
+                        + '\nGoodDollar token: ' + data.token_address
+                        + '\nCommunity ID hash: ' + data.project_id
+                        + '\nImmutable issuer signer: ' + data.issuer_signer_address
+                        + '\nCurrent vault balance: ' + data.vault_balance_gd + ' G$'
+                        + '\nNew withdrawal signing: ' + (data.withdrawal_enabled ? 'enabled' : 'disabled')
+                        + '\nWithdrawal state: ' + (data.paused ? 'paused' : 'active');
+                }
+            } catch (error) {
+                _communityVaultAdminConfig = null;
+                communityVaultAdminSetStatus((error && error.message) || 'Could not verify vault configuration.', 'error');
+                if (details) details.textContent = 'Funding is unavailable until the vault address and verified runtime settings are configured.';
+            }
+        }
+
+        function communityVaultAmountToBaseUnits(value, decimals) {
+            const raw = String(value || '').trim();
+            if (!/^\d+(?:\.\d+)?$/.test(raw)) throw new Error('Enter a positive G$ amount using digits and an optional decimal point.');
+            const parts = raw.split('.');
+            const fraction = parts[1] || '';
+            if (fraction.length > Number(decimals)) throw new Error('Amount has more decimal places than the G$ token supports.');
+            const scale = 10n ** BigInt(Number(decimals));
+            const wholeUnits = BigInt(parts[0]) * scale;
+            const fractionalUnits = BigInt((fraction + '0'.repeat(Number(decimals))).slice(0, Number(decimals)) || '0');
+            const amount = wholeUnits + fractionalUnits;
+            if (amount <= 0n) throw new Error('Funding amount must be greater than zero.');
+            return amount;
+        }
+
+        async function verifyCommunityVaultFundingTx() {
+            const input = document.getElementById('communityVaultFundingTxHash');
+            const txHash = String(input && input.value || '').trim().toLowerCase();
+            const status = document.getElementById('communityVaultFundStatus');
+            const button = document.querySelector('#community-withdrawal-vault-section button[onclick="verifyCommunityVaultFundingTx()"]');
+            const setStatus = (message, type) => {
+                if (!status) return;
+                status.textContent = message;
+                status.style.color = type === 'error' ? '#f87171' : type === 'ok' ? '#34d399' : 'rgba(241,245,249,0.75)';
+            };
+            if (button) button.disabled = true;
+            try {
+                if (!/^0x[0-9a-f]{64}$/.test(txHash)) throw new Error('Paste a valid 0x-prefixed Celo transaction hash.');
+                for (let attempt = 0; attempt < 18; attempt += 1) {
+                    const response = await fetch('/community/api/admin/withdrawal-vault/fund/confirm', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        credentials: 'same-origin', body: JSON.stringify({ tx_hash: txHash })
+                    });
+                    const data = await response.json();
+                    if (data.status === 'confirmed' && data.success) {
+                        setStatus('Funding confirmed: ' + data.amount_gd + ' G$ added to the vault. Tx: ' + txHash, 'ok');
+                        await loadCommunityVaultAdminStatus();
+                        return;
+                    }
+                    if (!response.ok && response.status !== 202) throw new Error(data.error || 'Could not verify the funding receipt.');
+                    setStatus('Funding transaction is ' + (data.status || 'pending') + '. Tx: ' + txHash);
+                    await new Promise(resolve => setTimeout(resolve, 4000));
+                }
+                setStatus('Funding confirmation is still pending. Keep this hash and verify it again later: ' + txHash);
+            } catch (error) {
+                setStatus((error && error.message) || 'Funding receipt verification failed.', 'error');
+            } finally {
+                if (button) button.disabled = false;
+            }
+        }
+
+        async function fundCommunityVault() {
+            const button = document.querySelector('#community-withdrawal-vault-section button[onclick="fundCommunityVault()"]');
+            const status = document.getElementById('communityVaultFundStatus');
+            const input = document.getElementById('communityVaultFundAmount');
+            const setFundStatus = (message, type) => {
+                if (!status) return;
+                status.textContent = message;
+                status.style.color = type === 'error' ? '#f87171' : type === 'ok' ? '#34d399' : 'rgba(241,245,249,0.75)';
+            };
+            if (button) button.disabled = true;
+            try {
+                if (!_communityVaultAdminConfig) await loadCommunityVaultAdminStatus();
+                const config = _communityVaultAdminConfig;
+                if (!config) throw new Error('Verified vault configuration is not available.');
+                const amountBase = communityVaultAmountToBaseUnits(input && input.value, config.decimals);
+                const amount = input.value.trim();
+                if (!window.confirm('Transfer ' + amount + ' G$ from your connected wallet to the Community withdrawal vault on Celo Mainnet?\n\nVault: ' + config.vault_address + '\nYou pay gas. This transfer is a vault contribution and cannot be withdrawn by the sender.')) return;
+                const provider = await communityVaultFundingProvider();
+                const accounts = await provider.request({ method: 'eth_requestAccounts' });
+                const sender = accounts && accounts[0];
+                if (!sender || sender.toLowerCase() !== String(COMMUNITY_VAULT_ADMIN_WALLET).toLowerCase()) {
+                    throw new Error('Connect the same wallet address used for this Admin Dashboard session.');
+                }
+                let chain = await provider.request({ method: 'eth_chainId' });
+                if (parseInt(chain, 16) !== 42220) {
+                    await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xa4ec' }] });
+                    chain = await provider.request({ method: 'eth_chainId' });
+                    if (parseInt(chain, 16) !== 42220) throw new Error('Switch your wallet to Celo Mainnet before funding.');
+                }
+                const calldata = '0xa9059cbb'
+                    + String(config.vault_address).replace(/^0x/, '').toLowerCase().padStart(64, '0')
+                    + amountBase.toString(16).padStart(64, '0');
+                setFundStatus('Review the G$ transfer in your wallet. Your wallet pays the network fee.');
+                const txHash = await provider.request({
+                    method: 'eth_sendTransaction',
+                    params: [{ from: sender, to: config.token_address, data: calldata, value: '0x0' }]
+                });
+                if (!txHash) throw new Error('Wallet did not return a transaction hash. Check wallet activity before retrying.');
+                const txHashInput = document.getElementById('communityVaultFundingTxHash');
+                if (txHashInput) txHashInput.value = txHash;
+                setFundStatus('Transfer submitted: ' + txHash + '. Waiting for Celo confirmation…');
+                let confirmed = false;
+                for (let attempt = 0; attempt < 18; attempt += 1) {
+                    const response = await fetch('/community/api/admin/withdrawal-vault/fund/confirm', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        credentials: 'same-origin', body: JSON.stringify({ tx_hash: txHash })
+                    });
+                    const data = await response.json();
+                    if (data.status === 'confirmed' && data.success) {
+                        setFundStatus('Funding confirmed: ' + data.amount_gd + ' G$ added to the vault. Tx: ' + txHash, 'ok');
+                        confirmed = true;
+                        await loadCommunityVaultAdminStatus();
+                        break;
+                    }
+                    if (!response.ok && response.status !== 202) throw new Error(data.error || 'Could not verify the funding receipt.');
+                    setFundStatus('Funding transaction is ' + (data.status || 'pending') + '. Tx: ' + txHash);
+                    await new Promise(resolve => setTimeout(resolve, 4000));
+                }
+                if (!confirmed) setFundStatus('Transaction was submitted but confirmation is still pending. Keep the hash above and use Verify transaction hash to retry: ' + txHash);
+            } catch (error) {
+                setFundStatus((error && error.message) || 'Vault funding could not be completed.', 'error');
+            } finally {
+                if (button) button.disabled = false;
+            }
+        }
 
         // ─── cUSD Faucet (GoodMarketMiniPayCUSDFaucet) ──────────────────────
         let _cusdFaucetStatus = null;
