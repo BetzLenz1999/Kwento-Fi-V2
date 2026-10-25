@@ -1305,7 +1305,9 @@ def summary(wallet: str | None, *, _supabase=None) -> dict:
         "status": status,
         "eligible": eligible,
         "balance_available": balance_available,
-        # v1 ships no payout path: the threshold is a goal, not a button.
+        # A ledger summary alone cannot establish payout readiness; the
+        # dedicated withdrawal endpoint also verifies current identity, vault
+        # immutables, pause state, and on-chain limits before issuing a signature.
         "can_withdraw": False,
         # The full breakdown, so the card can state the rates instead of a
         # single misleading average. Rates are per event type, not per action.
