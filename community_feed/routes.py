@@ -977,7 +977,16 @@ def api_admin_reward_rates():
         # cannot reorder the anti-farm story by accident.
         "names": list(rewards.RATE_NAMES),
         "min": float(low),
+        # `max` is the EFFECTIVE ceiling — the highest rate that can actually be
+        # paid. It is min(configured ceiling, daily allowance, per-post
+        # allowance), so the form can never offer a rate the caps would refuse.
         "max": float(high),
+        # The three inputs behind `max`, so the editor can EXPLAIN a lowered
+        # ceiling instead of silently showing a number smaller than the operator
+        # configured. Without these a clamped 100 -> 50 reads as a bug.
+        "rate_max": float(rewards.RATE_MAX),
+        "daily_cap": float(rewards.DAILY_CAP),
+        "post_cap": float(rewards.POST_CAP),
         "defaults": {name: float(rewards._env_rate(name))
                      for name in rewards.RATE_NAMES},
     })
