@@ -1851,7 +1851,7 @@
             } else if (data.eligible === false) {
                 leadEl.textContent = 'Verify your identity to start earning G$.';
             } else if (showBalance && minimum > 0 && amount >= minimum) {
-                leadEl.textContent = 'You reached the 500 G$ goal. Withdrawals are pending vault review.';
+                leadEl.textContent = 'Your full balance may be ready to withdraw. The vault and identity checks run before signing.';
             } else {
                 leadEl.textContent = 'Earn G$ from reactions, comments and the '
                     + 'daily quiz.';
@@ -1882,7 +1882,7 @@
                 : (data.eligible === false ? 'unverified'
                     : (showBalance && minimum > 0 && amount >= minimum ? 'ready' : 'pending'));
             chip.setAttribute('data-state', state);
-            chip.textContent = state === 'ready' ? 'Pending vault review'
+            chip.textContent = state === 'ready' ? 'Threshold reached'
                 : (state === 'guest' ? 'Guest'
                     : (state === 'unverified' ? 'Verify to earn' : 'Pending to withdraw'));
         }
@@ -1951,10 +1951,10 @@
         if (note) {
             note.hidden = false;
             note.textContent = data.eligible === false
-                ? 'Only verified wallets earn Community G$. You can still post, comment and react.'
+                ? 'Only currently verified wallets earn Community G$. You can still post, comment and react.'
                 : (showBalance && minimum > 0 && amount >= minimum
-                    ? 'The 500 G$ threshold is met, but vault withdrawals are not live yet. No payout will be submitted.'
-                    : 'Your Community G$ accrues in the ledger. Withdrawals are not live yet.');
+                    ? 'Withdraw sends G$ directly to your logged-in wallet. You pay Celo gas; the ledger is debited only after the vault payout is confirmed.'
+                    : 'Your Community G$ accrues in the ledger. The full balance becomes withdrawable after the minimum is reached and the vault is enabled.');
         }
         var withdrawRow = $('cfEarnWithdrawRow');
         var withdrawStatus = $('cfEarnWithdrawStatus');
@@ -1965,27 +1965,127 @@
         card.hidden = false;
     }
 
-    function checkWithdrawalEligibility() {
+    async function checkWithdrawalEligibility() {
         if (!WALLET) { requiresLogin(); return Promise.resolve(); }
         var button = $('cfEarnWithdrawBtn');
         var status = $('cfEarnWithdrawStatus');
         if (button) { button.disabled = true; button.textContent = 'Checking…'; }
         if (status) { status.hidden = true; status.textContent = ''; }
-        return api('/community/api/rewards/withdrawal-eligibility').then(function (result) {
-            var data = result && result.data;
-            if (!data || !data.success) throw new Error((data && data.error) || 'Could not check the withdrawal threshold.');
-            if (status) {
-                status.textContent = data.message || 'Withdrawal eligibility checked.';
-                status.hidden = false;
+        var setStatus = function (message) {
+            if (status) { status.textContent = message; status.hidden = false; }
+        };
+        var wait = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
+        var confirmTx = async function (withdrawalId, txHash) {
+            var key = 'gm-community-withdrawal:' + String(WALLET).toLowerCase();
+            try { localStorage.setItem(key, JSON.stringify({ withdrawal_id: withdrawalId, tx_hash: txHash })); } catch (_) {}
+            for (var attempt = 0; attempt < 12; attempt += 1) {
+                var check = await api('/community/api/rewards/withdrawals/confirm', {
+                    method: 'POST',
+                    body: JSON.stringify({ withdrawal_id: withdrawalId, tx_hash: txHash })
+                });
+                var confirmed = check && check.data;
+                if (confirmed && confirmed.status === 'completed') {
+                    try { localStorage.removeItem(key); } catch (_) {}
+                    setStatus('Withdrawal confirmed. Your Community ledger balance is updating.');
+                    await loadRewards();
+                    return true;
+                }
+                if (confirmed && confirmed.status === 'failed') {
+                    try { localStorage.removeItem(key); } catch (_) {}
+                    throw new Error(confirmed.error || 'The withdrawal transaction reverted; your ledger balance was not debited.');
+                }
+                if (!check.ok && check.status !== 202) {
+                    throw new Error((confirmed && confirmed.error) || 'Could not verify the transaction. Keep its hash and retry confirmation.');
+                }
+                setStatus(confirmed && confirmed.status === 'confirming'
+                    ? 'Celo transaction confirmed; waiting for the required finality confirmations…'
+                    : 'Withdrawal transaction submitted; waiting for Celo confirmation…');
+                await wait(5000);
             }
-        }).catch(function (error) {
-            if (status) {
-                status.textContent = (error && error.message) || 'Could not check the withdrawal threshold.';
-                status.hidden = false;
+            setStatus('The transaction is still awaiting final confirmation. Your request is reserved; click Withdraw again to resume safely.');
+            return false;
+        };
+
+        try {
+            var pendingKey = 'gm-community-withdrawal:' + String(WALLET).toLowerCase();
+            var pending = null;
+            try { pending = JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch (_) {}
+            if (pending && pending.withdrawal_id && pending.tx_hash) {
+                setStatus('Resuming confirmation for your submitted withdrawal…');
+                await confirmTx(pending.withdrawal_id, pending.tx_hash);
+                return;
             }
-        }).then(function () {
+
+            var eligibility = await api('/community/api/rewards/withdrawal-eligibility');
+            var ready = eligibility && eligibility.data;
+            if (!eligibility.ok || !ready || !ready.success) {
+                throw new Error((ready && ready.error) || 'Could not check withdrawal readiness.');
+            }
+            if (!ready.can_request) {
+                setStatus(ready.message || 'This wallet is not ready to withdraw yet.');
+                return;
+            }
+            var amount = String(ready.amount_gd || 'your full available balance');
+            if (!window.confirm('Withdraw ' + amount + ' G$ to your logged-in wallet? You will pay Celo gas. Confirm the recipient, vault address and network in your wallet before signing.')) return;
+
+            if (button) button.textContent = 'Preparing…';
+            var authResult = await api('/community/api/rewards/withdrawals/authorize', {
+                method: 'POST', body: '{}'
+            });
+            var authData = authResult && authResult.data;
+            var withdrawalId = authData && authData.withdrawal_id;
+            var txHash = authData && authData.tx_hash;
+            if ((!authResult.ok || !authData || !authData.success)
+                    && !(authData && authData.status === 'transaction_submitted' && txHash)) {
+                throw new Error((authData && authData.error) || 'Could not issue the withdrawal authorization.');
+            }
+            if (txHash && withdrawalId && authData.status === 'transaction_submitted') {
+                await confirmTx(withdrawalId, txHash);
+                return;
+            }
+            if (button) button.textContent = 'Confirm in wallet…';
+            if (!window.P2PWallet) throw new Error('Your wallet signing module is not ready. Refresh the page and retry.');
+            if (window.GMEthersLoader && typeof window.GMEthersLoader.load === 'function') {
+                await window.GMEthersLoader.load();
+            }
+            var boot = window.GM_COMMUNITY_BOOT || {};
+            window.P2PWallet.configure({ wallet: WALLET, chainId: Number(boot.celoChainId || 42220), loginMethod: boot.loginMethod || '' });
+            var auth = authData.authorization;
+            if (!auth || !auth.recipient || !auth.withdrawalId || !auth.projectId || !authData.signature) {
+                throw new Error('The server returned an incomplete withdrawal authorization. No transaction was sent.');
+            }
+            var expectedProjectId = '0xe4772aeb1ac8e78ecc6c0f9255e6c828ef90f0f411ba199aa090efd81271de5e';
+            if (String(auth.recipient).toLowerCase() !== String(WALLET).toLowerCase()) {
+                throw new Error('The authorization recipient does not match your logged-in wallet. No transaction was sent.');
+            }
+            if (String(auth.projectId).toLowerCase() !== expectedProjectId
+                    || Number(authData.chain_id) !== 42220
+                    || !authData.vault_address || !authData.token_address) {
+                throw new Error('The authorization project, Celo network, or vault configuration did not match. No transaction was sent.');
+            }
+            var authDecimals = Number(authData.token_decimals);
+            var authUnits = BigInt(String(auth.amount));
+            var authScale = 10n ** BigInt(authDecimals);
+            var authWhole = (authUnits / authScale).toString();
+            var authFraction = (authUnits % authScale).toString().padStart(authDecimals, '0').replace(/0+$/, '');
+            var authAmountGd = authWhole + (authFraction ? '.' + authFraction : '');
+            if (!window.confirm('Final review before your wallet opens:\n\n'
+                    + 'Amount: ' + authAmountGd + ' G$\n'
+                    + 'Recipient (your wallet): ' + auth.recipient + '\n'
+                    + 'GoodDollar token: ' + authData.token_address + '\n'
+                    + 'Community vault: ' + authData.vault_address + '\n'
+                    + 'Network: Celo Mainnet (42220)\n'
+                    + 'Gas: paid by you\n\nContinue to your wallet?')) return;
+            txHash = await window.P2PWallet.sendTx(authData.vault_address,
+                'function withdraw((address recipient,uint256 amount,bytes32 withdrawalId,uint256 nonce,uint256 deadline,bytes32 projectId) authorization,bytes issuerAuthorization)',
+                [[auth.recipient, String(auth.amount), auth.withdrawalId, String(auth.nonce), String(auth.deadline), auth.projectId], authData.signature]);
+            if (!txHash) throw new Error('The wallet did not return a transaction hash. Check your wallet activity before retrying.');
+            await confirmTx(withdrawalId, txHash);
+        } catch (error) {
+            setStatus((error && error.message) || 'Withdrawal could not be completed. Check your wallet activity before retrying.');
+        } finally {
             if (button) { button.disabled = false; button.textContent = 'Withdraw'; }
-        });
+        }
     }
 
     function formatGd(value) {
