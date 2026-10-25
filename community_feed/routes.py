@@ -406,10 +406,12 @@ def api_withdrawal_eligibility():
             return jsonify({"success": True, "threshold_met": True,
                             "can_request": False,
                             "message": "Community withdrawals are temporarily paused."})
-    except withdrawal_vault.WithdrawalConfigError:
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        logger.warning("community withdrawal readiness check failed: %s",
+                       withdrawal_vault.operator_detail(exc))
         return jsonify({"success": True, "threshold_met": True,
                         "can_request": False,
-                        "message": "Community withdrawals are not enabled or the vault configuration is not ready."})
+                        "message": withdrawal_vault.MEMBER_CONFIG_ERROR})
     except Exception as exc:  # noqa: BLE001
         logger.warning("community withdrawal readiness check failed: %s", exc)
         return jsonify({"success": True, "threshold_met": True,
@@ -604,8 +606,9 @@ def api_withdrawal_authorize():
                                 "error": "The existing authorization expired. Retry after the request is safely released."}), 409
         return jsonify(_sign_reserved_withdrawal(db, runtime, row))
     except withdrawal_vault.WithdrawalConfigError as exc:
-        logger.warning("community withdrawal authorization unavailable: %s", exc)
-        return jsonify({"success": False, "error": "Community withdrawals are not enabled or the vault configuration is not ready."}), 503
+        logger.warning("community withdrawal authorization unavailable: %s",
+                       withdrawal_vault.operator_detail(exc))
+        return jsonify({"success": False, "error": withdrawal_vault.MEMBER_CONFIG_ERROR}), 503
     except withdrawal_vault.WithdrawalPolicyError as exc:
         return jsonify({"success": False, "error": str(exc)}), 409
     except Exception as exc:  # noqa: BLE001
@@ -688,8 +691,10 @@ def api_withdrawal_confirm():
         })
         return jsonify({"success": True, "status": "completed", "tx_hash": tx_hash,
                         "amount_gd": str(completed.get("amount_gd") or row.get("amount_gd"))})
-    except withdrawal_vault.WithdrawalConfigError:
-        return jsonify({"success": False, "error": "Vault configuration is unavailable for receipt verification."}), 503
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        logger.warning("community withdrawal receipt verification unavailable: %s",
+                       withdrawal_vault.operator_detail(exc))
+        return jsonify({"success": False, "error": withdrawal_vault.MEMBER_CONFIG_ERROR}), 503
     except withdrawal_vault.WithdrawalPolicyError as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
@@ -712,9 +717,13 @@ def api_admin_withdrawal_vault_config():
             "vault_balance_gd": str(withdrawal_vault.base_units_to_gd(balance_base, runtime.decimals)),
             "paused": bool(runtime.vault.functions.paused().call()),
         })
-    except withdrawal_vault.WithdrawalConfigError:
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        logger.warning("community vault funding config read failed: %s",
+                       withdrawal_vault.operator_detail(exc))
         return jsonify({"success": False, "enabled": False,
-                        "error": "Community vault funding is unavailable until runtime configuration is complete."}), 503
+                        "error": "Community vault funding is unavailable until runtime configuration is complete.",
+                        "detail": withdrawal_vault.operator_detail(exc),
+                        "code": getattr(exc, "code", "unclassified")}), 503
     except Exception as exc:  # noqa: BLE001
         logger.warning("community vault funding config read failed: %s", exc)
         return jsonify({"success": False, "error": "Could not verify the Community vault on Celo."}), 503
@@ -759,8 +768,13 @@ def api_admin_withdrawal_vault_fund_confirm():
         })
         return jsonify({"success": True, "status": "confirmed", "tx_hash": tx_hash,
                         "amount_gd": str(recorded.get("amount_gd") or withdrawal_vault.base_units_to_gd(amount_base, runtime.decimals))})
-    except withdrawal_vault.WithdrawalConfigError:
-        return jsonify({"success": False, "error": "Vault configuration is unavailable for funding verification."}), 503
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        logger.warning("community vault funding verification unavailable: %s",
+                       withdrawal_vault.operator_detail(exc))
+        return jsonify({"success": False,
+                        "error": "Vault configuration is unavailable for funding verification.",
+                        "detail": withdrawal_vault.operator_detail(exc),
+                        "code": getattr(exc, "code", "unclassified")}), 503
     except withdrawal_vault.WithdrawalPolicyError as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
