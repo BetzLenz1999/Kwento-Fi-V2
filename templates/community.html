@@ -407,6 +407,116 @@
         <p class="cf-warn">Media uploads are not configured on this deployment yet — you can still post text.</p>
         {% endif %}
     </section>
+
+    <section class="cf-vault-donation" aria-labelledby="cfVaultDonationTitle">
+        <div class="cf-vault-donation-head">
+            <div>
+                <h2 id="cfVaultDonationTitle">Support the Community Vault</h2>
+                <p>Send G$ directly to the shared vault that supports Community withdrawals.</p>
+            </div>
+            {% if vault_donations_enabled %}
+            <button type="button" class="cf-vault-donation-open" id="cfVaultDonationOpen"
+                    aria-controls="cfVaultDonationFormWrap" aria-expanded="false"
+                    onclick="GMCommunity.openVaultDonation()">Donate to Community Vault</button>
+            {% else %}
+            <p class="cf-vault-donation-unavailable" role="status">
+                Community Vault donations are temporarily unavailable. Please check back later.
+            </p>
+            {% endif %}
+        </div>
+        <div class="cf-vault-donation-form-wrap" id="cfVaultDonationFormWrap" hidden>
+            {% if vault_donations_enabled %}
+            <form id="cfVaultDonationForm" onsubmit="return GMCommunity.submitVaultDonation(event)">
+                <div id="cfVaultDonationEntry">
+                    <div class="cf-vault-donation-fields">
+                        <label class="cf-vault-donation-field" for="cfVaultDonationName">
+                            <span>Public name <strong aria-hidden="true">*</strong></span>
+                            <input id="cfVaultDonationName" name="name" type="text" maxlength="80"
+                                   autocomplete="nickname" required>
+                            <small>Saved as your Community display name and shown on confirmed donation posts.</small>
+                        </label>
+                        <label class="cf-vault-donation-field" for="cfVaultDonationLinkedIn">
+                            <span>LinkedIn profile URL <strong aria-hidden="true">*</strong></span>
+                            <input id="cfVaultDonationLinkedIn" name="linkedin_url" type="url"
+                                   inputmode="url" placeholder="https://www.linkedin.com/in/your-profile/"
+                                   maxlength="500" autocomplete="url"
+                                   aria-describedby="cfVaultDonationLinkedInHint" required>
+                            <small id="cfVaultDonationLinkedInHint">Use an HTTPS personal profile URL, such as https://www.linkedin.com/in/your-profile/.</small>
+                        </label>
+                        <label class="cf-vault-donation-field" for="cfVaultDonationAmount">
+                            <span>Donation amount (G$) <strong aria-hidden="true">*</strong></span>
+                            <input id="cfVaultDonationAmount" name="amount_gd" type="text"
+                                   inputmode="decimal" pattern="[0-9]+(\.[0-9]+)?" value="1000"
+                                   aria-describedby="cfVaultDonationMinimum" required>
+                            <small id="cfVaultDonationMinimum">Minimum: 1,000 G$; no preset maximum, limited by your transferable wallet balance.</small>
+                        </label>
+                    </div>
+                    <div class="cf-vault-donation-disclosure">
+                        <h3>Public donation acknowledgment</h3>
+                        <p>After your G$ transfer is confirmed on Celo, <strong>Sytem</strong> will automatically publish and pin a post in the Community Feed. The post will show your donation amount, Community display name, and LinkedIn profile link. Every confirmed donation post will remain pinned, with the newest donations shown first.</p>
+                        <p>Your Celo transaction is public and can be linked to your wallet. The post will appear only in the Community Feed; we will not publish it to LinkedIn. This is a direct, irreversible transfer to the Community Withdrawal Vault and does not give you a personal claim to the donated G$. You pay the Celo network fee.</p>
+                        <p>The name you enter is saved privately in your Community account for future donation forms; each confirmed post keeps a snapshot of the name you approved for that donation. The app validates the LinkedIn URL format but does not verify profile ownership.</p>
+                    </div>
+                    <label class="cf-vault-donation-consent" for="cfVaultDonationConsent">
+                        <input id="cfVaultDonationConsent" name="consent" type="checkbox" required>
+                        <span>I agree to the public acknowledgment and donation terms above.</span>
+                    </label>
+                    <p class="cf-vault-donation-address" id="cfVaultDonationAddress" hidden></p>
+                    <div class="cf-vault-donation-actions">
+                        <button type="submit" class="cf-vault-donation-submit" id="cfVaultDonationSubmit">Review donation</button>
+                        <button type="button" class="cf-vault-donation-cancel" id="cfVaultDonationCancel"
+                                onclick="GMCommunity.closeVaultDonation()">Cancel</button>
+                        <button type="button" class="cf-vault-donation-check" id="cfVaultDonationRetry"
+                                onclick="GMCommunity.retryVaultDonationConfig()" hidden>Retry vault check</button>
+                    </div>
+                </div>
+                <section class="cf-vault-donation-review" id="cfVaultDonationReview"
+                         aria-labelledby="cfVaultDonationReviewTitle" hidden>
+                    <h3 id="cfVaultDonationReviewTitle" tabindex="-1">Review your donation</h3>
+                    <p>No transfer has been sent yet. Check these public and on-chain details before continuing to your wallet.</p>
+                    <dl class="cf-vault-donation-summary">
+                        <div><dt>Donation amount</dt><dd id="cfVaultDonationReviewAmount"></dd></div>
+                        <div><dt>Public name</dt><dd id="cfVaultDonationReviewName"></dd></div>
+                        <div><dt>LinkedIn profile</dt><dd id="cfVaultDonationReviewLinkedIn"></dd></div>
+                        <div><dt>Network</dt><dd id="cfVaultDonationReviewNetwork">Celo Mainnet (42220)</dd></div>
+                        <div><dt>G$ token</dt><dd id="cfVaultDonationReviewToken"></dd></div>
+                        <div><dt>Vault recipient</dt><dd id="cfVaultDonationReviewRecipient"></dd></div>
+                    </dl>
+                    <div class="cf-vault-donation-disclosure cf-vault-donation-review-disclosure">
+                        <h4>After confirmation</h4>
+                        <p>Sytem will publish and pin a Community Feed post showing the amount, name, and LinkedIn URL above. Every confirmed donation remains pinned. The transfer is direct and irreversible; you pay the Celo network fee.</p>
+                    </div>
+                    <div class="cf-vault-donation-actions">
+                        <button type="button" class="cf-vault-donation-cancel"
+                                id="cfVaultDonationReviewEdit" onclick="GMCommunity.editVaultDonation()">Edit details</button>
+                        <button type="button" class="cf-vault-donation-cancel"
+                                id="cfVaultDonationReviewCancel" onclick="GMCommunity.closeVaultDonation()">Cancel</button>
+                        <button type="button" class="cf-vault-donation-submit"
+                                id="cfVaultDonationContinue" onclick="GMCommunity.continueVaultDonationToWallet()">Continue to Wallet</button>
+                    </div>
+                </section>
+            </form>
+                <section class="cf-vault-donation-recovery" id="cfVaultDonationRecovery"
+                         aria-labelledby="cfVaultDonationRecoveryTitle" hidden>
+                    <h3 id="cfVaultDonationRecoveryTitle">Check a wallet transaction</h3>
+                    <p>Your wallet did not return a transaction hash. Do not send again if the transfer appears in your wallet activity; paste its hash here to verify it.</p>
+                    <label class="cf-vault-donation-field" for="cfVaultDonationTxHash">Celo transaction hash</label>
+                    <input id="cfVaultDonationTxHash" type="text" inputmode="text" autocomplete="off"
+                           placeholder="0x…" pattern="0x[0-9a-fA-F]{64}" maxlength="66" disabled>
+                    <button type="button" class="cf-vault-donation-check"
+                            onclick="GMCommunity.resumeVaultDonationFromHash()">Verify transaction hash</button>
+                </section>
+            {% endif %}
+            <div class="cf-vault-donation-actions cf-vault-donation-status-actions">
+                <button type="button" class="cf-vault-donation-check" id="cfVaultDonationCheck"
+                        onclick="GMCommunity.checkPendingVaultDonation()" hidden>Check donation status</button>
+                <button type="button" class="cf-vault-donation-cancel" id="cfVaultDonationStatusClose"
+                        onclick="GMCommunity.closeVaultDonation()" hidden>Close status</button>
+            </div>
+            <p class="cf-vault-donation-status" id="cfVaultDonationStatus" role="status"
+               aria-live="polite" aria-atomic="true" hidden></p>
+        </div>
+    </section>
     {% endif %}
 
 <!-- ── Recent posters rail ─────────────────────────────────────────────
@@ -425,6 +535,17 @@
     <div class="cf-rail" id="cfRail" aria-label="Recent posters" hidden></div>
 
         <section class="cf-posts" aria-labelledby="cfPostsTitle">
+            <section class="cf-pinned-donations" id="cfPinnedDonations" aria-labelledby="cfPinnedDonationsTitle" hidden>
+                <div class="cf-feed-section-head">
+                    <h2 id="cfPinnedDonationsTitle">Pinned Community Vault donations</h2>
+                    <span>Every confirmed donor acknowledgment stays pinned.</span>
+                </div>
+                <div id="cfPinnedDonationFeed" class="cf-pinned-donation-feed" aria-live="polite"></div>
+                <div class="cf-feed-foot">
+                    <button type="button" class="cf-load-more" id="cfPinnedDonationMore"
+                            onclick="GMCommunity.loadMorePinnedDonations()" hidden>Load more pinned donations</button>
+                </div>
+            </section>
             <div class="cf-feed-section-head">
                 <h2 id="cfPostsTitle" tabindex="-1">Recent posts</h2>
             </div>
