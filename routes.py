@@ -1689,9 +1689,15 @@ def set_feature_visibility():
 @routes.route("/")
 def index():
     """Main homepage with Connect Wallet style"""
-    # If already logged in, land on the configured post-login page (community feed).
+    # Installed PWAs start at `/`. Give that single entry point an update gate
+    # before opening the configured post-login destination. The lightweight
+    # gate immediately redirects ordinary browser tabs and blocks a standalone
+    # app until the current build has been explicitly acknowledged.
     if session.get("verified") and session.get("wallet"):
-        return redirect(get_post_login_path())
+        return render_template(
+            "pwa_update_gate.html",
+            post_login_path=get_post_login_path(),
+        )
     wc_project_id = os.environ.get("WALLETCONNECT_PROJECT_ID", "")
     enable_privy_login = _is_privy_login_enabled()
     privy_app_id = os.environ.get("PRIVY_APP_ID", "") if enable_privy_login else ""
