@@ -2532,6 +2532,25 @@
             chip.textContent = state === 'ready' ? 'Threshold reached'
                 : (state === 'guest' ? 'Guest'
                     : (state === 'unverified' ? 'Verify to earn' : 'Pending to withdraw'));
+            var canVerify = state === 'unverified' && !data.is_guest && !!WALLET;
+            chip.disabled = !canVerify;
+            chip.onclick = canVerify ? function () {
+                // The rewards endpoint has already identified this member as
+                // ineligible. Seed the shared router so its existing
+                // Claim Free G$ entry point opens the verification onboarding
+                // even if the separate claim-availability request is still
+                // finishing. This only opens UI; it does not claim or sign.
+                window._walletNeedsFV = true;
+                if (window._walletFvReason !== 're_verification_needed') {
+                    window._walletFvReason = 'not_verified';
+                }
+                openClaim();
+            } : null;
+            if (canVerify) {
+                chip.setAttribute('aria-label', 'Verify to earn. Open Claim Free G$ verification options.');
+            } else {
+                chip.removeAttribute('aria-label');
+            }
         }
 
         // The rates come from the server payload, never hard-coded, so the page
