@@ -29,6 +29,7 @@ from urllib.parse import urlsplit
 from flask import Blueprint, Response, jsonify, redirect, render_template, request, session
 
 from . import rewards
+from . import reward_settings
 from . import service as svc
 from . import storage
 from . import withdrawals as withdrawal_vault
@@ -967,54 +968,35 @@ def api_admin_archive_daily_prompt(prompt_id: str):
 
 @community_feed_bp.route("/api/admin/reward-rates", methods=["GET"])
 def api_admin_reward_rates():
-    """The rates in force, plus the bounds the editor must respect.
-
-    Admin-only. The bounds travel with the payload so the form's min/max can
-    never drift from the server clamp — the server clamp is still the control.
-    """
+    """Return one authoritative flat Community reward configuration."""
     if not _admin_wallet():
         return jsonify({"success": False, "error": "Admin access required"}), 403
-    rates = rewards.effective_rates(use_cache=False)
-    low, high = rewards.RATE_BOUNDS["comment_out"]
-    return jsonify({
-        "success": True,
-        "rates": {name: float(value) for name, value in rates.items()},
-        # `names` fixes the display order (largest to smallest) so the editor
-        # cannot reorder the anti-farm story by accident.
-        "names": list(rewards.RATE_NAMES),
-        "min": float(low),
-        # `max` is the EFFECTIVE ceiling — the highest rate that can actually be
-        # paid. It is min(configured ceiling, daily allowance, per-post
-        # allowance), so the form can never offer a rate the caps would refuse.
-        "max": float(high),
-        # The three inputs behind `max`, so the editor can EXPLAIN a lowered
-        # ceiling instead of silently showing a number smaller than the operator
-        # configured. Without these a clamped 100 -> 50 reads as a bug.
-        "rate_max": float(rewards.RATE_MAX),
-        "daily_cap": float(rewards.DAILY_CAP),
-        "post_cap": float(rewards.POST_CAP),
-        "defaults": {name: float(rewards._env_rate(name))
-                     for name in rewards.RATE_NAMES},
-    })
+    result = reward_settings.get_settings()
+    return jsonify(result), (200 if result.get("success") else 503)
 
 
 @community_feed_bp.route("/api/admin/reward-rates", methods=["POST"])
 def api_admin_set_reward_rates():
-    """Change the rates. Admin-only, audited, clamped server-side.
-
-    This is the ONLY admin write path in the rewards system. It writes config,
-    never a balance: the ledger stays append-only and the balance stays a SUM,
-    so an admin still cannot change what a member has already earned.
-    """
+    """Atomically update rates/caps through the SQL settings RPC."""
     admin = _admin_wallet()
     if not admin:
         return jsonify({"success": False, "error": "Admin access required"}), 403
     data = request.get_json(silent=True) or {}
-    result = rewards.set_rates(
-        data.get("rates") or {},
-        actor=admin,
-        reason=data.get("reason") or "",
-    )
+    patch = {}
+    if isinstance(data.get("rates"), dict):
+        patch["rates"] = data["rates"]
+    for key in ("daily_cap", "post_cap", "daily_learn_rate",
+                "daily_learn_rate_max", "daily_learn_cap"):
+        if key in data:
+            patch[key] = data[key]
+    # Flat rate keys remain accepted for older admin forms.
+    for key in rewards.RATE_NAMES:
+        if key in data:
+            patch[key] = data[key]
+    expected_version = data.get("config_version", data.get("expected_version"))
+    result = reward_settings.update_settings(
+        patch, actor=admin, reason=data.get("reason") or "",
+        expected_version=expected_version)
     if not result.get("success"):
         return jsonify(result), 400
     return jsonify(result)
