@@ -14,18 +14,33 @@
  *   serves this file (see `_dynamic_service_worker` in main.py). Embedding the
  *   build version in the SW body guarantees the file content changes on every
  *   deployment, so the browser's byte-for-byte SW comparison detects an update
- *   and triggers install -> activate -> SW_UPDATED -> in-page refresh banner.
+ *   and triggers install -> waiting -> activation after the old clients close
+ *   or an explicit user-approved SKIP_WAITING -> SW_UPDATED.
  *   If the file is ever served raw without substitution, the literal string
  *   below is used as a safe fallback (caches still work, just without
  *   per-deploy invalidation).
  */
 
+const BUILD_VERSION = '__BUILD_VERSION__';
 const CACHE_VERSION = 'goodmarket-__BUILD_VERSION__';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 self.addEventListener('install', (event) => {
-  // Activate the new worker as soon as it's installed.
-  self.skipWaiting();
+  // Do not force immediate activation. The worker waits while old clients are
+  // open; if they all close, the browser may activate it automatically. The
+  // root gate's accepted-build marker still requires the next launch to get
+  // the user's explicit "Update app" acknowledgment.
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'GET_BUILD_VERSION') {
+    const replyPort = event.ports && event.ports[0];
+    if (replyPort) replyPort.postMessage({ type: 'BUILD_VERSION', version: BUILD_VERSION });
+    return;
+  }
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    event.waitUntil(self.skipWaiting());
+  }
 });
 
 self.addEventListener('activate', (event) => {
