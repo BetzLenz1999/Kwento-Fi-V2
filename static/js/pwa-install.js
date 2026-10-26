@@ -37,6 +37,9 @@
     var SW_URL = '/static/service-worker.js';
     var SW_SCOPE = '/';
     var INSTALLED_KEY = 'gmPwaInstalled_v1';
+    var INSTALL_BASELINE_PENDING_KEY = 'gmPwaInstallBaselinePending_v1';
+    var INSTALL_BASELINE_INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+    var MODULE_BUILD_VERSION = _moduleBuildVersion();
     var UPDATE_POLL_MS = 60000;
     var DAPP_DETECTION_MS = 900;
 
@@ -70,6 +73,27 @@
 
     function _writeFlag(key) {
         try { localStorage.setItem(key, '1'); } catch (_) { /* private mode */ }
+    }
+
+    function _moduleBuildVersion() {
+        try {
+            var script = document.currentScript;
+            var source = script && script.src || '';
+            var match = source.match(/[?&]v=([^&#]+)/);
+            return match ? decodeURIComponent(match[1]) : '';
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function _recordInstallBaselineIntent(force) {
+        if (!MODULE_BUILD_VERSION || (_installedFlag && !force)) return;
+        try {
+            localStorage.setItem(INSTALL_BASELINE_PENDING_KEY, JSON.stringify({
+                build: MODULE_BUILD_VERSION,
+                createdAt: Date.now(),
+            }));
+        } catch (_) { /* blocked storage leaves the first launch as a safe review */ }
     }
 
     function _readSeen(key) {
@@ -365,6 +389,7 @@
     function _markInstalled() {
         _installedFlag = true;
         _writeFlag(INSTALLED_KEY);
+        _recordInstallBaselineIntent(true);
     }
 
     // ── native prompt ───────────────────────────────────────────────────
@@ -438,6 +463,7 @@
             }
             // No native prompt available (Firefox/Safari, or before the
             // engagement threshold) — guide the user to the manual path.
+            _recordInstallBaselineIntent(false);
             if (homepage) _setHomepageState('manual', manualInstallHint());
             setStatus(manualInstallHint());
             return res;
