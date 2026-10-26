@@ -25,6 +25,7 @@ import os
 import re
 from datetime import datetime, timezone
 
+from . import notifications as community_notifications
 from . import rewards
 
 from env_utils import get_env_int
@@ -2022,6 +2023,14 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
     # well as inside the hook — a bug in the hook itself (or an import error)
     # must not be able to fail the user's reaction.
     if not previous:
+        community_notifications.notify_reaction(
+            supabase,
+            actor_wallet=wallet,
+            actor_username=get_username(wallet) or "Community member",
+            post_owner_wallet=post_owner,
+            post_id=post_id,
+            reaction=reaction,
+        )
         try:
             reward_outcome = rewards.on_reaction_added(
                 wallet, post_id, post_owner,
@@ -2262,6 +2271,18 @@ def add_comment(wallet: str, post_id: int, body: str,
 
     if parent is None:
         _bump_comment_count(supabase, post_id, +1)
+    # Persist private in-app notifications only after the comment itself is
+    # saved. Notification-storage failure is logged by the helper and cannot
+    # turn a successful comment into a reported failure.
+    community_notifications.notify_comment(
+        supabase,
+        actor_wallet=wallet,
+        actor_username=username,
+        post_owner_wallet=post_owner,
+        post_id=post_id,
+        comment_id=rows[0].get("id"),
+        parent=parent,
+    )
     # A new comment earns for BOTH sides — the commenter (COMMENT_IN_RATE) and
     # the post owner (COMMENT_OUT_RATE, the larger rate); self-activity credits
     # nobody. Best-effort, and after the comment is persisted, so a rewards
