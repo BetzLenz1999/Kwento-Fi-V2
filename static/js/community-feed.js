@@ -819,6 +819,7 @@
             // Prepend from the local object — no refetch needed.
             _feed.unshift(result.data.post);
             renderFeed();
+            renderRewardOutcome(result.data.reward);
             window.dispatchEvent(new CustomEvent('gm:community-post-created', {
                 detail: { prompt_id: result.data.post && result.data.post.prompt_id }
             }));
@@ -1510,6 +1511,7 @@
                 post.reaction_breakdown = result.data.reaction_breakdown;
             }
             rerenderPost(post);
+            renderRewardOutcome(result.data.reward);
             loadRewards();
         }).catch(function (error) {
             // Roll back the chip, the count and the summary together.
@@ -1742,6 +1744,7 @@
             delete _replyingTo[post.id];
             renderComments(post, wrap);
             rerenderPost(post);
+            renderRewardOutcome(result.data.reward);
             loadRewards();
         }).catch(function (error) {
             toast((error && error.message) || 'Could not post your comment.', 'error');
@@ -1934,6 +1937,81 @@
         if (box) box.hidden = true;
     }
 
+    function renderBudgetDisplay(data) {
+        var budgetsEl = $('cfEarnBudgets');
+        if (!budgetsEl || !data || data.is_guest || data.configuration_available === false) {
+            if (budgetsEl) budgetsEl.hidden = true;
+            ['cfEarnSocialBudgetValue', 'cfEarnSocialBudgetNote',
+                'cfEarnQuizBudgetValue', 'cfEarnQuizBudgetNote',
+                'cfEarnCombinedBudgetValue', 'cfEarnCombinedBudgetNote'].forEach(function (id) {
+                var node = $(id);
+                if (node) node.textContent = '';
+            });
+            return;
+        }
+        var budgets = data.budgets;
+        if (!budgets || typeof budgets !== 'object') {
+            budgetsEl.hidden = true;
+            return;
+        }
+        var resetEl = $('cfEarnBudgetReset');
+        if (resetEl && budgets.reset_at) {
+            var reset = new Date(String(budgets.reset_at));
+            if (!isNaN(reset.getTime())) {
+                try {
+                    resetEl.textContent = 'Next reset: ' + reset.toLocaleString('en-PH', {
+                        timeZone: 'Asia/Manila', month: 'short', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit', hour12: true
+                    }) + ' PH';
+                } catch (e) {
+                    resetEl.textContent = 'Next reset: ' + reset.toISOString();
+                }
+            }
+        }
+        var value = function (item, key) {
+            if (!item || item[key] === undefined || item[key] === null) return null;
+            var number = Number(item[key]);
+            return Number.isFinite(number) ? number : null;
+        };
+        var render = function (name, item, label) {
+            var used = value(item, 'used_gd');
+            var remaining = value(item, 'remaining_gd');
+            var cap = value(item, 'cap_gd');
+            var valueEl = $(name + 'BudgetValue');
+            var noteEl = $(name + 'BudgetNote');
+            if (used === null || remaining === null || cap === null) return false;
+            if (valueEl) valueEl.textContent = formatGd(used) + ' used / ' + formatGd(remaining) + ' remaining';
+            if (noteEl) noteEl.textContent = label + ' limit ' + formatGd(cap) + ' G$'
+                + (item.reached ? ' · limit reached' : '');
+            return true;
+        };
+        var socialOk = render('cfEarnSocial', budgets.social, 'Social');
+        var quizOk = render('cfEarnQuiz', budgets.quiz, 'Daily Learn');
+        var combinedOk = render('cfEarnCombined', budgets.combined, 'Combined');
+        budgetsEl.hidden = !(socialOk && quizOk && combinedOk);
+    }
+
+    function renderRewardOutcome(reward) {
+        if (!reward || !reward.status) return;
+        var status = String(reward.status);
+        if (status === 'credited' || status === 'already_credited') return;
+        var reason = String(reward.reason || 'reward_unavailable');
+        var message = reason === 'daily_cap_reached'
+            ? 'Your action was saved, but today’s reward budget has been used.'
+            : (reason === 'post_cap_reached'
+                ? 'Your action was saved, but this post has reached its reward limit.'
+                : (reason === 'combined_cap_reached'
+                    ? 'Your action was saved, but the combined daily reward cap has been reached.'
+                    : (reason === 'configuration_unavailable'
+                        ? 'Your action was saved, but Community G$ configuration is temporarily unavailable. No reward was credited; try again later.'
+                        : (reason === 'legacy_snapshot_required'
+                            ? 'Your action was saved, but this older quiz attempt needs manual review before any reward can be credited.'
+                            : (reason === 'verified_wallet_required'
+                                ? 'Your action was saved, but this wallet is not eligible for Community G$.'
+                                : 'Your action was saved, but its Community G$ credit could not be confirmed.')))));
+        toast(message, 'error');
+    }
+
     // ── Community G$ card ──────────────────────────────────────────────────
     // The balance lives on THIS page only (never the wallet page — see
     // docs/COMMUNITY_REWARDS_LEDGER_PROPOSAL.md §0). It is the SUM of an
@@ -1951,6 +2029,7 @@
         // The server flag defaults on for signed-in members; the guest check
         // below still prevents personal balance details from being disclosed.
         var showBalance = data.show_balance === true;
+        var configurationAvailable = data.configuration_available !== false;
 
         var amountEl = $('cfEarnAmount');
         if (amountEl) amountEl.textContent = formatGd(amount);
@@ -2006,14 +2085,15 @@
         var ratesEl = $('cfEarnRates');
         var ratesToggle = $('cfEarnRatesToggle');
         if (ratesEl) {
-            var rates = data.rates || null;
+            var rates = configurationAvailable ? (data.rates || null) : null;
             if (rates) {
                 var rows = [
                     ['Comment on a post', rates.comment_in],
                     ['Someone comments on your post', rates.comment_out],
                     ['Someone reacts to your post', rates.reaction_out],
                     ['You react to a post', rates.reaction_in],
-                    ['Daily Learn (per correct answer)', rates.daily_learn_per_correct],
+                    ['Daily Learn (per correct answer)', rates.daily_learn_per_correct != null
+                        ? rates.daily_learn_per_correct : data.daily_learn_rate],
                 ];
                 ratesEl.textContent = '';
                 rows.forEach(function (row) {
@@ -2054,6 +2134,7 @@
 
         var balanceWrap = $('cfEarnBalance');
         if (balanceWrap) balanceWrap.hidden = !showBalance || !!data.is_guest;
+        renderBudgetDisplay(data);
 
         var bar = $('cfEarnBar');
         var fill = $('cfEarnBarFill');
@@ -2202,9 +2283,10 @@
     }
 
     function formatGd(value) {
-        var n = Number(value) || 0;
-        // Whole numbers read cleanly; a fractional balance keeps one decimal.
-        return n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1);
+        var n = Number(value);
+        if (!Number.isFinite(n)) return '';
+        if (n % 1 === 0) return String(Math.round(n));
+        return n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
     }
 
     function loadRewards() {
