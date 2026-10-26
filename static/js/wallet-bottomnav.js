@@ -40,6 +40,16 @@ function joinGoodMarketCommunity() {
 
 document.addEventListener('DOMContentLoaded', showJoinCommunityBannerOnce);
 
+function openWalletChatroom() {
+    var chatroom = window.GMChatroom;
+    if (chatroom && typeof chatroom.openWidget === 'function' && chatroom.openWidget()) return;
+    if (typeof navigateWithFeedback === 'function') {
+        navigateWithFeedback('/chatroom', 'Opening Community Chat…');
+    } else {
+        window.location.href = '/chatroom';
+    }
+}
+
 function openBottomSheet(id) {
             closeBottomSheet();
             const sheet = document.getElementById(id);
