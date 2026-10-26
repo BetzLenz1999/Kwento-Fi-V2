@@ -528,8 +528,9 @@ def decode_withdrawal_transaction(runtime: Runtime, tx: dict, row: dict) -> None
 def verify_withdrawal_receipt(runtime: Runtime, receipt: dict, row: dict) -> bool:
     """Require one exact WithdrawalPaid event from this vault receipt."""
     from web3 import Web3
+    from web3.logs import DISCARD
     try:
-        logs = runtime.vault.events.WithdrawalPaid().process_receipt(receipt, errors=0)
+        logs = runtime.vault.events.WithdrawalPaid().process_receipt(receipt, errors=DISCARD)
     except Exception:
         return False
     expected_id = str(row["withdrawal_id"]).lower()
@@ -743,6 +744,7 @@ def scan_withdrawal_transaction_page(
 def verify_funding_receipt(runtime: Runtime, receipt: dict, tx: dict, admin_wallet: str) -> int:
     """Validate an admin-wallet ERC-20 transfer directly into the configured vault."""
     from web3 import Web3
+    from web3.logs import DISCARD
     if int(tx.get("chainId", CELO_CHAIN_ID)) != CELO_CHAIN_ID:
         raise WithdrawalPolicyError("Funding transaction must be on Celo Mainnet")
     if Web3.to_checksum_address(tx.get("from", "")) != Web3.to_checksum_address(admin_wallet):
@@ -757,7 +759,7 @@ def verify_funding_receipt(runtime: Runtime, receipt: dict, tx: dict, admin_wall
     expected_amount = int(args["value"])
     matching = []
     try:
-        events = runtime.token.events.Transfer().process_receipt(receipt, errors=0)
+        events = runtime.token.events.Transfer().process_receipt(receipt, errors=DISCARD)
     except Exception as exc:
         raise WithdrawalPolicyError("Could not decode the GoodDollar Transfer event") from exc
     for event in events:
