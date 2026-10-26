@@ -1932,3 +1932,132 @@ body.cf-modal-open { overflow: hidden; }
     outline: 3px solid var(--cf-accent);
     outline-offset: 2px;
 }
+
+
+/* Community Vault donation form and persistent multi-pin acknowledgments. */
+.cf-vault-donation {
+    padding: 1rem;
+    border: 1px solid var(--cf-hairline);
+    border-radius: 14px;
+    background: var(--cf-card-solid);
+}
+.cf-vault-donation-head,
+.cf-vault-donation-actions,
+.cf-donation-card-head,
+.cf-donation-card-links {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.cf-vault-donation-head { justify-content: space-between; flex-wrap: wrap; }
+.cf-vault-donation-head h2,
+.cf-pinned-donations h2 { margin: 0; color: var(--cf-ink); font-size: 1.05rem; }
+.cf-vault-donation-head p,
+.cf-pinned-donations .cf-feed-section-head > span {
+    margin: 0.25rem 0 0;
+    color: var(--cf-dim);
+    font-size: 0.86rem;
+}
+.cf-vault-donation-open,
+.cf-vault-donation-submit {
+    min-height: 42px;
+    padding: 0.65rem 0.95rem;
+    border: 1px solid var(--cf-accent-2);
+    border-radius: 10px;
+    background: var(--cf-accent-2);
+    color: #fff;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+.cf-vault-donation-open:hover,
+.cf-vault-donation-submit:hover { background: var(--cf-accent-ink); }
+.cf-vault-donation-form-wrap { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--cf-hairline); }
+.cf-vault-donation-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.85rem; }
+.cf-vault-donation-field { display: grid; gap: 0.38rem; color: var(--cf-ink); font-size: 0.9rem; font-weight: 800; }
+.cf-vault-donation-field:last-child { grid-column: 1 / -1; }
+.cf-vault-donation-field input {
+    width: 100%; min-height: 42px; padding: 0.6rem 0.7rem;
+    border: 1px solid var(--cf-accent-border); border-radius: 8px;
+    background: var(--cf-field); color: var(--cf-ink); font: inherit; font-weight: 500;
+}
+.cf-vault-donation-field input:focus,
+.cf-vault-donation-consent input:focus-visible {
+    outline: 3px solid var(--cf-accent-soft); outline-offset: 2px;
+}
+.cf-vault-donation-field small { color: var(--cf-dim); font-size: 0.78rem; font-weight: 500; }
+.cf-vault-donation-disclosure {
+    margin-top: 0.95rem; padding: 0.85rem;
+    border: 1px solid var(--cf-border); border-radius: 10px;
+    background: var(--cf-soft); color: var(--cf-ink);
+}
+.cf-vault-donation-disclosure h3 { margin: 0 0 0.45rem; font-size: 0.92rem; }
+.cf-vault-donation-disclosure p { margin: 0.4rem 0 0; font-size: 0.82rem; line-height: 1.5; }
+.cf-vault-donation-consent { display: flex; align-items: flex-start; gap: 0.55rem; margin: 0.85rem 0; color: var(--cf-ink); font-size: 0.85rem; }
+.cf-vault-donation-consent input { width: 18px; height: 18px; flex: 0 0 auto; margin-top: 0.05rem; accent-color: var(--cf-accent); }
+.cf-vault-donation-address { overflow-wrap: anywhere; margin: 0.7rem 0; color: var(--cf-dim); font: 0.78rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cf-vault-donation-actions { flex-wrap: wrap; }
+.cf-vault-donation-cancel,
+.cf-vault-donation-check {
+    min-height: 40px; padding: 0.55rem 0.8rem;
+    border: 1px solid var(--cf-hairline); border-radius: 9px;
+    background: var(--cf-card-solid); color: var(--cf-ink); font: inherit; font-weight: 700; cursor: pointer;
+}
+.cf-vault-donation-status { margin: 0.7rem 0 0; color: var(--cf-dim); font-size: 0.85rem; }
+.cf-vault-donation-status.is-error { color: var(--cf-danger); }
+.cf-vault-donation-status.is-success { color: var(--cf-ok-ink); }
+.cf-vault-donation-unavailable { margin: 0; color: var(--cf-dim); font-size: 0.86rem; font-weight: 700; }
+.cf-pinned-donations { display: grid; gap: 0.65rem; margin-bottom: 1rem; }
+.cf-pinned-donations[hidden],
+.cf-vault-donation-review[hidden],
+.cf-vault-donation-recovery[hidden] { display: none !important; }
+.cf-vault-donation-review,
+.cf-vault-donation-recovery { display: grid; gap: 0.75rem; }
+.cf-vault-donation-review h3,
+.cf-vault-donation-recovery h3 { margin: 0; color: var(--cf-ink); font-size: 1rem; }
+.cf-vault-donation-review > p,
+.cf-vault-donation-recovery > p { margin: 0; color: var(--cf-dim); font-size: 0.85rem; line-height: 1.5; }
+.cf-vault-donation-summary { display: grid; gap: 0.5rem; margin: 0; }
+.cf-vault-donation-summary > div {
+    display: grid; grid-template-columns: minmax(8rem, 0.7fr) minmax(0, 1.3fr);
+    gap: 0.75rem; padding: 0.55rem 0; border-bottom: 1px solid var(--cf-hairline);
+}
+.cf-vault-donation-summary dt { color: var(--cf-dim); font-size: 0.82rem; font-weight: 700; }
+.cf-vault-donation-summary dd { margin: 0; color: var(--cf-ink); font-size: 0.86rem; font-weight: 700; overflow-wrap: anywhere; }
+.cf-vault-donation-summary a { color: var(--cf-accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+.cf-vault-donation-review-disclosure h4 { margin: 0; font-size: 0.9rem; }
+.cf-vault-donation-recovery input {
+    width: 100%; min-height: 42px; padding: 0.6rem 0.7rem;
+    border: 1px solid var(--cf-accent-border); border-radius: 8px;
+    background: var(--cf-field); color: var(--cf-ink); font: 0.82rem ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.cf-vault-donation-status-actions:empty { display: none; }
+.cf-pinned-donation-feed { display: grid; gap: 0.65rem; }
+.cf-donation-card {
+    padding: 0.95rem; border: 1px solid var(--cf-hairline); border-radius: 12px;
+    background: var(--cf-card-solid); color: var(--cf-ink);
+}
+.cf-donation-card-head { justify-content: space-between; margin-bottom: 0.55rem; }
+.cf-donation-system-author { display: flex; align-items: center; gap: 0.55rem; font-weight: 900; }
+.cf-donation-system-mark {
+    display: grid; width: 34px; height: 34px; place-items: center;
+    border-radius: 50%; background: var(--cf-accent-soft); color: var(--cf-accent-ink); font-weight: 900;
+}
+.cf-donation-pin-label {
+    padding: 0.22rem 0.48rem; border: 1px solid var(--cf-border); border-radius: 999px;
+    background: var(--cf-soft); color: var(--cf-accent-ink); font-size: 0.72rem; font-weight: 900;
+}
+.cf-donation-card-copy { margin: 0; font-size: 0.95rem; line-height: 1.5; overflow-wrap: anywhere; }
+.cf-donation-card-meta { display: block; margin-top: 0.35rem; color: var(--cf-dim); font-size: 0.78rem; }
+.cf-donation-card-links { flex-wrap: wrap; margin-top: 0.7rem; font-size: 0.82rem; }
+.cf-donation-card-links a { color: var(--cf-accent-ink); font-weight: 800; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.cf-donation-card-time { color: var(--cf-dim); font-size: 0.74rem; }
+@media (max-width: 640px) {
+    .cf-vault-donation { padding: 0.8rem; }
+    .cf-vault-donation-head { align-items: flex-start; }
+    .cf-vault-donation-open { width: 100%; }
+    .cf-vault-donation-fields { grid-template-columns: minmax(0, 1fr); }
+    .cf-vault-donation-field:last-child { grid-column: auto; }
+    .cf-vault-donation-summary > div { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+    .cf-donation-card { border-radius: 0; border-right: 0; border-left: 0; }
+}
