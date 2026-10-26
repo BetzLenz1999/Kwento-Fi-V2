@@ -54,8 +54,8 @@ self.addEventListener('push', (event) => {
   const target = String(data.url || '/messages');
   event.waitUntil(self.registration.showNotification(title, {
     body,
-    icon: '/static/icons/goodmarket-icon.png',
-    badge: '/static/icons/icon-192x192.png',
+    icon: '/static/icons/goodmarket-only-512.png',
+    badge: '/static/icons/goodmarket-only-192.png',
     tag: String(data.tag || 'community-message').slice(0, 120),
     renotify: true,
     data: { url: target.startsWith('/') ? target : '/messages' }
