@@ -336,6 +336,29 @@
                 <span class="cf-earn-bar-fill" id="cfEarnBarFill"></span>
             </div>
         </div>
+        <div class="cf-earn-budgets" id="cfEarnBudgets" hidden aria-live="polite">
+            <div class="cf-earn-budget-head">
+                <strong>Today’s reward budgets</strong>
+                <span id="cfEarnBudgetReset">Resets at 08:00 PH (00:00 UTC)</span>
+            </div>
+            <div class="cf-earn-budget-grid">
+                <div class="cf-earn-budget" id="cfEarnSocialBudget">
+                    <span class="cf-earn-budget-label">Social</span>
+                    <span class="cf-earn-budget-value" id="cfEarnSocialBudgetValue"></span>
+                    <span class="cf-earn-budget-note" id="cfEarnSocialBudgetNote"></span>
+                </div>
+                <div class="cf-earn-budget" id="cfEarnQuizBudget">
+                    <span class="cf-earn-budget-label">Daily Learn</span>
+                    <span class="cf-earn-budget-value" id="cfEarnQuizBudgetValue"></span>
+                    <span class="cf-earn-budget-note" id="cfEarnQuizBudgetNote"></span>
+                </div>
+                <div class="cf-earn-budget cf-earn-budget-total" id="cfEarnCombinedBudget">
+                    <span class="cf-earn-budget-label">Combined</span>
+                    <span class="cf-earn-budget-value" id="cfEarnCombinedBudgetValue"></span>
+                    <span class="cf-earn-budget-note" id="cfEarnCombinedBudgetNote"></span>
+                </div>
+            </div>
+        </div>
         <button type="button" class="cf-earn-rates-toggle" id="cfEarnRatesToggle"
                 aria-controls="cfEarnRates" aria-expanded="false" hidden>
             Show earning rates
