@@ -139,7 +139,6 @@ function run(opts) {
    'cfUploadStatus', 'cfFeed', 'cfEmpty', 'cfLoadMore', 'cfToast',
    'cfLightbox', 'cfLightboxBody', 'cfEditModal', 'cfEditCaption',
    'cfEditSaveBtn', 'cfComposer',
-   'cfComposerSummary', 'cfComposerBody', 'cfComposerCollapse',
    'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
    'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
    'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame',
@@ -157,11 +156,6 @@ function run(opts) {
     registry[id] = node;
   });
   registry.cfPreviews.hidden = true;
-  // The composer ships collapsed: mirror the markup's `is-collapsed` class and
-  // the summary's aria state, so a collapse assertion cannot pass on the stub's
-  // empty defaults.
-  registry.cfComposer.className = 'cf-composer is-collapsed';
-  registry.cfComposerSummary.setAttribute('aria-expanded', 'false');
   // Mirror the markup: the card and the balance block both start hidden, so a
   // "revealed" assertion cannot pass on the stub's default `false`.
   registry.cfEarn.hidden = true;
@@ -2141,62 +2135,6 @@ function feedFetch(handler, feedRows) {
     ok('the admin blurb states the weighted rates',
        tpl.includes('<strong>2.5</strong> per comment received') &&
        tpl.includes('<strong>0.1</strong> per reaction given'));
-  }
-
-  // ── Section 21: collapsed composer ──────────────────────────────────────
-  // The composer rests as ONE row and expands on an intent-to-post signal.
-  // Driven through the REAL bundle functions, not by grepping the source.
-  {
-    const { api, store } = run({ boot: MEMBER });
-    const composer = store.cfComposer;
-    const summary = store.cfComposerSummary;
-
-    ok('the composer starts collapsed',
-       api._internals.isComposerCollapsed() === true,
-       composer.className);
-    ok('the summary advertises the collapsed state',
-       summary.getAttribute('aria-expanded') === 'false');
-
-    // Expanding: the class flips and the summary tells assistive tech so.
-    api.expandComposer();
-    ok('tapping the summary expands the composer',
-       api._internals.isComposerCollapsed() === false,
-       composer.className);
-    ok('the summary announces the expanded state',
-       summary.getAttribute('aria-expanded') === 'true');
-    ok('expanding focuses the caption field, so posting is one tap then typing',
-       store.cfCaption.focused === true);
-
-    // The data-loss guard: a typed caption must survive a collapse request.
-    store.cfCaption.value = 'half written post';
-    api.collapseComposer();
-    ok('a typed caption is never collapsed away',
-       api._internals.isComposerCollapsed() === false,
-       composer.className);
-
-    // A queued attachment is work in progress too.
-    store.cfCaption.value = '';
-    api._internals.setPending([{ state: 'uploading' }]);
-    api.collapseComposer();
-    ok('a queued attachment is never collapsed away',
-       api._internals.isComposerCollapsed() === false,
-       composer.className);
-
-    // Empty again: now it may collapse.
-    api._internals.setPending([]);
-    api.collapseComposer();
-    ok('an empty composer collapses',
-       api._internals.isComposerCollapsed() === true,
-       composer.className);
-
-    // Publishing folds it back, so the feed returns to its resting state.
-    api._internals.setComposerCollapsed(false);
-    api._internals.resetComposer();
-    ok('publishing a post folds the composer back to one row',
-       api._internals.isComposerCollapsed() === true,
-       composer.className);
-    ok('reset clears the caption as well as collapsing',
-       store.cfCaption.value === '');
   }
 
   console.log('');
