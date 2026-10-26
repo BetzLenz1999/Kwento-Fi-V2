@@ -1461,7 +1461,7 @@
                                 </div>
                                 <div style="padding: 1rem; background: rgba(255, 255, 255, 0.03); border-radius: 8px;">
                                     <strong>Community Daily Learn Rate:</strong>
-                                    <p id="current-community-daily-learn-rate" style="font-size: 1.5rem; color: #34d399; margin-top: 0.5rem;">1 G$ / correct</p>
+                                    <p id="current-community-daily-learn-rate" style="font-size: 1.5rem; color: #34d399; margin-top: 0.5rem;">Unavailable</p>
                                 </div>
                                 <div style="padding: 1rem; background: rgba(255, 255, 255, 0.03); border-radius: 8px;">
                                     <strong>Cooldown:</strong>
@@ -1498,10 +1498,10 @@
                             </div>
 
                             <div style="margin-bottom: 1.5rem; padding: 1rem; border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 8px;">
-                                <label for="community-daily-learn-reward-per-correct" style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Community Daily Learn reward per correct answer (<span id="community-daily-learn-rate-range">0-50</span> G$)</label>
-                                <input type="number" id="community-daily-learn-reward-per-correct" min="0" max="50" step="0.0001" value="50" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
+                                <label for="community-daily-learn-reward-per-correct" style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Community Daily Learn reward per correct answer (read-only mirror)</label>
+                                <input type="number" id="community-daily-learn-reward-per-correct" min="0" max="500" step="0.0001" value="" readonly disabled placeholder="Unavailable" aria-describedby="community-daily-learn-mirror-note" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
                                 <small style="color: rgba(241, 245, 249, 0.7); display: block; margin-top: 0.5rem;">
-                                    Applies only to the 2-question Community Daily Learn cycle. Credit = correct answers × this rate (0, 1, or 2 correct); the full Learn &amp; Earn quiz rate is separate. Maximum: <span id="community-daily-learn-rate-max-note">50</span> G$ per correct answer (set by <code>COMMUNITY_DAILY_LEARN_RATE_MAX</code>). Daily Learn has its own daily allowance (at least 2× the maximum) and is <strong>not</strong> limited by the shared Community daily cap, so a completed cycle always credits.
+                                    <span id="community-daily-learn-mirror-note">Read-only mirror of the DB-authoritative Community Quiz rate. Edit the dedicated Community Quiz controls below so the rate, ceiling, cap, and config version are saved together; this full Quiz Settings save never changes it.</span>
                                 </small>
                             </div>
 
@@ -2736,8 +2736,11 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 <div class="content-box" style="margin-top: 1.5rem;">
                     <h2 style="margin-bottom: 1rem;">🪙 Community G$ Rewards</h2>
                     <div style="margin-bottom: 0.75rem; padding: 0.75rem 1rem; background: rgba(245,158,11,0.10); border-radius: 8px; border-left: 3px solid #f59e0b; font-size: 0.88rem; color: rgba(241,245,249,0.85);">
-                        Weighted rates: <strong>2.5</strong> per comment received, <strong>1.5</strong> per comment given, <strong>0.5</strong> per reaction received, <strong>0.1</strong> per reaction given. The balance is the <strong>sum of an append-only ledger</strong> — it can never be edited, and there is no admin control to change anyone's balance. Shown <strong>only inside /community</strong>, never on the wallet page. <strong>v1 has no payout path</strong>: earnings accrue and display, nothing is withdrawable. Run <span style="font-family:monospace;">sql/community_reward_ledger.sql</span> first. <strong>Visible by default for signed-in members; guests do not see personal balances. Set COMMUNITY_REWARD_SHOW_BALANCE=0 to hide it. Rate details are collapsed until expanded.</strong>
+                        Weighted rates default to <strong>2.5</strong> per comment received, <strong>1.5</strong> per comment given, <strong>0.5</strong> per reaction received, and <strong>0.1</strong> per reaction given. The social daily budget defaults to <strong>250 G$</strong>; Community Daily Learn has a separate <strong>250 G$</strong> budget, and the combined ceiling is <strong>500 G$</strong>. Unused quiz budget never borrows into social rewards. The balance is the <strong>sum of an append-only ledger</strong> and is shown only inside <code>/community</code>.
                     </div>
+                    <p style="margin:0 0 1rem;padding:0.75rem 1rem;background:rgba(59,130,246,0.10);border-left:3px solid #3b82f6;border-radius:8px;font-size:0.86rem;color:rgba(241,245,249,0.88);">
+                        there is no admin control to change anyone's balance: the balance cannot be edited. These controls change future reward settings only; past ledger credits remain append-only.
+                    </p>
                     <div style="margin-bottom: 1rem;">
                         <label style="display: block; margin-bottom: 0.5rem; color: rgba(241, 245, 249, 0.9); font-weight: 600;">Visibility</label>
                         <select id="community-rewards-visibility-select" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #f1f5f9; font-size: 1rem;">
@@ -2760,9 +2763,22 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     <div style="margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid rgba(255,255,255,0.12);">
                         <h3 style="margin-bottom: 0.5rem; font-size: 1rem;">Rates per action</h3>
                         <div style="margin-bottom: 0.9rem; padding: 0.75rem 1rem; background: rgba(59,130,246,0.10); border-radius: 8px; border-left: 3px solid #3b82f6; font-size: 0.85rem; color: rgba(241,245,249,0.85);">
-                            Changing a rate affects <strong>future earnings only</strong>. Past credits are stored per row in an append-only ledger, so they are never recalculated. A rate of <strong>0</strong> switches that action off. Out-of-range values are clamped server-side.
+                            Changing a rate affects <strong>future earnings only</strong>. Past credits are stored per row in an append-only ledger, so they are never recalculated. A rate of <strong>0</strong> switches that action off. Values are validated by the database RPC; invalid saves fail rather than being silently clamped.
                         </div>
                         <div id="reward-rates-fields"></div>
+                        <div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid rgba(255,255,255,0.12);">
+                            <h3 style="margin-bottom:0.5rem;font-size:1rem;">Community budget controls</h3>
+                            <p style="font-size:0.82rem;color:rgba(241,245,249,0.7);line-height:1.5;">
+                                Social and quiz budgets reset at 00:00 UTC (08:00 Philippine time). The quiz rate is the actual payout per correct answer; at the defaults, two correct answers earn 100 G$, not 250 G$. The configured quiz cap is reserved and cannot be borrowed by social rewards.
+                            </p>
+                            <div id="community-budget-fields"></div>
+                            <input type="hidden" id="community-reward-config-version" value="">
+                            <div id="community-budget-config-status" role="status" aria-live="polite" style="margin-top:0.6rem;font-size:0.82rem;color:rgba(241,245,249,0.7);"></div>
+                            <button class="btn btn-primary" type="button" onclick="saveCommunityQuizSettings()" style="width:100%;padding:0.9rem;font-size:1rem;margin-top:0.9rem;">
+                                💾 Save Community Quiz &amp; Budget Settings
+                            </button>
+                            <div id="community-quiz-settings-result" style="margin-top:1rem;display:none;"></div>
+                        </div>
                         <div style="margin-top: 0.9rem;">
                             <label style="display: block; margin-bottom: 0.4rem; color: rgba(241,245,249,0.9); font-weight: 600; font-size: 0.9rem;">Reason (required — recorded with your admin wallet)</label>
                             <input type="text" id="reward-rates-reason" maxlength="200" placeholder="e.g. tune the tap reward down during the campaign"
@@ -4690,55 +4706,94 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
             reaction_out: 'Someone reacts to your post',
             reaction_in: 'You react to a post'
         };
+        function _rewardHtml(value) {
+            return String(value === undefined || value === null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        function _rewardInputValue(value) {
+            if (value === undefined || value === null || value === '') return '';
+            const raw = String(value).trim();
+            if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(raw)) return '';
+            const number = Number(raw);
+            if (!Number.isFinite(number) || number < 0 || number > 500) return '';
+            return _rewardHtml(String(number));
+        }
+        function _rewardNumber(id, label, max) {
+            const field = document.getElementById(id);
+            const raw = field && field.value !== undefined ? String(field.value).trim() : '';
+            if (!raw) throw new Error(label + ' is required.');
+            if (!/^(?:\d+(?:\.\d{1,4})?|\.\d{1,4})$/.test(raw)) {
+                throw new Error(label + ' must be a finite number with up to 4 decimal places.');
+            }
+            const number = Number(raw);
+            if (!Number.isFinite(number) || number < 0 || number > max) {
+                throw new Error(label + ' must be between 0 and ' + max + '.');
+            }
+            return number;
+        }
+        function _renderCommunityBudgetFields(data) {
+            const fields = document.getElementById('community-budget-fields');
+            if (!fields) return;
+            const input = function (id, label, value, min, max, step, note) {
+                return '<div style="margin-bottom:0.75rem;">' +
+                    '<label for="' + id + '" style="display:block;margin-bottom:0.3rem;color:rgba(241,245,249,0.9);font-size:0.9rem;">' + label + '</label>' +
+                    '<input type="number" id="' + id + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + _rewardInputValue(value) + '" style="width:100%;padding:0.75rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#f1f5f9;font-size:1rem;">' +
+                    (note ? '<small style="display:block;margin-top:0.3rem;color:rgba(241,245,249,0.6);">' + note + '</small>' : '') +
+                    '</div>';
+            };
+            fields.innerHTML =
+                input('community-social-daily-cap', 'Social daily cap (G$)', data.daily_cap, 0, 500, '0.01', 'Independent UTC-day social allowance; default 250 G$.') +
+                input('community-social-post-cap', 'Social per-post cap (G$)', data.post_cap, 0, 500, '0.01', 'A post cap applies to the combined comment/reaction pair.') +
+                input('community-quiz-rate', 'Community Daily Learn rate per correct answer (G$)', data.daily_learn_rate, 0, 500, '0.0001', 'Default 50 G$; two correct answers therefore earn 100 G$.') +
+                input('community-quiz-rate-max', 'Community Daily Learn admin rate ceiling (G$)', data.daily_learn_rate_max, 0, 500, '0.0001', 'The actual rate cannot exceed this DB-authoritative ceiling.') +
+                input('community-quiz-daily-cap', 'Community Daily Learn reserved daily cap (G$)', data.daily_learn_cap, 0, 500, '0.01', 'Reserved quiz allowance; unused budget is never borrowed by social rewards.') +
+                '<p style="font-size:0.8rem;color:rgba(241,245,249,0.6);">Combined configured cap: ' + _rewardInputValue(data.combined_cap) + ' G$ (maximum 500 G$).</p>';
+            const version = document.getElementById('community-reward-config-version');
+            if (version) version.value = _rewardInputValue(data.config_version);
+        }
         async function loadRewardRates() {
             const fields = document.getElementById('reward-rates-fields');
             if (!fields) return;
             try {
                 const res = await fetch('/community/api/admin/reward-rates');
                 const data = await res.json();
-                if (!data.success) {
+                if (!data.success && !data.rates && !data.names) {
                     fields.innerHTML = '<p style="color:#ef4444;">❌ ' +
-                        (data.error || 'Could not load the rates') + '</p>';
+                        _rewardHtml(data.error || 'Could not load the rates') + '</p>';
+                    const unavailableBudget = document.getElementById('community-budget-fields');
+                    if (unavailableBudget) unavailableBudget.innerHTML = '<p style="color:#ef4444;">❌ Community budget configuration unavailable; no values were fabricated.</p>';
                     return;
                 }
-                const order = data.names || Object.keys(data.rates || {});
+                const order = data.names || Object.keys(data.rates || _REWARD_RATE_LABELS);
                 fields.innerHTML = order.map(function (name) {
                     const value = (data.rates || {})[name];
                     const label = _REWARD_RATE_LABELS[name] || name;
                     return '<div style="margin-bottom: 0.7rem;">' +
                         '<label style="display:block; margin-bottom:0.3rem; color:rgba(241,245,249,0.9); font-size:0.9rem;">' +
-                        label + '</label>' +
+                        _rewardHtml(label) + '</label>' +
                         '<input type="number" id="reward-rate-' + name + '" step="0.1" min="' +
-                        data.min + '" max="' + data.max + '" value="' + value + '" ' +
+                        '0" max="100" value="' + _rewardInputValue(value) + '" ' +
                         'style="width:100%; padding:0.75rem; background:rgba(255,255,255,0.1); ' +
                         'border:1px solid rgba(255,255,255,0.2); border-radius:8px; color:#f1f5f9; font-size:1rem;">' +
                         '</div>';
                 }).join('') +
                 '<p style="font-size:0.8rem; color:rgba(241,245,249,0.6);">Allowed range: ' +
-                data.min + '–' + data.max + ' G$. Values outside it are clamped.</p>' +
+                '0–100 G$. Values outside it are rejected.</p>' +
                 '<p style="font-size:0.8rem; color:rgba(241,245,249,0.6);">' +
-                'Daily allowance: ' + data.daily_cap + ' G$ per wallet per 24h &middot; ' +
-                'Per-post allowance: ' + data.post_cap + ' G$.</p>' +
-                _rewardRateCeilingNote(data) +
+                'Daily allowance: ' + _rewardInputValue(data.daily_cap) + ' G$ per wallet per UTC day &middot; ' +
+                'Per-post allowance: ' + _rewardInputValue(data.post_cap) + ' G$.</p>' +
                 _rewardRateOrderNote(data.rates || {});
+                _renderCommunityBudgetFields(data);
+                const budgetStatus = document.getElementById('community-budget-config-status');
+                if (budgetStatus) budgetStatus.textContent = data.success
+                    ? 'DB config version ' + _rewardInputValue(data.config_version) + ' loaded.'
+                    : 'Configuration is invalid. Repair the editable values and save. ' + (data.error || 'Database validation failed.');
             } catch (e) {
                 fields.innerHTML = '<p style="color:#ef4444;">❌ Could not load the rates</p>';
+                const budget = document.getElementById('community-budget-fields');
+                if (budget) budget.innerHTML = '<p style="color:#ef4444;">❌ Community budget configuration unavailable; no values were fabricated.</p>';
             }
-        }
-
-        // The ceiling is min(configured max, daily allowance, per-post
-        // allowance). When one of the allowances is the binding constraint the
-        // form shows a smaller max than the operator configured, which reads as
-        // a bug unless we name the reason.
-        function _rewardRateCeilingNote(data) {
-            if (data.max >= data.rate_max) return '';
-            var binding = data.daily_cap <= data.post_cap
-                ? 'the daily allowance (' + data.daily_cap + ' G$)'
-                : 'the per-post allowance (' + data.post_cap + ' G$)';
-            return '<p style="font-size:0.8rem; color:#fbbf24;">⚠ The configured ' +
-                'ceiling is ' + data.rate_max + ' G$, but rates are limited to ' +
-                data.max + ' G$ by ' + binding + '. A higher rate could never be ' +
-                'credited. Raise that allowance to allow higher rates.</p>';
         }
 
         // The four rates are deliberately NOT equal: reaction_in is the farm
@@ -4769,15 +4824,23 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 return;
             }
             const rates = {};
-            Object.keys(_REWARD_RATE_LABELS).forEach(function (name) {
-                const input = document.getElementById('reward-rate-' + name);
-                if (input) rates[name] = input.value;
-            });
+            const dailyCap = document.getElementById('community-social-daily-cap');
+            const postCap = document.getElementById('community-social-post-cap');
+            const version = document.getElementById('community-reward-config-version');
             try {
+                Object.keys(_REWARD_RATE_LABELS).forEach(function (name) {
+                    rates[name] = _rewardNumber('reward-rate-' + name, _REWARD_RATE_LABELS[name], 100);
+                });
+                const socialDailyCap = _rewardNumber('community-social-daily-cap', 'Social daily cap', 500);
+                const socialPostCap = _rewardNumber('community-social-post-cap', 'Social per-post cap', 500);
                 const res = await fetch('/community/api/admin/reward-rates', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rates: rates, reason: reason })
+                    body: JSON.stringify({ rates: rates,
+                        daily_cap: socialDailyCap,
+                        post_cap: socialPostCap,
+                        reason: reason,
+                        config_version: version && version.value ? Number(version.value) : null })
                 });
                 const data = await res.json();
                 resultDiv.style.display = 'block';
@@ -4792,6 +4855,62 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
             } catch (e) {
                 resultDiv.style.display = 'block';
                 resultDiv.innerHTML = '<p style="color:#ef4444;">❌ Could not save the rates</p>';
+            }
+        }
+
+        async function saveCommunityQuizSettings() {
+            const resultDiv = document.getElementById('community-quiz-settings-result');
+            const reasonEl = document.getElementById('reward-rates-reason');
+            const reason = (reasonEl && reasonEl.value || '').trim();
+            const status = document.getElementById('community-budget-config-status');
+            if (!reason) {
+                if (resultDiv) { resultDiv.style.display = 'block'; resultDiv.textContent = '❌ A reason is required.'; }
+                return;
+            }
+            const version = document.getElementById('community-reward-config-version');
+            let payload;
+            try {
+                // Keep this dedicated button on the same endpoint as the social
+                // editor, but send JSON numbers rather than HTML input strings.
+                const readQuizNumber = function (id, label) {
+                    const field = document.getElementById(id);
+                    const raw = field && field.value !== undefined ? String(field.value).trim() : '';
+                    if (!raw) throw new Error(label + ' is required.');
+                    if (!/^(?:\d+(?:\.\d{1,4})?|\.\d{1,4})$/.test(raw)) {
+                        throw new Error(label + ' must be a finite number with up to 4 decimal places.');
+                    }
+                    const number = Number(raw);
+                    if (!Number.isFinite(number) || number < 0 || number > 500) {
+                        throw new Error(label + ' must be between 0 and 500.');
+                    }
+                    return number;
+                };
+                payload = {
+                    daily_learn_rate: readQuizNumber('community-quiz-rate', 'Daily Learn rate'),
+                    daily_learn_rate_max: readQuizNumber('community-quiz-rate-max', 'Daily Learn rate ceiling'),
+                    daily_learn_cap: readQuizNumber('community-quiz-daily-cap', 'Daily Learn cap'),
+                    reason: reason,
+                    config_version: version && version.value ? Number(version.value) : null
+                };
+            } catch (error) {
+                if (resultDiv) { resultDiv.style.display = 'block'; resultDiv.textContent = '❌ ' + (error.message || 'Enter valid numeric values.'); }
+                if (status) status.textContent = 'No request sent; enter valid Community Quiz values.';
+                return;
+            }
+            if (status) status.textContent = 'Saving Community Quiz configuration…';
+            try {
+                const response = await fetch('/api/admin/quiz-settings', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.error || 'Could not save Community Quiz settings');
+                if (resultDiv) { resultDiv.style.display = 'block'; resultDiv.textContent = '✅ Community Quiz rate, ceiling, and reserved cap saved.'; }
+                if (reasonEl) reasonEl.value = '';
+                await loadRewardRates();
+            } catch (error) {
+                if (resultDiv) { resultDiv.style.display = 'block'; resultDiv.textContent = '❌ ' + (error.message || 'Could not save Community Quiz settings'); }
+                if (status) status.textContent = 'Community Quiz save failed; the previous DB configuration remains active.';
             }
         }
 
@@ -4874,10 +4993,13 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
         // The Daily Learn per-answer ceiling is server-provided so the bound is
         // never pinned in the markup. A missing value keeps the existing bound
         // (old cached HTML + new JS must not silently widen the limit).
-        let communityDailyLearnRateMax = 50;
+        let communityDailyLearnRateMax = null;
         function applyDailyLearnRateCeiling(value) {
             const parsed = Number(value);
-            if (!Number.isFinite(parsed) || parsed <= 0) return;
+            if (!Number.isFinite(parsed) || parsed < 0 || parsed > 500) {
+                communityDailyLearnRateMax = null;
+                return;
+            }
             communityDailyLearnRateMax = parsed;
             const label = document.getElementById('community-daily-learn-rate-range');
             if (label) label.textContent = '0-' + parsed;
@@ -4885,6 +5007,25 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
             if (note) note.textContent = String(parsed);
             const input = document.getElementById('community-daily-learn-reward-per-correct');
             if (input) input.max = String(parsed);
+        }
+
+        function renderCommunityDailyLearnMirror(settings) {
+            const current = document.getElementById('current-community-daily-learn-rate');
+            const input = document.getElementById('community-daily-learn-reward-per-correct');
+            const note = document.getElementById('community-daily-learn-mirror-note');
+            const rate = settings && settings.community_daily_learn_reward_per_correct;
+            const available = settings && settings.configuration_available !== false &&
+                rate !== null && rate !== undefined && Number.isFinite(Number(rate));
+            if (!available) {
+                if (current) current.textContent = 'Unavailable — repair Community reward configuration below';
+                if (input) { input.value = ''; input.disabled = true; input.readOnly = true; input.placeholder = 'Unavailable'; }
+                if (note) note.textContent = 'Community Daily Learn configuration is unavailable. Repair the editable Community Quiz controls below; the full Quiz Settings save does not change this rate.';
+                communityDailyLearnRateMax = null;
+                return;
+            }
+            if (current) current.textContent = formatQuizRewardAmount(rate) + ' / correct';
+            if (input) { input.value = rate; input.disabled = true; input.readOnly = true; input.placeholder = ''; }
+            if (note) note.textContent = 'Read-only mirror of the DB-authoritative Community Quiz rate. Edit the dedicated Community Quiz controls below so the rate, ceiling, cap, and config version are saved together; this full Quiz Settings save never changes it.';
         }
 
         async function loadQuizSettings() {
@@ -4902,15 +5043,23 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     document.getElementById('current-time').textContent = settings.time_per_question + 's';
                     document.getElementById('current-max-reward').textContent = settings.max_reward_per_quiz + ' G$';
                     document.getElementById('current-per-correct').textContent = formatQuizRewardAmount(settings.reward_per_correct);
-                    document.getElementById('current-community-daily-learn-rate').textContent = formatQuizRewardAmount(settings.community_daily_learn_reward_per_correct) + ' / correct';
                     document.getElementById('current-cooldown').textContent = formatQuizCooldownLabel(settings.cooldown_hours);
 
                     document.getElementById('questions-per-quiz').value = settings.questions_per_quiz;
                     document.getElementById('time-per-question').value = settings.time_per_question;
                     document.getElementById('max-reward-per-quiz').value = settings.max_reward_per_quiz;
-                    document.getElementById('community-daily-learn-reward-per-correct').value = settings.community_daily_learn_reward_per_correct;
                     document.getElementById('quiz-cooldown-hours').value = settings.cooldown_hours || 24;
-                    applyDailyLearnRateCeiling(settings.daily_learn_rate_max);
+                    const communityMirrorSettings = Object.assign({}, settings, {
+                        configuration_available: data.configuration_available
+                    });
+                    renderCommunityDailyLearnMirror(communityMirrorSettings);
+                    if (communityMirrorSettings.configuration_available !== false &&
+                        communityMirrorSettings.community_daily_learn_reward_per_correct !== null &&
+                        communityMirrorSettings.community_daily_learn_reward_per_correct !== undefined) {
+                        applyDailyLearnRateCeiling(communityMirrorSettings.daily_learn_rate_max);
+                    } else {
+                        applyDailyLearnRateCeiling(null);
+                    }
                     updateRewardPerCorrectPreview();
 
                     statusDiv.style.display = 'none';
@@ -4930,12 +5079,8 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 const timePerQuestion = parseInt(document.getElementById('time-per-question').value);
                 const maxRewardPerQuiz = parseInt(document.getElementById('max-reward-per-quiz').value);
                 const cooldownHours = parseInt(document.getElementById('quiz-cooldown-hours').value);
-                const communityDailyLearnReward = parseFloat(document.getElementById('community-daily-learn-reward-per-correct').value);
-
-                if (!questionsPerQuiz || !timePerQuestion || !maxRewardPerQuiz || !cooldownHours ||
-                    !Number.isFinite(communityDailyLearnReward) || communityDailyLearnReward < 0 ||
-                    communityDailyLearnReward > communityDailyLearnRateMax) {
-                    alert(`⚠️ Please fill in all fields. The Community Daily Learn reward must be between 0 and ${communityDailyLearnRateMax} G$ per correct answer.`);
+                if (!questionsPerQuiz || !timePerQuestion || !maxRewardPerQuiz || !cooldownHours) {
+                    alert('⚠️ Please fill in all full Learn & Earn fields. Community Daily Learn is saved separately below.');
                     return;
                 }
 
@@ -4946,8 +5091,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                         questions_per_quiz: questionsPerQuiz,
                         time_per_question: timePerQuestion,
                         max_reward_per_quiz: maxRewardPerQuiz,
-                        cooldown_hours: cooldownHours,
-                        community_daily_learn_reward_per_correct: communityDailyLearnReward
+                        cooldown_hours: cooldownHours
                     })
                 });
 
@@ -4960,7 +5104,6 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                           `⏱️ Time: ${timePerQuestion}s per question\n` +
                           `💰 Max Reward: ${formatQuizRewardAmount(maxRewardPerQuiz)}\n` +
                           `💎 Per Correct: ${formatQuizRewardAmount(rewardPerCorrect)}\n` +
-                          `🌱 Community Daily Learn: ${formatQuizRewardAmount(communityDailyLearnReward)} per correct answer\n` +
                           `⏳ Cooldown: ${formatQuizCooldownLabel(cooldownHours)}`);
                     await loadQuizSettings();
                 } else {
