@@ -20,6 +20,10 @@ CELO_CHAIN_ID = 42220
 EIP712_NAME = "GoodMarket Community Withdrawal Vault"
 EIP712_VERSION = "1"
 MAX_AUTHORIZATION_LIFETIME_SECONDS = 15 * 60
+KNOWN_VAULT_ADDRESS = "0x4c0d1f17e83776aa696848b870444e54ec3a2203"
+KNOWN_VAULT_DEPLOYMENT_BLOCK = 81001254
+MAX_RECONCILIATION_LOG_CALLS = 50
+MAX_RECONCILIATION_BLOCKS = 100000
 
 WITHDRAWAL_AUTHORIZATION_TYPES = [
     {"name": "recipient", "type": "address"},
@@ -371,6 +375,31 @@ def operator_detail(exc: BaseException) -> str:
     return str(exc)
 
 
+def deployment_block_for_runtime(runtime: Runtime) -> int:
+    """Return the configured history/reconciliation start block.
+
+    The known-vault fallback is retained for compatibility with the existing
+    history endpoint.  A different vault must always have an explicit start
+    block so reconciliation cannot scan an accidental or unbounded range.
+    """
+    configured = os.environ.get("COMMUNITY_VAULT_DEPLOYMENT_BLOCK", "").strip()
+    if configured:
+        if not re.fullmatch(r"\d+", configured):
+            raise WithdrawalConfigError(
+                "COMMUNITY_VAULT_DEPLOYMENT_BLOCK must be a non-negative integer.",
+                code="deployment_block",
+                hint="Set COMMUNITY_VAULT_DEPLOYMENT_BLOCK to the vault deployment block.",
+            )
+        return int(configured)
+    if str(runtime.vault_address).lower() == KNOWN_VAULT_ADDRESS:
+        return KNOWN_VAULT_DEPLOYMENT_BLOCK
+    raise WithdrawalConfigError(
+        "Withdrawal history is not configured for this vault.",
+        code="deployment_block",
+        hint="Set COMMUNITY_VAULT_DEPLOYMENT_BLOCK to the vault deployment block.",
+    )
+
+
 def amount_to_base_units(amount_gd: Decimal | str, decimals: int) -> int:
     """Convert without rounding; ledger value must be exactly token-representable."""
     try:
@@ -508,7 +537,8 @@ def verify_withdrawal_receipt(runtime: Runtime, receipt: dict, row: dict) -> boo
     expected_amount = int(row["amount_base_units"])
     expected_nonce = int(row["authorization_nonce"])
     for log in logs:
-        if Web3.to_checksum_address(log["address"]) != runtime.vault_address:
+        if (Web3.to_checksum_address(log["address"])
+                != Web3.to_checksum_address(runtime.vault_address)):
             continue
         args = log["args"]
         got_id = Web3.to_hex(args["withdrawalId"])
@@ -545,6 +575,169 @@ def find_withdrawal_transaction(runtime: Runtime, row: dict) -> str | None:
         except Exception:
             continue
     return None
+
+
+def scan_withdrawal_transaction_page(
+    runtime: Runtime,
+    row: dict,
+    *,
+    deployment_block: int,
+    before_block: int | None = None,
+) -> dict:
+    """Scan one bounded descending page for the exact stored payout.
+
+    This helper is deliberately read-only.  It returns a deterministic status
+    result and never records a hash, marks a reservation failed, or finalizes
+    a ledger row.  A candidate is returned only after transaction calldata,
+    stored issuer signature, successful receipt, and exact payout event all
+    validate through the same primitives used by confirmation.
+    """
+    from web3 import Web3
+
+    try:
+        deployment_block = int(deployment_block)
+        if deployment_block < 0:
+            return {"status": "manual_review"}
+        end_block = int(runtime.web3.eth.block_number)
+        if before_block is not None:
+            if isinstance(before_block, bool):
+                return {"status": "invalid_cursor"}
+            try:
+                cursor = int(before_block)
+            except (TypeError, ValueError):
+                return {"status": "invalid_cursor"}
+            if cursor < deployment_block or cursor > end_block:
+                return {"status": "invalid_cursor"}
+            end_block = cursor
+        if end_block < deployment_block:
+            return {"status": "manual_review"}
+
+        wallet = Web3.to_checksum_address(str(row.get("wallet_address") or ""))
+        withdrawal_id = str(row.get("withdrawal_id") or "").strip().lower()
+        signature = str(row.get("authorization_signature") or "").strip()
+        if (str(row.get("status") or "") != "claimed" or not signature
+                or not re.fullmatch(r"0x[0-9a-f]{64}", withdrawal_id)):
+            return {"status": "manual_review"}
+        row_vault = str(row.get("vault_address") or "").strip()
+        row_token = str(row.get("token_address") or "").strip()
+        if (not Web3.is_address(row_vault)
+                or Web3.to_checksum_address(row_vault)
+                != Web3.to_checksum_address(runtime.vault_address)):
+            return {"status": "manual_review"}
+        if (not Web3.is_address(row_token)
+                or Web3.to_checksum_address(row_token)
+                != Web3.to_checksum_address(runtime.token_address)):
+            return {"status": "manual_review"}
+        if row.get("chain_id") is None or int(row["chain_id"]) != CELO_CHAIN_ID:
+            return {"status": "manual_review"}
+        if str(row.get("project_id") or "").lower() != str(runtime.project_id).lower():
+            return {"status": "manual_review"}
+        withdrawal_id_bytes = Web3.to_bytes(hexstr=withdrawal_id)
+        if len(withdrawal_id_bytes) != 32:
+            return {"status": "manual_review"}
+
+        try:
+            max_chunk = int(os.environ.get("GETLOGS_MAX_CHUNK", "4000"))
+        except (TypeError, ValueError):
+            return {"status": "rpc_error"}
+        chunk = max(500, min(max_chunk, 4000))
+        max_scan_blocks = min(MAX_RECONCILIATION_BLOCKS,
+                              chunk * MAX_RECONCILIATION_LOG_CALLS)
+        topic0 = Web3.keccak(text="WithdrawalPaid(address,uint256,bytes32,uint256,uint256)")
+        recipient_topic = "0x" + wallet.lower().removeprefix("0x").rjust(64, "0")
+        page_to = end_block
+        page_from = None
+        scanned_blocks = 0
+        calls = 0
+        seen_hashes = set()
+        incomplete_rpc = False
+
+        while (end_block >= deployment_block
+               and calls < MAX_RECONCILIATION_LOG_CALLS
+               and scanned_blocks < max_scan_blocks):
+            eligible_span = min(chunk, end_block - deployment_block + 1,
+                                max_scan_blocks - scanned_blocks)
+            start_block = max(deployment_block, end_block - eligible_span + 1)
+            page_from = (max(deployment_block, start_block)
+                         if page_from is None else min(page_from, max(deployment_block, start_block)))
+            try:
+                logs = runtime.web3.eth.get_logs({
+                    "address": runtime.vault_address,
+                    "fromBlock": start_block,
+                    "toBlock": end_block,
+                    "topics": [topic0, recipient_topic, withdrawal_id_bytes],
+                })
+            except Exception:
+                return {"status": "rpc_error"}
+            calls += 1
+
+            logs = sorted(
+                logs,
+                key=lambda item: (int(item["blockNumber"]), int(item["logIndex"])),
+                reverse=True,
+            )
+            for log in logs:
+                try:
+                    tx_hash = Web3.to_hex(log["transactionHash"]).lower()
+                    if not re.fullmatch(r"0x[0-9a-f]{64}", tx_hash) or tx_hash in seen_hashes:
+                        continue
+                    if int(log.get("blockNumber", 0)) < deployment_block:
+                        continue
+                    seen_hashes.add(tx_hash)
+                    if Web3.to_checksum_address(log.get("address") or "") != Web3.to_checksum_address(runtime.vault_address):
+                        continue
+                    raw_topics = log.get("topics") or []
+                    if len(raw_topics) != 3:
+                        continue
+                    topics = [Web3.to_bytes(hexstr=item) if isinstance(item, str) else bytes(item)
+                              for item in raw_topics]
+                    if (len(topics[0]) != 32 or len(topics[1]) != 32
+                            or len(topics[2]) != 32 or topics[0] != topic0
+                            or topics[1][-20:] != bytes.fromhex(wallet[2:].lower())
+                            or topics[2] != withdrawal_id_bytes):
+                        continue
+                    try:
+                        tx = runtime.web3.eth.get_transaction(tx_hash)
+                    except Exception:
+                        incomplete_rpc = True
+                        continue
+                    try:
+                        receipt = runtime.web3.eth.get_transaction_receipt(tx_hash)
+                    except Exception:
+                        incomplete_rpc = True
+                        continue
+                    if int(receipt.get("status", 0)) != 1:
+                        continue
+                    if "chainId" in tx and int(tx["chainId"]) != CELO_CHAIN_ID:
+                        continue
+                    decode_withdrawal_transaction(runtime, tx, row)
+                    if verify_withdrawal_receipt(runtime, receipt, row):
+                        return {
+                            "status": "transaction_found",
+                            "tx_hash": tx_hash,
+                        }
+                except WithdrawalPolicyError:
+                    continue
+                except Exception:
+                    # A malformed candidate is simply not an exact match.
+                    continue
+
+            scanned_blocks += eligible_span
+            end_block -= eligible_span
+
+        if incomplete_rpc:
+            return {"status": "rpc_error"}
+        if end_block < deployment_block:
+            return {"status": "not_found"}
+        return {
+            "status": "scanning",
+            "next_before_block": end_block,
+            "scanned_blocks": scanned_blocks,
+            "from_block": page_from,
+            "to_block": page_to,
+        }
+    except Exception:
+        return {"status": "rpc_error"}
 
 
 def verify_funding_receipt(runtime: Runtime, receipt: dict, tx: dict, admin_wallet: str) -> int:
