@@ -1,5 +1,5 @@
 /* Public Community Chatroom widget — SEPARATE from the GoodMarket Agent.
-   Own floating launcher + panel; auto-opens on load. Shares only the
+   Own floating launcher + panel; starts closed and opens on user action. Shares only the
    `gm-chat-*` message styles (messages look identical to the agent's room). */
 
 .gm-chat-widget {
@@ -83,13 +83,20 @@
 }
 
 .gm-chat-close {
-  border: 0;
-  background: transparent;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, .08);
   color: #fff;
-  font-size: 26px;
+  font-size: 12px;
+  font-weight: 800;
   line-height: 1;
   cursor: pointer;
+  white-space: nowrap;
 }
+.gm-chat-close:hover { background: rgba(255, 255, 255, .16); }
+.gm-chat-close:focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }
 
 .gm-chat-live {
   display: inline-flex;
