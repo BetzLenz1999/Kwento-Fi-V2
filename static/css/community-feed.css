@@ -983,7 +983,14 @@ body {
     padding: 0.22rem 0.55rem; border-radius: 999px;
     background: #fff7e6; color: #8a4b00;
     border: 1px solid rgba(180, 120, 20, 0.4);
+    font-family: inherit; line-height: 1.4; cursor: default;
 }
+.cf-earn-chip:not(:disabled) { cursor: pointer; }
+.cf-earn-chip:not(:disabled):hover { filter: brightness(0.96); }
+.cf-earn-chip:not(:disabled):focus-visible {
+    outline: 3px solid var(--cf-accent-2); outline-offset: 2px;
+}
+.cf-earn-chip:disabled { opacity: 1; }
 .cf-earn-chip[data-state="ready"] {
     background: #e7f8ec; color: #146c33;
     border-color: rgba(20, 108, 51, 0.35);
