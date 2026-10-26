@@ -498,13 +498,16 @@ def _dynamic_service_worker():
     byte-for-byte comparison of the fetched SW file against the currently
     registered one. If we ship `static/service-worker.js` as a regular static
     asset, its bytes never change between deployments, so the browser keeps
-    the old worker forever and the in-page "New Version Available" banner
-    (see login.html / dashboard.html) never fires.
+    the old worker forever and the root PWA update gate never detects a new build.
 
     By substituting `__BUILD_VERSION__` with `ASSET_VERSION` (which is derived
     from the git commit SHA, see `_compute_asset_version`), the SW file
     content changes on every deployment. That triggers the standard SW update
-    lifecycle: install -> skipWaiting -> activate -> postMessage SW_UPDATED.
+    lifecycle: install -> waiting -> either old clients close or the
+    standalone root gate sends an explicit SKIP_WAITING message -> activate ->
+    postMessage SW_UPDATED. The accepted-build marker keeps the next PWA launch
+    gated if the browser activated the worker while the app was closed. Ordinary
+    browser tabs are redirected through the root without a mandatory gate.
 
     Notes:
     - This route takes precedence over Flask's default `/static/<path>` rule
