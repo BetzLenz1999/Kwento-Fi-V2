@@ -4601,24 +4601,45 @@ def set_wallet_maintenance():
 @routes.route("/api/admin/quiz-settings", methods=["GET"])
 @admin_required
 def get_quiz_settings():
-    """Get current quiz settings"""
+    """Get full Learn & Earn settings plus DB-authoritative Community config.
+
+    Community Daily Learn has its own rate/ceiling/cap contract.  Keep the
+    facade import lazy: routes is imported while the community blueprint is
+    being assembled, and an eager import would create a circular dependency.
+    """
     try:
         from learn_and_earn.learn_and_earn import quiz_manager
 
         settings = quiz_manager.get_quiz_settings()
-        # Ship the live ceiling with the settings so the admin form renders its
-        # bound from the server instead of a pinned literal. Raising
-        # COMMUNITY_DAILY_LEARN_RATE_MAX then needs no markup change.
+        settings = dict(settings or {})
+
+        community = {"success": False, "error": "Community reward configuration unavailable"}
         try:
-            from community_feed.rewards import (
-                daily_learn_rate_max as _daily_learn_rate_max)
-            settings = dict(settings or {})
-            settings["daily_learn_rate_max"] = float(_daily_learn_rate_max())
-        except Exception as exc:  # noqa: BLE001 - never break the settings read
-            logger.warning("Could not resolve the Daily Learn rate ceiling: %s", exc)
+            from community_feed.reward_settings import get_settings
+            community = get_settings()
+        except Exception as exc:  # noqa: BLE001 - preserve full quiz diagnostics
+            logger.warning("Could not resolve Community reward settings: %s", exc)
+
+        available = bool(community.get("success"))
+        # Even an invalid configuration may expose safely readable values for
+        # explicit repair. Never fall back to quiz_manager's stale cached rate.
+        settings["community_daily_learn_reward_per_correct"] = community.get("daily_learn_rate")
+        settings["daily_learn_rate_max"] = community.get("daily_learn_rate_max")
+        settings["community_daily_learn_daily_cap"] = community.get("daily_learn_cap")
+        settings["community_social_daily_cap"] = community.get("daily_cap")
+        settings["community_reward_config_version"] = community.get("config_version")
         return jsonify({
             "success": True,
-            "settings": settings
+            "settings": settings,
+            "community_daily_learn_reward_per_correct": settings.get(
+                "community_daily_learn_reward_per_correct"),
+            "daily_learn_rate_max": settings.get("daily_learn_rate_max"),
+            "community_daily_learn_daily_cap": settings.get(
+                "community_daily_learn_daily_cap"),
+            "community_social_daily_cap": settings.get("community_social_daily_cap"),
+            "config_version": settings.get("community_reward_config_version"),
+            "configuration_available": available,
+            "configuration_error": None if available else community.get("error"),
         })
     except Exception as e:
         logger.error(f"❌ Error getting quiz settings: {e}")
@@ -4902,17 +4923,61 @@ def update_insufficient_balance_message():
 @routes.route("/api/admin/quiz-settings", methods=["POST"])
 @admin_required
 def update_quiz_settings():
-    """Update quiz settings"""
+    """Update full quiz settings or the separate Community Daily Learn config."""
     try:
         from learn_and_earn.learn_and_earn import quiz_manager
 
-        data = request.json
+        data = request.get_json(silent=True) or {}
+
+        # Dedicated Community Quiz save.  It uses this same root endpoint but
+        # never calls quiz_manager.update_quiz_settings(), so a full quiz save
+        # cannot silently overwrite Community's DB-authoritative config.
+        community_keys = {
+            'daily_learn_rate', 'daily_learn_rate_max', 'daily_learn_cap',
+            'community_daily_learn_reward_per_correct',
+            'community_daily_learn_rate_max', 'community_daily_learn_daily_cap',
+        }
+        full_quiz_keys = {
+            'questions_per_quiz', 'time_per_question', 'max_reward_per_quiz',
+            'cooldown_hours',
+        }
+        # A legacy caller may still include the old Community field alongside
+        # full-quiz fields. Ignore that stale field rather than changing the
+        # Community config as a side effect of a full Learn & Earn save.
+        supplied_community = (community_keys.intersection(data.keys())
+                              if not full_quiz_keys.intersection(data.keys()) else set())
+        if supplied_community:
+            values = {}
+            aliases = {
+                'daily_learn_rate': ('daily_learn_rate', 'community_daily_learn_reward_per_correct'),
+                'daily_learn_rate_max': ('daily_learn_rate_max', 'community_daily_learn_rate_max'),
+                'daily_learn_cap': ('daily_learn_cap', 'community_daily_learn_daily_cap'),
+            }
+            for target, names in aliases.items():
+                for name in names:
+                    if name in data:
+                        values[target] = data[name]
+                        break
+            reason = str(data.get('reason') or '').strip()
+            if not reason:
+                return jsonify({"success": False, "error": "A reason is required"}), 400
+            try:
+                from community_feed.reward_settings import update_settings
+                result = update_settings(
+                    values,
+                    actor=session.get('wallet') or '',
+                    reason=reason,
+                    expected_version=data.get('config_version'),
+                )
+            except Exception as exc:  # noqa: BLE001 - return useful admin diagnosis
+                logger.exception("Community reward settings update failed")
+                result = {"success": False, "error": str(exc)}
+            return jsonify(result), (200 if result.get('success') else 400)
+
         questions_per_quiz = data.get('questions_per_quiz')
         time_per_question = data.get('time_per_question')
         max_reward_per_quiz = data.get('max_reward_per_quiz')
         cooldown_hours = data.get('cooldown_hours')
-        community_daily_learn_reward_per_correct = data.get(
-            'community_daily_learn_reward_per_correct')
 
         # Validate inputs
         if questions_per_quiz is not None and (questions_per_quiz < 5 or questions_per_quiz > 30):
@@ -4938,44 +5003,11 @@ def update_quiz_settings():
                 "success": False,
                 "error": "Quiz cooldown must be between 1 and 720 hours"
             }), 400
-        if community_daily_learn_reward_per_correct is not None:
-            # The ceiling lives in ONE place (community_feed.rewards) so the admin
-            # route can never drift from the ledger's own bound. Resolved through
-            # the live accessor, not a pinned literal: a hardcoded fallback here
-            # would be a second source of truth that silently re-imposes the old
-            # bound if the import ever fails.
-            try:
-                from community_feed.rewards import (
-                    daily_learn_rate_max as _daily_learn_rate_max)
-                daily_learn_ceiling = _daily_learn_rate_max()
-            except Exception:  # noqa: BLE001 - never block the admin on an import
-                from community_feed.rewards import DAILY_LEARN_RATE_MAX_DEFAULT
-                daily_learn_ceiling = DAILY_LEARN_RATE_MAX_DEFAULT
-            try:
-                daily_learn_rate = Decimal(str(community_daily_learn_reward_per_correct))
-            except (InvalidOperation, TypeError, ValueError):
-                return jsonify({
-                    "success": False,
-                    "error": (f"Community Daily Learn reward must be a number "
-                              f"between 0 and {daily_learn_ceiling:g} G$")
-                }), 400
-            if (isinstance(community_daily_learn_reward_per_correct, bool)
-                    or not daily_learn_rate.is_finite()
-                    or daily_learn_rate < 0 or daily_learn_rate > daily_learn_ceiling):
-                return jsonify({
-                    "success": False,
-                    "error": (f"Community Daily Learn reward must be between 0 and "
-                              f"{daily_learn_ceiling:g} G$ per correct answer")
-                }), 400
-            community_daily_learn_reward_per_correct = float(
-                daily_learn_rate.quantize(Decimal('0.0001')))
-
         result = quiz_manager.update_quiz_settings(
             questions_per_quiz=questions_per_quiz,
             time_per_question=time_per_question,
             max_reward_per_quiz=max_reward_per_quiz,
-            cooldown_hours=cooldown_hours,
-            community_daily_learn_reward_per_correct=community_daily_learn_reward_per_correct
+            cooldown_hours=cooldown_hours
         )
 
         if result.get('success'):
@@ -4988,8 +5020,7 @@ def update_quiz_settings():
                     "questions_per_quiz": questions_per_quiz,
                     "time_per_question": time_per_question,
                     "max_reward_per_quiz": max_reward_per_quiz,
-                    "cooldown_hours": cooldown_hours,
-                    "community_daily_learn_reward_per_correct": community_daily_learn_reward_per_correct
+                    "cooldown_hours": cooldown_hours
                 }
             )
 
