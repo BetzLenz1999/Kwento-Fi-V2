@@ -693,9 +693,6 @@
         setUploadStatus('');
         updateCounter();
         updatePostButton();
-        // The post is published, so there is nothing left to protect: fold the
-        // composer back to its resting row.
-        setComposerCollapsed(true);
     }
 
     function setDailyPrompt(prompt) { _dailyPrompt = prompt || null; }
@@ -2565,54 +2562,10 @@
 
     // ── Wiring ─────────────────────────────────────────────────────────────
 
-    // ── Collapsed composer ────────────────────────────────────────────────
-    // The composer rests as one row and expands on an intent-to-post signal.
-    // The collapse state is the `is-collapsed` class on #cfComposer — the CSS
-    // and this code therefore share ONE source of truth and cannot disagree.
-
-    function isComposerCollapsed() {
-        var composer = $('cfComposer');
-        return !!(composer && composer.classList.contains('is-collapsed'));
-    }
-
-    /* Collapsing with a typed caption or a queued attachment would silently
-       destroy the member's work — a queued video is minutes of uploading. So
-       the composer only auto-collapses when it is genuinely empty. */
-    function composerHasContent() {
-        var input = $('cfCaption');
-        if (input && String(input.value || '').trim()) return true;
-        return _pending.length > 0;
-    }
-
-    function setComposerCollapsed(collapsed) {
-        var composer = $('cfComposer');
-        if (!composer) return;
-        var summary = $('cfComposerSummary');
-        // Never hide work in progress, whichever direction we were asked to go.
-        if (collapsed && composerHasContent()) return;
-        composer.classList.toggle('is-collapsed', !!collapsed);
-        if (summary) summary.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    }
-
-    function expandComposer() {
-        if (!isComposerCollapsed()) return;
-        setComposerCollapsed(false);
-        // Focus the field the member just asked for, so posting is one tap and
-        // then typing — not tap, then tap again.
-        var input = $('cfCaption');
-        if (input && typeof input.focus === 'function') input.focus();
-    }
-
-    function collapseComposer() {
-        setComposerCollapsed(true);
-    }
-
     function bind() {
         var input = $('cfCaption');
         if (input) {
-            // Typing is itself an intent to post; make sure the composer is open.
             input.addEventListener('input', function () {
-                expandComposer();
                 updateCounter();
                 updatePostButton();
             });
@@ -2657,7 +2610,6 @@
             if (!event.clipboardData || !event.clipboardData.files.length) return;
             var target = event.target;
             if (!target || target.id !== 'cfCaption') return;
-            expandComposer();
             addFiles(event.clipboardData.files);
         });
         document.addEventListener('pointerdown', function (event) {
@@ -2678,16 +2630,13 @@
                     || _activeReactionPicker.trigger.contains(target))) return;
             closeReactionPicker(false);
         });
-        // Drag & drop onto the composer. A drag is an intent to post, so it
-        // opens the composer too — otherwise the drop would land on a hidden
-        // body and appear to do nothing.
+        // Drag & drop onto the composer.
         var composer = $('cfComposer');
         if (composer) {
             ['dragover', 'drop'].forEach(function (name) {
                 composer.addEventListener(name, function (event) {
                     event.preventDefault();
                     if (name === 'drop' && event.dataTransfer && event.dataTransfer.files) {
-                        expandComposer();
                         addFiles(event.dataTransfer.files);
                     }
                 });
@@ -2697,14 +2646,6 @@
             if (event.key === 'Escape') {
                 if (_activeReactionPicker) {
                     closeReactionPicker(true);
-                    event.preventDefault();
-                    return;
-                }
-                // An open-but-empty composer closes before the dialogs do: it is
-                // the innermost surface. It refuses while it holds work, so
-                // Escape can never discard a caption.
-                if (!isComposerCollapsed()) {
-                    collapseComposer();
                     event.preventDefault();
                     return;
                 }
@@ -2741,8 +2682,6 @@
         loadRewards: loadRewards,
         loadMore: loadMore,
         submitPost: submitPost,
-        expandComposer: expandComposer,
-        collapseComposer: collapseComposer,
         setDailyPrompt: setDailyPrompt,
         answerPrompt: answerPrompt,
         seePromptResponses: seePromptResponses,
@@ -2831,12 +2770,6 @@
             setPending: function (rows) { _pending = rows; },
             getNextCursor: function () { return _nextCursor; },
             setNextCursor: function (value) { _nextCursor = value; },
-            isComposerCollapsed: isComposerCollapsed,
-            composerHasContent: composerHasContent,
-            setComposerCollapsed: setComposerCollapsed,
-            expandComposer: expandComposer,
-            collapseComposer: collapseComposer,
-            resetComposer: resetComposer,
         },
     };
 
