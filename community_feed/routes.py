@@ -341,6 +341,151 @@ def api_rewards():
     return jsonify(svc.rewards_summary(wallet))
 
 
+@community_feed_bp.route("/api/rewards/withdrawals/history", methods=["GET"])
+def api_withdrawal_history():
+    """Read a member's successful WithdrawalPaid events from the verified vault."""
+    def history_json(payload, status=200):
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        return response, status
+
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return history_json({"success": False, "error": "Not authenticated"}, 401)
+    retry = _throttle("withdraw-history:" + wallet, 30, allow=6)
+    if retry:
+        return history_json({"success": False, "error": "Too many history requests. Please wait and retry."}, 429)
+
+    def integer_arg(name, default=None):
+        raw = request.args.get(name)
+        if raw is None:
+            return default
+        if not re.fullmatch(r"\d+", raw):
+            raise ValueError(name)
+        return int(raw)
+
+    try:
+        limit = integer_arg("limit", 20)
+        before_block = integer_arg("before_block")
+        before_log_index = integer_arg("before_log_index")
+        if not 1 <= limit <= 50:
+            raise ValueError("limit")
+        if (before_block is None) != (before_log_index is None):
+            raise ValueError("cursor")
+    except ValueError:
+        return history_json({"success": False, "error": "Invalid limit or pagination cursor."}, 400)
+
+    try:
+        from web3 import Web3
+        runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
+        known_vault = "0x4c0d1f17e83776aa696848b870444e54ec3a2203"
+        configured_block = os.environ.get("COMMUNITY_VAULT_DEPLOYMENT_BLOCK", "").strip()
+        if configured_block:
+            if not re.fullmatch(r"\d+", configured_block):
+                return history_json({"success": False, "error": "Withdrawal history is not configured correctly."}, 503)
+            deployment_block = int(configured_block)
+        elif runtime.vault_address.lower() == known_vault:
+            deployment_block = 81001254
+        else:
+            return history_json({"success": False, "error": "Withdrawal history is not configured for this vault."}, 503)
+        wallet = Web3.to_checksum_address(wallet)
+        vault_address = Web3.to_checksum_address(runtime.vault_address)
+        latest = int(runtime.web3.eth.block_number)
+        if deployment_block > latest:
+            return history_json({"success": False, "error": "Withdrawal history start block is newer than the Celo chain tip."}, 503)
+        end_block = min(latest, before_block if before_block is not None else latest)
+        max_chunk = int(os.environ.get("GETLOGS_MAX_CHUNK", "4000"))
+        chunk = max(500, min(max_chunk, 4000))
+        topic0 = Web3.to_hex(Web3.keccak(text="WithdrawalPaid(address,uint256,bytes32,uint256,uint256)"))
+        recipient_topic = "0x" + wallet.lower().removeprefix("0x").rjust(64, "0")
+        collected = []
+        scanned_blocks = 0
+        # The shared block-span setting can be lowered for RPC providers, but a
+        # page must not turn into thousands of serial eth_getLogs requests.
+        # When the budget is reached the block cursor resumes the scan later.
+        max_scan_blocks = min(100000, chunk * 50)
+        cursor_tuple = (before_block, before_log_index) if before_block is not None else None
+        while (end_block >= deployment_block and len(collected) <= limit
+               and scanned_blocks < max_scan_blocks):
+            start_block = max(deployment_block, end_block - chunk + 1,
+                              end_block - (max_scan_blocks - scanned_blocks) + 1)
+            logs = runtime.web3.eth.get_logs({
+                "address": vault_address,
+                "fromBlock": start_block,
+                "toBlock": end_block,
+                "topics": [topic0, recipient_topic],
+            })
+            logs = sorted(logs, key=lambda item: (int(item["blockNumber"]), int(item["logIndex"])), reverse=True)
+            for log in logs:
+                bn, li = int(log["blockNumber"]), int(log["logIndex"])
+                if cursor_tuple and (bn, li) >= cursor_tuple:
+                    continue
+                try:
+                    if Web3.to_checksum_address(log.get("address") or "") != vault_address:
+                        continue
+                except Exception:
+                    continue
+                raw_topics = log.get("topics") or []
+                raw_data = log.get("data", b"")
+                try:
+                    topics = [Web3.to_bytes(hexstr=item) if isinstance(item, str) else bytes(item)
+                              for item in raw_topics]
+                    data = Web3.to_bytes(hexstr=raw_data) if isinstance(raw_data, str) else bytes(raw_data)
+                except Exception:
+                    continue
+                if len(topics) != 3 or any(len(item) != 32 for item in topics) or len(data) != 96:
+                    continue
+                if Web3.to_hex(topics[0]).lower() != topic0.lower():
+                    continue
+                if Web3.to_checksum_address("0x" + topics[1][-20:].hex()) != wallet:
+                    continue
+                # Decode ABI words only after validating event signature/topic count/data size.
+                withdrawal_id = Web3.to_hex(topics[2]).lower()
+                amount = int.from_bytes(data[0:32], "big")
+                tx_hash = Web3.to_hex(log["transactionHash"]).lower()
+                confirmations = max(0, latest - bn + 1)
+                try:
+                    block = runtime.web3.eth.get_block(bn)
+                    timestamp = datetime.fromtimestamp(int(block["timestamp"]), timezone.utc).isoformat().replace("+00:00", "Z")
+                except Exception:
+                    timestamp = None
+                collected.append({
+                    "tx_hash": tx_hash, "withdrawal_id": withdrawal_id,
+                    "amount_gd": str(withdrawal_vault.base_units_to_gd(amount, runtime.decimals)),
+                    "block_number": bn, "log_index": li, "timestamp_utc": timestamp,
+                    "confirmations": confirmations,
+                    "status": "confirmed" if confirmations >= runtime.confirmations else "confirming",
+                })
+                if len(collected) > limit:
+                    break
+            scanned_blocks += end_block - start_block + 1
+            if len(collected) > limit:
+                break
+            end_block = start_block - 1
+        reached_start = end_block < deployment_block
+        collected.sort(key=lambda item: (item["block_number"], item["log_index"]), reverse=True)
+        has_more = len(collected) > limit or (not reached_start and scanned_blocks >= max_scan_blocks)
+        page_items = collected[:limit]
+        next_cursor = None
+        if len(collected) > limit:
+            last = page_items[-1]
+            next_cursor = {"block_number": last["block_number"], "log_index": last["log_index"]}
+        elif has_more:
+            # All logs in scanned blocks were returned; continue strictly below
+            # the lowest fully scanned block on the next page.
+            next_cursor = {"block_number": end_block + 1, "log_index": 0}
+        return history_json({"success": True, "items": page_items, "has_more": has_more,
+                             "next_cursor": next_cursor})
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        logger.warning("community withdrawal history runtime unavailable: %s", withdrawal_vault.operator_detail(exc))
+        return history_json({"success": False, "error": withdrawal_vault.MEMBER_CONFIG_ERROR}, 503)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community withdrawal history RPC failed: %s", exc)
+        return history_json({"success": False, "error": "Withdrawal history could not be loaded. Please retry."}, 503)
+
+
 @community_feed_bp.route("/api/rewards/withdrawal-eligibility", methods=["GET"])
 def api_withdrawal_eligibility():
     """Read-only, fail-closed readiness check for the direct user-paid vault."""
