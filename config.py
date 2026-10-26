@@ -88,8 +88,20 @@ POST_LOGIN_PATH = (os.getenv('POST_LOGIN_PATH') or '/community').strip() or '/co
 
 
 def get_post_login_path():
-    """Path a user lands on after create / login / wallet connect."""
-    return POST_LOGIN_PATH
+    """Safe same-origin path for the post-login landing page."""
+    path = POST_LOGIN_PATH
+    has_unsafe_chars = any(
+        ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F or char.isspace()
+        for char in path
+    )
+    if (
+        not path.startswith("/")
+        or path.startswith("//")
+        or "\\" in path
+        or has_unsafe_chars
+    ):
+        return "/community"
+    return path
 
 
 # Use production domain for external links (referrals, shares, etc.)
