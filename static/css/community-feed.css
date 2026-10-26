@@ -171,6 +171,89 @@ body {
     padding: 0.42rem 0.85rem; text-decoration: none; cursor: pointer;
 }
 .cf-nav-btn:hover { background: var(--cf-field); color: var(--cf-ink); }
+.cf-notification-button {
+    position: relative; flex: 0 0 40px; width: 40px; height: 40px;
+    display: grid; place-items: center; padding: 0;
+    color: var(--cf-ink); background: var(--cf-card);
+    border: 1px solid var(--cf-hairline); border-radius: 50%;
+    font: inherit; font-size: 1.05rem; cursor: pointer;
+}
+.cf-notification-button:hover { background: var(--cf-field); }
+.cf-notification-button:focus-visible,
+.cf-notification-close:focus-visible,
+.cf-notification-mark-all:focus-visible,
+.cf-notification-more:focus-visible,
+.cf-notification-item:focus-visible {
+    outline: 2px solid var(--cf-accent-2); outline-offset: 2px;
+}
+.cf-notification-button:disabled { cursor: default; opacity: 0.65; }
+.cf-notification-badge {
+    position: absolute; top: -3px; right: -4px;
+    min-width: 18px; height: 18px; padding: 0 4px;
+    display: grid; place-items: center; border-radius: 999px;
+    color: #fff; background: #c62828; border: 2px solid var(--cf-bg);
+    font-size: 0.62rem; font-weight: 800; line-height: 1;
+}
+.cf-notification-badge[hidden] { display: none; }
+.cf-notification-panel {
+    position: absolute; top: calc(100% + 5px); right: 12px; z-index: 1300;
+    display: flex; flex-direction: column;
+    width: min(370px, calc(100vw - 24px));
+    max-height: min(70vh, 620px); overflow: hidden;
+    background: var(--cf-card); border: 1px solid var(--cf-border);
+    border-radius: 16px; box-shadow: 0 16px 44px rgba(41, 37, 36, 0.2);
+}
+.cf-notification-panel[hidden] { display: none; }
+.cf-notification-panel-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+    padding: 0.8rem 0.9rem; border-bottom: 1px solid var(--cf-hairline);
+}
+.cf-notification-panel-head h2 { margin: 0; font-size: 0.95rem; }
+.cf-notification-panel-actions { display: flex; align-items: center; gap: 0.4rem; }
+.cf-notification-mark-all,
+.cf-notification-close,
+.cf-notification-more {
+    color: var(--cf-accent-ink); background: transparent; border: 0;
+    font: inherit; font-size: 0.75rem; font-weight: 700; cursor: pointer;
+}
+.cf-notification-mark-all:disabled { color: var(--cf-dim); cursor: default; }
+.cf-notification-close {
+    width: 32px; height: 32px; border-radius: 50%;
+    color: var(--cf-ink-2); font-size: 1.35rem; line-height: 1;
+}
+.cf-notification-close:hover,
+.cf-notification-mark-all:not(:disabled):hover,
+.cf-notification-more:hover { background: var(--cf-field); }
+.cf-notification-list { overflow-y: auto; overscroll-behavior: contain; }
+.cf-notification-empty {
+    margin: 0; padding: 1.3rem 1rem; color: var(--cf-dim);
+    font-size: 0.84rem; text-align: center;
+}
+.cf-notification-row { border-bottom: 1px solid var(--cf-hairline); }
+.cf-notification-item {
+    width: 100%; display: flex; align-items: flex-start; gap: 0.7rem;
+    padding: 0.78rem 0.9rem; border: 0; text-align: left;
+    color: var(--cf-ink); background: transparent; font: inherit; cursor: pointer;
+}
+.cf-notification-item:hover { background: var(--cf-field); }
+.cf-notification-item.is-unread { background: #f2f6ff; }
+.cf-notification-item.is-unread:hover { background: #e9f0ff; }
+.cf-notification-icon {
+    flex: 0 0 34px; width: 34px; height: 34px; display: grid; place-items: center;
+    border-radius: 50%; background: var(--cf-field); font-size: 0.95rem;
+}
+.cf-notification-copy { min-width: 0; flex: 1 1 auto; }
+.cf-notification-message { display: block; font-size: 0.82rem; line-height: 1.4; overflow-wrap: anywhere; }
+.cf-notification-time { display: block; margin-top: 0.2rem; color: var(--cf-dim); font-size: 0.7rem; }
+.cf-notification-unread-dot {
+    flex: 0 0 8px; width: 8px; height: 8px; margin-top: 0.38rem;
+    border-radius: 50%; background: #2463eb;
+}
+.cf-notification-unread-dot[hidden] { display: none; }
+.cf-notification-more {
+    padding: 0.75rem; border-top: 1px solid var(--cf-hairline);
+}
+.cf-notification-more[hidden] { display: none; }
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 .cf-wrap {
@@ -1253,6 +1336,10 @@ body {
         padding: 0.5rem 0.6rem calc(var(--cf-bottom-nav-height) + 0.8rem + env(safe-area-inset-bottom, 0px));
         gap: 0.8rem;
     }
+    .cf-notification-button { flex-basis: 36px; width: 36px; height: 36px; }
+    .cf-nav-right { gap: 0.35rem; }
+    .cf-nav-refresh-label { display: none; }
+    #cfRefreshBtn { padding-left: 0.55rem; padding-right: 0.55rem; }
     /* The gutter token drives the full-bleed pull-back, so it must match the
        wrap's own padding at every width or the photo stops short of the edge. */
     :root { --cf-gutter: 0.6rem; }
