@@ -61,8 +61,8 @@
         @media (max-width: 480px) {
             .cf-nav { gap: 0.4rem; padding-left: 0.7rem; padding-right: 0.7rem; }
             .cf-nav-right { flex-shrink: 0; }
-            /* The row has to carry the two-line brand AND Refresh / Your Wallet
-               (or Get Started). The brand itself is tightened in
+            /* The row has to carry the two-line brand AND Notifications / Refresh
+               / Your Wallet (or Get Started). The brand itself is tightened in
                community-feed.css where the rest of the lockup lives; the date
                chip is dropped here because it is the most expendable item and
                this block is the overflow guard. Measured in a browser. */
@@ -94,7 +94,15 @@
              nothing left to tap. -->
         <button type="button" class="gs-nav-cta" onclick="openGoodMarketGetStarted()">Get Started</button>
         {% else %}
-        <button type="button" class="cf-nav-btn" id="cfRefreshBtn" onclick="GMCommunity.refresh()">↻ Refresh</button>
+        <button type="button" class="cf-notification-button" id="cfNotificationButton"
+                aria-label="Notifications" aria-controls="cfNotificationPanel"
+                aria-expanded="false" title="Notifications"
+                onclick="GMCommunity.toggleNotifications()">
+            <span aria-hidden="true">🔔</span>
+            <span class="cf-notification-badge" id="cfNotificationBadge" hidden></span>
+        </button>
+        <button type="button" class="cf-nav-btn" id="cfRefreshBtn" aria-label="Refresh Community Feed"
+                onclick="GMCommunity.refresh()"><span aria-hidden="true">↻</span><span class="cf-nav-refresh-label"> Refresh</span></button>
         <a class="cf-nav-btn" href="/wallet">Your Wallet</a>
         {% endif %}
     </div>
@@ -128,6 +136,26 @@
         <div class="cf-search-results" id="cfSearchResults" role="listbox"
              aria-label="Member search results"></div>
 </div>
+    {% if not is_guest %}
+    <section class="cf-notification-panel" id="cfNotificationPanel" hidden
+             role="dialog" aria-labelledby="cfNotificationTitle">
+        <div class="cf-notification-panel-head">
+            <h2 id="cfNotificationTitle">Notifications</h2>
+            <div class="cf-notification-panel-actions">
+                <button type="button" class="cf-notification-mark-all" id="cfNotificationMarkAll"
+                        onclick="GMCommunity.markAllNotificationsRead()" disabled>Mark all read</button>
+                <button type="button" class="cf-notification-close" aria-label="Close notifications"
+                        onclick="GMCommunity.closeNotifications()">×</button>
+            </div>
+        </div>
+        <div class="cf-notification-list" id="cfNotificationList" role="list"
+             aria-live="polite" aria-busy="false">
+            <p class="cf-notification-empty">Loading notifications…</p>
+        </div>
+        <button type="button" class="cf-notification-more" id="cfNotificationMore"
+                onclick="GMCommunity.loadMoreNotifications()" hidden>Load older notifications</button>
+    </section>
+    {% endif %}
 </header>
 
 <a class="cf-skip-link" href="#cfPostsTitle">Skip to community posts</a>
