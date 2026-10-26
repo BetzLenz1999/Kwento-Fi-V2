@@ -1667,7 +1667,13 @@
     sendTip: sendTip,
     openTipModal: openTipModal,
     closeTipModal: closeTipModal,
-    tipTokens: function () { return (TIP_BOOT.tokens || []).slice(); }
+    tipTokens: function () { return (TIP_BOOT.tokens || []).slice(); },
+    openWidget: function () {
+      var toggle = document.querySelector('[data-gm-chat-toggle]');
+      if (!toggle) return false;
+      if (!toggle.hidden && typeof toggle.click === 'function') toggle.click();
+      return true;
+    }
   };
 
   // The wallet nav is a bottom bar on phones and a left rail on desktop.
