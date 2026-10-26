@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" class="gm-pwa-update-gate-pending">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#e8720a">
+  <title>Update GoodMarket</title>
+  <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
+  <script>
+    (function () {
+      var standalone = false;
+      try {
+        standalone = !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+          || navigator.standalone === true;
+      } catch (_) {}
+      if (!standalone) window.location.replace({{ post_login_path|tojson }});
+    })();
+    window.addEventListener('error', function (event) {
+      var failed = event && event.target;
+      if (!failed || !failed.src || failed.src.indexOf('/js/pwa-update-gate.js') === -1) return;
+      document.documentElement.classList.remove('gm-pwa-update-gate-pending');
+      var status = document.getElementById('gm-pwa-update-status');
+      var copy = document.getElementById('gm-pwa-update-copy');
+      var button = document.getElementById('gm-pwa-continue');
+      if (status) status.textContent = 'The update checker could not load. You can continue with the current version.';
+      if (copy) copy.textContent = 'The app could not check for updates. You may continue, then try again on your next launch.';
+      if (button) {
+        button.hidden = false;
+        button.onclick = function () { window.location.replace(document.body.getAttribute('data-next-url') || '/community'); };
+      }
+    }, true);
+  </script>
+  <style>
+    :root { color-scheme: light; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    html.gm-pwa-update-gate-pending body { visibility: hidden; }
+    body { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: #f7f1e8; color: #15263a; }
+    main { width: min(100%, 440px); padding: 30px 26px; border: 1px solid #d6dce2; border-radius: 22px; background: #fff; box-shadow: 0 18px 60px rgba(21,38,58,.12); text-align: center; }
+    img { width: 76px; height: 76px; object-fit: contain; margin-bottom: 14px; }
+    h1 { margin: 0 0 12px; font-size: clamp(1.35rem, 6vw, 1.8rem); }
+    p { margin: 0 0 18px; line-height: 1.55; color: #526273; }
+    #gm-pwa-update-status { min-height: 1.5em; margin-bottom: 14px; font-size: .94rem; }
+    .gm-pwa-update-actions { display: grid; gap: 10px; }
+    button, a.gm-pwa-continue { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; width: 100%; border: 0; border-radius: 12px; padding: 12px 18px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+    #gm-pwa-update-now { background: #e8720a; color: #fff; }
+    #gm-pwa-update-retry { background: #19344d; color: #fff; }
+    #gm-pwa-continue { background: #edf1f4; color: #19344d; }
+    button:disabled { opacity: .65; cursor: wait; }
+    [hidden] { display: none !important; }
+    noscript { display: block; margin-top: 16px; }
+    noscript a { color: #19344d; }
+    html.gm-pwa-update-gate-pending body > noscript {
+      position: fixed; inset: 0; z-index: 2; display: grid; place-items: center;
+      visibility: visible !important; padding: 24px; background: #f7f1e8;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .gm-pwa-spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; border: 2px solid #d6dce2; border-top-color: #e8720a; border-radius: 50%; vertical-align: -2px; animation: gm-spin .8s linear infinite; }
+      @keyframes gm-spin { to { transform: rotate(360deg); } }
+    }
+  </style>
+  <script defer src="{{ url_for('static', filename='js/pwa-update-gate.js', v=ASSET_VERSION) }}"></script>
+</head>
+  <body data-next-url="{{ post_login_path|e }}" data-build-version="{{ ASSET_VERSION|e }}">
+  <main aria-labelledby="gm-pwa-update-title">
+    <img src="{{ url_for('static', filename='icons/goodmarket-only-192.png', v=ASSET_VERSION) }}" width="76" height="76" alt="GoodMarket">
+    <h1 id="gm-pwa-update-title">Checking GoodMarket</h1>
+    <p id="gm-pwa-update-copy">We’ll check for an app update before opening your page.</p>
+    <div id="gm-pwa-update-status" role="status" aria-live="polite"><span class="gm-pwa-spinner" aria-hidden="true"></span>Checking for updates…</div>
+    <div class="gm-pwa-update-actions">
+      <button id="gm-pwa-update-now" type="button" hidden>Update app</button>
+      <button id="gm-pwa-update-retry" type="button" hidden>Try again</button>
+      <button id="gm-pwa-continue" type="button" hidden>Continue with current version</button>
+    </div>
+    <noscript><p>JavaScript is needed to check app updates.</p><a class="gm-pwa-continue" href="{{ post_login_path|e }}">Continue to GoodMarket</a></noscript>
+  </main>
+</body>
+</html>
