@@ -1326,11 +1326,12 @@
         head.appendChild(el('span', 'cf-donation-pin-label', 'Pinned'));
         card.appendChild(head);
 
+        var body = el('div', 'cf-card-body');
         var donor = String(post.donor_name || '').trim() || 'A Community member';
         var amount = String(post.amount_gd || '').trim() || '0';
-        card.appendChild(el('p', 'cf-donation-card-copy',
+        body.appendChild(el('p', 'cf-donation-card-copy',
             donor + ' donated ' + amount + ' G$ to the Community Withdrawal Vault.'));
-        card.appendChild(el('small', 'cf-donation-card-meta',
+        body.appendChild(el('small', 'cf-donation-card-meta',
             'Thank you for supporting the Community.'));
 
         var links = el('div', 'cf-donation-card-links');
@@ -1350,9 +1351,26 @@
             txLink.rel = 'noopener noreferrer';
             links.appendChild(txLink);
         }
-        if (links.childNodes.length) card.appendChild(links);
+        if (links.childNodes.length) body.appendChild(links);
         var stamp = timeAgo(post.created_at);
-        if (stamp) card.appendChild(el('time', 'cf-donation-card-time', stamp));
+        if (stamp) body.appendChild(el('time', 'cf-donation-card-time', stamp));
+
+        var summary = el('div', 'cf-summary');
+        var summaryLeft = el('div', 'cf-summary-left');
+        summaryLeft.appendChild(buildSummaryEmojis(post));
+        var reactionCount = el('span', 'cf-count', countLabel(post.reaction_count) || '0');
+        reactionCount.setAttribute('aria-live', 'polite');
+        summaryLeft.appendChild(reactionCount);
+        summary.appendChild(summaryLeft);
+        summary.appendChild(el('span', null, countLabel(post.comment_count)
+            ? countLabel(post.comment_count) + ' comment' + (post.comment_count === 1 ? '' : 's')
+            : ''));
+        body.appendChild(summary);
+
+        var engagement = el('div', 'cf-engagement');
+        engagement.appendChild(buildActionRow(post, engagement));
+        body.appendChild(engagement);
+        card.appendChild(body);
         return card;
     }
 
@@ -1973,9 +1991,12 @@
     function sharePost(post) {
         var url = window.location.origin + '/community/p/' + encodeURIComponent(post.id);
         var text = post.body ? post.body.slice(0, 120) : 'Check out this post on GoodMarket Community';
+        var title = post.post_type === 'system_vault_donation'
+            ? 'Community Vault donation · Sytem'
+            : '@' + (post.username || 'member') + ' on GoodMarket Community';
         if (navigator.share) {
             navigator.share({
-                title: '@' + (post.username || 'member') + ' on GoodMarket Community',
+                title: title,
                 text: text,
                 url: url,
             }).catch(function () {});
