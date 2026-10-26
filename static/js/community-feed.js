@@ -54,6 +54,17 @@
     var _earnBusy = false;     // one in-flight rewards fetch at a time
     var _earnDirty = false;    // a refresh arrived while one was in flight
     var _earnPromise = null;   // callers can await the coalesced latest read
+    // Reconciliation is deliberately page-memory-only: the cursor is a
+    // bounded scan continuation, never a durable withdrawal authorization.
+    var _reconciliation = {
+        withdrawalId: null,
+        beforeBlock: null,
+        busy: false,
+        skipRevealOnce: false,
+        statusLoaded: false,
+        canWithdraw: false,
+        resumeAuthorizationId: null,
+    };
     var _dailyPrompt = null;
     var _promptModeId = null;
     var _promptFilterId = null;
@@ -2094,6 +2105,265 @@
         }).then(function () { _withdrawalHistory.busy = false; });
     }
 
+    function isWithdrawalId(value) {
+        return /^0x[0-9a-f]{64}$/i.test(String(value || ''));
+    }
+    function isTransactionHash(value) {
+        return /^0x[0-9a-f]{64}$/i.test(String(value || ''));
+    }
+    function reconciliationStatus(message, kind) {
+        var status = $('cfEarnReconcileStatus');
+        if (!status) return;
+        status.textContent = message || '';
+        status.className = 'cf-earn-reconcile-status' + (kind ? ' is-' + kind : '');
+        status.hidden = !message;
+    }
+    function reconciliationButton(disabled, label) {
+        var button = $('cfEarnReconcileBtn');
+        if (!button) return;
+        button.disabled = !!disabled;
+        if (label) button.textContent = label;
+    }
+    function syncWithdrawalActionVisibility() {
+        var row = $('cfEarnWithdrawRow');
+        if (!row) return;
+        row.hidden = !WALLET || !_reconciliation.statusLoaded
+            || !_reconciliation.canWithdraw || !!_reconciliation.withdrawalId;
+    }
+    function showReconciliationStatusUnavailable() {
+        var prompt = $('cfEarnReconcile');
+        var copy = $('cfEarnReconcileCopy');
+        var button = $('cfEarnReconcileBtn');
+        var hasKnownReservation = isWithdrawalId(_reconciliation.withdrawalId);
+        if (prompt) prompt.hidden = false;
+        if (copy) {
+            copy.textContent = hasKnownReservation
+                ? 'A previous payout is awaiting confirmation. We could not refresh its status; retry the reconciliation check or contact support.'
+                : 'We could not check whether a previous withdrawal is awaiting confirmation. Refresh this page before starting another withdrawal.';
+        }
+        if (button) {
+            button.hidden = !hasKnownReservation;
+            button.disabled = !hasKnownReservation;
+        }
+        reconciliationStatus(hasKnownReservation
+            ? 'The status check could not complete. No balance change was made; retry or contact support.'
+            : 'Refresh the page before starting a withdrawal so we can safely check for an earlier request.', 'error');
+        syncWithdrawalActionVisibility();
+    }
+    function hideReconciliationPrompt() {
+        var prompt = $('cfEarnReconcile');
+        var copy = $('cfEarnReconcileCopy');
+        var button = $('cfEarnReconcileBtn');
+        if (prompt) prompt.hidden = true;
+        _reconciliation.withdrawalId = null;
+        _reconciliation.beforeBlock = null;
+        reconciliationStatus('');
+        if (copy) copy.textContent = 'A previous payout was submitted but may need checking. This checks and reconciles that submitted payout only; it will not send another payment or ask you to sign.';
+        if (button) button.hidden = false;
+        reconciliationButton(false, 'Reconcile previous withdrawal');
+        syncWithdrawalActionVisibility();
+        syncTodayHub();
+    }
+    function loadReconciliationStatus() {
+        // The member-only markup and this guard keep guests from learning even
+        // that a wallet-specific reservation exists.
+        if (BOOT.isGuest || !WALLET || !$('cfEarnReconcile')) return Promise.resolve(false);
+        return api('/community/api/rewards/withdrawals/reconciliation', {
+            headers: { 'Cache-Control': 'no-cache' },
+        }).then(function (result) {
+            var skipReveal = _reconciliation.skipRevealOnce;
+            _reconciliation.skipRevealOnce = false;
+            var data = result && result.data;
+            if (!result.ok || !data || data.success !== true
+                    || typeof data.needs_reconciliation !== 'boolean') {
+                _reconciliation.statusLoaded = false;
+                showReconciliationStatusUnavailable();
+                return false;
+            }
+            _reconciliation.statusLoaded = true;
+            var withdrawal = data.withdrawal || {};
+            if (data.needs_reconciliation === true && !isWithdrawalId(withdrawal.withdrawal_id)) {
+                _reconciliation.statusLoaded = false;
+                showReconciliationStatusUnavailable();
+                return false;
+            }
+            if (data.needs_reconciliation !== true) {
+                _reconciliation.resumeAuthorizationId = null;
+                hideReconciliationPrompt();
+                return false;
+            }
+            _reconciliation.withdrawalId = String(withdrawal.withdrawal_id).toLowerCase();
+            _reconciliation.beforeBlock = null;
+            _reconciliation.resumeAuthorizationId = null;
+            if (skipReveal) {
+                hideReconciliationPrompt();
+                return false;
+            }
+            var prompt = $('cfEarnReconcile');
+            var copy = $('cfEarnReconcileCopy');
+            var button = $('cfEarnReconcileBtn');
+            if (prompt) prompt.hidden = false;
+            if (copy) copy.textContent = 'A previous payout was submitted but may need checking. This checks and reconciles that submitted payout only; it will not send another payment or ask you to sign.';
+            if (button) button.hidden = false;
+            reconciliationStatus('');
+            reconciliationButton(false, 'Reconcile previous withdrawal');
+            syncWithdrawalActionVisibility();
+            syncTodayHub();
+            return true;
+        }).catch(function () {
+            _reconciliation.skipRevealOnce = false;
+            _reconciliation.statusLoaded = false;
+            showReconciliationStatusUnavailable();
+            return false;
+        });
+    }
+    function refreshWithdrawalHistoryAfterConfirmation() {
+        if (!_withdrawalHistory.loaded) return Promise.resolve();
+        _withdrawalHistory.loaded = false;
+        var historyList = $('cfEarnHistoryList');
+        var historyMore = $('cfEarnHistoryMore');
+        if (historyList) historyList.textContent = '';
+        if (historyMore) {
+            historyMore.hidden = true;
+            historyMore.textContent = 'Load older';
+        }
+        var historyToggle = $('cfEarnHistoryToggle');
+        if (historyToggle && historyToggle.getAttribute('aria-expanded') === 'true') {
+            loadWithdrawalHistory(false);
+        }
+        return Promise.resolve();
+    }
+    async function refreshWithdrawalViewsAfterConfirmation() {
+        _reconciliation.statusLoaded = false;
+        _reconciliation.resumeAuthorizationId = null;
+        hideReconciliationPrompt();
+        await refreshWithdrawalHistoryAfterConfirmation();
+        await loadRewards();
+        // Refresh the private reservation status without allowing a stale
+        // claimed response to flash the prompt back after completion.
+        _reconciliation.skipRevealOnce = true;
+        await loadReconciliationStatus();
+    }
+    async function confirmWithdrawalTransaction(withdrawalId, txHash, setStatus) {
+        _reconciliation.withdrawalId = isWithdrawalId(withdrawalId)
+            ? String(withdrawalId).toLowerCase() : null;
+        _reconciliation.resumeAuthorizationId = null;
+        _reconciliation.statusLoaded = true;
+        var prompt = $('cfEarnReconcile');
+        var button = $('cfEarnReconcileBtn');
+        var copy = $('cfEarnReconcileCopy');
+        if (prompt && _reconciliation.withdrawalId) prompt.hidden = false;
+        if (button && _reconciliation.withdrawalId) button.hidden = false;
+        if (copy && _reconciliation.withdrawalId) {
+            copy.textContent = 'A previous payout was submitted but may need checking. This checks and reconciles that submitted payout only; it will not send another payment or ask you to sign.';
+        }
+        syncWithdrawalActionVisibility();
+        var key = 'gm-community-withdrawal:' + String(WALLET).toLowerCase();
+        try { localStorage.setItem(key, JSON.stringify({ withdrawal_id: withdrawalId, tx_hash: txHash })); } catch (_) {}
+        var wait = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
+        for (var attempt = 0; attempt < 12; attempt += 1) {
+            var check = await api('/community/api/rewards/withdrawals/confirm', {
+                method: 'POST',
+                body: JSON.stringify({ withdrawal_id: withdrawalId, tx_hash: txHash }),
+            });
+            var confirmed = check && check.data;
+            if (confirmed && confirmed.status === 'completed') {
+                try { localStorage.removeItem(key); } catch (_) {}
+                if (setStatus) setStatus('Withdrawal confirmed. Refreshing your Community balance and history…', 'ok');
+                await refreshWithdrawalViewsAfterConfirmation();
+                return true;
+            }
+            if (confirmed && confirmed.status === 'failed') {
+                try { localStorage.removeItem(key); } catch (_) {}
+                var failedMessage = confirmed.error || 'The withdrawal transaction reverted; your ledger balance was not debited.';
+                _reconciliation.statusLoaded = false;
+                _reconciliation.resumeAuthorizationId = null;
+                hideReconciliationPrompt();
+                await loadRewards();
+                await loadReconciliationStatus();
+                var withdrawStatus = $('cfEarnWithdrawStatus');
+                if (withdrawStatus) {
+                    withdrawStatus.textContent = failedMessage;
+                    withdrawStatus.hidden = false;
+                }
+                throw new Error(failedMessage);
+            }
+            if (!check.ok && check.status !== 202) {
+                throw new Error((confirmed && confirmed.error) || 'Could not verify the transaction. Keep its hash and retry confirmation.');
+            }
+            if (setStatus) setStatus(confirmed && confirmed.status === 'confirming'
+                ? 'The submitted payout was found; waiting for the required confirmation depth…'
+                : 'The submitted payout was found; waiting for confirmation…');
+            await wait(5000);
+        }
+        if (setStatus) setStatus('The submitted payout is still awaiting final confirmation. No balance change was made; retry reconciliation later or contact support.', 'error');
+        return false;
+    }
+    async function reconcilePreviousWithdrawal() {
+        if (BOOT.isGuest || !WALLET) { requiresLogin(); return; }
+        var prompt = $('cfEarnReconcile');
+        if (!prompt || prompt.hidden || !isWithdrawalId(_reconciliation.withdrawalId)) return;
+        if (_reconciliation.busy) return;
+        _reconciliation.busy = true;
+        reconciliationButton(true, 'Checking…');
+        reconciliationStatus('Checking the previously submitted payout. No new payment will be sent and no signature is requested.');
+        try {
+            var body = { withdrawal_id: _reconciliation.withdrawalId };
+            if (_reconciliation.beforeBlock !== null) body.before_block = _reconciliation.beforeBlock;
+            var result = await api('/community/api/rewards/withdrawals/reconciliation', {
+                method: 'POST',
+                body: JSON.stringify(body),
+            });
+            var data = result && result.data;
+            var status = data && data.status;
+            if (result.ok && data && status === 'transaction_found'
+                    && String(data.withdrawal_id || '').toLowerCase() === _reconciliation.withdrawalId
+                    && isTransactionHash(data.tx_hash)) {
+                reconciliationStatus('The previously submitted transaction was found. Checking it with the existing confirmation process…');
+                var confirmed = await confirmWithdrawalTransaction(
+                    _reconciliation.withdrawalId, String(data.tx_hash).toLowerCase(),
+                    function (message, kind) { reconciliationStatus(message, kind); });
+                if (!confirmed && !prompt.hidden) reconciliationButton(false, 'Reconcile previous withdrawal');
+                return;
+            }
+            if (result.ok && data && status === 'scanning'
+                    && /^\d+$/.test(String(data.next_before_block))) {
+                _reconciliation.beforeBlock = String(data.next_before_block);
+                reconciliationStatus('This bounded page is complete. Continue search to check older blocks; no new payment will be sent and no signature is requested.');
+                reconciliationButton(false, 'Continue search');
+                return;
+            }
+            if (result.ok && data && status === 'not_found') {
+                var scannedWithdrawalId = _reconciliation.withdrawalId;
+                _reconciliation.beforeBlock = null;
+                _reconciliation.resumeAuthorizationId = scannedWithdrawalId;
+                hideReconciliationPrompt();
+                var withdrawStatus = $('cfEarnWithdrawStatus');
+                if (withdrawStatus) {
+                    withdrawStatus.textContent = 'No matching payout was found across the configured history. No balance change was made; you can retry the normal withdrawal or contact support.';
+                    withdrawStatus.hidden = false;
+                }
+                syncWithdrawalActionVisibility();
+                return;
+            }
+            if (status === 'manual_review' || result.status === 409) {
+                reconciliationStatus('The previous payout could not be matched exactly. No balance change was made. Please contact support for manual review.', 'error');
+                reconciliationButton(false, 'Retry reconciliation');
+                return;
+            }
+            reconciliationStatus('The reconciliation check could not complete. No balance change was made. Please retry, or contact support if the problem continues.', 'error');
+            reconciliationButton(false, 'Retry reconciliation');
+        } catch (_) {
+            reconciliationStatus('The reconciliation check could not complete. No balance change was made. Please retry, or contact support if the problem continues.', 'error');
+            reconciliationButton(false, 'Retry reconciliation');
+        } finally {
+            _reconciliation.busy = false;
+            if (!prompt.hidden && $('cfEarnReconcileBtn') && $('cfEarnReconcileBtn').disabled) {
+                reconciliationButton(false, _reconciliation.beforeBlock !== null ? 'Continue search' : 'Reconcile previous withdrawal');
+            }
+        }
+    }
+
     function syncTodayHub() {
         var hub = $('cfTodayHub');
         if (!hub) return;
@@ -2243,10 +2513,14 @@
         }
         var withdrawRow = $('cfEarnWithdrawRow');
         var withdrawStatus = $('cfEarnWithdrawStatus');
+        _reconciliation.canWithdraw = !data.is_guest && data.eligible !== false
+            && showBalance && !!WALLET;
         if (withdrawRow) {
-            withdrawRow.hidden = !!data.is_guest || data.eligible === false || !showBalance;
+            withdrawRow.hidden = !_reconciliation.canWithdraw
+                || !_reconciliation.statusLoaded || !!_reconciliation.withdrawalId;
         }
         if (withdrawStatus) withdrawStatus.hidden = true;
+        syncWithdrawalActionVisibility();
         var history = $('cfEarnHistory');
         var historyToggle = $('cfEarnHistoryToggle');
         var historyPanel = $('cfEarnHistoryPanel');
@@ -2275,62 +2549,38 @@
         if (!WALLET) { requiresLogin(); return Promise.resolve(); }
         var button = $('cfEarnWithdrawBtn');
         var status = $('cfEarnWithdrawStatus');
+        var submissionAttempted = false;
         if (button) { button.disabled = true; button.textContent = 'Checking…'; }
         if (status) { status.hidden = true; status.textContent = ''; }
         var setStatus = function (message) {
             if (status) { status.textContent = message; status.hidden = false; }
         };
-        var wait = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
-        var confirmTx = async function (withdrawalId, txHash) {
-            var key = 'gm-community-withdrawal:' + String(WALLET).toLowerCase();
-            try { localStorage.setItem(key, JSON.stringify({ withdrawal_id: withdrawalId, tx_hash: txHash })); } catch (_) {}
-            for (var attempt = 0; attempt < 12; attempt += 1) {
-                var check = await api('/community/api/rewards/withdrawals/confirm', {
-                    method: 'POST',
-                    body: JSON.stringify({ withdrawal_id: withdrawalId, tx_hash: txHash })
-                });
-                var confirmed = check && check.data;
-                if (confirmed && confirmed.status === 'completed') {
-                    try { localStorage.removeItem(key); } catch (_) {}
-                    setStatus('Withdrawal confirmed. Your Community ledger balance is updating.');
-                    if (_withdrawalHistory.loaded) {
-                        _withdrawalHistory.loaded = false;
-                        var historyList = $('cfEarnHistoryList');
-                        var historyMore = $('cfEarnHistoryMore');
-                        if (historyList) historyList.textContent = '';
-                        if (historyMore) { historyMore.hidden = true; historyMore.textContent = 'Load older'; }
-                        var historyToggle = $('cfEarnHistoryToggle');
-                        if (historyToggle && historyToggle.getAttribute('aria-expanded') === 'true') {
-                            loadWithdrawalHistory(false);
-                        }
-                    }
-                    await loadRewards();
-                    return true;
-                }
-                if (confirmed && confirmed.status === 'failed') {
-                    try { localStorage.removeItem(key); } catch (_) {}
-                    throw new Error(confirmed.error || 'The withdrawal transaction reverted; your ledger balance was not debited.');
-                }
-                if (!check.ok && check.status !== 202) {
-                    throw new Error((confirmed && confirmed.error) || 'Could not verify the transaction. Keep its hash and retry confirmation.');
-                }
-                setStatus(confirmed && confirmed.status === 'confirming'
-                    ? 'Celo transaction confirmed; waiting for the required finality confirmations…'
-                    : 'Withdrawal transaction submitted; waiting for Celo confirmation…');
-                await wait(5000);
-            }
-            setStatus('The transaction is still awaiting final confirmation. Your request is reserved; click Withdraw again to resume safely.');
-            return false;
-        };
-
         try {
             var pendingKey = 'gm-community-withdrawal:' + String(WALLET).toLowerCase();
             var pending = null;
             try { pending = JSON.parse(localStorage.getItem(pendingKey) || 'null'); } catch (_) {}
             if (pending && pending.withdrawal_id && pending.tx_hash) {
                 setStatus('Resuming confirmation for your submitted withdrawal…');
-                await confirmTx(pending.withdrawal_id, pending.tx_hash);
+                await confirmWithdrawalTransaction(pending.withdrawal_id, pending.tx_hash, function (message) {
+                    setStatus(message);
+                });
                 return;
+            }
+
+            if (_reconciliation.withdrawalId) {
+                setStatus('A previous withdrawal is awaiting reconciliation. Use the reconciliation control before starting another wallet flow.');
+                return;
+            }
+            if (!isWithdrawalId(_reconciliation.resumeAuthorizationId)) {
+                await loadReconciliationStatus();
+                if (_reconciliation.withdrawalId) {
+                    setStatus('A previous withdrawal is awaiting reconciliation. Use the reconciliation control before starting another wallet flow.');
+                    return;
+                }
+                if (!_reconciliation.statusLoaded) {
+                    setStatus('The app could not safely check for an earlier withdrawal. Refresh the page before retrying.');
+                    return;
+                }
             }
 
             var eligibility = await api('/community/api/rewards/withdrawal-eligibility');
@@ -2357,7 +2607,9 @@
                 throw new Error((authData && authData.error) || 'Could not issue the withdrawal authorization.');
             }
             if (txHash && withdrawalId && authData.status === 'transaction_submitted') {
-                await confirmTx(withdrawalId, txHash);
+                await confirmWithdrawalTransaction(withdrawalId, txHash, function (message) {
+                    setStatus(message);
+                });
                 return;
             }
             if (button) button.textContent = 'Confirm in wallet…';
@@ -2393,15 +2645,20 @@
                     + 'Community vault: ' + authData.vault_address + '\n'
                     + 'Network: Celo Mainnet (42220)\n'
                     + 'Gas: paid by you\n\nContinue to your wallet?')) return;
+            submissionAttempted = true;
+            _reconciliation.resumeAuthorizationId = null;
             txHash = await window.P2PWallet.sendTx(authData.vault_address,
                 'function withdraw((address recipient,uint256 amount,bytes32 withdrawalId,uint256 nonce,uint256 deadline,bytes32 projectId) authorization,bytes issuerAuthorization)',
                 [[auth.recipient, String(auth.amount), auth.withdrawalId, String(auth.nonce), String(auth.deadline), auth.projectId], authData.signature]);
             if (!txHash) throw new Error('The wallet did not return a transaction hash. Check your wallet activity before retrying.');
-            await confirmTx(withdrawalId, txHash);
+            await confirmWithdrawalTransaction(withdrawalId, txHash, function (message) {
+                setStatus(message);
+            });
         } catch (error) {
             setStatus((error && error.message) || 'Withdrawal could not be completed. Check your wallet activity before retrying.');
         } finally {
             if (button) { button.disabled = false; button.textContent = 'Withdraw'; }
+            if (submissionAttempted) await loadReconciliationStatus();
         }
     }
 
@@ -2885,6 +3142,7 @@
                     && /^0x[0-9a-f]{64}$/i.test(String(pending.tx_hash || ''))) {
                 checkWithdrawalEligibility();
             }
+            loadReconciliationStatus();
         });
         if (typeof window.addEventListener === 'function') {
             window.addEventListener('gm:daily-learn-completed', function (event) {
@@ -2908,6 +3166,7 @@
         cancelPromptMode: cancelPromptMode,
         prefillDailyLearnReflection: prefillDailyLearnReflection,
         checkWithdrawalEligibility: checkWithdrawalEligibility,
+        reconcilePreviousWithdrawal: reconcilePreviousWithdrawal,
         react: react,
         toggleComments: toggleComments,
         openLightbox: openLightbox,
@@ -2983,6 +3242,9 @@
             setComments: function (postId, rows) { _commentCache[postId] = rows || []; },
             loadRewards: loadRewards,
             renderRewards: renderRewards,
+            loadReconciliationStatus: loadReconciliationStatus,
+            reconcilePreviousWithdrawal: reconcilePreviousWithdrawal,
+            confirmWithdrawalTransaction: confirmWithdrawalTransaction,
             formatGd: formatGd,
             getFeed: function () { return _feed; },
             setFeed: function (rows) { _feed = rows; },
