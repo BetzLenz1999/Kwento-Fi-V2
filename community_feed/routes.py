@@ -148,6 +148,26 @@ def _open_withdrawal(db, wallet: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def _claimed_withdrawal(db, wallet: str, withdrawal_id: str | None = None) -> dict | None:
+    """Read only a claimed reservation belonging to the authenticated wallet."""
+    query = (db.table("community_reward_withdrawals").select("*")
+             .ilike("wallet_address", wallet.lower()).eq("status", "claimed"))
+    if withdrawal_id is not None:
+        query = query.eq("withdrawal_id", withdrawal_id)
+    rows = _withdrawal_rows(query.order("id", desc=True).execute())
+    for row in rows:
+        if row.get("authorization_signature"):
+            return row
+    return None
+
+
+def _private_withdrawal_json(payload: dict, status: int = 200):
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Vary"] = "Cookie"
+    return response, status
+
+
 def _fresh_withdrawal_identity(wallet: str) -> tuple[bool, bool]:
     """Return (verified, chain_available), bypassing the identity read cache."""
     try:
@@ -380,16 +400,7 @@ def api_withdrawal_history():
     try:
         from web3 import Web3
         runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
-        known_vault = "0x4c0d1f17e83776aa696848b870444e54ec3a2203"
-        configured_block = os.environ.get("COMMUNITY_VAULT_DEPLOYMENT_BLOCK", "").strip()
-        if configured_block:
-            if not re.fullmatch(r"\d+", configured_block):
-                return history_json({"success": False, "error": "Withdrawal history is not configured correctly."}, 503)
-            deployment_block = int(configured_block)
-        elif runtime.vault_address.lower() == known_vault:
-            deployment_block = 81001254
-        else:
-            return history_json({"success": False, "error": "Withdrawal history is not configured for this vault."}, 503)
+        deployment_block = withdrawal_vault.deployment_block_for_runtime(runtime)
         wallet = Web3.to_checksum_address(wallet)
         vault_address = Web3.to_checksum_address(runtime.vault_address)
         latest = int(runtime.web3.eth.block_number)
@@ -484,6 +495,125 @@ def api_withdrawal_history():
     except Exception as exc:  # noqa: BLE001
         logger.warning("community withdrawal history RPC failed: %s", exc)
         return history_json({"success": False, "error": "Withdrawal history could not be loaded. Please retry."}, 503)
+
+
+@community_feed_bp.route("/api/rewards/withdrawals/reconciliation", methods=["GET"])
+def api_withdrawal_reconciliation_status():
+    """Expose only whether this wallet has a signed claimed row to reconcile."""
+    if not svc.is_enabled():
+        response = _disabled_response()
+        response[0].headers["Cache-Control"] = "private, no-store, max-age=0"
+        return response
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Not authenticated"}, 401)
+    try:
+        row = _claimed_withdrawal(_withdrawal_admin_db(), wallet)
+        if not row or not row.get("authorization_signature"):
+            return _private_withdrawal_json({"success": True, "needs_reconciliation": False})
+        return _private_withdrawal_json({
+            "success": True,
+            "needs_reconciliation": True,
+            "withdrawal": {
+                "withdrawal_id": row.get("withdrawal_id"),
+                "amount_gd": str(row.get("amount_gd") or "0"),
+                "tx_hash": row.get("tx_hash"),
+            },
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community withdrawal reconciliation status lookup failed: %s", exc)
+        return _private_withdrawal_json({
+            "success": False,
+            "error": "Withdrawal reconciliation status could not be loaded. Please retry.",
+        }, 503)
+
+
+@community_feed_bp.route("/api/rewards/withdrawals/reconciliation", methods=["POST"])
+def api_withdrawal_reconciliation_scan():
+    """Scan one bounded page for the authenticated wallet's existing payout."""
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "Cross-origin withdrawal request rejected"}, 403)
+    if not svc.is_enabled():
+        response = _disabled_response()
+        response[0].headers["Cache-Control"] = "private, no-store, max-age=0"
+        return response
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Not authenticated"}, 401)
+    retry = _throttle("withdraw-reconcile:" + wallet, 30, allow=6)
+    if retry:
+        return _private_withdrawal_json({"success": False, "error": "Too many reconciliation requests. Please wait and retry."}, 429)
+
+    body = _json_body()
+    withdrawal_id = str(body.get("withdrawal_id") or "").strip().lower()
+    if not re.fullmatch(r"0x[0-9a-f]{64}", withdrawal_id):
+        return _private_withdrawal_json({"success": False, "error": "A valid withdrawal ID is required."}, 400)
+    before_block = body.get("before_block")
+    if before_block is not None:
+        if isinstance(before_block, bool) or not re.fullmatch(r"\d+", str(before_block)):
+            return _private_withdrawal_json({"success": False, "error": "The scan cursor is invalid."}, 400)
+        before_block = int(before_block)
+
+    try:
+        db = _withdrawal_admin_db()
+        row = _claimed_withdrawal(db, wallet, withdrawal_id)
+        if not row or not row.get("authorization_signature"):
+            return _private_withdrawal_json({
+                "success": False,
+                "status": "manual_review",
+                "error": "No existing signed Community withdrawal was found. No balance change was made; please contact support.",
+            }, 409)
+        stored_hash = str(row.get("tx_hash") or "").strip().lower()
+        if stored_hash:
+            if not re.fullmatch(r"0x[0-9a-f]{64}", stored_hash):
+                return _private_withdrawal_json({
+                    "success": False,
+                    "status": "manual_review",
+                    "error": "The existing withdrawal needs support review. No balance change was made.",
+                }, 409)
+            return _private_withdrawal_json({
+                "success": True, "status": "transaction_found",
+                "withdrawal_id": withdrawal_id, "tx_hash": stored_hash,
+            })
+
+        runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
+        deployment_block = withdrawal_vault.deployment_block_for_runtime(runtime)
+        result = withdrawal_vault.scan_withdrawal_transaction_page(
+            runtime, row, deployment_block=deployment_block, before_block=before_block,
+        )
+        if result.get("status") == "invalid_cursor":
+            return _private_withdrawal_json({
+                "success": False,
+                "status": "invalid_cursor",
+                "error": "The scan cursor is outside the configured vault history range.",
+            }, 400)
+        if result.get("status") == "rpc_error":
+            logger.warning("community withdrawal reconciliation RPC unavailable")
+            return _private_withdrawal_json({
+                "success": False,
+                "status": "retryable",
+                "error": "Withdrawal reconciliation could not complete. No balance change was made; please retry.",
+            }, 503)
+        if result.get("status") == "manual_review":
+            return _private_withdrawal_json({
+                "success": False,
+                "status": "manual_review",
+                "error": "The existing withdrawal could not be matched exactly. No balance change was made; please contact support.",
+            }, 409)
+        return _private_withdrawal_json({"success": True, "withdrawal_id": withdrawal_id, **result})
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        logger.warning("community withdrawal reconciliation configuration unavailable: %s",
+                       withdrawal_vault.operator_detail(exc))
+        return _private_withdrawal_json({
+            "success": False, "status": "retryable",
+            "error": withdrawal_vault.MEMBER_CONFIG_ERROR,
+        }, 503)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community withdrawal reconciliation failed: %s", exc)
+        return _private_withdrawal_json({
+            "success": False, "status": "retryable",
+            "error": "Withdrawal reconciliation could not complete. No balance change was made; please retry.",
+        }, 503)
 
 
 @community_feed_bp.route("/api/rewards/withdrawal-eligibility", methods=["GET"])
