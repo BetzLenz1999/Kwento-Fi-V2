@@ -32,6 +32,7 @@ from . import rewards
 from . import reward_settings
 from . import service as svc
 from . import storage
+from . import vault_donations
 from . import withdrawals as withdrawal_vault
 
 logger = logging.getLogger(__name__)
@@ -248,6 +249,7 @@ def community_feed_home():
             fv_return_to="/community",
         ),
         is_guest=not bool(wallet),
+        vault_donations_enabled=vault_donations.donations_enabled(),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
         avatar_url=svc.get_avatar_url(wallet) if wallet else None,
@@ -308,6 +310,7 @@ def community_feed_post(post_id: int):
             fv_return_to=canonical_url,
         ),
         is_guest=not bool(wallet),
+        vault_donations_enabled=vault_donations.donations_enabled(),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
         avatar_url=svc.get_avatar_url(wallet) if wallet else None,
@@ -321,7 +324,8 @@ def community_feed_post(post_id: int):
         focus_post=post,
         focus_post_id=post_id,
         canonical_url=canonical_url,
-        share_title=f"@{username} on GoodMarket Community",
+        share_title=("Community Vault donation · Sytem" if post.get("post_type") == "system_vault_donation"
+                     else f"@{username} on GoodMarket Community"),
         share_description=description,
         share_image=share_image,
     )
@@ -1064,6 +1068,78 @@ def api_admin_withdrawal_vault_fund_confirm():
         return jsonify({"success": False, "error": "Could not verify or record this funding transaction. The on-chain transfer, if successful, remains in the vault."}), 503
 
 
+@community_feed_bp.route("/api/vault-donations/config", methods=["GET"])
+def api_vault_donations_config():
+    """Expose only runtime-verified network, token and recipient values."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Not authenticated"}, 401)
+    try:
+        return _private_withdrawal_json(vault_donations.public_config(wallet))
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        return _private_withdrawal_json({
+            "success": False,
+            "error": "Community Vault donations are unavailable until the shared withdrawal vault is configured and enabled.",
+            "code": exc.code,
+        }, 503)
+    except withdrawal_vault.WithdrawalPolicyError as exc:
+        return _private_withdrawal_json({"success": False, "error": str(exc), "code": "vault_unavailable"}, 503)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community vault donation config read failed: %s", exc)
+        return _private_withdrawal_json({"success": False, "error": "Could not verify the Community Vault on Celo."}, 503)
+
+
+@community_feed_bp.route("/api/vault-donations/intent", methods=["POST"])
+def api_vault_donation_intent():
+    if not svc.is_enabled():
+        return _disabled_response()
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "Cross-origin donation request rejected"}, 403)
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Not authenticated"}, 401)
+    wait = _throttle(f"vault-donation-intent:{wallet}", 10)
+    if wait:
+        return _private_withdrawal_json({"success": False, "error": "Please wait before preparing another donation.", "retry_after": wait}, 429)
+    result = vault_donations.create_intent(wallet, _json_body())
+    status = 200 if result.get("success") else (503 if result.get("code") in {"db", "profile", "donations_disabled", "vault_unavailable"} else 400)
+    return _private_withdrawal_json(result, status)
+
+
+@community_feed_bp.route("/api/vault-donations/confirm", methods=["POST"])
+def api_vault_donation_confirm():
+    if not svc.is_enabled():
+        return _disabled_response()
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "Cross-origin donation confirmation rejected"}, 403)
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Not authenticated"}, 401)
+    body = _json_body()
+    result = vault_donations.confirm_transaction(wallet, body.get("donation_id"), body.get("tx_hash"))
+    if result.get("success") and result.get("status") in {"pending", "confirming"}:
+        return _private_withdrawal_json(result, 202)
+    if result.get("status") == "processing" or result.get("retryable"):
+        return _private_withdrawal_json(result, 503)
+    status = 200 if result.get("success") else (503 if result.get("code") in {"unavailable", "vault_unavailable"} else 400)
+    return _private_withdrawal_json(result, status)
+
+
+@community_feed_bp.route("/api/vault-donations/cancel", methods=["POST"])
+def api_vault_donation_cancel():
+    if not svc.is_enabled():
+        return _disabled_response()
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "Cross-origin donation cancellation rejected"}, 403)
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Not authenticated"}, 401)
+    result = vault_donations.cancel_intent(wallet, _json_body().get("donation_id"))
+    return _private_withdrawal_json(result, 200 if result.get("success") else 400)
+
+
 @community_feed_bp.route("/api/daily-learn", methods=["GET"])
 def api_daily_learn():
     """Return today's server-published two-question snapshot.
@@ -1284,9 +1360,26 @@ def api_feed():
     viewer = _session_wallet()
     cursor = request.args.get("cursor", type=int)
     limit = request.args.get("limit", type=int)
-    return jsonify(svc.get_feed(
+    result = svc.get_feed(
         viewer=viewer, cursor=cursor, limit=limit,
-        prompt_id=request.args.get("prompt_id") or None))
+        prompt_id=request.args.get("prompt_id") or None)
+    if result.get("success") and cursor is None:
+        pinned = svc.get_pinned_donation_feed(viewer=viewer, limit=10)
+        result["pinned_posts"] = pinned.get("posts", []) if pinned.get("success") else []
+        result["pinned_next_cursor"] = pinned.get("next_cursor") if pinned.get("success") else None
+    return jsonify(result)
+
+
+@community_feed_bp.route("/api/feed/pinned-donations", methods=["GET"])
+def api_pinned_donations():
+    if not svc.is_enabled():
+        return _disabled_response()
+    result = svc.get_pinned_donation_feed(
+        viewer=_session_wallet(),
+        cursor=request.args.get("cursor", type=int),
+        limit=request.args.get("limit", type=int),
+    )
+    return jsonify(result), (200 if result.get("success") else 503)
 
 
 @community_feed_bp.route("/api/users/search", methods=["GET"])
