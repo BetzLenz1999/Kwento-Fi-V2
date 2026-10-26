@@ -79,6 +79,7 @@
 
     function rewardStatusMessage() {
         if (!lastReward || !lastReward.status) return 'Reward status is not available yet.';
+        var reason = String(lastReward.reason || '');
         if (lastReward.status === 'credited') {
             return lastEarningsRefresh === true
                 ? 'Your completion reward is now reflected in Community G$ Earnings.'
@@ -93,12 +94,20 @@
                     ? 'Your completion reward is already included in Community G$ Earnings.'
                     : 'Your completion reward is already in the ledger. Refreshing Community G$ Earnings…');
         }
+        if (reason === 'legacy_snapshot_required') {
+            return 'Your quiz is saved, but this older attempt needs manual review before any reward can be credited. It will not be repriced or automatically retried.';
+        }
+        if (reason === 'configuration_unavailable') {
+            return 'Your quiz is saved, but Community G$ configuration is temporarily unavailable. No reward was credited; try again later.';
+        }
+        if (reason === 'combined_cap_reached') {
+            return 'Your completion is saved, but the combined daily reward cap has been reached; no additional reward was added.';
+        }
         if (lastReward.status === 'pending') {
-            return lastReward.reason === 'verified_wallet_required'
+            return reason === 'verified_wallet_required'
                 ? 'Your quiz is saved, but the remaining reward is pending because this wallet is not eligible to earn Community G$.'
                 : 'Your quiz is saved. The remaining question reward is pending and will be retried; check Community G$ Earnings again later.';
         }
-        var reason = lastReward.reason;
         var message = reason === 'daily_cap_reached'
             ? 'Your completion is saved, but the separate Daily Learn allowance for this UTC day has been used; no additional reward was added.'
             : (reason === 'no_correct_answers'
