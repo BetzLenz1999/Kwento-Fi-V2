@@ -2894,6 +2894,12 @@
     var SEARCH_MIN = 2;
     var _searchTimer = null;
     var _searchSeq = 0;
+    var _notifications = [];
+    var _notificationCursor = null;
+    var _notificationUnread = 0;
+    var _notificationLoading = false;
+    var _notificationPanelOpen = false;
+    var _notificationPollTimer = null;
 
     function buildNavItem(item) {
         var isLink = !!item.href;
@@ -2985,6 +2991,219 @@
             .then(function (response) { return response.ok ? response.json() : null; })
             .then(function (data) { if (data && data.success) setMessageUnread(data.unread_total); })
             .catch(function () {});
+    }
+
+    // ── Private in-app Community notifications ──────────────────────────────
+    function setNotificationUnread(count) {
+        var button = $('cfNotificationButton');
+        var badge = $('cfNotificationBadge');
+        if (!button || !badge) return;
+        _notificationUnread = Math.max(0, Number(count) || 0);
+        badge.textContent = _notificationUnread > 99 ? '99+' : String(_notificationUnread);
+        badge.hidden = _notificationUnread === 0;
+        button.setAttribute('aria-label', _notificationUnread
+            ? 'Notifications, ' + _notificationUnread + ' unread'
+            : 'Notifications');
+        var markAll = $('cfNotificationMarkAll');
+        if (markAll) markAll.disabled = _notificationUnread === 0;
+    }
+
+    function notificationMessage(item) {
+        var actor = esc(item && item.actor_username || 'Community member')
+            .trim().replace(/^@+/, '').slice(0, 80) || 'Community member';
+        var type = String(item && item.notification_type || '');
+        if (type === 'reaction') {
+            var reaction = {
+                like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢', angry: '😡'
+            }[String(item.reaction || '')] || '';
+            return actor + ' reacted' + (reaction ? ' ' + reaction : '') + ' to your post.';
+        }
+        if (type === 'comment') return actor + ' commented on your post.';
+        if (type === 'reply') return actor + ' replied to your comment.';
+        if (type === 'post_reply') return actor + ' replied in your post.';
+        return actor + ' interacted with your post.';
+    }
+
+    function notificationIcon(item) {
+        if (item && item.notification_type === 'reaction') {
+            return ({ like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢', angry: '😡' })[
+                String(item.reaction || '')] || '🔔';
+        }
+        if (item && item.notification_type === 'reply') return '↩';
+        return '💬';
+    }
+
+    function renderNotifications(message) {
+        var list = $('cfNotificationList');
+        var more = $('cfNotificationMore');
+        if (!list) return;
+        list.textContent = '';
+        if (message) {
+            list.appendChild(el('p', 'cf-notification-empty', message));
+            if (more) more.hidden = true;
+            return;
+        }
+        if (!_notifications.length) {
+            list.appendChild(el('p', 'cf-notification-empty', 'You’re all caught up.'));
+        } else {
+            _notifications.forEach(function (item) {
+                var wrapper = el('div', 'cf-notification-row');
+                wrapper.setAttribute('role', 'listitem');
+                var button = el('button', 'cf-notification-item'
+                    + (item.read_at ? '' : ' is-unread'));
+                button.type = 'button';
+                button.setAttribute('aria-label', notificationMessage(item)
+                    + (item.read_at ? '' : ' Unread'));
+                var icon = el('span', 'cf-notification-icon', notificationIcon(item));
+                icon.setAttribute('aria-hidden', 'true');
+                var copy = el('span', 'cf-notification-copy');
+                copy.appendChild(el('span', 'cf-notification-message', notificationMessage(item)));
+                copy.appendChild(el('span', 'cf-notification-time',
+                    item.created_at ? timeAgo(item.created_at) : 'Recently'));
+                var dot = el('span', 'cf-notification-unread-dot');
+                dot.setAttribute('aria-hidden', 'true');
+                dot.hidden = !!item.read_at;
+                button.appendChild(icon);
+                button.appendChild(copy);
+                button.appendChild(dot);
+                button.onclick = function () { openNotification(item); };
+                wrapper.appendChild(button);
+                list.appendChild(wrapper);
+            });
+        }
+        if (more) more.hidden = !_notificationCursor;
+        var markAll = $('cfNotificationMarkAll');
+        if (markAll) markAll.disabled = _notificationUnread === 0;
+    }
+
+    function loadNotifications(append) {
+        if (!WALLET || _notificationLoading) return Promise.resolve(false);
+        var cursor = append ? _notificationCursor : null;
+        if (append && !cursor) return Promise.resolve(false);
+        _notificationLoading = true;
+        var list = $('cfNotificationList');
+        var more = $('cfNotificationMore');
+        if (list) list.setAttribute('aria-busy', 'true');
+        if (more && append) { more.disabled = true; more.textContent = 'Loading…'; }
+        var query = '/community/api/notifications?limit=20'
+            + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+        return api(query).then(function (result) {
+            if (!result.ok || !result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error)
+                    || 'Notifications are temporarily unavailable.');
+            }
+            var incoming = result.data.notifications || [];
+            _notifications = append ? _notifications.concat(incoming) : incoming;
+            _notificationCursor = result.data.next_cursor || null;
+            setNotificationUnread(result.data.unread_count);
+            renderNotifications();
+            return true;
+        }).catch(function () {
+            if (!_notifications.length) {
+                renderNotifications('Notifications are temporarily unavailable. Please try again.');
+            }
+            return false;
+        }).then(function (success) {
+            _notificationLoading = false;
+            if (list) list.setAttribute('aria-busy', 'false');
+            if (more) { more.disabled = false; more.textContent = 'Load older notifications'; }
+            return success;
+        });
+    }
+
+    function openNotifications() {
+        if (!WALLET) { requiresLogin(); return; }
+        var panel = $('cfNotificationPanel');
+        var button = $('cfNotificationButton');
+        if (!panel || !button) return;
+        _notificationPanelOpen = true;
+        panel.hidden = false;
+        button.setAttribute('aria-expanded', 'true');
+        loadNotifications(false);
+        var close = panel.querySelector('.cf-notification-close');
+        if (close && close.focus) close.focus();
+    }
+
+    function closeNotifications(restoreFocus) {
+        var panel = $('cfNotificationPanel');
+        var button = $('cfNotificationButton');
+        _notificationPanelOpen = false;
+        if (panel) panel.hidden = true;
+        if (button) {
+            button.setAttribute('aria-expanded', 'false');
+            if (restoreFocus && button.focus) button.focus();
+        }
+    }
+
+    function toggleNotifications() {
+        if (_notificationPanelOpen) closeNotifications(true);
+        else openNotifications();
+    }
+
+    function openNotification(item) {
+        if (!item || !/^\d+$/.test(String(item.id || ''))
+                || !/^\d+$/.test(String(item.post_id || ''))) return;
+        if (!item.read_at) {
+            item.read_at = new Date().toISOString();
+            setNotificationUnread(_notificationUnread - 1);
+            renderNotifications();
+            // Keep the private read receipt alive while the browser navigates.
+            fetch('/community/api/notifications/' + encodeURIComponent(item.id) + '/read', {
+                method: 'POST', credentials: 'same-origin', keepalive: true,
+                headers: { 'Content-Type': 'application/json' }, body: '{}'
+            }).catch(function () {});
+        }
+        closeNotifications(false);
+        window.location.href = '/community/p/' + encodeURIComponent(item.post_id)
+            + '#post-' + encodeURIComponent(item.post_id);
+    }
+
+    function markAllNotificationsRead() {
+        if (!WALLET || !_notificationUnread) return Promise.resolve(false);
+        var button = $('cfNotificationMarkAll');
+        if (button) button.disabled = true;
+        return api('/community/api/notifications/read-all', { method: 'POST', body: '{}' })
+            .then(function (result) {
+                if (!result.ok || !result.data || !result.data.success) {
+                    throw new Error((result.data && result.data.error)
+                        || 'Could not update notifications.');
+                }
+                var now = new Date().toISOString();
+                _notifications.forEach(function (item) { item.read_at = item.read_at || now; });
+                setNotificationUnread(0);
+                renderNotifications();
+                return true;
+            }).catch(function () {
+                if (button) button.disabled = _notificationUnread === 0;
+                toast('Could not mark notifications as read. Please try again.', 'error');
+                return false;
+            });
+    }
+
+    function loadMoreNotifications() { return loadNotifications(true); }
+
+    function initNotifications() {
+        if (!WALLET || !$('cfNotificationButton')) return;
+        loadNotifications(false);
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && _notificationPanelOpen) closeNotifications(true);
+        });
+        document.addEventListener('click', function (event) {
+            if (!_notificationPanelOpen) return;
+            var panel = $('cfNotificationPanel');
+            var button = $('cfNotificationButton');
+            if (panel && button && !panel.contains(event.target)
+                    && !button.contains(event.target)) closeNotifications(false);
+        });
+        var refreshIfVisible = function () {
+            if (!_notificationPanelOpen
+                    && (!document.visibilityState || document.visibilityState === 'visible')) {
+                loadNotifications(false);
+            }
+        };
+        document.addEventListener('visibilitychange', refreshIfVisible);
+        window.addEventListener('focus', refreshIfVisible);
+        _notificationPollTimer = window.setInterval(refreshIfVisible, 60000);
     }
 
     function openSearch() {
@@ -3711,6 +3930,7 @@
         bind();
         renderNav();
         loadMessageUnread();
+        initNotifications();
         loadRewards().then(function () {
             if (!WALLET) return;
             var pending = null;
@@ -3810,6 +4030,10 @@
         openClaim: openClaim,
         closeClaim: closeClaim,
         setMessageUnread: setMessageUnread,
+        toggleNotifications: toggleNotifications,
+        closeNotifications: closeNotifications,
+        markAllNotificationsRead: markAllNotificationsRead,
+        loadMoreNotifications: loadMoreNotifications,
         // Exposed for the test harness (drives the real bodies).
         _internals: {
             timeAgo: timeAgo,
@@ -3834,6 +4058,12 @@
             renderNav: renderNav,
             setMessageUnread: setMessageUnread,
             loadMessageUnread: loadMessageUnread,
+            setNotificationUnread: setNotificationUnread,
+            notificationMessage: notificationMessage,
+            notificationIcon: notificationIcon,
+            renderNotifications: renderNotifications,
+            loadNotifications: loadNotifications,
+            openNotification: openNotification,
             runSearch: runSearch,
             renderSearchResults: renderSearchResults,
             prepareImage: prepareImage,
