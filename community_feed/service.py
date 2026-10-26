@@ -238,7 +238,36 @@ def rewards_summary(wallet: str | None) -> dict:
         return {"success": True, "enabled": False, "is_guest": not wallet,
                 "balance_gd": 0.0, "min_payout_gd": 0.0, "progress": 0.0,
                 "status": "guest" if not wallet else "pending",
-                "can_withdraw": False}
+                "can_withdraw": False, "budgets": None,
+                "configuration_available": False}
+
+
+def _viewer_reward_outcome(value) -> dict:
+    """Expose only the viewer's status/reason; reward hooks are best-effort."""
+    if not isinstance(value, dict):
+        return {"status": "not_credited", "reason": "reward_unavailable"}
+    output = {key: value[key] for key in ("status", "reason") if key in value}
+    output.setdefault("status", "not_credited")
+    return output
+
+
+def _persisted_reward_time(supabase, table: str, filters: dict, supplied=None):
+    """Recover a persisted event timestamp; never substitute the current time.
+
+    Minimal-return PostgREST deployments may omit the insert representation.
+    An unreadable source time stays unknown and fails closed if a cutoff is set.
+    """
+    if supplied:
+        return supplied
+    try:
+        query = supabase.table(table).select("created_at")
+        for key, value in filters.items():
+            query = query.eq(key, value)
+        rows = _rows(query.limit(1).execute())
+        return rows[0].get("created_at") if rows else None
+    except Exception as exc:  # noqa: BLE001 - never fail the saved interaction
+        logger.warning("community_feed: reward source timestamp unavailable: %s", exc)
+        return None
 
 
 def is_enabled() -> bool:
@@ -1830,6 +1859,8 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
         # Tapping your own active chip removes it.
         return clear_reaction(wallet, post_id, _supabase=supabase, _post=post)
 
+    reward_outcome = {"status": "not_credited", "reason": "reward_unavailable"}
+    reaction_created_at = None
     try:
         if previous:
             # Switch: update in place, count does not move. A switch is NOT a
@@ -1842,11 +1873,13 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
                 "wallet_address", wallet).execute()
             count = int(post.get("reaction_count") or 0)
         else:
-            supabase.table("community_feed_reactions").insert({
+            inserted = supabase.table("community_feed_reactions").insert({
                 "post_id": int(post_id),
                 "wallet_address": wallet.lower(),
                 "reaction": reaction,
             }).execute()
+            inserted_rows = _rows(inserted)
+            reaction_created_at = inserted_rows[0].get("created_at") if inserted_rows else None
             count = int(post.get("reaction_count") or 0) + 1
             _write_reaction_count(supabase, post_id, count)
     except Exception as exc:  # noqa: BLE001
@@ -1862,8 +1895,13 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
     # must not be able to fail the user's reaction.
     if not previous:
         try:
-            rewards.on_reaction_added(
-                wallet, post_id, post.get("wallet_address"), _supabase=supabase)
+            reward_outcome = rewards.on_reaction_added(
+                wallet, post_id, post.get("wallet_address"),
+                event_created_at=_persisted_reward_time(
+                    supabase, "community_feed_reactions",
+                    {"post_id": int(post_id), "wallet_address": wallet.lower()},
+                    reaction_created_at),
+                _supabase=supabase)
         except Exception as exc:  # noqa: BLE001
             logger.warning("community_feed: reward credit failed: %s", exc)
 
@@ -1880,6 +1918,7 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
         logger.info("community_feed: reaction badge evaluation skipped: %s", exc)
 
     return {"success": True, "reaction_count": count, "my_reaction": reaction,
+            "reward": _viewer_reward_outcome(reward_outcome),
             "reaction_breakdown": _post_breakdown(supabase, post_id)}
 
 
@@ -1900,7 +1939,8 @@ def clear_reaction(wallet: str, post_id: int, *, _supabase=None,
     if not previous:
         return {"success": True,
                 "reaction_count": int(post.get("reaction_count") or 0),
-                "my_reaction": None}
+                "my_reaction": None,
+                "reward": {"status": "already_credited"}}
 
     try:
         supabase.table("community_feed_reactions").delete().eq(
@@ -1915,11 +1955,13 @@ def clear_reaction(wallet: str, post_id: int, *, _supabase=None,
     # Removing a reaction reverses both sides of the credit it produced. The
     # ledger's unique `reverses_ledger_id` makes a replayed undo a no-op.
     try:
-        rewards.on_reaction_removed(
+        reward_outcome = rewards.on_reaction_removed(
             wallet, post_id, post.get("wallet_address"), _supabase=supabase)
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_feed: reward reversal failed: %s", exc)
+        reward_outcome = {"status": "not_credited", "reason": "reward_unavailable"}
     return {"success": True, "reaction_count": count, "my_reaction": None,
+            "reward": _viewer_reward_outcome(reward_outcome),
             "reaction_breakdown": _post_breakdown(supabase, post_id)}
 
 
@@ -2092,9 +2134,13 @@ def add_comment(wallet: str, post_id: int, body: str,
     # the post owner (COMMENT_OUT_RATE, the larger rate); self-activity credits
     # nobody. Best-effort, and after the comment is persisted, so a rewards
     # problem never reports the comment as failed.
+    reward_outcome = {"status": "not_credited", "reason": "reward_unavailable"}
     try:
-        rewards.on_comment_added(
+        reward_outcome = rewards.on_comment_added(
             wallet, rows[0].get("id"), post_id, post.get("wallet_address"),
+            event_created_at=_persisted_reward_time(
+                supabase, "community_feed_comments", {"id": rows[0].get("id")},
+                rows[0].get("created_at")),
             _supabase=supabase)
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_feed: reward credit failed: %s", exc)
@@ -2111,7 +2157,8 @@ def add_comment(wallet: str, post_id: int, body: str,
     public_comment["reply_to_username"] = (
         (mention or "").strip().lstrip("@") or None)
     return {"success": True,
-            "comment": public_comment}
+            "comment": public_comment,
+            "reward": _viewer_reward_outcome(reward_outcome)}
 
 
 def _notify_comment_reply(*, actor_wallet: str, actor_username: str,
@@ -2260,13 +2307,15 @@ def delete_comment(wallet: str, comment_id: int) -> dict:
     # Deleting a comment reverses both sides of the credit it produced, so the
     # owner's rate must be resolved here to find the owner's row.
     try:
-        rewards.on_comment_removed(
+        reward_outcome = rewards.on_comment_removed(
             wallet, comment_id,
             _comment_post_owner(supabase, rows[0].get("post_id")),
             _supabase=supabase)
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_feed: reward reversal failed: %s", exc)
-    return {"success": True}
+        reward_outcome = {"status": "not_credited", "reason": "reward_unavailable"}
+    return {"success": True,
+            "reward": _viewer_reward_outcome(reward_outcome)}
 
 
 # ── Reports ──────────────────────────────────────────────────────────────────
