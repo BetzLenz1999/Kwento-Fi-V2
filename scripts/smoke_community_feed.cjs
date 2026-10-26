@@ -2086,9 +2086,11 @@ function feedFetch(handler, feedRows) {
       path.join(__dirname, '..', 'templates', 'admin_dashboard.html'), 'utf8');
     const rw = fs2.readFileSync(
       path.join(__dirname, '..', 'community_feed', 'rewards.py'), 'utf8');
+    const settings = fs2.readFileSync(
+      path.join(__dirname, '..', 'community_feed', 'reward_settings.py'), 'utf8');
 
     // The server's rate vocabulary. The template must not invent a name.
-    const names = /RATE_NAMES\s*=\s*\(([^)]*)\)/.exec(rw);
+    const names = /RATE_NAMES\s*=\s*\(([^)]*)\)/.exec(settings);
     const serverNames = names
       ? names[1].split(',').map(x => x.trim().replace(/["']/g, '')).filter(Boolean)
       : [];
@@ -2114,18 +2116,21 @@ function feedFetch(handler, feedRows) {
     ok('the editor requires a reason before saving',
        /if\s*\(\s*!reason\s*\)/.test(tpl));
     ok('the server refuses a write without an actor and a reason',
-       /if not actor or not actor\.strip\(\)/.test(rw) &&
-       /if not reason or not reason\.strip\(\)/.test(rw));
+       settings.includes('not actor.strip()') &&
+       settings.includes('not reason.strip()'));
 
-    // The clamp must be server-side: the form's min/max is a convenience.
-    ok('the server clamps every rate to the bounds',
-       rw.includes('def _clamp') && rw.includes('RATE_BOUNDS'));
+    // An atomic DB settings RPC validates the whole rate/cap combination;
+    // silent rate clamping is deliberately no longer the live write policy.
+    ok('the server validates settings through the atomic update RPC',
+       settings.includes('community_reward_settings_update') &&
+       settings.includes('def _validate_patch') &&
+       settings.includes('db.rpc(RPC_UPDATE, args)'));
 
     // The whole point: this writes config, and there is still no balance column.
     ok('the rate write touches only the config table',
-       /maintenance_settings/.test(rw) &&
-       !/update\([^)]*delta_gd/.test(rw) &&
-       !/set_balance/.test(rw));
+       settings.includes('RPC_UPDATE') &&
+       !/update\([^)]*delta_gd/.test(settings) &&
+       !/set_balance/.test(settings));
 
     // The card copy must not advertise a balance the admin can edit.
     ok('the admin copy still promises the balance cannot be edited',
