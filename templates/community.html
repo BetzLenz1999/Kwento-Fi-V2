@@ -127,10 +127,19 @@
         </div>
         <div class="cf-search-results" id="cfSearchResults" role="listbox"
              aria-label="Member search results"></div>
-    </div>
+</div>
 </header>
 
-<main class="cf-wrap">
+<a class="cf-skip-link" href="#cfPostsTitle">Skip to community posts</a>
+<main class="cf-wrap cf-layout">
+    {# Keep the Today hub first in DOM order for the mobile reading sequence.
+       The wide-screen grid places this complementary panel on the right; the
+       skip link above gives keyboard users a direct route to the post stream. #}
+    <aside class="cf-today-hub" id="cfTodayHub" aria-labelledby="cfTodayHubTitle" hidden>
+        <div class="cf-today-hub-head">
+            <h1 class="cf-today-hub-title" id="cfTodayHubTitle">Today in Community</h1>
+            <p>Learn. Share. Earn together.</p>
+        </div>
 
     <section class="cf-daily-prompt" id="cfDailyPrompt" aria-labelledby="cfDailyPromptTitle" hidden>
         <div class="cf-daily-prompt-kicker">Today’s Community Prompt</div>
@@ -157,63 +166,8 @@
         <p class="cf-daily-learn-reset" id="cfDailyLearnReset">Resets daily at 00:00 UTC.</p>
     </section>
 
-    {% if is_guest %}
-    <div class="cf-guest">
-        {% with guest_card_icon='📸',
-                guest_card_kicker='Community Feed',
-                guest_card_title='Join the conversation',
-                guest_card_body='Browse the community freely — reading is open to everyone. Connect or create a free GoodMarket wallet to react, comment and share your own photos and videos. Email + PIN, no app to install.' %}
-            {% include "_guest_connect_card.html" %}
-        {% endwith %}
-    </div>
-    {% else %}
-
-    <!-- ── Composer ─────────────────────────────────────────────────────── -->
-    <section class="cf-composer" id="cfComposer" aria-labelledby="cfComposerTitle">
-        <h2 class="cf-sr-only" id="cfComposerTitle">Create a post</h2>
-        <div class="cf-composer-head">
-            {# Profile picture. Tapping the ring opens the picture modal, so a
-               member can upload/change/remove their picture without leaving the
-               feed. The initial-letter fallback is used until a picture exists.
-               `display_name` falls back to a shortened wallet address, which
-               contradicts the username gate below. Show the username or a
-               neutral label — never an address, not even your own. #}
-            <button type="button" class="cf-avatar-btn" id="cfAvatarBtn"
-                    onclick="GMCommunity.openAvatarModal()"
-                    aria-label="Change your profile picture">
-                <span class="cf-avatar" id="cfComposerAvatar" aria-hidden="true">
-                    {%- if avatar_url -%}
-                    <img class="cf-avatar-img" src="{{ url_for('community_feed.api_profile_avatar', username=username) }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
-                    {%- else -%}
-                    {{ (username or 'You')[0]|upper }}
-                    {%- endif -%}
-                </span>
-                <span class="cf-avatar-badge" aria-hidden="true">📷</span>
-            </button>
-            <div class="cf-composer-who">
-                <strong>{{ username or 'You' }}</strong>
-                <span>Sharing publicly</span>
-            </div>
-        </div>
-
-        <div class="cf-prompt-context" id="cfPromptContext" hidden>
-            <span id="cfPromptContextText">Answering today’s prompt</span>
-            <button type="button" onclick="GMCommunity.cancelPromptMode()"
-                    aria-label="Cancel prompt response mode">Cancel</button>
-        </div>
-
-        <label class="cf-sr-only" for="cfCaption">Caption</label>
-        <textarea id="cfCaption" class="cf-caption-input" rows="2"
-                  placeholder="What happened today?"
-                  maxlength="{{ max_caption }}"></textarea>
-
-        {# Daily Learn, once today's quiz is done. The full card used to stay on
-           screen all day retitled "Daily Learn complete", which pushed the
-           composer down for no reason. The completion state and the reward
-           reason still have to be reachable — the reason is how a member learns
-           WHY they were not paid (daily cap, no correct answers, unverified
-           wallet) — so it collapses into one line here and the detail opens on
-           tap. Written by the bundle from the same /api/daily-learn payload. #}
+        {% if not is_guest %}
+        {# Completion status is wallet-specific; never render it to guests. #}
         <div class="cf-learn-done" id="cfLearnDone" hidden>
             <span class="cf-learn-done-mark" aria-hidden="true">✅</span>
             <span class="cf-learn-done-text" id="cfLearnDoneText">Daily Learn done today</span>
@@ -223,76 +177,9 @@
         </div>
         <p class="cf-learn-done-detail" id="cfLearnDoneDetail" role="status"
            aria-live="polite" hidden></p>
-
-        {# Username gate. Shown only when the signed-in wallet has no username
-           yet — the composer stays visible so the user can see what they are
-           about to unlock, but posting is blocked until a name is chosen. #}
-        {% if username_required and not username %}
-        <div class="cf-username-gate" id="cfUsernameGate">
-            <p class="cf-username-lead">
-                <strong>Pick a username to start posting.</strong>
-                Posts show your username, never your wallet address.
-            </p>
-            <div class="cf-username-row">
-                <span class="cf-username-at" aria-hidden="true">@</span>
-                <label class="cf-sr-only" for="cfUsernameInput">Username</label>
-                <input type="text" id="cfUsernameInput" class="cf-username-input"
-                       placeholder="yourname" maxlength="24" autocomplete="username"
-                       spellcheck="false" inputmode="text">
-                <button type="button" class="cf-username-save" id="cfUsernameSave"
-                        onclick="GMCommunity.saveUsername()">Save</button>
-            </div>
-            <p class="cf-username-hint" id="cfUsernameHint">
-                Letters, numbers and _ — 3 to 24 characters.
-            </p>
-        </div>
         {% endif %}
 
-        <div class="cf-previews" id="cfPreviews" hidden></div>
-
-        <div class="cf-upload-status" id="cfUploadStatus" role="status" aria-live="polite" hidden></div>
-
-        <div class="cf-composer-foot">
-            <div class="cf-composer-actions">
-                <label class="cf-file-btn" for="cfFileInput">
-                    <span aria-hidden="true">🖼</span> Photo / Video
-                </label>
-                <input type="file" id="cfFileInput" class="cf-sr-only"
-                       accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm"
-                       multiple>
-            </div>
-            <div class="cf-composer-right">
-                <span class="cf-counter" id="cfCounter">0 / {{ max_caption }}</span>
-                <button type="button" class="cf-post-btn" id="cfPostBtn"
-                        onclick="GMCommunity.submitPost()" disabled>Post</button>
-            </div>
-        </div>
-        <p class="cf-composer-hint" id="cfComposerHint">
-            Up to {{ max_media }} files · images to {{ max_image_mb }}MB, video to {{ max_video_mb }}MB.
-            Post only content you own.
-        </p>
-        {% if not storage_ready %}
-        <p class="cf-warn">Media uploads are not configured on this deployment yet — you can still post text.</p>
-        {% endif %}
-    </section>
-    {% endif %}
-
-    <!-- ── Recent posters rail ─────────────────────────────────────────────
-         Instagram's story rail: a sideways run of circular avatars, each with a
-         gradient ring and a label. It is built in the bundle from the authors
-         already on the feed page (`GMCommunity._internals.buildRail`), so it
-         needs no endpoint and no table, and it can never show a member who has
-         not posted. Outside the is_guest branch on purpose — reading is public.
-
-         It starts `hidden` so an empty feed does not flash an empty rail; the
-         bundle reveals it only when there is at least one author. -->
-    <div class="cf-daily-heading" id="cfDailyHeading" hidden>
-        <strong>Today in Community</strong>
-        <span>Daily moments from members</span>
-    </div>
-    <div class="cf-rail" id="cfRail" aria-label="Recent posters" hidden></div>
-
-    <!-- ── Community G$ card ───────────────────────────────────────────────
+<!-- ── Community G$ card ───────────────────────────────────────────────
          The community rewards balance lives HERE and ONLY here (never on the
          wallet page — see docs/COMMUNITY_REWARDS_LEDGER_PROPOSAL.md §0: two G$
          figures side by side invite "47 + 12 = 59", which is false, because
@@ -391,8 +278,138 @@
             </section>
         </div>
     </section>
+    </aside>
 
-    <!-- ── Feed ────────────────────────────────────────────────────────────
+    <div class="cf-primary" id="cfPrimary" role="region" aria-label="Community composer and posts">
+    {% if is_guest %}
+    <div class="cf-guest">
+        {% with guest_card_icon='📸',
+                guest_card_kicker='Community Feed',
+                guest_card_title='Join the conversation',
+                guest_card_body='Browse the community freely — reading is open to everyone. Connect or create a free GoodMarket wallet to react, comment and share your own photos and videos. Email + PIN, no app to install.' %}
+            {% include "_guest_connect_card.html" %}
+        {% endwith %}
+    </div>
+    {% else %}
+
+    <!-- ── Composer ─────────────────────────────────────────────────────── -->
+    <section class="cf-composer" id="cfComposer" aria-labelledby="cfComposerTitle">
+        <h2 class="cf-sr-only" id="cfComposerTitle">Create a post</h2>
+        <div class="cf-composer-entry-row">
+        <div class="cf-composer-head">
+            {# Profile picture. Tapping the ring opens the picture modal, so a
+               member can upload/change/remove their picture without leaving the
+               feed. The initial-letter fallback is used until a picture exists.
+               `display_name` falls back to a shortened wallet address, which
+               contradicts the username gate below. Show the username or a
+               neutral label — never an address, not even your own. #}
+            <button type="button" class="cf-avatar-btn" id="cfAvatarBtn"
+                    onclick="GMCommunity.openAvatarModal()"
+                    aria-label="Change your profile picture">
+                <span class="cf-avatar" id="cfComposerAvatar" aria-hidden="true">
+                    {%- if avatar_url -%}
+                    <img class="cf-avatar-img" src="{{ url_for('community_feed.api_profile_avatar', username=username) }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                    {%- else -%}
+                    {{ (username or 'You')[0]|upper }}
+                    {%- endif -%}
+                </span>
+                <span class="cf-avatar-badge" aria-hidden="true">📷</span>
+            </button>
+            <div class="cf-composer-who">
+                <strong>{{ username or 'You' }}</strong>
+                <span>Sharing publicly</span>
+            </div>
+        </div>
+
+        <label class="cf-sr-only" for="cfCaption">Caption</label>
+        <div class="cf-caption-wrap">
+            <textarea id="cfCaption" class="cf-caption-input" rows="2"
+                      placeholder="What happened today?"
+                      maxlength="{{ max_caption }}"></textarea>
+        </div>
+
+        <div class="cf-composer-actions">
+            <label class="cf-file-btn" for="cfFileInput" aria-label="Add photos or videos">
+                <span aria-hidden="true">🖼</span> Photo / Video
+            </label>
+            <input type="file" id="cfFileInput" class="cf-sr-only"
+                   accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm"
+                   multiple>
+        </div>
+        <div class="cf-prompt-context" id="cfPromptContext" hidden>
+            <span id="cfPromptContextText">Answering today’s prompt</span>
+            <button type="button" onclick="GMCommunity.cancelPromptMode()"
+                    aria-label="Cancel prompt response mode">Cancel</button>
+        </div>
+        </div>
+
+
+
+        {# Username gate. Shown only when the signed-in wallet has no username
+           yet — the composer stays visible so the user can see what they are
+           about to unlock, but posting is blocked until a name is chosen. #}
+        {% if username_required and not username %}
+        <div class="cf-username-gate" id="cfUsernameGate">
+            <p class="cf-username-lead">
+                <strong>Pick a username to start posting.</strong>
+                Posts show your username, never your wallet address.
+            </p>
+            <div class="cf-username-row">
+                <span class="cf-username-at" aria-hidden="true">@</span>
+                <label class="cf-sr-only" for="cfUsernameInput">Username</label>
+                <input type="text" id="cfUsernameInput" class="cf-username-input"
+                       placeholder="yourname" maxlength="24" autocomplete="username"
+                       spellcheck="false" inputmode="text">
+                <button type="button" class="cf-username-save" id="cfUsernameSave"
+                        onclick="GMCommunity.saveUsername()">Save</button>
+            </div>
+            <p class="cf-username-hint" id="cfUsernameHint">
+                Letters, numbers and _ — 3 to 24 characters.
+            </p>
+        </div>
+        {% endif %}
+
+        <div class="cf-previews" id="cfPreviews" hidden></div>
+
+        <div class="cf-upload-status" id="cfUploadStatus" role="status" aria-live="polite" hidden></div>
+
+        <div class="cf-composer-foot">
+            <div class="cf-composer-right">
+                <span class="cf-counter" id="cfCounter">0 / {{ max_caption }}</span>
+                <button type="button" class="cf-post-btn" id="cfPostBtn"
+                        onclick="GMCommunity.submitPost()" disabled>Post</button>
+            </div>
+        </div>
+        <p class="cf-composer-hint" id="cfComposerHint">
+            Up to {{ max_media }} files · images to {{ max_image_mb }}MB, video to {{ max_video_mb }}MB.
+            Post only content you own.
+        </p>
+        {% if not storage_ready %}
+        <p class="cf-warn">Media uploads are not configured on this deployment yet — you can still post text.</p>
+        {% endif %}
+    </section>
+    {% endif %}
+
+<!-- ── Recent posters rail ─────────────────────────────────────────────
+         Instagram's story rail: a sideways run of circular avatars, each with a
+         gradient ring and a label. It is built in the bundle from the authors
+         already on the feed page (`GMCommunity._internals.buildRail`), so it
+         needs no endpoint and no table, and it can never show a member who has
+         not posted. Outside the is_guest branch on purpose — reading is public.
+
+         It starts `hidden` so an empty feed does not flash an empty rail; the
+         bundle reveals it only when there is at least one author. -->
+    <div class="cf-daily-heading" id="cfDailyHeading" hidden>
+        <strong>Recent posters</strong>
+        <span>Daily moments from members</span>
+    </div>
+    <div class="cf-rail" id="cfRail" aria-label="Recent posters" hidden></div>
+
+        <section class="cf-posts" aria-labelledby="cfPostsTitle">
+            <div class="cf-feed-section-head">
+                <h2 id="cfPostsTitle" tabindex="-1">Recent posts</h2>
+            </div>
+<!-- ── Feed ────────────────────────────────────────────────────────────
          Outside the is_guest branch on purpose: reading is PUBLIC. A guest
          gets the same cards a member does. Only writing is gated — the JS
          raises the shared connect card on react/comment, and the server
@@ -408,6 +425,8 @@
         <p class="cf-empty" id="cfEmpty" hidden>
             {% if is_guest %}No posts yet.{% else %}No posts yet. Be the first to share something!{% endif %}
         </p>
+    </div>
+        </section>
     </div>
 </main>
 
