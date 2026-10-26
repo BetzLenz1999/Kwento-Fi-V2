@@ -488,7 +488,8 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
                  is_following: bool = False,
                  avatar_url: str | None = None,
                  reactions: dict[str, int] | None = None,
-                 earned_badges: list[dict] | None = None) -> dict:
+                 earned_badges: list[dict] | None = None,
+                 donation: dict | None = None) -> dict:
     """Shape a post for the browser.
 
     The wallet address is dropped and ownership is reduced to ``is_mine`` — a
@@ -498,6 +499,48 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
     ``reactions`` is a ``{key: count}`` breakdown (no
     wallet, just tallies) so a card can show WHICH reactions were used.
     """
+    if row.get("post_type") == "system_vault_donation":
+        donation = donation or {}
+        try:
+            base_units = int(donation.get("amount_base_units") or 0)
+            decimals = max(0, min(36, int(donation.get("token_decimals") or 18)))
+            padded = str(base_units).rjust(decimals + 1, "0")
+            whole = padded[:-decimals] if decimals else padded
+            fraction = padded[-decimals:].rstrip("0") if decimals else ""
+            amount = whole + ("." + fraction if fraction else "")
+        except (TypeError, ValueError):
+            amount = "0"
+        tx_hash = str(donation.get("tx_hash") or "").lower()
+        tx_url = ("https://celoscan.io/tx/" + tx_hash
+                  if re.fullmatch(r"0x[0-9a-f]{64}", tx_hash) else "")
+        donor_name = (donation.get("donor_name") or "").strip()
+        body = f"{donor_name} donated {amount} G$ to the Community Withdrawal Vault."
+        return {
+            "id": row.get("id"),
+            "post_type": "system_vault_donation",
+            "username": "Sytem",
+            "body": body,
+            "avatar_url": None,
+            "media": [],
+            "reaction_count": 0,
+            "reaction_breakdown": {},
+            "comment_count": 0,
+            "prompt_id": None,
+            "badges": [],
+            "my_reaction": None,
+            "is_mine": False,
+            "is_following": False,
+            "is_edited": False,
+            "is_pinned": bool(row.get("is_pinned")),
+            "is_interactive": False,
+            "created_at": row.get("created_at"),
+            "edited_at": None,
+            "donor_name": donor_name,
+            "amount_gd": amount,
+            "linkedin_url": donation.get("linkedin_url") or "",
+            "tx_hash": tx_hash,
+            "tx_url": tx_url,
+        }
     owner = (row.get("wallet_address") or "").lower()
     # Strip a stored `@` (a legacy/imported row): the card draws its own prefix.
     username = (row.get("username") or "").strip().lstrip("@")
@@ -930,6 +973,64 @@ def get_follow_counts(username: str | None) -> dict:
     }
 
 
+def _donation_rows_for_posts(supabase, post_ids: list) -> dict[int, dict]:
+    if not post_ids:
+        return {}
+    try:
+        rows = _rows(supabase.table("community_vault_donations")
+                     .select("feed_post_id,donor_name,linkedin_url,amount_base_units,token_decimals,tx_hash")
+                     .in_("feed_post_id", post_ids)
+                     .eq("status", "confirmed").execute())
+        result = {}
+        for row in rows:
+            try:
+                result[int(row.get("feed_post_id"))] = row
+            except (TypeError, ValueError):
+                continue
+        return result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: pinned donation metadata load failed: %s", exc)
+        return {}
+
+
+def get_pinned_donation_feed(viewer: str | None = None,
+                             cursor: int | None = None,
+                             limit: int | None = None) -> dict:
+    """Return one keyset page of confirmed, pinned System donation posts."""
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "posts": []}
+    try:
+        size = int(limit or DEFAULT_PAGE_SIZE)
+    except (TypeError, ValueError):
+        size = DEFAULT_PAGE_SIZE
+    size = max(1, min(MAX_PAGE_SIZE, size))
+    try:
+        query = (supabase.table("community_feed_posts").select("*")
+                 .eq("post_type", "system_vault_donation")
+                 .eq("is_pinned", True).eq("is_hidden", False)
+                 .eq("is_deleted", False))
+        if cursor:
+            query = query.lt("id", int(cursor))
+        rows = _rows(query.order("id", desc=True).limit(size + 1).execute())
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: pinned donation query failed: %s", exc)
+        return {"success": False, "error": "Could not load pinned donations", "posts": []}
+    has_more = len(rows) > size
+    rows = rows[:size]
+    donations = _donation_rows_for_posts(
+        supabase, [row.get("id") for row in rows if row.get("id") is not None])
+    posts = [_public_post(row, [], viewer, donation=donations[int(row["id"])])
+             for row in rows
+             if row.get("id") is not None and int(row["id"]) in donations]
+    return {
+        "success": True,
+        "posts": posts,
+        "next_cursor": rows[-1].get("id") if rows and has_more else None,
+        "has_more": has_more,
+    }
+
+
 def get_feed(viewer: str | None = None, cursor: int | None = None,
              limit: int | None = None, author: str | None = None,
              prompt_id: str | None = None) -> dict:
@@ -952,6 +1053,7 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
         query = (
             supabase.table("community_feed_posts")
             .select("*")
+            .eq("post_type", "user")
             .eq("is_deleted", False)
             .eq("is_hidden", False)
         )
@@ -1027,6 +1129,13 @@ def get_post(post_id: int, viewer: str | None = None) -> dict:
     if not rows or rows[0].get("is_deleted") or rows[0].get("is_hidden"):
         return {"success": False, "error": "Post not found", "code": "not_found"}
     row = rows[0]
+    if row.get("post_type") == "system_vault_donation":
+        donations = _donation_rows_for_posts(supabase, [row.get("id")])
+        donation = donations.get(int(row["id"]))
+        if not donation or not donation.get("tx_hash"):
+            return {"success": False, "error": "Post not found", "code": "not_found"}
+        return {"success": True,
+                "post": _public_post(row, [], viewer, donation=donation)}
     media = _media_for_posts(supabase, [row.get("id")]).get(row.get("id"), [])
     reactions = _reactions_for_posts(supabase, [row.get("id")], viewer)
     avatar = _avatars_for_wallets(
@@ -1815,6 +1924,8 @@ def _purge_objects(keys: list[str]) -> int:
 def _mark_deleted(supabase, post_id: int, by_wallet: str, hidden: bool) -> bool:
     payload = {
         "is_deleted": True,
+        "is_pinned": False,
+        "pinned_at": None,
         "deleted_by": (by_wallet or "").lower(),
         "deleted_at": _now().isoformat(),
     }
@@ -1853,6 +1964,8 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
     post = _load_visible_post(supabase, post_id)
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
+    if post.get("post_type") == "system_vault_donation":
+        return {"success": False, "error": "System donation posts are read-only.", "code": "read_only"}
 
     previous = _current_reaction(supabase, post_id, wallet)
     if previous == reaction:
@@ -1934,6 +2047,8 @@ def clear_reaction(wallet: str, post_id: int, *, _supabase=None,
     post = _post or _load_visible_post(supabase, post_id)
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
+    if post.get("post_type") == "system_vault_donation":
+        return {"success": False, "error": "System donation posts are read-only.", "code": "read_only"}
 
     previous = _current_reaction(supabase, post_id, wallet)
     if not previous:
@@ -2026,7 +2141,7 @@ def _load_visible_post(supabase, post_id: int) -> dict | None:
     try:
         result = (
             supabase.table("community_feed_posts")
-            .select("id,wallet_address,reaction_count,is_deleted,is_hidden")
+            .select("id,wallet_address,reaction_count,is_deleted,is_hidden,post_type")
             .eq("id", int(post_id))
             .limit(1)
             .execute()
@@ -2071,6 +2186,8 @@ def add_comment(wallet: str, post_id: int, body: str,
     post = _load_visible_post(supabase, post_id)
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
+    if post.get("post_type") == "system_vault_donation":
+        return {"success": False, "error": "System donation posts are read-only.", "code": "read_only"}
 
     parent = None
     if parent_comment_id not in (None, ""):
@@ -2223,6 +2340,8 @@ def get_comments(post_id: int, viewer: str | None = None, limit: int = 1000) -> 
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found",
                 "comments": []}
+    if post.get("post_type") == "system_vault_donation":
+        return {"success": True, "comments": []}
     try:
         result = (
             supabase.table("community_feed_comments")
@@ -2390,13 +2509,17 @@ def admin_hide_post(post_id: int, admin_wallet: str, hidden: bool = True) -> dic
     owner = None
     try:
         rows = _rows(supabase.table("community_feed_posts").select(
-            "wallet_address").eq("id", int(post_id)).limit(1).execute())
-        owner = rows[0].get("wallet_address") if rows else None
+            "wallet_address,post_type").eq("id", int(post_id)).limit(1).execute())
+        owner = (rows[0].get("wallet_address")
+                 if rows and rows[0].get("post_type") != "system_vault_donation" else None)
     except Exception:
         pass
     try:
+        patch = {"is_hidden": bool(hidden)}
+        if hidden:
+            patch.update({"is_pinned": False, "pinned_at": None})
         supabase.table("community_feed_posts").update(
-            {"is_hidden": bool(hidden)}).eq("id", int(post_id)).execute()
+            patch).eq("id", int(post_id)).execute()
     except Exception as exc:  # noqa: BLE001
         logger.error("community_feed: hide failed: %s", exc)
         return {"success": False, "error": "Could not update the post", "code": "db"}
@@ -2419,8 +2542,9 @@ def admin_delete_post(post_id: int, admin_wallet: str) -> dict:
     owner = None
     try:
         rows = _rows(supabase.table("community_feed_posts").select(
-            "wallet_address").eq("id", int(post_id)).limit(1).execute())
-        owner = rows[0].get("wallet_address") if rows else None
+            "wallet_address,post_type").eq("id", int(post_id)).limit(1).execute())
+        owner = (rows[0].get("wallet_address")
+                 if rows and rows[0].get("post_type") != "system_vault_donation" else None)
     except Exception:
         pass
     keys = _media_keys(supabase, int(post_id))
