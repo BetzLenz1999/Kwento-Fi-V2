@@ -375,6 +375,21 @@
             <p class="cf-earn-withdraw-status" id="cfEarnWithdrawStatus"
                role="status" aria-live="polite" hidden></p>
         </div>
+        <div class="cf-earn-history" id="cfEarnHistory" hidden>
+            <button type="button" class="cf-earn-history-toggle" id="cfEarnHistoryToggle"
+                    aria-controls="cfEarnHistoryPanel" aria-expanded="false" hidden>
+                Transaction history
+            </button>
+            <section class="cf-earn-history-panel" id="cfEarnHistoryPanel"
+                     aria-label="On-chain withdrawal history" hidden>
+                <p class="cf-earn-history-message" id="cfEarnHistoryMessage"
+                   role="status" aria-live="polite"></p>
+                <ul class="cf-earn-history-list" id="cfEarnHistoryList"></ul>
+                <button type="button" class="cf-earn-history-more" id="cfEarnHistoryMore" hidden>
+                    Load older
+                </button>
+            </section>
+        </div>
     </section>
 
     <!-- ── Feed ────────────────────────────────────────────────────────────
