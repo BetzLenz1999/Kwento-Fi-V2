@@ -1,3 +1,4 @@
+
 """Community reward facade.
 
 Positive reward grants are deliberately delegated to service-role SQL RPCs.  The
