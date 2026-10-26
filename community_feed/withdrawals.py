@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
@@ -452,18 +453,36 @@ def decode_withdrawal_transaction(runtime: Runtime, tx: dict, row: dict) -> None
     sender = Web3.to_checksum_address(tx.get("from", ""))
     recipient = Web3.to_checksum_address(row["wallet_address"])
     tx_to = Web3.to_checksum_address(tx.get("to") or "")
-    if sender != recipient or tx_to != runtime.vault_address or int(tx.get("value", 0)) != 0:
+    vault_address = Web3.to_checksum_address(runtime.vault_address)
+    if sender != recipient or tx_to != vault_address or int(tx.get("value", 0)) != 0:
         raise WithdrawalPolicyError("Transaction sender, destination, or native value does not match the authorization")
     fn, args = runtime.vault.decode_function_input(tx.get("input") or tx.get("data"))
     if fn.fn_name != "withdraw":
         raise WithdrawalPolicyError("Transaction is not a direct Community vault withdrawal")
     signed = args["authorization"]
-    expected = row["authorization"]
+    # SQL persists the authorization as scalar columns (not a JSON object).
+    # Reconstruct from that immutable reservation so recovery/confirmation
+    # validates the exact authorization that was signed.
+    expected = {
+        "recipient": row["wallet_address"],
+        "amount": row["amount_base_units"],
+        "withdrawalId": row["withdrawal_id"],
+        "nonce": row["authorization_nonce"],
+        "deadline": row["authorization_deadline"],
+        "projectId": row["project_id"],
+    }
     expected_tuple = (
         Web3.to_checksum_address(expected["recipient"]), int(expected["amount"]),
         expected["withdrawalId"], int(expected["nonce"]), int(expected["deadline"]), expected["projectId"],
     )
-    actual_tuple = tuple(signed)
+    tuple_fields = ("recipient", "amount", "withdrawalId", "nonce", "deadline", "projectId")
+    try:
+        actual_tuple = (tuple(signed[field_name] for field_name in tuple_fields)
+                        if isinstance(signed, Mapping) else tuple(signed))
+    except (KeyError, TypeError) as exc:
+        raise WithdrawalPolicyError("Transaction authorization tuple is malformed") from exc
+    if len(actual_tuple) != len(tuple_fields):
+        raise WithdrawalPolicyError("Transaction authorization tuple is malformed")
     actual_id = Web3.to_hex(actual_tuple[2]) if not isinstance(actual_tuple[2], str) else actual_tuple[2]
     actual_project = Web3.to_hex(actual_tuple[5]) if not isinstance(actual_tuple[5], str) else actual_tuple[5]
     normalized_actual = (Web3.to_checksum_address(actual_tuple[0]), int(actual_tuple[1]), actual_id, int(actual_tuple[3]), int(actual_tuple[4]), actual_project)
