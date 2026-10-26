@@ -42,6 +42,13 @@
 
     var _feed = [];            // rendered posts, newest first
     var _nextCursor = null;
+    var _pinnedDonations = [];
+    var _pinnedDonationCursor = null;
+    var _pinnedDonationLoading = false;
+    var _vaultDonationConfig = null;
+    var _vaultDonationIntent = null;
+    var _vaultDonationBusy = false;
+    var _activeVaultDonation = null;
     var _loading = false;
     var _pending = [];         // composer attachments awaiting upload
     var _posting = false;
@@ -940,21 +947,43 @@
         });
     }
 
+    function renderPinnedDonations() {
+        var section = $('cfPinnedDonations');
+        var container = $('cfPinnedDonationFeed');
+        if (!section || !container) return;
+        container.textContent = '';
+        section.hidden = !_pinnedDonations.length;
+        _pinnedDonations.forEach(function (post) {
+            container.appendChild(buildDonationCard(post));
+        });
+        var more = $('cfPinnedDonationMore');
+        if (more) more.hidden = !_pinnedDonationCursor;
+    }
+
     function renderFeed() {
         var container = $('cfFeed');
         if (!container) return;
         container.textContent = '';
         container.setAttribute('aria-busy', 'false');
         buildRail();
+        renderPinnedDonations();
 
         if (!_feed.length) {
             var empty = $('cfEmpty');
-            if (empty) empty.hidden = false;
+            if (empty) {
+                empty.hidden = false;
+                empty.textContent = _pinnedDonations.length
+                    ? 'No recent member posts yet.'
+                    : (WALLET ? 'No posts yet. Be the first to share something!' : 'No posts yet.');
+            }
             updateLoadMore();
             return;
         }
         var emptyNode = $('cfEmpty');
-        if (emptyNode) emptyNode.hidden = true;
+        if (emptyNode) {
+            emptyNode.hidden = true;
+            emptyNode.textContent = 'No posts yet. Be the first to share something!';
+        }
 
         _feed.forEach(function (post) { container.appendChild(buildCard(post)); });
         updateLoadMore();
@@ -1286,7 +1315,51 @@
         return actions;
     }
 
+    function buildDonationCard(post) {
+        var card = el('article', 'cf-donation-card');
+        card.setAttribute('data-post-id', post.id);
+        var head = el('div', 'cf-donation-card-head');
+        var author = el('div', 'cf-donation-system-author');
+        author.appendChild(el('span', 'cf-donation-system-mark', 'S'));
+        author.appendChild(el('strong', null, 'Sytem'));
+        head.appendChild(author);
+        head.appendChild(el('span', 'cf-donation-pin-label', 'Pinned'));
+        card.appendChild(head);
+
+        var donor = String(post.donor_name || '').trim() || 'A Community member';
+        var amount = String(post.amount_gd || '').trim() || '0';
+        card.appendChild(el('p', 'cf-donation-card-copy',
+            donor + ' donated ' + amount + ' G$ to the Community Withdrawal Vault.'));
+        card.appendChild(el('small', 'cf-donation-card-meta',
+            'Thank you for supporting the Community.'));
+
+        var links = el('div', 'cf-donation-card-links');
+        var linkedIn = String(post.linkedin_url || '');
+        if (/^https:\/\/(?:www\.)?linkedin\.com\/in\/[A-Za-z0-9_%.-]{1,120}\/?$/i.test(linkedIn)) {
+            var profileLink = el('a', null, 'LinkedIn Profile');
+            profileLink.href = linkedIn;
+            profileLink.target = '_blank';
+            profileLink.rel = 'noopener noreferrer';
+            links.appendChild(profileLink);
+        }
+        var txUrl = String(post.tx_url || '');
+        if (/^https:\/\/celoscan\.io\/tx\/0x[0-9a-f]{64}$/i.test(txUrl)) {
+            var txLink = el('a', null, 'View Celo Transaction');
+            txLink.href = txUrl;
+            txLink.target = '_blank';
+            txLink.rel = 'noopener noreferrer';
+            links.appendChild(txLink);
+        }
+        if (links.childNodes.length) card.appendChild(links);
+        var stamp = timeAgo(post.created_at);
+        if (stamp) card.appendChild(el('time', 'cf-donation-card-time', stamp));
+        return card;
+    }
+
     function buildCard(post) {
+        if (post && post.post_type === 'system_vault_donation') {
+            return buildDonationCard(post);
+        }
         var card = el('article', 'cf-card');
         card.setAttribute('data-post-id', post.id);
 
@@ -2711,9 +2784,15 @@
                 throw new Error((result.data && result.data.error) || 'Could not load the feed.');
             }
             _nextCursor = result.data.next_cursor || null;
+            if (reset) {
+                _pinnedDonations = Array.isArray(result.data.pinned_posts)
+                    ? result.data.pinned_posts : [];
+                _pinnedDonationCursor = result.data.pinned_next_cursor || null;
+            }
             // Guard a malformed payload: a server bug must not break the page.
             var rows = result.data.posts || [];
-            if (reset && FOCUS_POST && FOCUS_POST.id != null
+            if (reset && FOCUS_POST && FOCUS_POST.post_type !== 'system_vault_donation'
+                    && FOCUS_POST.id != null
                     && !rows.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })) {
                 rows = [FOCUS_POST].concat(rows);
             }
@@ -2740,6 +2819,27 @@
         if (button) { button.disabled = true; button.textContent = 'Loading…'; }
         loadFeed(false).then(function () {
             if (button) { button.disabled = false; button.textContent = 'Load more'; }
+        });
+    }
+
+    function loadMorePinnedDonations() {
+        if (_pinnedDonationLoading || !_pinnedDonationCursor) return Promise.resolve();
+        _pinnedDonationLoading = true;
+        var button = $('cfPinnedDonationMore');
+        if (button) { button.disabled = true; button.textContent = 'Loading…'; }
+        return api('/community/api/feed/pinned-donations?limit=10&cursor='
+            + encodeURIComponent(_pinnedDonationCursor)).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not load pinned donations.');
+            }
+            _pinnedDonations = _pinnedDonations.concat(result.data.posts || []);
+            _pinnedDonationCursor = result.data.next_cursor || null;
+            renderPinnedDonations();
+        }).catch(function (error) {
+            toast((error && error.message) || 'Could not load pinned donations.', 'error');
+        }).then(function () {
+            _pinnedDonationLoading = false;
+            if (button) { button.disabled = false; button.textContent = 'Load more pinned donations'; }
         });
     }
 
@@ -3121,6 +3221,449 @@
         updatePostButton();
     }
 
+    function donationStatus(message, kind) {
+        var status = $('cfVaultDonationStatus');
+        if (!status) return;
+        status.hidden = !message;
+        status.textContent = message || '';
+        status.classList.toggle('is-error', kind === 'error');
+        status.classList.toggle('is-success', kind === 'success');
+    }
+
+    function donationStorageKey() {
+        return 'gm-community-vault-donation:' + String(WALLET || '').toLowerCase();
+    }
+
+    function readPendingVaultDonation() {
+        if (!WALLET) return null;
+        if (_activeVaultDonation && /^[0-9a-f-]{36}$/i.test(String(_activeVaultDonation.donation_id || ''))
+                && /^0x[0-9a-f]{64}$/i.test(String(_activeVaultDonation.tx_hash || ''))) {
+            return _activeVaultDonation;
+        }
+        try {
+            var value = JSON.parse(localStorage.getItem(donationStorageKey()) || 'null');
+            if (value && /^[0-9a-f-]{36}$/i.test(String(value.donation_id || ''))
+                    && /^0x[0-9a-f]{64}$/i.test(String(value.tx_hash || ''))) return value;
+        } catch (_) {}
+        return null;
+    }
+
+    function savePendingVaultDonation(value) {
+        _activeVaultDonation = value;
+        try { localStorage.setItem(donationStorageKey(), JSON.stringify(value)); } catch (_) {}
+    }
+
+    function clearPendingVaultDonation() {
+        _activeVaultDonation = null;
+        try { localStorage.removeItem(donationStorageKey()); } catch (_) {}
+    }
+
+    function openVaultDonation() {
+        if (!WALLET) { requiresLogin(); return Promise.resolve(false); }
+        var panel = $('cfVaultDonationFormWrap');
+        if (panel) panel.hidden = false;
+        var opener = $('cfVaultDonationOpen');
+        if (opener) opener.setAttribute('aria-expanded', 'true');
+        var name = $('cfVaultDonationName');
+        if (name && name.focus) name.focus();
+        var address = $('cfVaultDonationAddress');
+        var retry = $('cfVaultDonationRetry');
+        if (retry) retry.hidden = true;
+        donationStatus('Verifying the shared Community Withdrawal Vault on Celo…');
+        return api('/community/api/vault-donations/config').then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Donations are not available right now.');
+            }
+            _vaultDonationConfig = result.data;
+            if (name && !name.value && result.data.community_display_name) {
+                name.value = result.data.community_display_name;
+            }
+            if (address) {
+                address.hidden = false;
+                address.textContent = 'Verified recipient: ' + result.data.vault_address
+                    + ' · G$ token: ' + result.data.token_address
+                    + ' · Celo Mainnet (42220)';
+            }
+            if (retry) retry.hidden = true;
+            donationStatus('Vault verified. Complete the form and review the exact donation before opening your wallet.');
+            return true;
+        }).catch(function (error) {
+            donationStatus((error && error.message) || 'Could not verify the Community Vault.', 'error');
+            if (retry) retry.hidden = false;
+            return false;
+        });
+    }
+
+    function retryVaultDonationConfig() {
+        return openVaultDonation();
+    }
+
+    function closeVaultDonation() {
+        if (_vaultDonationBusy) return;
+        var recovery = $('cfVaultDonationRecovery');
+        if (_vaultDonationIntent && recovery && !recovery.hidden) {
+            donationStatus('Keep this verification panel open until you enter the transaction hash. Do not send another transfer.', 'error');
+            return;
+        }
+        var intent = _vaultDonationIntent;
+        _vaultDonationIntent = null;
+        if (intent && intent.donation_id) {
+            api('/community/api/vault-donations/cancel', {
+                method: 'POST', body: JSON.stringify({ donation_id: intent.donation_id })
+            });
+        }
+        var entry = $('cfVaultDonationEntry');
+        var review = $('cfVaultDonationReview');
+        if (entry) entry.hidden = false;
+        if (review) review.hidden = true;
+        if (recovery) recovery.hidden = true;
+        var recoveryHash = $('cfVaultDonationTxHash');
+        if (recoveryHash) { recoveryHash.disabled = true; recoveryHash.value = ''; }
+        var panel = $('cfVaultDonationFormWrap');
+        if (panel) panel.hidden = true;
+        var button = $('cfVaultDonationOpen');
+        if (button) button.setAttribute('aria-expanded', 'false');
+        var statusClose = $('cfVaultDonationStatusClose');
+        if (statusClose) statusClose.hidden = true;
+        donationStatus('');
+        if (button && button.focus) button.focus();
+    }
+
+    function donationAmountBaseUnits(value, decimals) {
+        var text = String(value || '').trim();
+        if (!/^\d+(?:\.\d+)?$/.test(text)) throw new Error('Enter a valid G$ amount.');
+        var parts = text.split('.');
+        var places = Number(decimals);
+        var fraction = parts[1] || '';
+        if (!Number.isInteger(places) || places < 0 || places > 36 || fraction.length > places) {
+            throw new Error('Amount has too many decimal places for G$.');
+        }
+        var scale = 10n ** BigInt(places);
+        var base = BigInt(parts[0]) * scale
+            + BigInt((fraction + '0'.repeat(places)).slice(0, places) || '0');
+        if (base < 1000n * scale) throw new Error('The minimum donation is 1,000 G$.');
+        if (base > ((1n << 256n) - 1n)) throw new Error('Donation amount exceeds the token transaction limit.');
+        return base.toString();
+    }
+
+    function checkPendingVaultDonation(explicit) {
+        if (_vaultDonationBusy) return Promise.resolve(false);
+        var pending = explicit || readPendingVaultDonation();
+        if (!pending) {
+            donationStatus('No submitted donation transaction is saved on this device.', 'error');
+            return Promise.resolve(false);
+        }
+        _vaultDonationBusy = true;
+        var check = $('cfVaultDonationCheck');
+        if (check) check.hidden = true;
+        var statusClose = $('cfVaultDonationStatusClose');
+        if (statusClose) statusClose.hidden = false;
+        donationStatus('Checking the same submitted transaction. This will not send another transfer.');
+        function wait(ms) { return new Promise(function (resolve) { window.setTimeout(resolve, ms); }); }
+        function poll(attempt) {
+            return api('/community/api/vault-donations/confirm', {
+                method: 'POST',
+                body: JSON.stringify({ donation_id: pending.donation_id, tx_hash: pending.tx_hash })
+            }).then(function (result) {
+                var data = result.data || {};
+                if (data.success && data.status === 'confirmed') {
+                    clearPendingVaultDonation();
+                    _vaultDonationIntent = null;
+                    var entry = $('cfVaultDonationEntry');
+                    var review = $('cfVaultDonationReview');
+                    var recovery = $('cfVaultDonationRecovery');
+                    if (entry) entry.hidden = false;
+                    if (review) review.hidden = true;
+                    if (recovery) recovery.hidden = true;
+                    var recoveryHash = $('cfVaultDonationTxHash');
+                    if (recoveryHash) { recoveryHash.disabled = true; recoveryHash.value = ''; }
+                    donationStatus('Donation confirmed: ' + (data.amount_gd || '')
+                        + ' G$ sent to the Community Withdrawal Vault. Sytem has pinned your acknowledgment.', 'success');
+                    if (check) check.hidden = true;
+                    if (statusClose) statusClose.hidden = !!entry;
+                    loadFeed(true);
+                    return true;
+                }
+                if (data.status === 'pending' || data.status === 'confirming'
+                        || data.status === 'processing' || data.retryable) {
+                    var detail = data.confirmations != null
+                        ? ' (' + data.confirmations + '/' + data.required_confirmations + ' confirmations)'
+                        : '';
+                    donationStatus((data.message || 'Waiting for donation confirmation') + detail
+                        + '. Do not submit another transfer.');
+                    if (attempt < 19) return wait(3000).then(function () { return poll(attempt + 1); });
+                    donationStatus('The transaction is still being processed. Keep this hash and use “Check donation status”; do not send again.');
+                    if (check) check.hidden = false;
+                    return false;
+                }
+                donationStatus(data.error || 'Could not verify this transaction. Keep the hash and contact support before trying another transfer.', 'error');
+                if (check) check.hidden = false;
+                return false;
+            }).catch(function () {
+                if (attempt < 19) return wait(3000).then(function () { return poll(attempt + 1); });
+                donationStatus('Network confirmation is delayed. Use “Check donation status” later; do not send again.');
+                if (check) check.hidden = false;
+                return false;
+            });
+        }
+        return poll(0).then(function (confirmed) {
+            _vaultDonationBusy = false;
+            var submit = $('cfVaultDonationSubmit');
+            if (submit) submit.disabled = !!readPendingVaultDonation();
+            return confirmed;
+        });
+    }
+
+    function renderVaultDonationReview(intent) {
+        var entry = $('cfVaultDonationEntry');
+        var review = $('cfVaultDonationReview');
+        if (!entry || !review || !intent) return false;
+        $('cfVaultDonationReviewAmount').textContent = String(intent.amount_gd || '') + ' G$';
+        $('cfVaultDonationReviewName').textContent = String(intent.public_name || '');
+        $('cfVaultDonationReviewToken').textContent = String(intent.token_address || '');
+        $('cfVaultDonationReviewRecipient').textContent = String(intent.vault_address || '');
+        var linkedinCell = $('cfVaultDonationReviewLinkedIn');
+        var linkedin = String(intent.linkedin_url || '');
+        if (linkedinCell) {
+            linkedinCell.textContent = '';
+            if (/^https:\/\/(?:www\.)?linkedin\.com\/in\/[A-Za-z0-9_%.-]{1,120}\/?$/i.test(linkedin)) {
+                var link = el('a', null, linkedin);
+                link.href = linkedin;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                linkedinCell.appendChild(link);
+            } else {
+                linkedinCell.textContent = linkedin;
+            }
+        }
+        var network = $('cfVaultDonationReviewNetwork');
+        if (network) network.textContent = 'Celo Mainnet (' + String(intent.chain_id || 42220) + ')';
+        entry.hidden = true;
+        review.hidden = false;
+        var recovery = $('cfVaultDonationRecovery');
+        if (recovery) recovery.hidden = true;
+        donationStatus('Review every detail below. No transfer has been sent yet.');
+        var title = $('cfVaultDonationReviewTitle');
+        if (title && title.focus) title.focus();
+        return true;
+    }
+
+    function submitVaultDonation(event) {
+        if (event && event.preventDefault) event.preventDefault();
+        if (!WALLET) { requiresLogin(); return false; }
+        if (_vaultDonationBusy) return false;
+        if (readPendingVaultDonation()) {
+            donationStatus('A prior donation transaction is still being checked. Check its status before starting another donation.', 'error');
+            var check = $('cfVaultDonationCheck');
+            if (check) check.hidden = false;
+            return false;
+        }
+        if (_vaultDonationIntent) {
+            renderVaultDonationReview(_vaultDonationIntent);
+            return false;
+        }
+        var form = $('cfVaultDonationForm');
+        if (!form || !form.reportValidity()) return false;
+        var name = String(($('cfVaultDonationName') || {}).value || '').trim();
+        var linkedin = String(($('cfVaultDonationLinkedIn') || {}).value || '').trim();
+        var amount = String(($('cfVaultDonationAmount') || {}).value || '').trim();
+        var consent = $('cfVaultDonationConsent');
+        if (!consent || !consent.checked) {
+            donationStatus('Consent to the public acknowledgment is required.', 'error');
+            return false;
+        }
+        _vaultDonationBusy = true;
+        var submit = $('cfVaultDonationSubmit');
+        if (submit) submit.disabled = true;
+        var work = _vaultDonationConfig ? Promise.resolve(_vaultDonationConfig) : openVaultDonation().then(function (ok) {
+            if (!ok) throw new Error('Vault verification failed. No transfer was sent.');
+            return _vaultDonationConfig;
+        });
+        work.then(function (config) {
+            var amountBase = donationAmountBaseUnits(amount, config.decimals);
+            donationStatus('Preparing your review. No transfer has been sent yet.');
+            return api('/community/api/vault-donations/intent', {
+                method: 'POST',
+                body: JSON.stringify({ name: name, linkedin_url: linkedin, amount_gd: amount, consent: true })
+            }).then(function (result) {
+                if (!result.data || !result.data.success) {
+                    throw new Error((result.data && result.data.error) || 'Could not prepare the donation.');
+                }
+                var intent = result.data;
+                if (String(intent.amount_base_units) !== amountBase) {
+                    api('/community/api/vault-donations/cancel', {
+                        method: 'POST', body: JSON.stringify({ donation_id: intent.donation_id })
+                    });
+                    throw new Error('The prepared G$ amount changed. No transfer was sent; reload the verified vault details and try again.');
+                }
+                _vaultDonationIntent = intent;
+                if (!renderVaultDonationReview(intent)) {
+                    _vaultDonationIntent = null;
+                    throw new Error('Could not show the donation review. No transfer was sent.');
+                }
+            });
+        }).catch(function (error) {
+            _vaultDonationBusy = false;
+            donationStatus((error && error.message) || 'Could not prepare the donation. No transfer was sent.', 'error');
+            var retry = $('cfVaultDonationRetry');
+            if (_vaultDonationConfig && retry) retry.hidden = true;
+        }).then(function () {
+            _vaultDonationBusy = false;
+            if (submit) submit.disabled = !!readPendingVaultDonation();
+        });
+        return false;
+    }
+
+    function editVaultDonation() {
+        if (_vaultDonationBusy) return;
+        var intent = _vaultDonationIntent;
+        _vaultDonationIntent = null;
+        if (intent && intent.donation_id) {
+            api('/community/api/vault-donations/cancel', {
+                method: 'POST', body: JSON.stringify({ donation_id: intent.donation_id })
+            });
+        }
+        var entry = $('cfVaultDonationEntry');
+        var review = $('cfVaultDonationReview');
+        var recovery = $('cfVaultDonationRecovery');
+        if (entry) entry.hidden = false;
+        if (review) review.hidden = true;
+        if (recovery) recovery.hidden = true;
+        var recoveryHash = $('cfVaultDonationTxHash');
+        if (recoveryHash) { recoveryHash.disabled = true; recoveryHash.value = ''; }
+        donationStatus('You can edit the donation details. No transfer has been sent.');
+        var name = $('cfVaultDonationName');
+        if (name && name.focus) name.focus();
+    }
+
+    function setDonationReviewActionsDisabled(disabled) {
+        ['cfVaultDonationReviewEdit', 'cfVaultDonationReviewCancel', 'cfVaultDonationContinue']
+            .forEach(function (id) {
+                var button = $(id);
+                if (button) button.disabled = !!disabled;
+            });
+    }
+
+    function continueVaultDonationToWallet() {
+        if (!WALLET) { requiresLogin(); return Promise.resolve(false); }
+        if (_vaultDonationBusy) return Promise.resolve(false);
+        if (readPendingVaultDonation()) {
+            donationStatus('A prior transaction is still being checked. Do not send another transfer.', 'error');
+            return Promise.resolve(false);
+        }
+        var intent = _vaultDonationIntent;
+        if (!intent) {
+            donationStatus('Prepare and review a donation before opening your wallet.', 'error');
+            return Promise.resolve(false);
+        }
+        if (intent.expires_at && Date.now() >= Date.parse(intent.expires_at)) {
+            api('/community/api/vault-donations/cancel', {
+                method: 'POST', body: JSON.stringify({ donation_id: intent.donation_id })
+            });
+            _vaultDonationIntent = null;
+            var entry = $('cfVaultDonationEntry');
+            var review = $('cfVaultDonationReview');
+            if (entry) entry.hidden = false;
+            if (review) review.hidden = true;
+            donationStatus('The review request expired before wallet approval. No transfer was sent; review the details again.', 'error');
+            return Promise.resolve(false);
+        }
+        if (!window.P2PWallet || typeof window.P2PWallet.sendTx !== 'function') {
+            donationStatus('Wallet signing is unavailable. No transfer was sent.', 'error');
+            return Promise.resolve(false);
+        }
+        _vaultDonationBusy = true;
+        setDonationReviewActionsDisabled(true);
+        var sendStarted = false;
+        try {
+            window.P2PWallet.configure({
+                wallet: WALLET,
+                chainId: Number(intent.chain_id || 42220),
+                loginMethod: BOOT.loginMethod || ''
+            });
+        } catch (error) {
+            _vaultDonationBusy = false;
+            setDonationReviewActionsDisabled(false);
+            donationStatus((error && error.message) || 'Wallet signing is unavailable. No transfer was sent.', 'error');
+            return Promise.resolve(false);
+        }
+        donationStatus('Review and approve the exact transfer in your wallet.');
+        sendStarted = true;
+        return Promise.resolve().then(function () {
+            return window.P2PWallet.sendTx(
+                intent.token_address,
+                'function transfer(address to,uint256 value) returns (bool)',
+                [intent.vault_address, String(intent.amount_base_units)]
+            );
+        }).then(function (txHash) {
+            txHash = String(txHash || '').toLowerCase();
+            if (!/^0x[0-9a-f]{64}$/.test(txHash)) {
+                throw new Error('Wallet did not return a valid transaction hash.');
+            }
+            var pending = { donation_id: intent.donation_id, tx_hash: txHash };
+            savePendingVaultDonation(pending);
+            _vaultDonationIntent = null;
+            var entry = $('cfVaultDonationEntry');
+            var review = $('cfVaultDonationReview');
+            var recovery = $('cfVaultDonationRecovery');
+            if (entry) entry.hidden = true;
+            if (review) review.hidden = true;
+            if (recovery) recovery.hidden = true;
+            var recoveryHash = $('cfVaultDonationTxHash');
+            if (recoveryHash) { recoveryHash.disabled = true; recoveryHash.value = ''; }
+            _vaultDonationBusy = false;
+            return checkPendingVaultDonation(pending);
+        }).catch(function (error) {
+            _vaultDonationBusy = false;
+            var code = String(error && (error.code || (error.data && error.data.code)) || '');
+            var message = String(error && error.message || '');
+            var rejected = code === '4001' || /user rejected|user denied|request rejected/i.test(message);
+            if (rejected) {
+                setDonationReviewActionsDisabled(false);
+                donationStatus('You cancelled the wallet request. No transfer was sent; you can continue or edit these details.');
+                return false;
+            }
+            if (sendStarted) {
+                var recovery = $('cfVaultDonationRecovery');
+                if (recovery) recovery.hidden = false;
+                var recoveryHash = $('cfVaultDonationTxHash');
+                if (recoveryHash) { recoveryHash.disabled = false; recoveryHash.focus(); }
+                setDonationReviewActionsDisabled(true);
+                donationStatus('The wallet did not return a transaction hash. Do not send again if the transfer appears in wallet activity; paste its hash below for verification.', 'error');
+            } else {
+                setDonationReviewActionsDisabled(false);
+                donationStatus(message || 'Wallet signing failed. No transfer was sent.', 'error');
+            }
+            return false;
+        });
+    }
+
+    function resumeVaultDonationFromHash() {
+        if (_vaultDonationBusy) return Promise.resolve(false);
+        if (!_vaultDonationIntent) {
+            donationStatus('There is no prepared donation request to match this transaction.', 'error');
+            return Promise.resolve(false);
+        }
+        var input = $('cfVaultDonationTxHash');
+        var txHash = String((input && input.value) || '').trim().toLowerCase();
+        if (!/^0x[0-9a-f]{64}$/.test(txHash)) {
+            if (input && input.reportValidity) input.reportValidity();
+            donationStatus('Enter a valid Celo transaction hash from your wallet activity.', 'error');
+            return Promise.resolve(false);
+        }
+        var pending = { donation_id: _vaultDonationIntent.donation_id, tx_hash: txHash };
+        savePendingVaultDonation(pending);
+        _vaultDonationIntent = null;
+        var entry = $('cfVaultDonationEntry');
+        var review = $('cfVaultDonationReview');
+        var recovery = $('cfVaultDonationRecovery');
+        if (entry) entry.hidden = true;
+        if (review) review.hidden = true;
+        if (recovery) recovery.hidden = true;
+        if (input) { input.disabled = true; input.value = ''; }
+        return checkPendingVaultDonation(pending);
+    }
+
     function init() {
         // Guests read the feed too — reading is public, only writing is gated.
         // The composer is absent from a guest's DOM, so bind()'s null-checks
@@ -3150,6 +3693,24 @@
                 if (event && event.detail) event.detail.refreshPromise = refresh;
             });
         }
+        var pendingDonation = readPendingVaultDonation();
+        if (pendingDonation) {
+            var donationPanel = $('cfVaultDonationFormWrap');
+            var checkDonation = $('cfVaultDonationCheck');
+            var donationOpener = $('cfVaultDonationOpen');
+            var donationEntry = $('cfVaultDonationEntry');
+            var donationReview = $('cfVaultDonationReview');
+            var donationRecovery = $('cfVaultDonationRecovery');
+            if (donationPanel) donationPanel.hidden = false;
+            if (donationOpener) donationOpener.setAttribute('aria-expanded', 'true');
+            if (checkDonation) checkDonation.hidden = false;
+            if (donationEntry) donationEntry.hidden = true;
+            if (donationReview) donationReview.hidden = true;
+            if (donationRecovery) donationRecovery.hidden = true;
+            var donationHash = $('cfVaultDonationTxHash');
+            if (donationHash) { donationHash.disabled = true; donationHash.value = ''; }
+            checkPendingVaultDonation(pendingDonation);
+        }
         loadFeed(true);
     }
 
@@ -3159,6 +3720,15 @@
         loadRewards: loadRewards,
         syncTodayHub: syncTodayHub,
         loadMore: loadMore,
+        loadMorePinnedDonations: loadMorePinnedDonations,
+        openVaultDonation: openVaultDonation,
+        retryVaultDonationConfig: retryVaultDonationConfig,
+        closeVaultDonation: closeVaultDonation,
+        submitVaultDonation: submitVaultDonation,
+        editVaultDonation: editVaultDonation,
+        continueVaultDonationToWallet: continueVaultDonationToWallet,
+        resumeVaultDonationFromHash: resumeVaultDonationFromHash,
+        checkPendingVaultDonation: checkPendingVaultDonation,
         submitPost: submitPost,
         setDailyPrompt: setDailyPrompt,
         answerPrompt: answerPrompt,
