@@ -10,12 +10,12 @@
     <meta property="og:site_name" content="GoodMarket">
     <meta property="og:title" content="GoodMarket — Community Wallet for the G$ Token">
     <meta property="og:description" content="Quizzes, daily tasks, minigames & more — earn real G$ and manage it in one wallet. Gas-free, community-built on Celo.">
-    <meta property="og:image" content="{{ request.url_root }}static/icons/goodmarket-icon.png">
+    <meta property="og:image" content="{{ request.url_root }}static/icons/goodmarket-only-512.png">
     <meta property="og:url" content="{{ request.url_root }}">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="GoodMarket — Community Wallet for the G$ Token">
     <meta name="twitter:description" content="Quizzes, daily tasks, minigames & more — earn real G$ and manage it in one wallet. Gas-free, community-built on Celo.">
-    <meta name="twitter:image" content="{{ request.url_root }}static/icons/goodmarket-icon.png">
+    <meta name="twitter:image" content="{{ request.url_root }}static/icons/goodmarket-only-512.png">
     <!-- Telegram Mini App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
@@ -25,12 +25,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GoodMarket">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/svg+xml" href="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
-    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-only-192.png?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" href="/static/icons/goodmarket-only-192.png?v={{ ASSET_VERSION }}">
     <!-- Shared "Install app" (PWA) banner styles. -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pwa-install.css', v=ASSET_VERSION) }}">
-
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
@@ -2476,7 +2474,7 @@
     <div id="gmWelcomeLoader" class="gm-welcome-loader" role="status" aria-live="polite" aria-label="GoodMarket loading">
         <div class="gm-loader-card">
             <div class="gm-loader-orb" aria-hidden="true">
-                <img class="gm-loader-mark" src="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}" alt="" width="74" height="74">
+                <img class="gm-loader-mark" src="/static/icons/goodmarket-only-192.png?v={{ ASSET_VERSION }}" alt="" width="74" height="74">
             </div>
             <h1 class="gm-loader-title">Welcome to GoodMarket</h1>
             <p class="gm-loader-subtitle">Your everyday G$ wallet on Celo — earn, save, swap and spend.</p>
