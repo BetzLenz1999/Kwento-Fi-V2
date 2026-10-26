@@ -2094,10 +2094,25 @@
         }).then(function () { _withdrawalHistory.busy = false; });
     }
 
+    function syncTodayHub() {
+        var hub = $('cfTodayHub');
+        if (!hub) return;
+        var cardIds = ['cfDailyPrompt', 'cfDailyLearn', 'cfLearnDone', 'cfEarn'];
+        var hasVisibleCard = cardIds.some(function (id) {
+            var card = $(id);
+            return !!(card && !card.hidden);
+        });
+        hub.hidden = !hasVisibleCard;
+    }
+
     function renderRewards(data) {
         var card = $('cfEarn');
         if (!card) return;
-        if (!data || !data.enabled) { card.hidden = true; return; }
+        if (!data || !data.enabled) {
+            card.hidden = true;
+            syncTodayHub();
+            return;
+        }
 
         var amount = Number(data.balance_gd) || 0;
         var minimum = Number(data.min_payout_gd) || 0;
@@ -2253,6 +2268,7 @@
             } else loadWithdrawalHistory(_withdrawalHistory.loaded);
         };
         card.hidden = false;
+        syncTodayHub();
     }
 
     async function checkWithdrawalEligibility() {
@@ -2883,6 +2899,7 @@
         init: init,
         refresh: refresh,
         loadRewards: loadRewards,
+        syncTodayHub: syncTodayHub,
         loadMore: loadMore,
         submitPost: submitPost,
         setDailyPrompt: setDailyPrompt,
