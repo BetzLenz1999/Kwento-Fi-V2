@@ -35,6 +35,12 @@
         if (typeof window.openGoodMarketGetStarted === 'function') window.openGoodMarketGetStarted();
     }
 
+    function syncTodayHub() {
+        if (window.GMCommunity && typeof window.GMCommunity.syncTodayHub === 'function') {
+            window.GMCommunity.syncTodayHub();
+        }
+    }
+
     function loadPrompt() {
         var card = $('cfDailyPrompt');
         if (!card) return Promise.resolve();
@@ -61,7 +67,7 @@
                 answer.setAttribute('aria-disabled', prompt.has_responded ? 'true' : 'false');
             }
             card.hidden = false;
-        }).catch(function () { card.hidden = true; });
+        }).catch(function () { card.hidden = true; }).then(syncTodayHub);
     }
 
     function renderLearnMessage(message, actionLabel, action) {
@@ -347,7 +353,10 @@
             var title = $('cfDailyLearnTitle');
             if (title) title.textContent = 'Answer today’s 2 questions';
             renderQuestion(data);
-        }).catch(function () { card.hidden = true; });
+        }).catch(function () {
+            card.hidden = true;
+            hideLearnDone();
+        }).then(syncTodayHub);
     }
 
     /* ── "Daily Learn done today" strip ──────────────────────────────────────
