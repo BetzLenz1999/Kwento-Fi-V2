@@ -170,8 +170,40 @@
     {% else %}
 
     <!-- ── Composer ─────────────────────────────────────────────────────── -->
-    <section class="cf-composer" id="cfComposer" aria-labelledby="cfComposerTitle">
+    <section class="cf-composer is-collapsed" id="cfComposer" aria-labelledby="cfComposerTitle">
         <h2 class="cf-sr-only" id="cfComposerTitle">Create a post</h2>
+
+        {# Resting state: ONE row. The composer used to be permanently expanded,
+           so the caption field, the attach button and Post occupied the first
+           screen on a phone before a single post was visible.
+
+           This is a <button>, not a <div>: it is the composer's entry point, so
+           it must be keyboard-reachable and must announce what it does.
+           `aria-expanded` is kept in sync by the bundle.
+
+           The avatar is duplicated here (the body has its own) because only one
+           of the two is ever rendered. Neither shows a wallet address — the
+           username, or the neutral initial. #}
+        <button type="button" class="cf-composer-summary" id="cfComposerSummary"
+                aria-controls="cfComposerBody" aria-expanded="false"
+                onclick="GMCommunity.expandComposer()">
+            <span class="cf-avatar cf-composer-summary-avatar" aria-hidden="true">
+                {%- if avatar_url -%}
+                <img class="cf-avatar-img" src="{{ url_for('community_feed.api_profile_avatar', username=username) }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
+                {%- else -%}
+                {{ (username or 'You')[0]|upper }}
+                {%- endif -%}
+            </span>
+            <span class="cf-composer-summary-text">Share something with the community…</span>
+            <span class="cf-composer-summary-icon" aria-hidden="true">🖼</span>
+        </button>
+
+        {# The expanded composer. Every id that the bundle, the smoke harness and
+           the content tests drive (cfCaption, cfPostBtn, cfFileInput,
+           cfPreviews, cfUploadStatus, cfCounter, cfComposerAvatar) is kept
+           inside this wrapper — collapsing is a class toggle on #cfComposer,
+           never a removal, so no contract is broken by hiding it. #}
+        <div class="cf-composer-body" id="cfComposerBody">
         <div class="cf-composer-head">
             {# Profile picture. Tapping the ring opens the picture modal, so a
                member can upload/change/remove their picture without leaving the
@@ -275,6 +307,15 @@
         {% if not storage_ready %}
         <p class="cf-warn">Media uploads are not configured on this deployment yet — you can still post text.</p>
         {% endif %}
+
+        {# Explicit escape hatch. Collapsing is otherwise automatic (only when the
+           composer is empty), so a member who opened it by accident needs a way
+           back that does not require emptying the caption first. #}
+        <div class="cf-composer-collapse-row">
+            <button type="button" class="cf-composer-collapse" id="cfComposerCollapse"
+                    onclick="GMCommunity.collapseComposer()">Cancel</button>
+        </div>
+        </div><!-- /#cfComposerBody -->
     </section>
     {% endif %}
 
