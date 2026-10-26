@@ -213,7 +213,7 @@ def _comment_post_owner(supabase, post_id) -> str | None:
     try:
         result = (
             supabase.table("community_feed_posts")
-            .select("wallet_address")
+            .select("wallet_address,post_type")
             .eq("id", int(post_id))
             .limit(1)
             .execute()
@@ -222,7 +222,9 @@ def _comment_post_owner(supabase, post_id) -> str | None:
         logger.warning("community_feed: post owner lookup failed: %s", exc)
         return None
     rows = _rows(result)
-    return rows[0].get("wallet_address") if rows else None
+    if not rows or rows[0].get("post_type") == "system_vault_donation":
+        return None
+    return rows[0].get("wallet_address")
 
 
 def rewards_summary(wallet: str | None) -> dict:
@@ -522,17 +524,17 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
             "body": body,
             "avatar_url": None,
             "media": [],
-            "reaction_count": 0,
-            "reaction_breakdown": {},
-            "comment_count": 0,
+            "reaction_count": int(row.get("reaction_count") or 0),
+            "reaction_breakdown": _clean_breakdown(reactions),
+            "comment_count": int(row.get("comment_count") or 0),
             "prompt_id": None,
             "badges": [],
-            "my_reaction": None,
+            "my_reaction": my_reaction,
             "is_mine": False,
             "is_following": False,
             "is_edited": False,
             "is_pinned": bool(row.get("is_pinned")),
-            "is_interactive": False,
+            "is_interactive": True,
             "created_at": row.get("created_at"),
             "edited_at": None,
             "donor_name": donor_name,
@@ -1018,11 +1020,20 @@ def get_pinned_donation_feed(viewer: str | None = None,
         return {"success": False, "error": "Could not load pinned donations", "posts": []}
     has_more = len(rows) > size
     rows = rows[:size]
-    donations = _donation_rows_for_posts(
-        supabase, [row.get("id") for row in rows if row.get("id") is not None])
-    posts = [_public_post(row, [], viewer, donation=donations[int(row["id"])])
-             for row in rows
-             if row.get("id") is not None and int(row["id"]) in donations]
+    post_ids = [row.get("id") for row in rows if row.get("id") is not None]
+    donations = _donation_rows_for_posts(supabase, post_ids)
+    viewer_reactions = _reactions_for_posts(supabase, post_ids, viewer)
+    reaction_breakdowns = _reaction_breakdowns_for_posts(supabase, post_ids)
+    posts = [
+        _public_post(
+            row, [], viewer,
+            my_reaction=viewer_reactions.get(row.get("id")),
+            reactions=reaction_breakdowns.get(row.get("id")),
+            donation=donations[int(row["id"])],
+        )
+        for row in rows
+        if row.get("id") is not None and int(row["id"]) in donations
+    ]
     return {
         "success": True,
         "posts": posts,
@@ -1134,8 +1145,12 @@ def get_post(post_id: int, viewer: str | None = None) -> dict:
         donation = donations.get(int(row["id"]))
         if not donation or not donation.get("tx_hash"):
             return {"success": False, "error": "Post not found", "code": "not_found"}
+        reactions = _reactions_for_posts(supabase, [row.get("id")], viewer)
+        breakdown = _reaction_breakdowns_for_posts(supabase, [row.get("id")])
         return {"success": True,
-                "post": _public_post(row, [], viewer, donation=donation)}
+                "post": _public_post(
+                    row, [], viewer, reactions.get(row.get("id")),
+                    reactions=breakdown.get(row.get("id")), donation=donation)}
     media = _media_for_posts(supabase, [row.get("id")]).get(row.get("id"), [])
     reactions = _reactions_for_posts(supabase, [row.get("id")], viewer)
     avatar = _avatars_for_wallets(
@@ -1964,8 +1979,8 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
     post = _load_visible_post(supabase, post_id)
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
-    if post.get("post_type") == "system_vault_donation":
-        return {"success": False, "error": "System donation posts are read-only.", "code": "read_only"}
+    post_owner = (None if post.get("post_type") == "system_vault_donation"
+                  else post.get("wallet_address"))
 
     previous = _current_reaction(supabase, post_id, wallet)
     if previous == reaction:
@@ -2009,7 +2024,7 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
     if not previous:
         try:
             reward_outcome = rewards.on_reaction_added(
-                wallet, post_id, post.get("wallet_address"),
+                wallet, post_id, post_owner,
                 event_created_at=_persisted_reward_time(
                     supabase, "community_feed_reactions",
                     {"post_id": int(post_id), "wallet_address": wallet.lower()},
@@ -2024,7 +2039,7 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
     try:
         from . import badges as community_badges
         community_badges.on_reaction_added(wallet, post_id, client=supabase)
-        owner_wallet = (post.get("wallet_address") or "").lower()
+        owner_wallet = (post_owner or "").lower()
         if owner_wallet and owner_wallet != wallet.lower():
             community_badges.on_reaction_added(owner_wallet, post_id, client=supabase)
     except Exception as exc:  # noqa: BLE001 - badges never fail a reaction
@@ -2047,8 +2062,8 @@ def clear_reaction(wallet: str, post_id: int, *, _supabase=None,
     post = _post or _load_visible_post(supabase, post_id)
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
-    if post.get("post_type") == "system_vault_donation":
-        return {"success": False, "error": "System donation posts are read-only.", "code": "read_only"}
+    post_owner = (None if post.get("post_type") == "system_vault_donation"
+                  else post.get("wallet_address"))
 
     previous = _current_reaction(supabase, post_id, wallet)
     if not previous:
@@ -2071,7 +2086,7 @@ def clear_reaction(wallet: str, post_id: int, *, _supabase=None,
     # ledger's unique `reverses_ledger_id` makes a replayed undo a no-op.
     try:
         reward_outcome = rewards.on_reaction_removed(
-            wallet, post_id, post.get("wallet_address"), _supabase=supabase)
+            wallet, post_id, post_owner, _supabase=supabase)
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_feed: reward reversal failed: %s", exc)
         reward_outcome = {"status": "not_credited", "reason": "reward_unavailable"}
@@ -2186,8 +2201,8 @@ def add_comment(wallet: str, post_id: int, body: str,
     post = _load_visible_post(supabase, post_id)
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
-    if post.get("post_type") == "system_vault_donation":
-        return {"success": False, "error": "System donation posts are read-only.", "code": "read_only"}
+    post_owner = (None if post.get("post_type") == "system_vault_donation"
+                  else post.get("wallet_address"))
 
     parent = None
     if parent_comment_id not in (None, ""):
@@ -2254,7 +2269,7 @@ def add_comment(wallet: str, post_id: int, body: str,
     reward_outcome = {"status": "not_credited", "reason": "reward_unavailable"}
     try:
         reward_outcome = rewards.on_comment_added(
-            wallet, rows[0].get("id"), post_id, post.get("wallet_address"),
+            wallet, rows[0].get("id"), post_id, post_owner,
             event_created_at=_persisted_reward_time(
                 supabase, "community_feed_comments", {"id": rows[0].get("id")},
                 rows[0].get("created_at")),
@@ -2270,7 +2285,7 @@ def add_comment(wallet: str, post_id: int, body: str,
                if parent else None)
     public_comment = _public_comment(
         rows[0], wallet, avatar_url=avatar,
-        post_owner=post.get("wallet_address"))
+        post_owner=post_owner)
     public_comment["reply_to_username"] = (
         (mention or "").strip().lstrip("@") or None)
     return {"success": True,
@@ -2284,6 +2299,8 @@ def _notify_comment_reply(*, actor_wallet: str, actor_username: str,
     actor = (actor_wallet or "").lower()
     parent_wallet = (parent.get("wallet_address") or "").lower()
     post_wallet = (post.get("wallet_address") or "").lower()
+    if post.get("post_type") == "system_vault_donation":
+        post_wallet = ""
     recipients: dict[str, str] = {}
     if parent_wallet and parent_wallet != actor:
         recipients[parent_wallet] = "parent"
@@ -2340,8 +2357,6 @@ def get_comments(post_id: int, viewer: str | None = None, limit: int = 1000) -> 
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found",
                 "comments": []}
-    if post.get("post_type") == "system_vault_donation":
-        return {"success": True, "comments": []}
     try:
         result = (
             supabase.table("community_feed_comments")
