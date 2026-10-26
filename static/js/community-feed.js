@@ -2018,6 +2018,82 @@
     // append-only ledger, fetched from the server; the client never computes
     // or stores it. Refreshed after every earning action so the number moves
     // as the user reacts and comments.
+    var _withdrawalHistory = { items: [], hasMore: false, cursor: null, loaded: false, busy: false };
+
+    function renderWithdrawalHistoryItems(items) {
+        var list = $('cfEarnHistoryList');
+        if (!list) return;
+        items.forEach(function (item) {
+            var li = el('li', 'cf-earn-history-item');
+            var detail = el('div', 'cf-earn-history-detail');
+            var amount = Number(item.amount_gd);
+            detail.appendChild(el('strong', 'cf-earn-history-amount',
+                (Number.isFinite(amount) ? formatGd(amount) : String(item.amount_gd || '')) + ' G$'));
+            var timestamp = item.timestamp_utc ? new Date(item.timestamp_utc) : null;
+            var dateText = timestamp && !Number.isNaN(timestamp.getTime())
+                ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(timestamp)
+                : 'Date unavailable';
+            detail.appendChild(el('time', 'cf-earn-history-date', dateText));
+            li.appendChild(detail);
+            var state = item.status === 'confirmed' ? 'Confirmed' : 'Confirming';
+            li.appendChild(el('span', 'cf-earn-history-state', state));
+            var hash = String(item.tx_hash || '');
+            if (/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+                var link = el('a', 'cf-earn-history-link', 'View transaction');
+                link.href = 'https://celoscan.io/tx/' + hash;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.setAttribute('aria-label', 'View transaction ' + hash + ' on CeloScan (opens in a new tab)');
+                li.appendChild(link);
+            }
+            list.appendChild(li);
+        });
+    }
+
+    function loadWithdrawalHistory(older) {
+        var message = $('cfEarnHistoryMessage');
+        var list = $('cfEarnHistoryList');
+        var more = $('cfEarnHistoryMore');
+        if (_withdrawalHistory.busy || !WALLET) return;
+        _withdrawalHistory.busy = true;
+        if (more) { more.disabled = true; more.textContent = 'Loading…'; }
+        if (message) message.textContent = older ? 'Loading older transactions…' : 'Loading transaction history…';
+        var url = '/community/api/rewards/withdrawals/history?limit=20';
+        if (older && _withdrawalHistory.cursor) {
+            url += '&before_block=' + encodeURIComponent(_withdrawalHistory.cursor.block_number)
+                + '&before_log_index=' + encodeURIComponent(_withdrawalHistory.cursor.log_index);
+        }
+        api(url).then(function (result) {
+            var data = result && result.data;
+            if (!result.ok || !data || !data.success || !Array.isArray(data.items)) {
+                throw new Error((data && data.error) || 'Could not load transaction history.');
+            }
+            if (!older) list.textContent = '';
+            renderWithdrawalHistoryItems(data.items);
+            _withdrawalHistory.loaded = true;
+            _withdrawalHistory.hasMore = data.has_more === true;
+            _withdrawalHistory.cursor = data.next_cursor || null;
+            _withdrawalHistory.retryOlder = false;
+            if (message) {
+                message.textContent = !data.items.length
+                    ? (data.has_more
+                        ? 'No withdrawals found in this scanned range. Load older to continue.'
+                        : (older ? 'No older withdrawals.' : 'No confirmed withdrawals yet.'))
+                    : '';
+            }
+            if (more) {
+                more.hidden = !_withdrawalHistory.hasMore;
+                more.disabled = false;
+                more.textContent = 'Load older';
+            }
+        }).catch(function (error) {
+            if (message) message.textContent = (error && error.message ? error.message : 'Could not load transaction history.') + ' Select to retry.';
+            if (more) { more.hidden = false; more.disabled = false; more.textContent = older ? 'Retry loading older' : 'Retry'; }
+            // Retry button shares this action; remember whether this was a next-page request.
+            _withdrawalHistory.retryOlder = !!older;
+        }).then(function () { _withdrawalHistory.busy = false; });
+    }
+
     function renderRewards(data) {
         var card = $('cfEarn');
         if (!card) return;
@@ -2156,6 +2232,26 @@
             withdrawRow.hidden = !!data.is_guest || data.eligible === false || !showBalance;
         }
         if (withdrawStatus) withdrawStatus.hidden = true;
+        var history = $('cfEarnHistory');
+        var historyToggle = $('cfEarnHistoryToggle');
+        var historyPanel = $('cfEarnHistoryPanel');
+        if (history) history.hidden = !!data.is_guest || !WALLET;
+        if (historyToggle) {
+            historyToggle.hidden = !!data.is_guest || !WALLET;
+            historyToggle.onclick = function () {
+                var expanded = historyToggle.getAttribute('aria-expanded') === 'true';
+                historyToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                historyPanel.hidden = expanded;
+                if (!expanded && !_withdrawalHistory.loaded) loadWithdrawalHistory(false);
+            };
+        }
+        var historyMore = $('cfEarnHistoryMore');
+        if (historyMore) historyMore.onclick = function () {
+            if (_withdrawalHistory.retryOlder) {
+                _withdrawalHistory.retryOlder = false;
+                loadWithdrawalHistory(true);
+            } else loadWithdrawalHistory(_withdrawalHistory.loaded);
+        };
         card.hidden = false;
     }
 
@@ -2181,6 +2277,17 @@
                 if (confirmed && confirmed.status === 'completed') {
                     try { localStorage.removeItem(key); } catch (_) {}
                     setStatus('Withdrawal confirmed. Your Community ledger balance is updating.');
+                    if (_withdrawalHistory.loaded) {
+                        _withdrawalHistory.loaded = false;
+                        var historyList = $('cfEarnHistoryList');
+                        var historyMore = $('cfEarnHistoryMore');
+                        if (historyList) historyList.textContent = '';
+                        if (historyMore) { historyMore.hidden = true; historyMore.textContent = 'Load older'; }
+                        var historyToggle = $('cfEarnHistoryToggle');
+                        if (historyToggle && historyToggle.getAttribute('aria-expanded') === 'true') {
+                            loadWithdrawalHistory(false);
+                        }
+                    }
                     await loadRewards();
                     return true;
                 }
@@ -2748,7 +2855,21 @@
         bind();
         renderNav();
         loadMessageUnread();
-        loadRewards();
+        loadRewards().then(function () {
+            if (!WALLET) return;
+            var pending = null;
+            try {
+                pending = JSON.parse(localStorage.getItem(
+                    'gm-community-withdrawal:' + String(WALLET).toLowerCase()) || 'null');
+            } catch (_) {}
+            // Reconcile only an already-submitted member transaction. The
+            // confirm endpoint verifies its exact authorization and receipt;
+            // this never signs or submits another on-chain withdrawal.
+            if (pending && /^0x[0-9a-f]{64}$/i.test(String(pending.withdrawal_id || ''))
+                    && /^0x[0-9a-f]{64}$/i.test(String(pending.tx_hash || ''))) {
+                checkWithdrawalEligibility();
+            }
+        });
         if (typeof window.addEventListener === 'function') {
             window.addEventListener('gm:daily-learn-completed', function (event) {
                 var refresh = loadRewards();
