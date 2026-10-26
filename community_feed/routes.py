@@ -33,6 +33,7 @@ from . import reward_settings
 from . import service as svc
 from . import storage
 from . import vault_donations
+from . import notifications as community_notifications
 from . import withdrawals as withdrawal_vault
 
 logger = logging.getLogger(__name__)
@@ -354,6 +355,97 @@ def api_state():
         "max_caption": svc.MAX_CAPTION,
         "max_media": svc.MAX_MEDIA_PER_POST,
     })
+
+
+def _private_notification_json(payload: dict, status: int = 200):
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Vary"] = "Cookie"
+    return response, status
+
+
+@community_feed_bp.route("/api/notifications", methods=["GET"])
+def api_notifications():
+    """Read the authenticated member's private Community activity inbox."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_notification_json({
+            "success": False, "code": "auth_required", "error": "Not authenticated",
+        }, 401)
+    raw_limit = request.args.get("limit", "20")
+    raw_cursor = request.args.get("cursor")
+    if not re.fullmatch(r"\d{1,2}", raw_limit or ""):
+        return _private_notification_json({
+            "success": False, "code": "invalid_limit", "error": "Invalid notification limit.",
+        }, 400)
+    limit = int(raw_limit)
+    if not 1 <= limit <= 50:
+        return _private_notification_json({
+            "success": False, "code": "invalid_limit", "error": "Invalid notification limit.",
+        }, 400)
+    cursor = None
+    if raw_cursor is not None:
+        if not re.fullmatch(r"\d{1,19}", raw_cursor or ""):
+            return _private_notification_json({
+                "success": False, "code": "invalid_cursor", "error": "Invalid notification cursor.",
+            }, 400)
+        cursor = int(raw_cursor)
+        if not 1 <= cursor <= 9_223_372_036_854_775_807:
+            return _private_notification_json({
+                "success": False, "code": "invalid_cursor", "error": "Invalid notification cursor.",
+            }, 400)
+    wait = _throttle(f"community-notifications:{wallet}", 10, allow=30)
+    if wait:
+        return _private_notification_json({
+            "success": False, "code": "rate_limited", "error": "Please wait before refreshing notifications.",
+            "retry_after": wait,
+        }, 429)
+    result = community_notifications.list_for_wallet(
+        wallet, limit=limit, before_id=cursor)
+    status = 503 if result.get("code") == "db" else (400 if result.get("code") == "cursor" else 200)
+    return _private_notification_json(result, status)
+
+
+@community_feed_bp.route("/api/notifications/<int:notification_id>/read", methods=["POST"])
+def api_notification_mark_read(notification_id: int):
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_notification_json({
+            "success": False, "code": "auth_required", "error": "Not authenticated",
+        }, 401)
+    wait = _throttle(f"community-notifications:{wallet}", 10, allow=30)
+    if wait:
+        return _private_notification_json({
+            "success": False, "code": "rate_limited", "error": "Please wait before updating notifications.",
+            "retry_after": wait,
+        }, 429)
+    result = community_notifications.mark_one_read(wallet, notification_id)
+    status = 503 if result.get("code") == "db" else (400 if result.get("code") == "id" else 200)
+    return _private_notification_json(result, status)
+
+
+@community_feed_bp.route("/api/notifications/read-all", methods=["POST"])
+def api_notifications_mark_all_read():
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_notification_json({
+            "success": False, "code": "auth_required", "error": "Not authenticated",
+        }, 401)
+    wait = _throttle(f"community-notifications:{wallet}", 10, allow=30)
+    if wait:
+        return _private_notification_json({
+            "success": False, "code": "rate_limited", "error": "Please wait before updating notifications.",
+            "retry_after": wait,
+        }, 429)
+    result = community_notifications.mark_all_read(wallet)
+    status = 503 if result.get("code") == "db" else 200
+    return _private_notification_json(result, status)
 
 
 @community_feed_bp.route("/api/rewards", methods=["GET"])
