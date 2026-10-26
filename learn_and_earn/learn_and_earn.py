@@ -411,7 +411,7 @@ class LearnEarnQuizManager:
         self.questions_per_quiz = 10
         self.time_per_question = 20
         self.max_reward_per_quiz = 2000
-        self.community_daily_learn_reward_per_correct = 1.0
+        self.community_daily_learn_reward_per_correct = 50.0
         self.max_retries = 3
         self.cooldown_hours = 24  # 24-hour cooldown between rewarded quizzes
 
@@ -436,7 +436,7 @@ class LearnEarnQuizManager:
                 self.time_per_question = settings.get('time_per_question', 20)
                 self.max_reward_per_quiz = settings.get('max_reward_per_quiz', 2000)
                 self.community_daily_learn_reward_per_correct = float(
-                    settings.get('community_daily_learn_reward_per_correct', 1) or 0
+                    settings.get('community_daily_learn_reward_per_correct', 50) or 0
                 )
                 self.cooldown_hours = max(1, int(settings.get('cooldown_hours',24)))
                 logger.info(f"✅ Loaded quiz settings: {self.questions_per_quiz} questions, {self.time_per_question}s per question, {self.max_reward_per_quiz} G$ max reward, {self.cooldown_hours}h cooldown")
@@ -446,7 +446,7 @@ class LearnEarnQuizManager:
                     'questions_per_quiz': 10,
                     'time_per_question': 20,
                     'max_reward_per_quiz': 2000,
-                    'community_daily_learn_reward_per_correct': 1,
+                    'community_daily_learn_reward_per_correct': 50,
                     'cooldown_hours': 24
                 }
                 supabase.table('quiz_settings').insert(default_settings).execute()
@@ -468,27 +468,27 @@ class LearnEarnQuizManager:
                              max_reward_per_quiz=None, cooldown_hours=None,
                              community_daily_learn_reward_per_correct=None):
         try:
+            if community_daily_learn_reward_per_correct is not None:
+                return {'success': False, 'error': 'Use the dedicated audited Community reward settings save'}
             supabase = get_supabase_client()
             if not supabase:
                 return {'success': False, 'error': 'Database not available'}
 
             update_data = {}
+            next_values = {}
             if questions_per_quiz is not None:
                 update_data['questions_per_quiz'] = questions_per_quiz
-                self.questions_per_quiz = questions_per_quiz
+                next_values['questions_per_quiz'] = questions_per_quiz
             if time_per_question is not None:
                 update_data['time_per_question'] = time_per_question
-                self.time_per_question = time_per_question
+                next_values['time_per_question'] = time_per_question
             if max_reward_per_quiz is not None:
                 update_data['max_reward_per_quiz'] = max_reward_per_quiz
-                self.max_reward_per_quiz = max_reward_per_quiz
-            if community_daily_learn_reward_per_correct is not None:
-                reward_rate = round(float(community_daily_learn_reward_per_correct), 4)
-                update_data['community_daily_learn_reward_per_correct'] = reward_rate
-                self.community_daily_learn_reward_per_correct = reward_rate
+                next_values['max_reward_per_quiz'] = max_reward_per_quiz
             if cooldown_hours is not None:
-                update_data['cooldown_hours'] = max(1, int(cooldown_hours))
-                self.cooldown_hours = max(1, int(cooldown_hours))
+                cooldown = max(1, int(cooldown_hours))
+                update_data['cooldown_hours'] = cooldown
+                next_values['cooldown_hours'] = cooldown
 
             if not update_data:
                 return {'success': False, 'error': 'No settings to update'}
@@ -499,10 +499,20 @@ class LearnEarnQuizManager:
             if result.data and len(result.data) > 0:
                 # Update existing settings
                 supabase.table('quiz_settings').update(update_data).eq('id', result.data[0]['id']).execute()
+                saved = supabase.table('quiz_settings').select('*').eq('id', result.data[0]['id']).limit(1).execute()
             else:
                 # Insert new settings
-                supabase.table('quiz_settings').insert(update_data).execute()
+                saved = supabase.table('quiz_settings').insert(update_data).execute()
 
+            saved_rows = getattr(saved, 'data', None) or []
+            if not saved_rows or any(saved_rows[0].get(key) != value for key, value in update_data.items()):
+                return {'success': False, 'error': 'Quiz settings write could not be confirmed; cached values were not changed'}
+
+            # Only publish the new process-local values after the DB mutation
+            # has completed.  A failed write must not make the next read report
+            # a configuration that was never persisted.
+            for name, value in next_values.items():
+                setattr(self, name, value)
             logger.info(f"✅ Updated quiz settings: {update_data}")
             return {'success': True, 'settings': self.get_quiz_settings()}
         except Exception as e:
