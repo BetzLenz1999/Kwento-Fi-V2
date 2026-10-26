@@ -256,6 +256,25 @@
              or guest asks to expand it. -->
         <ul class="cf-earn-rates" id="cfEarnRates" hidden></ul>
         <p class="cf-earn-note" id="cfEarnNote" hidden></p>
+        {% if not is_guest %}
+        {# Revealed only after the authenticated status endpoint confirms a
+           signed, claimed reservation. This never signs or sends a payment. #}
+        <div class="cf-earn-reconcile" id="cfEarnReconcile" hidden>
+            <h3 class="cf-sr-only" id="cfEarnReconcileTitle">Reconcile previous withdrawal</h3>
+            <p class="cf-earn-reconcile-copy" id="cfEarnReconcileCopy">
+                A previous payout was submitted but may need checking. This checks and reconciles that submitted payout only; it will not send another payment or ask you to sign.
+            </p>
+            <div class="cf-earn-reconcile-actions">
+                <button type="button" class="cf-earn-reconcile-btn" id="cfEarnReconcileBtn"
+                        aria-controls="cfEarnReconcileStatus"
+                        onclick="GMCommunity.reconcilePreviousWithdrawal()" hidden>
+                    Reconcile previous withdrawal
+                </button>
+            </div>
+            <p class="cf-earn-reconcile-status" id="cfEarnReconcileStatus"
+               role="status" aria-live="polite" aria-atomic="true" hidden></p>
+        </div>
+        {% endif %}
         <div class="cf-earn-withdraw-row" id="cfEarnWithdrawRow" hidden>
             <button type="button" class="cf-earn-withdraw" id="cfEarnWithdrawBtn"
                     onclick="GMCommunity.checkWithdrawalEligibility()">Withdraw</button>
