@@ -163,33 +163,45 @@
             -webkit-backdrop-filter: blur(22px);
         }
 
+        /* The orb is a spinning progress RING; the GoodMarket mark sits still
+           inside it. This used to be a filled gradient disc carrying a literal
+           "G$" — which made the installed app read as a GoodDollar app rather
+           than GoodMarket. The spin lives on ::before so the artwork does not
+           rotate (a rotating logo is unreadable). */
         .gm-loader-orb {
             width: 88px;
             height: 88px;
             margin: 0 auto 1.2rem;
             border-radius: 999px;
-            background:
-                radial-gradient(circle at 32% 28%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 42%),
-                conic-gradient(from 180deg, #93c5fd, #3b82f6, #1d4ed8, #60a5fa, #93c5fd);
-            box-shadow: 0 0 42px rgba(59, 130, 246, 0.75), 0 12px 30px rgba(2,6,23,0.5), inset 0 1px 0 rgba(255,255,255,0.45);
-            animation: gmLoaderSpin 1.45s linear infinite;
             position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
         }
 
+        .gm-loader-orb::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: 999px;
+            background:
+                radial-gradient(circle at 32% 28%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 42%),
+                conic-gradient(from 180deg, #93c5fd, #3b82f6, #1d4ed8, #60a5fa, #93c5fd);
+            box-shadow: 0 0 42px rgba(59, 130, 246, 0.55), 0 12px 30px rgba(2,6,23,0.45);
+            animation: gmLoaderSpin 1.45s linear infinite;
+        }
+
         .gm-loader-orb::after {
             content: none;
         }
 
-        .gm-loader-gs {
-            font-size: 2.1rem;
-            font-weight: 900;
-            color: #ffffff;
-            letter-spacing: -0.05em;
-            text-shadow: 0 2px 10px rgba(30,64,175,0.7);
-            animation: gmLoaderGhost 1.45s linear infinite;
+        .gm-loader-mark {
+            position: relative;
+            z-index: 1;
+            width: 74px;
+            height: 74px;
+            display: block;
+            border-radius: 999px;
         }
         .gm-loader-mosaic {
             display: flex;
@@ -252,19 +264,13 @@
             to { transform: rotate(360deg); }
         }
 
-        @keyframes gmLoaderGhost {
-            0%, 100% { opacity: 0.9; }
-            50% { opacity: 0.55; }
-        }
-
         @keyframes gmLoaderPulse {
             0%, 80%, 100% { opacity: 0.35; transform: translateY(0) scale(0.86); }
             40% { opacity: 1; transform: translateY(-7px) scale(1); }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .gm-loader-orb,
-            .gm-loader-gs,
+            .gm-loader-orb::before,
             .gm-loader-dots span,
             .fs-books, .fs-game, .fs-phone {
                 animation: none;
@@ -2023,13 +2029,12 @@
                 radial-gradient(circle at 50% 38%, rgba(124, 58, 237, 0.28), transparent 55%),
                 linear-gradient(160deg, #070b1f 0%, #0d1032 100%);
         }
-        .gm-loader-orb {
+        .gm-loader-orb::before {
             background:
                 radial-gradient(circle at 32% 28%, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0) 44%),
                 conic-gradient(from 180deg, var(--action), var(--action-2), var(--primary), var(--action));
-            box-shadow: 0 0 40px rgba(251, 191, 36, 0.5), 0 12px 30px rgba(2,6,23,0.5);
+            box-shadow: 0 0 40px rgba(251, 191, 36, 0.4), 0 12px 30px rgba(2,6,23,0.45);
         }
-        .gm-loader-gs { text-shadow: 0 2px 10px rgba(120, 53, 15, 0.55); }
         .gm-loader-chip {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -2470,7 +2475,9 @@
     <!-- Entrance loading screen: hidden once the homepage is ready. -->
     <div id="gmWelcomeLoader" class="gm-welcome-loader" role="status" aria-live="polite" aria-label="GoodMarket loading">
         <div class="gm-loader-card">
-            <div class="gm-loader-orb" aria-hidden="true"><span class="gm-loader-gs">G$</span></div>
+            <div class="gm-loader-orb" aria-hidden="true">
+                <img class="gm-loader-mark" src="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}" alt="" width="74" height="74">
+            </div>
             <h1 class="gm-loader-title">Welcome to GoodMarket</h1>
             <p class="gm-loader-subtitle">Your everyday G$ wallet on Celo — earn, save, swap and spend.</p>
             <div class="gm-loader-mosaic" aria-hidden="true">
