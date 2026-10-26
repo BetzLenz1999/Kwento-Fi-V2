@@ -1020,6 +1020,41 @@ body {
     border-radius: 999px;
     transition: width 240ms ease;
 }
+.cf-earn-budgets {
+    margin-top: 0.75rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--cf-earn-line);
+}
+.cf-earn-budget-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    color: var(--cf-earn-ink-2);
+    font-size: 0.74rem;
+}
+.cf-earn-budget-head span { font-size: 0.68rem; color: var(--cf-earn-accent); }
+.cf-earn-budget-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+    margin-top: 0.45rem;
+}
+.cf-earn-budget {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.45rem 0.5rem;
+    border-radius: 10px;
+    background: var(--cf-earn-tile);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+}
+.cf-earn-budget-label { font-size: 0.68rem; font-weight: 800; color: var(--cf-earn-ink-2); }
+.cf-earn-budget-value { font-size: 0.78rem; font-weight: 800; color: var(--cf-earn-accent); font-variant-numeric: tabular-nums; }
+.cf-earn-budget-note { font-size: 0.64rem; line-height: 1.25; color: var(--cf-earn-ink-2); }
+.cf-earn-budget-total { border-color: var(--cf-earn-line); }
+.cf-earn-budgets[hidden] { display: none; }
 /* The rates stay collapsed until the accessible disclosure button is opened.
    Their amounts still come from the server and retain the readable 2x2 tiles. */
 .cf-earn-rates-toggle {
