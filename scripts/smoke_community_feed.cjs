@@ -142,6 +142,8 @@ function run(opts) {
    'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
    'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
    'cfCommunityCardsModal', 'cfCommunityCardsClose', 'cfCommunityCardsContent',
+   'cfReactionUsersModal', 'cfReactionUsersClose', 'cfReactionUsersFilters',
+   'cfReactionUsersStatus', 'cfReactionUsersList', 'cfReactionUsersRetry', 'cfReactionUsersMore',
    'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame',
    'cfMessagePushPrompt', 'cfMessagePushStatus', 'cfMessagePushCopy',
    'cfMessagePushEnable', 'cfMessagePushLater',
@@ -172,6 +174,9 @@ function run(opts) {
   // its src parked on data-src so the store never loads until a tap.
   registry.cfAirtimeModal.hidden = true;
   registry.cfCommunityCardsModal.hidden = true;
+  registry.cfReactionUsersModal.hidden = true;
+  registry.cfReactionUsersRetry.hidden = true;
+  registry.cfReactionUsersMore.hidden = true;
   registry.cfMessagePushPrompt.hidden = true;
   registry.cfAirtimeFrame.setAttribute('data-src', '/reloadly/?embed=1#topup');
   // The shared claim dialog is rendered directly and starts closed.
@@ -903,9 +908,9 @@ function feedFetch(handler, feedRows) {
        bareEmojis.length === 1 && bareEmojis[0].textContent === '👍',
        JSON.stringify(bareEmojis.map(n => n.textContent)));
 
-    // The viewer's own reaction always gets a seat, even when it is the
-    // least-used kind.
-    const mine = api._internals.buildCard(makePost({
+  // The viewer's own reaction always gets a seat, even when it is the
+  // least-used kind.
+  const mine = api._internals.buildCard(makePost({
       reaction_count: 20,
       my_reaction: 'sad',
       reaction_breakdown: { like: 19, sad: 1 },
@@ -913,6 +918,111 @@ function feedFetch(handler, feedRows) {
     ok('the viewer reaction is always shown first',
        mine.querySelector('.cf-summary-emoji').textContent === '😢',
        mine.querySelector('.cf-summary-emoji').textContent);
+  }
+
+  // ── 10c-1. Comment names link only when a profile username is available ──
+  {
+    const { api } = run({ boot: MEMBER });
+    const post = makePost({ id: 41 });
+    const live = api._internals.renderCommentNode(post, {
+      id: 7, username: 'ana', profile_username: 'ana', body: 'hello',
+      is_deleted: false, avatar_url: null,
+    }, {}, 0, {});
+    const authorLink = live.querySelector('.cf-comment-profile-link');
+    const avatarLink = live.querySelector('.cf-comment-profile-avatar-link');
+    ok('a live commenter name links to the username profile',
+       !!authorLink && authorLink.href === '/community/u/ana', authorLink && authorLink.href);
+    ok('a live commenter avatar links to the same profile',
+       !!avatarLink && avatarLink.href === '/community/u/ana', avatarLink && avatarLink.href);
+
+    const anonymous = api._internals.renderCommentNode(post, {
+      id: 8, username: 'Community member', profile_username: null, body: 'legacy',
+      is_deleted: false, avatar_url: null,
+    }, {}, 0, {});
+    ok('a legacy anonymous commenter is not turned into a profile link',
+       !anonymous.querySelector('.cf-comment-profile-link'));
+    const deleted = api._internals.renderCommentNode(post, {
+      id: 9, username: 'Deleted comment', profile_username: 'ana', body: 'deleted',
+      is_deleted: true, avatar_url: null,
+    }, {}, 0, {});
+    ok('a deleted commenter remains non-clickable',
+       !deleted.querySelector('.cf-comment-profile-link')
+       && !deleted.querySelector('.cf-comment-profile-avatar-link'));
+  }
+
+  // ── 10c-2. The reaction summary opens a paginated/filterable public list ──
+  {
+    const requests = [];
+    const { api, store, document } = run({
+      boot: GUEST,
+      fetchImpl: url => {
+        const requestUrl = String(url);
+        if (requestUrl.indexOf('/reactions?') === -1) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({
+            success: true, posts: [], next_cursor: null, has_more: false,
+          }) });
+        }
+        requests.push(requestUrl);
+        const payload = requests.length === 1 ? {
+          success: true,
+          reactors: [
+            { username: 'ana', profile_username: 'ana', avatar_url: null, reaction: 'love' },
+            { username: 'Community member', profile_username: null, avatar_url: null, reaction: 'haha' },
+          ],
+          next_cursor: 'opaque.cursor.token', has_more: true,
+        } : requests.length === 2 ? {
+          success: true,
+          reactors: [{ username: 'teo', profile_username: 'teo', avatar_url: null, reaction: 'like' }],
+          next_cursor: null, has_more: false,
+        } : {
+          success: true,
+          reactors: [{ username: 'ana', profile_username: 'ana', avatar_url: null, reaction: 'love' }],
+          next_cursor: null, has_more: false,
+        };
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) });
+      },
+    });
+    const card = api._internals.buildCard(makePost({ reaction_count: 3 }));
+    const trigger = card.querySelector('.cf-reaction-count-trigger');
+    ok('reaction count is a button with the accessible dialog target',
+       !!trigger && trigger.tagName === 'BUTTON'
+       && trigger.getAttribute('aria-controls') === 'cfReactionUsersModal');
+    trigger.onclick();
+    await tick();
+    ok('tapping reaction total opens the users modal for guests',
+       store.cfReactionUsersModal.hidden === false && requests.length === 1);
+    ok('the reactor request is deferred until the summary is tapped',
+       requests[0] === '/community/api/posts/5/reactions?limit=25', requests[0]);
+    ok('named reactors link to public profiles',
+       store.cfReactionUsersList.querySelector('.cf-reactor-name').href === '/community/u/ana');
+    ok('reactor fallback is generic and contains no wallet address',
+       store.cfReactionUsersList.textContent.indexOf('Community member') >= 0
+       && !/0x[0-9a-f]{8,}/i.test(store.cfReactionUsersList.textContent));
+    ok('load-more appears only when the API supplies a continuation',
+       store.cfReactionUsersMore.hidden === false);
+    store.cfReactionUsersMore.dispatch('click');
+    await tick();
+    ok('load-more sends the opaque keyset cursor',
+       requests[1].indexOf('cursor=opaque.cursor.token') >= 0, requests[1]);
+    const loveFilter = store.cfReactionUsersFilters.querySelectorAll('.cf-reaction-filter')
+      .find(button => button.getAttribute('data-reaction-filter') === 'love');
+    loveFilter.onclick();
+    await tick();
+    ok('reaction filter resets pagination and requests only that reaction',
+       requests[2].indexOf('reaction=love') >= 0 && requests[2].indexOf('cursor=') === -1,
+       requests[2]);
+    store.cfReactionUsersClose.dispatch('click');
+    ok('closing the reactor dialog restores focus and body scroll',
+       store.cfReactionUsersModal.hidden === true
+       && trigger.getAttribute('aria-expanded') === 'false'
+       && !document.body.classList.contains('cf-modal-open'));
+    trigger.onclick();
+    await tick();
+    let escapePrevented = false;
+    document.dispatch('keydown', { key: 'Escape', preventDefault() { escapePrevented = true; } });
+    ok('Escape closes the reactor dialog without leaving the page locked',
+       escapePrevented && store.cfReactionUsersModal.hidden === true
+       && !document.body.classList.contains('cf-modal-open'));
   }
 
   // ── 10d. An optimistic reaction keeps the stacked summary in step ────────
