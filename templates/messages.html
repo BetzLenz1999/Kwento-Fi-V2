@@ -57,6 +57,7 @@
   <div class="gm-msg-toast" id="gmMsgToast" role="status" aria-live="polite" hidden></div>
   <script>
     window.GM_MESSAGES_BOOT = {
+      wallet: {{ (wallet or '')|tojson }},
       initialUsername: {{ initial_username|default('', true)|tojson }},
       initialConversationId: {{ initial_conversation_id|default('', true)|tojson }},
       viewerUsername: {{ viewer_username|default('', true)|tojson }},
