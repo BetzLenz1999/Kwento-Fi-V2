@@ -1802,6 +1802,40 @@ def api_clear_reaction(post_id: int):
     return jsonify(result), status
 
 
+@community_feed_bp.route("/api/posts/<int:post_id>/reactions", methods=["GET"])
+def api_get_reactions(post_id: int):
+    """Public, on-demand reactor identities for a visible post."""
+    if not svc.is_enabled():
+        return _disabled_response()
+
+    raw_limit = request.args.get("limit", "25")
+    if not re.fullmatch(r"\d{1,2}", raw_limit or ""):
+        return jsonify({"success": False, "error": "Invalid reaction page size.",
+                        "code": "limit", "reactors": []}), 400
+    limit = int(raw_limit)
+    if not 1 <= limit <= 50:
+        return jsonify({"success": False, "error": "Invalid reaction page size.",
+                        "code": "limit", "reactors": []}), 400
+
+    cursor = request.args.get("cursor")
+    if cursor == "":
+        return jsonify({"success": False, "error": "Invalid reaction cursor.",
+                        "code": "cursor", "reactors": []}), 400
+    reaction = request.args.get("reaction")
+    if reaction is not None:
+        reaction = reaction.strip().lower()
+        if reaction not in svc.REACTION_KEYS:
+            return jsonify({"success": False, "error": "Unknown reaction filter.",
+                            "code": "filter", "reactors": []}), 400
+
+    result = svc.get_reaction_users(
+        post_id, cursor=cursor, limit=limit, reaction=reaction)
+    status = {"not_found": 404, "cursor": 400, "filter": 400,
+              "limit": 400, "db": 503, "cursor_unavailable": 503}.get(
+                  result.get("code"), 200)
+    return jsonify(result), status
+
+
 # ── Comments ─────────────────────────────────────────────────────────────────
 
 @community_feed_bp.route("/api/posts/<int:post_id>/comments", methods=["GET"])
