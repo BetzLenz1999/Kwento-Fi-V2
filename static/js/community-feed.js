@@ -3562,6 +3562,41 @@
         if (!sheetOpen) document.body.classList.remove('cf-modal-open');
     }
 
+    var _airtimeVerificationBridgeBound = false;
+    function bindAirtimeVerificationBridge() {
+        if (_airtimeVerificationBridgeBound || typeof window.addEventListener !== 'function') return;
+        _airtimeVerificationBridgeBound = true;
+        window.addEventListener('message', function (event) {
+            var frame = $('cfAirtimeFrame');
+            var modal = $('cfAirtimeModal');
+            var data = event && event.data;
+            if (!frame || !modal || modal.hidden || !event
+                    || event.origin !== window.location.origin
+                    || event.source !== frame.contentWindow
+                    || !data || typeof data !== 'object'
+                    || data.channel !== 'gm-reloadly-embed' || data.version !== 1
+                    || data.type !== 'request-community-verification'
+                    || typeof data.requestId !== 'string'
+                    || !/^airtime-fv-[a-z0-9-]{1,80}$/i.test(data.requestId)
+                    || typeof window.openClaimOrVerify !== 'function') return;
+
+            closeAirtime();
+            window._walletNeedsFV = true;
+            if (window._walletFvReason !== 're_verification_needed') {
+                window._walletFvReason = 'not_verified';
+            }
+            openClaim();
+            try {
+                event.source.postMessage({
+                    channel: 'gm-reloadly-embed',
+                    version: 1,
+                    type: 'community-verification-ack',
+                    requestId: data.requestId
+                }, event.origin);
+            } catch (_) {}
+        });
+    }
+
     function openClaim() {
         if (typeof window.openClaimOrVerify === 'function') {
             window.openClaimOrVerify();
@@ -3590,6 +3625,7 @@
     // ── Wiring ─────────────────────────────────────────────────────────────
 
     function bind() {
+        bindAirtimeVerificationBridge();
         var input = $('cfCaption');
         if (input) {
             input.addEventListener('input', function () {
