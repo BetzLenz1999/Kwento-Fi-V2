@@ -268,6 +268,10 @@
     var title = document.getElementById('gm-pwa-update-title');
     var copy = document.getElementById('gm-pwa-update-copy');
     var status = document.getElementById('gm-pwa-update-status');
+    var progress = document.getElementById('gm-pwa-startup-progress');
+    var progressFill = document.getElementById('gm-pwa-progress-fill');
+    var progressPercent = document.getElementById('gm-pwa-progress-percent');
+    var progressStage = document.getElementById('gm-pwa-progress-stage');
     var updateButton = document.getElementById('gm-pwa-update-now');
     var retryButton = document.getElementById('gm-pwa-update-retry');
     var continueButton = document.getElementById('gm-pwa-continue');
@@ -275,6 +279,39 @@
     var waitingWorker = null;
     var navigating = false;
     var checkGeneration = 0;
+    var progressTimer = null;
+    var progressStartedAt = 0;
+    var progressValue = 1;
+
+    function stopProgress() {
+      if (progressTimer !== null) {
+        clearInterval(progressTimer);
+        progressTimer = null;
+      }
+    }
+
+    function setProgress(value, stageText) {
+      progressValue = Math.max(progressValue, Math.min(99, Math.max(1, Math.floor(value))));
+      if (progress) progress.setAttribute('aria-valuenow', String(progressValue));
+      if (progressPercent) progressPercent.textContent = progressValue + '%';
+      if (progressFill) progressFill.style.width = progressValue + '%';
+      if (stageText && progressStage) progressStage.textContent = stageText;
+    }
+
+    function startProgress() {
+      stopProgress();
+      progressValue = 1;
+      progressStartedAt = Date.now();
+      if (progress) progress.hidden = false;
+      setProgress(1, 'Starting GoodMarket…');
+      progressTimer = setInterval(function () {
+        var elapsed = Date.now() - progressStartedAt;
+        // Estimated progress follows elapsed work but asymptotically stops at
+        // 99%; only actual startup checkpoints or navigation can finish it.
+        var estimate = Math.min(99, 1 + Math.floor(98 * (1 - Math.exp(-elapsed / 4500))));
+        setProgress(estimate);
+      }, 250);
+    }
 
     document.documentElement.classList.remove('gm-pwa-update-gate-pending');
 
@@ -282,19 +319,25 @@
       if (navigating) return;
       navigating = true;
       checkGeneration += 1;
+      setProgress(99, 'Opening your GoodMarket page…');
+      if (status) status.textContent = 'App checks complete. Opening your page…';
+      stopProgress();
       window.location.replace(target);
     }
 
     function showChecking() {
       if (title) title.textContent = 'Checking GoodMarket';
       if (copy) copy.textContent = 'We’ll check for an app update before opening your page.';
-      if (status) status.textContent = 'Checking for updates…';
+      if (status) status.textContent = 'Preparing your app…';
+      startProgress();
       if (updateButton) updateButton.hidden = true;
       if (retryButton) retryButton.hidden = true;
       if (continueButton) continueButton.hidden = true;
     }
 
     function showUpdate(worker) {
+      stopProgress();
+      if (progress) progress.hidden = true;
       waitingWorker = worker;
       if (title) title.textContent = worker ? 'Update required' : 'Confirm app version';
       if (copy) copy.textContent = worker
@@ -313,6 +356,8 @@
     }
 
     function showCheckError(error) {
+      stopProgress();
+      if (progress) progress.hidden = true;
       if (title) title.textContent = 'Could not check for updates';
       if (copy) copy.textContent = 'Connect to the internet and try again, or continue with the version already on this device.';
       if (status) status.textContent = (error && error.message) || 'The update check is unavailable.';
@@ -322,6 +367,7 @@
     }
 
     function acknowledgeVerifiedBuild(onVerified) {
+      setProgress(92, 'Verifying the installed app…');
       var activeWorker = navigator.serviceWorker.controller || (registration && registration.active);
       readWorkerBuildVersion(activeWorker, WORKER_VERSION_TIMEOUT_MS).then(function (version) {
         if (version !== buildVersion) {
@@ -345,6 +391,7 @@
           ? navigator.serviceWorker.getRegistration('/')
           : null;
       }).then(function (existing) {
+        setProgress(18, 'Preparing the app update check…');
         if (navigator.onLine === false) throw new Error('You are offline. Connect to the internet to check for an update.');
         function registerCurrentWorker() {
           return navigator.serviceWorker.register('/static/service-worker.js', { scope: '/' })
@@ -360,7 +407,9 @@
         return registerCurrentWorker();
       }).then(function (reg) {
         if (!reg || reg.worker) return reg;
+        setProgress(38, 'Checking for a newer GoodMarket version…');
         return checkForUpdate(reg.registration, CHECK_TIMEOUT_MS).then(function (result) {
+          setProgress(68, 'Verifying the app version…');
           var worker = result && result.worker;
           var versionSourcePromise = worker
             ? Promise.resolve(worker)
@@ -371,6 +420,7 @@
             if (version !== buildVersion) {
               throw new Error('The available app worker does not match this release. Please retry the update check.');
             }
+            setProgress(90, 'Getting your page ready…');
             return { registration: reg.registration, worker: worker, workerVersion: version };
           });
         });
