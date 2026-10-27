@@ -2900,6 +2900,10 @@
     var _messageUnreadLoading = false;
     var _messageUnreadPollTimer = null;
     var _messageUnreadLifecycleInitialized = false;
+    var _messagePushPromptOpen = false;
+    var _messagePushPromptBusy = false;
+    var _messagePushPromptReady = false;
+    var _messagePushPromptDismissKey = 'gmCommunityMessagePushPromptDismissedUntil_v1';
     var _notifications = [];
     var _notificationCursor = null;
     var _notificationUnread = 0;
@@ -2940,7 +2944,7 @@
             if (item.action === 'messages') {
                 if (event && event.preventDefault) event.preventDefault();
                 if (!WALLET) { requiresLogin(); return; }
-                window.location.href = '/messages';
+                openMessages();
                 return;
             }
             if (item.action === 'airtime') {
@@ -3023,6 +3027,157 @@
         document.addEventListener('visibilitychange', refreshIfVisible);
         window.addEventListener('focus', refreshIfVisible);
         _messageUnreadPollTimer = window.setInterval(refreshIfVisible, 60000);
+    }
+
+    function messagePromptWasDismissed() {
+        try {
+            var until = Number(localStorage.getItem(_messagePushPromptDismissKey) || 0);
+            if (until > Date.now()) return true;
+            localStorage.removeItem(_messagePushPromptDismissKey);
+        } catch (_) {}
+        return false;
+    }
+
+    function messagePromptStatus(message, isError) {
+        var status = $('cfMessagePushStatus');
+        if (!status) return;
+        status.textContent = message || '';
+        status.hidden = !message;
+        status.classList.toggle('is-error', !!isError);
+    }
+
+    function openMessages() {
+        if (!WALLET) { requiresLogin(); return; }
+        var prompt = $('cfMessagePushPrompt');
+        if (!BOOT.messagesEnabled || !prompt || !window.GMCommunityPush
+                || messagePromptWasDismissed()) {
+            window.location.href = '/messages';
+            return;
+        }
+        _messagePushPromptOpen = true;
+        _messagePushPromptBusy = false;
+        _messagePushPromptReady = false;
+        prompt.hidden = false;
+        document.body.classList.add('cf-push-optin-open');
+        var enable = $('cfMessagePushEnable');
+        var later = $('cfMessagePushLater');
+        var copy = $('cfMessagePushCopy');
+        if (copy) copy.textContent = 'Enable notifications on this device so you’ll know when someone sends you a Community message. You can change this later.';
+        if (enable) { enable.hidden = false; enable.disabled = true; enable.textContent = 'Checking…'; }
+        if (later) { later.disabled = false; later.textContent = 'Not now'; }
+        messagePromptStatus('Checking notification permission and device setup…', false);
+        if (later && later.focus) later.focus();
+
+        window.GMCommunityPush.inspect().then(function (result) {
+            if (!_messagePushPromptOpen) return;
+            result = result || { state: 'unavailable' };
+            if (result.state === 'enabled') {
+                window.location.href = '/messages';
+                return;
+            }
+            if (result.state === 'needs-setup') {
+                _messagePushPromptReady = true;
+                if (enable) {
+                    enable.disabled = false;
+                    enable.textContent = window.Notification && window.Notification.permission === 'granted'
+                        ? 'Finish setup' : 'Enable notifications';
+                    enable.focus();
+                }
+                messagePromptStatus('', false);
+                return;
+            }
+
+            _messagePushPromptReady = false;
+            if (enable) { enable.hidden = true; enable.disabled = true; }
+            if (later) later.textContent = 'Continue to Messages';
+            var message = result.message || 'You can still open Messages without notifications.';
+            if (result.state === 'permission-blocked') {
+                message = 'Notifications are blocked for this site. Allow them in your browser settings, then retry from Messages. You can continue without enabling them.';
+            } else if (result.state === 'unsupported') {
+                message = 'This browser or connection does not support push notifications. You can still open Messages.';
+            } else if (result.state === 'unconfigured') {
+                message = 'Message notifications are not available right now. You can still open Messages.';
+            }
+            messagePromptStatus(message, result.state === 'storage-unavailable');
+            if (later && later.focus) later.focus();
+        }).catch(function (error) {
+            if (!_messagePushPromptOpen) return;
+            _messagePushPromptReady = false;
+            if (enable) { enable.hidden = true; enable.disabled = true; }
+            if (later) { later.textContent = 'Continue to Messages'; if (later.focus) later.focus(); }
+            messagePromptStatus((error && error.message)
+                || 'Notification setup could not be checked. You can still open Messages.', true);
+        });
+    }
+
+    function declineMessageNotifications() {
+        if (!_messagePushPromptOpen) { window.location.href = '/messages'; return; }
+        _messagePushPromptOpen = false;
+        _messagePushPromptReady = false;
+        var prompt = $('cfMessagePushPrompt');
+        if (prompt) prompt.hidden = true;
+        document.body.classList.remove('cf-push-optin-open');
+        try { localStorage.setItem(_messagePushPromptDismissKey, String(Date.now() + 30 * 86400000)); }
+        catch (_) {}
+        window.location.href = '/messages';
+    }
+
+    function enableMessageNotifications() {
+        if (!_messagePushPromptOpen || !_messagePushPromptReady || _messagePushPromptBusy
+                || !window.GMCommunityPush) return;
+        _messagePushPromptBusy = true;
+        var enable = $('cfMessagePushEnable');
+        var later = $('cfMessagePushLater');
+        if (enable) { enable.disabled = true; enable.textContent = 'Setting up…'; }
+        if (later) later.disabled = true;
+        messagePromptStatus('Allow notifications in the browser prompt to continue.', false);
+
+        // The shared helper calls Notification.requestPermission immediately,
+        // synchronously within this click handler, before any network request.
+        window.GMCommunityPush.enable().then(function () {
+            if (!_messagePushPromptOpen) return;
+            messagePromptStatus('Notifications are enabled on this device. Opening Messages…', false);
+            window.location.href = '/messages';
+        }).catch(function (error) {
+            if (!_messagePushPromptOpen) return;
+            var denied = error && error.code === 'permission_denied';
+            _messagePushPromptBusy = false;
+            _messagePushPromptReady = !denied;
+            if (enable) {
+                enable.hidden = !!denied;
+                enable.disabled = !!denied;
+                enable.textContent = denied ? 'Enable notifications' : 'Retry setup';
+            }
+            if (later) { later.disabled = false; later.textContent = 'Continue to Messages'; }
+            messagePromptStatus((error && error.message)
+                || 'Could not finish notification setup. You can still open Messages and retry later.', true);
+            if (denied && later && later.focus) later.focus();
+        });
+    }
+
+    function initMessagePushPrompt() {
+        if (!WALLET || !$('cfMessagePushPrompt')) return;
+        document.addEventListener('keydown', function (event) {
+            if (!_messagePushPromptOpen) return;
+            if (event.key === 'Escape') {
+                if (event.preventDefault) event.preventDefault();
+                declineMessageNotifications();
+                return;
+            }
+            if (event.key !== 'Tab') return;
+            var enable = $('cfMessagePushEnable');
+            var later = $('cfMessagePushLater');
+            var focusable = [enable, later].filter(function (node) {
+                return node && !node.hidden && !node.disabled;
+            });
+            if (!focusable.length) return;
+            var first = focusable[0], last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault(); first.focus();
+            }
+        });
     }
 
     // ── Private in-app Community notifications ──────────────────────────────
@@ -3971,6 +4126,7 @@
         // make that half a no-op; the feed wiring is what matters here.
         bind();
         renderNav();
+        initMessagePushPrompt();
         loadMessageUnread();
         initMessageUnreadRefresh();
         initNotifications();
@@ -4072,6 +4228,9 @@
         closeAirtime: closeAirtime,
         openClaim: openClaim,
         closeClaim: closeClaim,
+        openMessages: openMessages,
+        enableMessageNotifications: enableMessageNotifications,
+        declineMessageNotifications: declineMessageNotifications,
         setMessageUnread: setMessageUnread,
         toggleNotifications: toggleNotifications,
         closeNotifications: closeNotifications,
@@ -4099,6 +4258,10 @@
             toggleFollow: toggleFollow,
             setFollowButton: setFollowButton,
             renderNav: renderNav,
+            openMessages: openMessages,
+            enableMessageNotifications: enableMessageNotifications,
+            declineMessageNotifications: declineMessageNotifications,
+            messagePromptWasDismissed: messagePromptWasDismissed,
             setMessageUnread: setMessageUnread,
             loadMessageUnread: loadMessageUnread,
             setNotificationUnread: setNotificationUnread,
