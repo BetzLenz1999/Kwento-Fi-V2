@@ -1993,6 +1993,7 @@ body.cf-modal-open { overflow: hidden; }
     padding: 1rem 1.1rem;
     box-shadow: var(--cf-shadow);
 }
+.cf-daily-learn { max-width: 22rem; margin-inline: auto; }
 .cf-daily-prompt-kicker,
 .cf-daily-learn-kicker {
     color: var(--cf-accent-ink);
@@ -2154,8 +2155,8 @@ body.cf-modal-open { overflow: hidden; }
 .cf-chip { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 
 @media (max-width: 620px) {
-    .cf-daily-prompt,
-    .cf-daily-learn { padding: 0.85rem; border-radius: 12px; }
+    .cf-daily-prompt { padding: 0.85rem; border-radius: 12px; }
+    .cf-daily-learn { padding: 0.7rem; border-radius: 11px; }
     .cf-daily-prompt-foot { flex-wrap: wrap; justify-content: flex-start; }
     .cf-daily-prompt-foot > span { flex-basis: 100%; }
     .cf-daily-learn-head { align-items: flex-start; }
