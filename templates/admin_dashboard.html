@@ -776,12 +776,6 @@
                     </a>
                 </li>
                 <li class="menu-item">
-                    <a class="menu-link" onclick="showSection('p2p-review-section')">
-                        <span class="menu-icon">🧾</span>
-                        <span>P2P Proof Review</span>
-                    </a>
-                </li>
-                <li class="menu-item">
                     <a class="menu-link" onclick="showSection('developer-profile-section')">
                         <span class="menu-icon">👨‍💻</span>
                         <span>Developer Profile</span>
@@ -1852,35 +1846,6 @@ CORRECT: C
                     <h2 style="color:#fbbf24; margin-bottom: 1rem;">🧾 Submissions</h2>
                     <div id="collaborationReviewContent">
                         <div class="loading"><div class="spinner"></div><p>Loading collaboration submissions...</p></div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- P2P Payment Proof Review Section -->
-            <section id="p2p-review-section" class="section">
-                <div class="page-header">
-                    <h1 class="page-title">🧾 P2P Payment Proof Review</h1>
-                    <p style="color: rgba(241, 245, 249, 0.7);">
-                        Review P2P orders escalated after a seller rejects the buyer's payment proof.
-                    </p>
-                </div>
-
-                <div class="content-box" style="margin-bottom: 1.2rem;">
-                    <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center; justify-content:space-between;">
-                        <div>
-                            <h2 style="margin-bottom:0.35rem;">Admin Review Queue</h2>
-                            <p style="color:rgba(241,245,249,0.6); margin:0; font-size:0.9rem;">
-                                Use <strong>Release to buyer</strong> when the proof is valid. Use <strong>Refund seller</strong> when the proof is fake or invalid.
-                            </p>
-                        </div>
-                        <button class="btn btn-primary" onclick="loadP2PReviewQueue()">🔄 Refresh</button>
-                    </div>
-                    <div id="p2pReviewStatus" style="margin-top:1rem;"></div>
-                </div>
-
-                <div class="content-box">
-                    <div id="p2pReviewQueue">
-                        <div class="loading"><div class="spinner"></div><p>Loading P2P review queue...</p></div>
                     </div>
                 </div>
             </section>
@@ -3672,9 +3637,6 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     break;
                 case 'collaboration-review':
                     loadCollaborationSubmissions();
-                    break;
-                case 'p2p-review':
-                    loadP2PReviewQueue();
                     break;
                 case 'developerProfile':
                     loadCurrentProfile();
@@ -8656,155 +8618,6 @@ async function loadMinigamesMaintenance() {
             } catch (error) {
                 console.error('Error rejecting collaboration submission:', error);
                 alert('❌ Error rejecting collaboration submission: ' + error.message);
-            }
-        }
-
-        // ============================================================
-        // P2P PAYMENT PROOF ADMIN REVIEW FUNCTIONS
-        // ============================================================
-        function _adminEscapeHtml(value) {
-            return String(value ?? '').replace(/[&<>"']/g, function(ch) {
-                return ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]);
-            });
-        }
-
-        function _adminShortAddr(value) {
-            const addr = String(value || '');
-            return addr.length > 12 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : (addr || '—');
-        }
-
-        function _p2pReviewStatusBadge(status) {
-            const safeStatus = _adminEscapeHtml(status || 'unknown');
-            return `<span style="display:inline-block;padding:0.25rem 0.55rem;border-radius:999px;background:rgba(239,68,68,0.12);color:#fca5a5;font-weight:700;font-size:0.78rem;">${safeStatus}</span>`;
-        }
-
-        function _p2pReviewSetStatus(message, type = 'info') {
-            const statusDiv = document.getElementById('p2pReviewStatus');
-            if (!statusDiv) return;
-            const colors = {
-                info: ['rgba(59,130,246,0.12)', 'rgba(59,130,246,0.35)', '#93c5fd'],
-                success: ['rgba(16,185,129,0.12)', 'rgba(16,185,129,0.35)', '#34d399'],
-                error: ['rgba(239,68,68,0.12)', 'rgba(239,68,68,0.35)', '#fca5a5']
-            };
-            const [bg, border, color] = colors[type] || colors.info;
-            statusDiv.innerHTML = message ? `<div style="padding:0.85rem 1rem;border-radius:10px;background:${bg};border:1px solid ${border};color:${color};">${message}</div>` : '';
-        }
-
-        async function loadP2PReviewQueue() {
-            const box = document.getElementById('p2pReviewQueue');
-            if (!box) return;
-            box.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading P2P review queue...</p></div>';
-            _p2pReviewSetStatus('');
-
-            try {
-                const response = await fetch('/p2p/api/admin/review-queue');
-                const data = await response.json();
-                if (!data.success) {
-                    box.innerHTML = `<p style="color:#ef4444;">Error: ${_adminEscapeHtml(data.error || 'Failed to load P2P review queue')}</p>`;
-                    return;
-                }
-
-                const queue = data.queue || [];
-                _p2pReviewSetStatus(
-                    `${queue.length} order(s) waiting for admin review.${data.contract_configured ? '' : ' ⚠️ P2P contract is not fully configured, so release/refund actions may fail.'}`,
-                    data.contract_configured ? 'info' : 'error'
-                );
-
-                if (!queue.length) {
-                    box.innerHTML = `
-                        <div style="padding:2rem;text-align:center;background:rgba(16,185,129,0.08);border:1px dashed rgba(16,185,129,0.25);border-radius:10px;">
-                            <p style="color:#10b981;font-size:1.05rem;">✅ No P2P payment proofs need admin review</p>
-                        </div>`;
-                    return;
-                }
-
-                box.innerHTML = queue.map(item => {
-                    const o = item.order || {};
-                    const proofs = item.proofs || [];
-                    const msgs = item.messages || [];
-                    const dispute = item.dispute || {};
-                    const amountGd = Number(o.amount_gd || o.g_dollar_amount || 0);
-                    const payAmount = Number(o.pay_amount || o.fiat_amount || 0);
-                    const payCurrency = o.pay_currency || o.fiat_currency || '';
-                    const created = o.created_at ? new Date(o.created_at).toLocaleString() : '—';
-                    const proofHtml = proofs.length ? proofs.map(p => {
-                        const url = _adminEscapeHtml(p.image_url || '');
-                        const reference = p.reference ? `<div style="color:rgba(241,245,249,0.65);font-size:0.85rem;margin-top:0.25rem;">Ref: ${_adminEscapeHtml(p.reference)}</div>` : '';
-                        return `<div style="margin-top:0.65rem;"><a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="Payment proof" style="max-width:260px;max-height:260px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);object-fit:contain;"></a>${reference}</div>`;
-                    }).join('') : '<div style="color:rgba(241,245,249,0.55);margin-top:0.5rem;">No proof uploaded</div>';
-                    const chatHtml = msgs.length ? msgs.map(m => `
-                        <div style="padding:0.45rem 0.6rem;margin:0.35rem 0;border-radius:8px;background:rgba(255,255,255,0.06);">
-                            <strong style="color:#93c5fd;font-family:monospace;">${_adminShortAddr(m.sender_wallet)}</strong>:
-                            <span>${_adminEscapeHtml(m.body || '')}</span>
-                        </div>
-                    `).join('') : '<span style="color:rgba(241,245,249,0.55);">No messages</span>';
-
-                    return `
-                        <div id="p2p-review-order-${o.id}" style="padding:1rem;margin-bottom:1rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:12px;">
-                            <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem;">
-                                <div>
-                                    <h3 style="margin:0 0 0.35rem 0;">Order #${_adminEscapeHtml(o.id)} ${_p2pReviewStatusBadge(o.status)}</h3>
-                                    <div style="color:rgba(241,245,249,0.65);font-size:0.9rem;">Created: ${_adminEscapeHtml(created)} · On-chain ID: ${_adminEscapeHtml(o.onchain_id ?? '—')}</div>
-                                </div>
-                                <div style="text-align:right;color:rgba(241,245,249,0.82);">
-                                    <div><strong>${amountGd.toLocaleString()} G$</strong></div>
-                                    <div>${payAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${_adminEscapeHtml(payCurrency)}</div>
-                                </div>
-                            </div>
-                            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;margin-bottom:0.8rem;">
-                                <div><strong>Buyer:</strong> <span style="font-family:monospace;">${_adminShortAddr(o.buyer_wallet)}</span></div>
-                                <div><strong>Seller:</strong> <span style="font-family:monospace;">${_adminShortAddr(o.seller_wallet)}</span></div>
-                                <div><strong>Dispute:</strong> ${_adminEscapeHtml(dispute.status || 'open')}</div>
-                            </div>
-                            ${o.reject_reason ? `<div style="padding:0.8rem;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:10px;color:#fca5a5;margin-bottom:0.8rem;"><strong>Seller rejection reason:</strong> ${_adminEscapeHtml(o.reject_reason)}</div>` : ''}
-                            <div style="margin-bottom:0.9rem;"><strong>Proof of payment</strong>${proofHtml}</div>
-                            <div style="margin-bottom:1rem;"><strong>Order chat</strong><div style="margin-top:0.45rem;">${chatHtml}</div></div>
-                            <div style="display:flex;gap:0.65rem;flex-wrap:wrap;">
-                                <button class="btn btn-primary" onclick="p2pAdminReviewAction(${Number(o.id)}, 'release')" style="background:linear-gradient(135deg,#10b981,#059669);">
-                                    ✅ Release to buyer
-                                </button>
-                                <button class="btn btn-danger" onclick="p2pAdminReviewAction(${Number(o.id)}, 'refund')">
-                                    ↩️ Refund seller
-                                </button>
-                            </div>
-                        </div>`;
-                }).join('');
-            } catch (error) {
-                console.error('Error loading P2P review queue:', error);
-                box.innerHTML = '<p style="color:#ef4444;">Error loading P2P review queue.</p>';
-            }
-        }
-
-        async function p2pAdminReviewAction(orderId, action) {
-            if (!orderId || !['release', 'refund'].includes(action)) return;
-            const actionLabel = action === 'release' ? 'release escrowed G$ to the buyer' : 'refund escrowed G$ to the seller';
-            if (!confirm(`Confirm admin review action for order #${orderId}?\n\nThis will ${actionLabel} using the server owner key.`)) return;
-            _p2pReviewSetStatus(`⏳ Submitting on-chain ${action} for order #${orderId}...`, 'info');
-            try {
-                const response = await fetch(`/p2p/api/admin/orders/${orderId}/${action}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: '{}'
-                });
-                const rawText = await response.text();
-                let data;
-                try {
-                    data = rawText ? JSON.parse(rawText) : {};
-                } catch (parseError) {
-                    throw new Error(rawText ? rawText.slice(0, 240) : `HTTP ${response.status}`);
-                }
-                if (!data.success) {
-                    const explanation = data.explanation ? ` — ${data.explanation}` : '';
-                    _p2pReviewSetStatus(`❌ ${_adminEscapeHtml(data.error || 'P2P review action failed')}${_adminEscapeHtml(explanation)}${data.tx_hash ? ` · TX: ${_adminEscapeHtml(data.tx_hash)}` : ''}`, 'error');
-                    return;
-                }
-                const txLink = data.tx_hash ? ` <a href="https://celoscan.io/tx/${_adminEscapeHtml(data.tx_hash)}" target="_blank" rel="noopener" style="color:#93c5fd;text-decoration:underline;">View TX</a>` : '';
-                const successMessage = data.message || `Order #${orderId} ${action} completed.`;
-                _p2pReviewSetStatus(`✅ ${_adminEscapeHtml(successMessage)}${txLink}`, 'success');
-                await loadP2PReviewQueue();
-            } catch (error) {
-                console.error('Error processing P2P review action:', error);
-                _p2pReviewSetStatus(`❌ Error processing P2P review action: ${_adminEscapeHtml(error.message)}`, 'error');
             }
         }
 
