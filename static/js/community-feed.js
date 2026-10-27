@@ -2553,9 +2553,8 @@
             }
         }
 
-        // The rates come from the server payload, never hard-coded, so the page
-        // cannot quote a rate the ledger does not pay. Keep them collapsed until
-        // the accessible toggle is activated, preserving that choice on refresh.
+        // Keep the optional server-sourced rate renderer/data contract intact;
+        // the current Community template intentionally mounts no detail nodes.
         var ratesEl = $('cfEarnRates');
         var ratesToggle = $('cfEarnRatesToggle');
         if (ratesEl) {
@@ -2608,6 +2607,8 @@
 
         var balanceWrap = $('cfEarnBalance');
         if (balanceWrap) balanceWrap.hidden = !showBalance || !!data.is_guest;
+        // Keep the server-controlled budget/rate payload and renderer intact;
+        // this card intentionally no longer mounts those optional detail panels.
         renderBudgetDisplay(data);
 
         var bar = $('cfEarnBar');
@@ -2654,6 +2655,16 @@
                 loadWithdrawalHistory(true);
             } else loadWithdrawalHistory(_withdrawalHistory.loaded);
         };
+        var hasBalance = !!(balanceWrap && !balanceWrap.hidden);
+        var hasActions = !!((withdrawRow && !withdrawRow.hidden)
+            || (history && !history.hidden));
+        var actionColumn = $('cfEarnActions');
+        if (actionColumn) actionColumn.hidden = !hasActions;
+        var overview = $('cfEarnOverview');
+        if (overview) {
+            overview.classList.toggle('cf-earn-overview-no-balance', !hasBalance);
+            overview.hidden = !hasBalance && !hasActions;
+        }
         card.hidden = false;
         syncTodayHub();
     }
