@@ -159,6 +159,9 @@
 </header>
 
 <a class="cf-skip-link" href="#cfPostsTitle">Skip to community posts</a>
+{# One source of navigation destinations; on phones CSS presents this as a
+   compact quick-action tray below the masthead, while desktop keeps its rail. #}
+<nav class="cf-bottom-nav cf-community-mobile-actions" id="cfBottomNav" aria-label="Community navigation"></nav>
 <main class="cf-wrap cf-layout">
     {# Keep the Today hub first in DOM order for the mobile reading sequence.
        The wide-screen grid places this complementary panel on the right; the
@@ -415,7 +418,7 @@
         {% endif %}
     </section>
 
-    <section class="cf-vault-donation" aria-labelledby="cfVaultDonationTitle">
+    <section class="cf-vault-donation" id="cfVaultDonationCard" aria-labelledby="cfVaultDonationTitle">
         <div class="cf-vault-donation-head">
             <div>
                 <h2 id="cfVaultDonationTitle">Support the Community Vault</h2>
@@ -577,15 +580,28 @@
     </div>
 </main>
 
-{# ── Community bottom navigation ────────────────────────────────────────────
-   The same thumb-reachable bar the wallet uses, carrying the four community
-   destinations: the feed itself, member search (read-only, so guests get it
-   too), Buy Airtime (the Reloadly store, opened in the in-page modal above)
-   and Your Wallet. Earn opens a sheet with the community's own earn
-   destinations — see #cfSheetEarn.
+{# Mobile-only quick access to the auxiliary Community cards. JavaScript moves
+   the existing card nodes here below 900px and restores them to their exact
+   template positions on desktop; IDs and event handlers are never duplicated. #}
+<div class="cf-community-cards-modal" id="cfCommunityCardsModal" role="dialog"
+     aria-modal="true" aria-labelledby="cfCommunityCardsTitle"
+     aria-describedby="cfCommunityCardsDescription" tabindex="-1" hidden>
+    <div class="cf-community-cards-panel">
+        <div class="cf-community-cards-handle" aria-hidden="true"></div>
+        <header class="cf-community-cards-header">
+            <div>
+                <p class="cf-community-cards-kicker">Your community hub</p>
+                <h2 id="cfCommunityCardsTitle">Community Cards</h2>
+                <p id="cfCommunityCardsDescription">Community G$, vault support, and recent posters.</p>
+            </div>
+            <button type="button" class="cf-community-cards-close" id="cfCommunityCardsClose"
+                    aria-label="Close Community Cards">×</button>
+        </header>
+        <div class="cf-community-cards-content" id="cfCommunityCardsContent"></div>
+    </div>
+</div>
 
-   A guest tapping Earn gets the shared connect card: the destinations behind
-   it are all signed-in features. #}
+{# ── Earn destinations sheet (separate from Community Cards) ───────────────── #}
 <div class="cf-sheet-overlay" id="cfSheetOverlay" onclick="GMCommunity.closeSheet()"></div>
 
 <div class="cf-sheet" id="cfSheetEarn" role="dialog" aria-label="More ways to earn G$">
@@ -668,10 +684,6 @@
 {% include "_claim_modal.html" %}
 {% include "_claim_support_modals.html" %}
 
-{# The nav is built in the bundle from `GM_COMMUNITY_BOOT.nav` (emitted in the
-   boot object below) so the destination list lives in ONE place. Labels are
-   written with textContent — user-supplied data never reaches it. #}
-<nav class="cf-bottom-nav" id="cfBottomNav" aria-label="Community navigation"></nav>
 {% if not is_guest and messages_enabled %}
 <div class="cf-push-optin" id="cfMessagePushPrompt" hidden>
     <div class="cf-push-optin-backdrop"></div>
@@ -751,8 +763,8 @@ window.GM_COMMUNITY_BOOT = {
     storageReady: {{ 'true' if storage_ready else 'false' }},
     focusPostId: {{ (focus_post_id or '')|tojson }},
     focusPost: {{ (focus_post or none)|tojson }},
-    // Destination list for the bottom nav. ONE source of truth: the bar is
-    // built from this object, so a new destination is added here only.
+    // Destination list for the Community mobile action tray and desktop rail.
+    // The Community Cards item is mobile-only; CSS preserves the desktop rail.
     // `guestOk` marks a destination a signed-out visitor may reach (reading is
     // public); a `!guestOk` tap raises the shared connect card instead.
     //
@@ -769,6 +781,7 @@ window.GM_COMMUNITY_BOOT = {
         { id: 'search', icon: '🔍', label: 'Search',      action: 'search',    guestOk: true },
         { id: 'messages', icon: '💬', label: 'Messages',    href: '/messages', action: 'messages', guestOk: false },
         { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
+        { id: 'community-cards', icon: '🗂️', label: 'Community Cards', action: 'community-cards', guestOk: true },
         { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet',     guestOk: false }
     ],
     reactions: {
