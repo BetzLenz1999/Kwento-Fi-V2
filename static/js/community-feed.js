@@ -3046,11 +3046,20 @@
         status.classList.toggle('is-error', !!isError);
     }
 
+    function browserCanRequestMessageNotifications() {
+        return !!window.Notification
+            && window.Notification.permission === 'default'
+            && window.isSecureContext !== false
+            && !!(window.navigator && window.navigator.serviceWorker)
+            && !!window.PushManager;
+    }
+
     function openMessages() {
         if (!WALLET) { requiresLogin(); return; }
         var prompt = $('cfMessagePushPrompt');
         if (!BOOT.messagesEnabled || !prompt || !window.GMCommunityPush
-                || messagePromptWasDismissed()) {
+                || messagePromptWasDismissed()
+                || !browserCanRequestMessageNotifications()) {
             window.location.href = '/messages';
             return;
         }
