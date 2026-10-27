@@ -317,11 +317,19 @@ window.P2PWallet = (function () {
         }
     }
 
-    async function _privySendTx(to, data, valueHex, from, fn) {
+    function _notifyTxOption(options, name, value) {
+        if (!options || typeof options[name] !== "function") return;
+        try { options[name](value); } catch (_) {
+            // Observers must not turn a submitted wallet transaction into a send failure.
+        }
+    }
+
+    async function _privySendTx(to, data, valueHex, from, fn, options) {
         if (typeof window.GMPrivySendTransaction !== "function") {
             throw new Error("Privy transaction signing is not ready. Please refresh and try again.");
         }
         var label = _privyActionLabel(fn);
+        _notifyTxOption(options, "onBroadcastStarted");
         var receipt = await window.GMPrivySendTransaction(
             {
                 to: to,
@@ -343,10 +351,11 @@ window.P2PWallet = (function () {
         );
         var txHash = (receipt && (receipt.hash || receipt.transactionHash)) || (typeof receipt === "string" ? receipt : null);
         if (!txHash) throw new Error("Privy did not return a transaction hash.");
+        _notifyTxOption(options, "onTransactionHash", txHash);
         return txHash;
     }
 
-    async function _miniPayTx(ep, to, data, valueHex) {
+    async function _miniPayTx(ep, to, data, valueHex, options) {
         var value = valueHex || "0x0";
         var accounts = await ep.request({ method: "eth_requestAccounts" });
         var from = (accounts && accounts[0]) || cfg.wallet;
@@ -362,13 +371,23 @@ window.P2PWallet = (function () {
         for (var k = 0; k < attempts.length; k++) {
             var p = { from: from, to: to, data: data, value: value, gas: gasHex };
             if (attempts[k]) p.feeCurrency = attempts[k];
+            var txHash = null;
+            var sendRequestStarted = false;
             try {
                 await _assertCelo(ep);
-                var txHash = await ep.request({ method: "eth_sendTransaction", params: [p] });
-                await _waitReceipt(ep, txHash);
+                sendRequestStarted = true;
+                _notifyTxOption(options, "onBroadcastStarted");
+                txHash = await ep.request({ method: "eth_sendTransaction", params: [p] });
+                if (!txHash) throw new Error("Transaction failed");
+                _notifyTxOption(options, "onTransactionHash", txHash);
+                if (!options || options.waitForReceipt !== false) await _waitReceipt(ep, txHash);
                 return txHash;
             } catch (err) {
                 lastErr = err;
+                // Once a provider has returned a hash, never retry with another
+                // fee currency: that could submit a duplicate transfer.
+                if (txHash) throw err;
+                if (sendRequestStarted && options && options.noRetryAfterSendRequest) throw err;
                 var msg = ((err && (err.message || "")) + "").toLowerCase();
                 if ((err && err.code === 4001) || /reject|denied|revert/i.test(msg)) throw err;
             }
@@ -381,9 +400,11 @@ window.P2PWallet = (function () {
      * @param {string} to           contract address
      * @param {string} abiFragment  e.g. "function openOrder(uint256 listingId, uint256 amount) returns (uint256)"
      * @param {Array}  args         function args
-     * @returns {Promise<string>}   tx hash (after confirmation when possible)
+     * @param {Object} options      optional submission callbacks and receipt-wait policy
+     * @returns {Promise<string>}   tx hash (after confirmation when possible by default)
      */
-    async function sendTx(to, abiFragment, args, valueHex) {
+    async function sendTx(to, abiFragment, args, valueHex, options) {
+        options = options || {};
         var ep = await getProvider();
         var accounts = await ep.request({ method: "eth_requestAccounts" });
         var from = (accounts && accounts[0]) || cfg.wallet;
@@ -398,11 +419,11 @@ window.P2PWallet = (function () {
 
         await _ensureCelo(ep);
         if (_isPrivyEmbeddedProvider(ep, from)) {
-            var privyTxHash = await _privySendTx(to, data, valueHex, from, fn);
-            await _waitReceipt(ep, privyTxHash);
+            var privyTxHash = await _privySendTx(to, data, valueHex, from, fn, options);
+            if (options.waitForReceipt !== false) await _waitReceipt(ep, privyTxHash);
             return privyTxHash;
         }
-        if (isMiniPay()) return await _miniPayTx(ep, to, data, valueHex);
+        if (isMiniPay()) return await _miniPayTx(ep, to, data, valueHex, options);
 
         var gasHex;
         try {
@@ -421,12 +442,14 @@ window.P2PWallet = (function () {
         // transaction field because some injected wallets (including Trust) reject it.
         await _assertCelo(ep);
 
+        _notifyTxOption(options, "onBroadcastStarted");
         var txHash = await ep.request({
             method: "eth_sendTransaction",
             params: [{ from: from, to: to, data: data, value: valueHex || "0x0", gas: gasHex, gasPrice: "0x" + gasPrice.toString(16) }],
         });
         if (!txHash) throw new Error("Transaction failed");
-        await _waitReceipt(ep, txHash);
+        _notifyTxOption(options, "onTransactionHash", txHash);
+        if (options.waitForReceipt !== false) await _waitReceipt(ep, txHash);
         return txHash;
     }
 
