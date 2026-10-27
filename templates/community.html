@@ -601,6 +601,29 @@
     </div>
 </div>
 
+{# Public reaction identities load only after a visitor opens a post's reaction
+   summary. The API returns usernames/profile URLs, never wallet addresses. #}
+<div class="cf-reactions-modal" id="cfReactionUsersModal" role="dialog"
+     aria-modal="true" aria-labelledby="cfReactionUsersTitle" tabindex="-1" hidden>
+    <section class="cf-reactions-panel">
+        <header class="cf-reactions-header">
+            <div>
+                <p class="cf-community-cards-kicker">Post activity</p>
+                <h2 id="cfReactionUsersTitle">Reactions</h2>
+            </div>
+            <button type="button" class="cf-community-cards-close" id="cfReactionUsersClose"
+                    aria-label="Close reactions">×</button>
+        </header>
+        <div class="cf-reactions-filters" id="cfReactionUsersFilters" role="group" aria-label="Filter reactions"></div>
+        <p class="cf-reactions-status" id="cfReactionUsersStatus" role="status" aria-live="polite"></p>
+        <ul class="cf-reactions-list" id="cfReactionUsersList" aria-label="People who reacted"></ul>
+        <div class="cf-reactions-footer">
+            <button type="button" class="cf-reactions-retry" id="cfReactionUsersRetry" hidden>Retry</button>
+            <button type="button" class="cf-reactions-more" id="cfReactionUsersMore" hidden>Load more</button>
+        </div>
+    </section>
+</div>
+
 {# ── Earn destinations sheet (separate from Community Cards) ───────────────── #}
 <div class="cf-sheet-overlay" id="cfSheetOverlay" onclick="GMCommunity.closeSheet()"></div>
 
