@@ -13,6 +13,12 @@
     var _busy = false;
     var lastReward = null;
     var lastEarningsRefresh = null;
+    var _questionTimer = null;
+    var _advanceTimer = null;
+    var _questionDeadline = 0;
+    var _activeQuestion = null;
+    var DAILY_QUESTION_SECONDS = 15;
+    var ANSWER_FEEDBACK_DELAY_MS = 1000;
 
     function $(id) { return document.getElementById(id); }
     function el(tag, className, text) {
@@ -71,6 +77,8 @@
     }
 
     function renderLearnMessage(message, actionLabel, action) {
+        stopQuestionTimer();
+        clearAdvanceTimer();
         var root = $('cfDailyLearnContent');
         if (!root) return;
         root.textContent = '';
@@ -163,12 +171,59 @@
         });
     }
 
+    function clearAdvanceTimer() {
+        if (_advanceTimer !== null) {
+            window.clearTimeout(_advanceTimer);
+            _advanceTimer = null;
+        }
+    }
+
+    function stopQuestionTimer() {
+        if (_questionTimer !== null) {
+            window.clearInterval(_questionTimer);
+            _questionTimer = null;
+        }
+        _questionDeadline = 0;
+    }
+
+    function updateQuestionTimer() {
+        if (!_questionDeadline || !_activeQuestion || _busy) return;
+        var remaining = Math.max(0, Math.ceil((_questionDeadline - Date.now()) / 1000));
+        var value = $('cfDailyLearnTimerValue');
+        var timer = $('cfDailyLearnTimer');
+        var progress = $('cfDailyLearnTimerProgress');
+        var fill = $('cfDailyLearnTimerFill');
+        if (value) value.textContent = remaining + 's';
+        if (progress) progress.setAttribute('aria-valuenow', String(remaining));
+        if (fill) fill.style.width = (remaining / DAILY_QUESTION_SECONDS * 100) + '%';
+        if (timer) {
+            timer.classList.toggle('is-warning', remaining <= 5);
+            timer.classList.toggle('is-caution', remaining > 5 && remaining <= 10);
+        }
+        if (remaining <= 0) {
+            var question = _activeQuestion;
+            stopQuestionTimer();
+            submitAnswer(question, null, true);
+        }
+    }
+
+    function startQuestionTimer(question) {
+        stopQuestionTimer();
+        _activeQuestion = question || null;
+        if (!WALLET || !_activeQuestion) return;
+        _questionDeadline = Date.now() + DAILY_QUESTION_SECONDS * 1000;
+        updateQuestionTimer();
+        _questionTimer = window.setInterval(updateQuestionTimer, 250);
+    }
+
     function syncLearnDoneDetail() {
         var detail = $('cfLearnDoneDetail');
         if (detail) detail.textContent = learnDoneDetailText();
     }
 
     function renderCompleted(data) {
+        stopQuestionTimer();
+        clearAdvanceTimer();
         var score = Number(data.score) || 0;
         var total = Number(data.total_questions) || 2;
         var root = $('cfDailyLearnContent');
@@ -206,40 +261,51 @@
         var root = $('cfDailyLearnContent');
         if (!root) return;
         root.textContent = '';
-        root.appendChild(el('p', 'cf-daily-learn-result', result.correct ? 'Correct.' : 'Not quite.'));
+        var feedback = result.skipped
+            ? 'Time ran out. This question was skipped.'
+            : (result.correct ? 'Correct.' : 'Not quite.');
+        root.appendChild(el('p', 'cf-daily-learn-result', feedback));
         if (result.explanation) root.appendChild(el('p', 'cf-daily-learn-result', result.explanation));
         if (result.status === 'completed') {
+            root.appendChild(el('p', 'cf-daily-learn-result',
+                'Your Daily Learn is complete: ' + (Number(result.score) || 0) + '/2.'));
             var rewardNote = el('p', 'cf-daily-learn-result', rewardStatusMessage());
             rewardNote.id = 'cfDailyLearnRewardStatus';
             root.appendChild(rewardNote);
         }
         var progress = $('cfDailyLearnProgress');
         if (progress) progress.textContent = (Number(result.completed_questions) || 0) + '/2 complete';
-        var next = el('button', 'cf-daily-learn-next',
-            result.status === 'completed' ? 'See today’s result' : 'Continue');
-        next.type = 'button';
-        next.onclick = function () {
+        clearAdvanceTimer();
+        _advanceTimer = window.setTimeout(function () {
+            _advanceTimer = null;
             if (result.status === 'completed') renderCompleted(result);
             else loadLearn();
-        };
-        root.appendChild(next);
+        }, ANSWER_FEEDBACK_DELAY_MS);
     }
 
-    function submitAnswer(question) {
-        if (_busy || selectedAnswer === null) return;
+    function submitAnswer(question, answer, skipped) {
+        if (_busy || (!skipped && answer === null)) return;
         if (!WALLET) {
             renderLearnMessage('Connect a verified wallet to submit your Daily Learn answers.', 'Sign in', connect);
             return;
         }
         _busy = true;
-        var submit = $('cfDailyLearnSubmit');
-        if (submit) { submit.disabled = true; submit.textContent = 'Checking…'; }
+        stopQuestionTimer();
+        clearAdvanceTimer();
+        var root = $('cfDailyLearnContent');
+        var options = root && root.querySelectorAll
+            ? root.querySelectorAll('.cf-daily-learn-option') : [];
+        Array.prototype.forEach.call(options, function (choice) { choice.disabled = true; });
+        var status = $('cfDailyLearnAnswerStatus');
+        if (status) status.textContent = skipped
+            ? 'Time expired. Saving this question as skipped…' : 'Saving your answer…';
         api('/community/api/daily-learn/answer', {
             method: 'POST',
             body: JSON.stringify({
                 day_utc: learn.day_utc,
                 question_id: question.question_id,
-                answer: selectedAnswer
+                answer: skipped ? null : answer,
+                skipped: skipped === true
             })
         }).then(function (response) {
             var result = response.data || {};
@@ -258,16 +324,22 @@
             }
             if (result.status === 'completed') refreshCompletionEarnings(result);
             renderAnswerFeedback(result);
-        }).catch(function (error) {
-            renderLearnMessage((error && error.message) || 'Daily Learn is temporarily unavailable.');
+        }).catch(function () {
+            // A lost response can happen after the database committed. Reload
+            // authoritative progress before showing another answer; identical
+            // submissions are idempotent at the database boundary.
+            _busy = false;
+            return loadLearn('We could not confirm that response. Checking your saved quiz progress…');
         }).then(function () {
             _busy = false;
         });
     }
 
-    function renderQuestion(data) {
+    function renderQuestion(data, notice) {
         var root = $('cfDailyLearnContent');
         if (!root) return;
+        stopQuestionTimer();
+        clearAdvanceTimer();
         root.textContent = '';
         selectedAnswer = null;
         var question = (data.questions || [])[0];
@@ -286,6 +358,31 @@
         if (!WALLET) {
             root.appendChild(el('p', 'cf-daily-learn-reset', 'Preview — connect a verified wallet to answer and save progress.'));
         }
+        if (notice) root.appendChild(el('p', 'cf-daily-learn-result', notice));
+        if (WALLET) {
+            var timer = el('div', 'cf-daily-learn-timer');
+            timer.id = 'cfDailyLearnTimer';
+            timer.setAttribute('role', 'timer');
+            timer.setAttribute('aria-label', 'Time remaining for this question');
+            timer.setAttribute('aria-live', 'off');
+            timer.appendChild(el('span', 'cf-daily-learn-timer-label', 'Time remaining'));
+            var value = el('span', 'cf-daily-learn-timer-value', DAILY_QUESTION_SECONDS + 's');
+            value.id = 'cfDailyLearnTimerValue';
+            timer.appendChild(value);
+            var track = el('span', 'cf-daily-learn-timer-track');
+            track.id = 'cfDailyLearnTimerProgress';
+            track.setAttribute('role', 'progressbar');
+            track.setAttribute('aria-label', 'Question time remaining');
+            track.setAttribute('aria-valuemin', '0');
+            track.setAttribute('aria-valuemax', String(DAILY_QUESTION_SECONDS));
+            track.setAttribute('aria-valuenow', String(DAILY_QUESTION_SECONDS));
+            var fill = el('span', 'cf-daily-learn-timer-fill');
+            fill.id = 'cfDailyLearnTimerFill';
+            fill.setAttribute('aria-hidden', 'true');
+            track.appendChild(fill);
+            timer.appendChild(track);
+            root.appendChild(timer);
+        }
         root.appendChild(el('p', 'cf-daily-learn-question', question.question || ''));
         var options = el('div', 'cf-daily-learn-options');
         options.setAttribute('role', 'group');
@@ -296,32 +393,38 @@
             choice.type = 'button';
             choice.setAttribute('aria-pressed', 'false');
             choice.onclick = function () {
+                if (_busy) return;
                 selectedAnswer = index;
                 Array.prototype.forEach.call(options.children, function (node) {
                     node.setAttribute('aria-pressed', node === choice ? 'true' : 'false');
                 });
-                if (submitButton) submitButton.disabled = false;
+                if (WALLET) {
+                    submitAnswer(question, index, false);
+                } else if (submitButton) {
+                    submitButton.disabled = false;
+                }
             };
             options.appendChild(choice);
         });
         root.appendChild(options);
-        var button = el('button', 'cf-daily-learn-submit', WALLET ? 'Submit answer' : 'Sign in to answer');
-        button.id = 'cfDailyLearnSubmit';
-        button.type = 'button';
-        button.disabled = !!WALLET;
-        submitButton = button;
-        button.onclick = function () {
-            if (!WALLET) { connect(); return; }
-            if (selectedAnswer === null) {
-                renderLearnMessage('Choose an answer before continuing.', 'Back to question', function () { renderQuestion(data); });
-                return;
-            }
-            submitAnswer(question);
-        };
-        root.appendChild(button);
+        if (!WALLET) {
+            var signIn = el('button', 'cf-daily-learn-connect', 'Sign in to answer');
+            signIn.type = 'button';
+            signIn.disabled = true;
+            submitButton = signIn;
+            signIn.onclick = connect;
+            root.appendChild(signIn);
+        } else {
+            var answerStatus = el('p', 'cf-daily-learn-answer-status', '');
+            answerStatus.id = 'cfDailyLearnAnswerStatus';
+            answerStatus.setAttribute('role', 'status');
+            answerStatus.setAttribute('aria-live', 'polite');
+            root.appendChild(answerStatus);
+        }
+        if (WALLET) startQuestionTimer(question);
     }
 
-    function loadLearn() {
+    function loadLearn(notice) {
         var card = $('cfDailyLearn');
         if (!card) return Promise.resolve();
         return api('/community/api/daily-learn').then(function (response) {
@@ -352,7 +455,7 @@
             card.hidden = false;
             var title = $('cfDailyLearnTitle');
             if (title) title.textContent = 'Answer today’s 2 questions';
-            renderQuestion(data);
+            renderQuestion(data, notice);
         }).catch(function () {
             card.hidden = true;
             hideLearnDone();
