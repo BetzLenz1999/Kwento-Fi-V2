@@ -5,6 +5,47 @@
   var SW_URL = '/static/service-worker.js';
   var SW_SCOPE = '/';
   var ACTIVE_TIMEOUT_MS = 15000;
+  var ENABLED_CACHE_PREFIX = 'gmMessagePushEnabled_v1:';
+  var ENABLED_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+  function enabledCacheKey(wallet) {
+    var boot = window.GM_MESSAGES_BOOT || window.GM_COMMUNITY_BOOT || {};
+    var address = String(wallet || boot.wallet || '').trim().toLowerCase();
+    return address ? ENABLED_CACHE_PREFIX + address : '';
+  }
+
+  function rememberEnabled() {
+    var key = enabledCacheKey();
+    if (!key) return;
+    try {
+      if (!window.localStorage) return;
+      window.localStorage.setItem(key, JSON.stringify({ checkedAt: Date.now() }));
+    }
+    catch (_) {}
+  }
+
+  function clearRememberedEnabled(wallet) {
+    var key = enabledCacheKey(wallet);
+    if (!key) return;
+    try { if (window.localStorage) window.localStorage.removeItem(key); } catch (_) {}
+  }
+
+  function hasCachedEnabled(wallet) {
+    var key = enabledCacheKey(wallet);
+    if (!key || !window.Notification
+        || window.Notification.permission !== 'granted') return false;
+    try {
+      var storage = window.localStorage;
+      if (!storage) return false;
+      var value = JSON.parse(storage.getItem(key) || 'null');
+      var age = value && Date.now() - Number(value.checkedAt);
+      if (!value || !isFinite(age) || age < 0 || age > ENABLED_CACHE_TTL_MS) {
+        storage.removeItem(key);
+        return false;
+      }
+      return true;
+    } catch (_) { return false; }
+  }
 
   function makeError(message, code) {
     var error = new Error(message || 'Could not set up message notifications.');
@@ -158,32 +199,39 @@
   }
 
   function inspect() {
-    if (!supported()) return Promise.resolve({ state: 'unsupported' });
-    if (window.Notification.permission === 'denied') {
-      return Promise.resolve({ state: 'permission-blocked' });
-    }
-    return serverStatus().then(function (config) {
-      if (!config.enabled || !config.public_key) return { state: 'unconfigured' };
-      // Catch malformed keys before the user grants browser permission.
-      base64ToBytes(config.public_key);
-      if (config.storage_ready !== true) {
-        return { state: 'storage-unavailable', message: config.error ||
-          'Message notifications cannot be enabled right now. You can still open Messages.' };
-      }
-      return registerCanonicalWorker().then(function (registration) {
-        return registration.pushManager.getSubscription().then(function (subscription) {
-          if (window.Notification.permission !== 'granted' || !subscription) {
-            return { state: 'needs-setup' };
-          }
-          return serverStatus(subscription.endpoint).then(function (status) {
-            return status.enabled && status.storage_ready === true && status.subscribed === true
-              ? { state: 'enabled' } : { state: 'needs-setup' };
+    var result;
+    if (!supported()) result = Promise.resolve({ state: 'unsupported' });
+    else if (window.Notification.permission === 'denied') {
+      result = Promise.resolve({ state: 'permission-blocked' });
+    } else {
+      result = serverStatus().then(function (config) {
+        if (!config.enabled || !config.public_key) return { state: 'unconfigured' };
+        // Catch malformed keys before the user grants browser permission.
+        base64ToBytes(config.public_key);
+        if (config.storage_ready !== true) {
+          return { state: 'storage-unavailable', message: config.error ||
+            'Message notifications cannot be enabled right now. You can still open Messages.' };
+        }
+        return registerCanonicalWorker().then(function (registration) {
+          return registration.pushManager.getSubscription().then(function (subscription) {
+            if (window.Notification.permission !== 'granted' || !subscription) {
+              return { state: 'needs-setup' };
+            }
+            return serverStatus(subscription.endpoint).then(function (status) {
+              return status.enabled && status.storage_ready === true && status.subscribed === true
+                ? { state: 'enabled' } : { state: 'needs-setup' };
+            });
           });
         });
+      }).catch(function (error) {
+        return { state: 'storage-unavailable', message: (error && error.message)
+          || 'Could not check notification setup. You can still open Messages.' };
       });
-    }).catch(function (error) {
-      return { state: 'storage-unavailable', message: (error && error.message)
-        || 'Could not check notification setup. You can still open Messages.' };
+    }
+    return result.then(function (status) {
+      if (status.state === 'enabled') rememberEnabled();
+      else if (status.state !== 'storage-unavailable') clearRememberedEnabled();
+      return status;
     });
   }
 
@@ -242,13 +290,16 @@
           });
         });
       });
+    }).then(function (result) {
+      if (result && result.state === 'enabled') rememberEnabled();
+      return result;
     });
   }
 
   function disable() {
     return registerCanonicalWorker().then(function (registration) {
       return registration.pushManager.getSubscription().then(function (subscription) {
-        if (!subscription) return { state: 'disabled' };
+        if (!subscription) { clearRememberedEnabled(); return { state: 'disabled' }; }
         return api('/api/messages/push/unsubscribe', {
           method: 'POST', body: JSON.stringify({ endpoint: subscription.endpoint })
         }).then(function (result) {
@@ -257,7 +308,7 @@
               (result && result.code) || 'unsubscribe_failed');
           }
           return subscription.unsubscribe().catch(function () { return false; })
-            .then(function () { return { state: 'disabled' }; });
+            .then(function () { clearRememberedEnabled(); return { state: 'disabled' }; });
         });
       });
     });
@@ -268,6 +319,8 @@
     inspect: inspect,
     enable: enable,
     disable: disable,
-    register: registerCanonicalWorker
+    register: registerCanonicalWorker,
+    hasCachedEnabled: hasCachedEnabled,
+    clearCachedEnabled: clearRememberedEnabled
   };
 })(window, navigator);
