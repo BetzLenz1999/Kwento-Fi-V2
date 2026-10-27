@@ -142,6 +142,8 @@ function run(opts) {
    'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
    'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
    'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame',
+   'cfMessagePushPrompt', 'cfMessagePushStatus', 'cfMessagePushCopy',
+   'cfMessagePushEnable', 'cfMessagePushLater',
    'claimModal',
    'cfRail',
    'cfEarn', 'cfEarnChip', 'cfEarnAmount', 'cfEarnGoal', 'cfEarnBar',
@@ -168,6 +170,7 @@ function run(opts) {
   // The Buy Airtime iframe ships with the modal: `hidden` until opened, and
   // its src parked on data-src so the store never loads until a tap.
   registry.cfAirtimeModal.hidden = true;
+  registry.cfMessagePushPrompt.hidden = true;
   registry.cfAirtimeFrame.setAttribute('data-src', '/reloadly/?embed=1#topup');
   // The shared claim dialog is rendered directly and starts closed.
   registry.claimModal.className = '';
@@ -193,6 +196,9 @@ function run(opts) {
   const timeoutCallbacks = new Map();
   const sandbox = {
     document: doc, console,
+    addEventListener: () => {},
+    setInterval: () => 1,
+    clearInterval: () => {},
     setTimeout: fn => {
       const id = nextTimerId++;
       timeoutCallbacks.set(id, fn);
@@ -2140,6 +2146,45 @@ function feedFetch(handler, feedRows) {
     ok('the admin blurb states the weighted rates',
        tpl.includes('<strong>2.5</strong> per comment received') &&
        tpl.includes('<strong>0.1</strong> per reaction given'));
+  }
+
+  // ── O. Messages button: opt-in is tap-triggered and never blocks Messages ──
+  {
+    const boot = Object.assign({}, MEMBER, {
+      messagesEnabled: true,
+      nav: [{ id: 'messages', icon: '💬', label: 'Messages', href: '/messages',
+        action: 'messages', guestOk: false }],
+    });
+    const { api, store, sandbox } = run({ boot });
+    let enableCalls = 0;
+    sandbox.GMCommunityPush = {
+      inspect: () => Promise.resolve({ state: 'needs-setup' }),
+      enable: () => { enableCalls++; return Promise.resolve({ state: 'enabled' }); },
+    };
+    api._internals.renderNav();
+    const messageButton = store.cfBottomNav.children.find(n => n.getAttribute('data-nav') === 'messages');
+    messageButton.onclick({ preventDefault() {} });
+    ok('tapping Messages opens the in-app permission-choice dialog',
+       store.cfMessagePushPrompt.hidden === false);
+    ok('tapping Messages itself does not request browser permission', enableCalls === 0);
+    await tick();
+    ok('the Enable control becomes available after readiness passes',
+       store.cfMessagePushEnable.disabled === false
+         && store.cfMessagePushEnable.textContent === 'Enable notifications');
+    api.enableMessageNotifications();
+    ok('the explicit Enable tap starts push setup', enableCalls === 1);
+    await tick();
+    ok('successful setup proceeds to Messages', sandbox.location.href === '/messages', sandbox.location.href);
+
+    const declined = run({ boot });
+    declined.sandbox.GMCommunityPush = {
+      inspect: () => Promise.resolve({ state: 'needs-setup' }),
+      enable: () => { throw new Error('Not now must not attempt enable'); },
+    };
+    declined.api._internals.openMessages();
+    await tick();
+    declined.api.declineMessageNotifications();
+    ok('Not now opens Messages without calling enable', declined.sandbox.location.href === '/messages');
   }
 
   console.log('');
