@@ -987,6 +987,8 @@ function feedFetch(handler, feedRows) {
     ok('reaction count is a button with the accessible dialog target',
        !!trigger && trigger.tagName === 'BUTTON'
        && trigger.getAttribute('aria-controls') === 'cfReactionUsersModal');
+    ok('reaction button visibly tells users they can see who reacted',
+       trigger && trigger.textContent.indexOf('See who reacted') >= 0);
     trigger.onclick();
     await tick();
     ok('tapping reaction total opens the users modal for guests',
@@ -1023,6 +1025,33 @@ function feedFetch(handler, feedRows) {
     ok('Escape closes the reactor dialog without leaving the page locked',
        escapePrevented && store.cfReactionUsersModal.hidden === true
        && !document.body.classList.contains('cf-modal-open'));
+  }
+
+  // ── 10c-3. A stale zero total cannot disable known reaction evidence ─────
+  {
+    const requests = [];
+    const { api, store } = run({
+      boot: GUEST,
+      fetchImpl: url => {
+        const requestUrl = String(url);
+        if (requestUrl.indexOf('/reactions?') !== -1) requests.push(requestUrl);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          success: true, reactors: [], next_cursor: null, has_more: false,
+        }) });
+      },
+    });
+    const card = api._internals.buildCard(makePost({
+      reaction_count: 0, reaction_breakdown: { love: 2 },
+    }));
+    const trigger = card.querySelector('.cf-reaction-count-trigger');
+    ok('a nonzero reaction breakdown overrides a stale zero-count disabled state',
+       !!trigger && trigger.disabled === false
+       && trigger.textContent.indexOf('See who reacted') >= 0);
+    trigger.onclick();
+    await tick();
+    ok('the stale-count control still opens and requests the reactor list',
+       store.cfReactionUsersModal.hidden === false && requests.length === 1);
+    store.cfReactionUsersClose.dispatch('click');
   }
 
   // ── 10d. An optimistic reaction keeps the stacked summary in step ────────
