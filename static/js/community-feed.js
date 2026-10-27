@@ -3037,7 +3037,7 @@
         }
         document.addEventListener('visibilitychange', refreshIfVisible);
         window.addEventListener('focus', refreshIfVisible);
-        _messageUnreadPollTimer = window.setInterval(refreshIfVisible, 60000);
+        _messageUnreadPollTimer = window.setInterval(refreshIfVisible, 5 * 60 * 1000);
     }
 
     function messagePromptWasDismissed() {
@@ -3420,7 +3420,7 @@
         };
         document.addEventListener('visibilitychange', refreshIfVisible);
         window.addEventListener('focus', refreshIfVisible);
-        _notificationPollTimer = window.setInterval(refreshIfVisible, 60000);
+        _notificationPollTimer = window.setInterval(refreshIfVisible, 5 * 60 * 1000);
     }
 
     function openSearch() {
