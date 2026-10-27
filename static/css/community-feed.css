@@ -2133,6 +2133,12 @@ body.cf-modal-open { overflow: hidden; }
     border: 1px solid var(--cf-hairline); border-radius: 9px;
     background: var(--cf-card-solid); color: var(--cf-ink); font: inherit; font-weight: 700; cursor: pointer;
 }
+.cf-vault-donation-submit:disabled,
+.cf-vault-donation-cancel:disabled,
+.cf-vault-donation-check:disabled {
+    opacity: 0.58; cursor: not-allowed; filter: saturate(0.55);
+}
+.cf-vault-donation-submit:disabled:hover { background: var(--cf-accent-2); }
 .cf-vault-donation-status { margin: 0.7rem 0 0; color: var(--cf-dim); font-size: 0.85rem; }
 .cf-vault-donation-status.is-error { color: var(--cf-danger); }
 .cf-vault-donation-status.is-success { color: var(--cf-ok-ink); }
