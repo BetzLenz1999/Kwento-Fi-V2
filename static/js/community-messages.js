@@ -80,7 +80,15 @@
   }
   function loadPushStatus() {
     var token = ++pushSyncToken;
-    setPushUi('checking', true, null, true);
+    var cachedEnabled = !!(window.GMCommunityPush
+      && typeof window.GMCommunityPush.hasCachedEnabled === 'function'
+      && window.GMCommunityPush.hasCachedEnabled(BOOT.wallet));
+    if (cachedEnabled) {
+      setPushUi('enabled', false,
+        'Notifications were last confirmed on this device; refreshing in the background.', true);
+    } else {
+      setPushUi('checking', true, null, true);
+    }
     if (!window.GMCommunityPush) {
       setPushUi('sync-error', false, 'The notification setup module could not load. Reload and try again.', true);
       return;
@@ -96,14 +104,19 @@
       } else if (status.state === 'permission-blocked') {
         setPushUi('permission-blocked', false, null, true);
       } else if (status.state === 'storage-unavailable') {
-        setPushUi('sync-error', false, status.message, true);
-      } else if (Notification.permission === 'granted') {
+        if (cachedEnabled) setPushUi('enabled', false,
+          'Notifications were last confirmed on this device, but the current status could not be refreshed.', true);
+        else setPushUi('sync-error', false, status.message, true);
+      } else if (window.Notification && window.Notification.permission === 'granted') {
         setPushUi('setup-needed', false, 'Permission is already allowed. Finish registering this device for message notifications.', true);
       } else {
         setPushUi('ready', false, null, true);
       }
     }).catch(function (error) {
-      if (token === pushSyncToken) setPushUi('sync-error', false,
+      if (token !== pushSyncToken) return;
+      if (cachedEnabled) setPushUi('enabled', false,
+        'Notifications were last confirmed on this device, but the current status could not be refreshed.', true);
+      else setPushUi('sync-error', false,
         (error && error.message) || 'Could not verify this device’s notification setup. Retry to check again.', true);
     });
   }
