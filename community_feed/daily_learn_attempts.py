@@ -113,6 +113,7 @@ def _public_result(payload: dict[str, Any], *, submitted: bool) -> dict[str, Any
         for key in (
             "success", "status", "day_utc", "score", "completed_questions",
             "total_questions", "next_question_available", "completed_new", "code",
+            "skipped",
         )
         if key in payload
     }
@@ -138,18 +139,20 @@ def _invalid_day() -> dict[str, Any]:
             "message": "Daily Learn answers are accepted only for today's UTC cycle."}
 
 
-def submit_answer(wallet: str, day_utc: str, question_id: str, answer: Any, *, client=None) -> dict[str, Any]:
+def submit_answer(wallet: str, day_utc: str, question_id: str, answer: Any, *,
+                  skipped: bool = False, client=None) -> dict[str, Any]:
     """Persist one answer for today's expected question and return its result.
 
     The explicit ``day_utc`` is a consistency guard for the route and must equal
     today's UTC date. The database checks it again against its own UTC clock.
     Score, reward, and correctness are not accepted as inputs. An identical
     retry is successful but has ``completed_new=False``; a changed answer or
-    out-of-order question is rejected without mutation.
+    out-of-order question is rejected without mutation. A timeout skip uses the
+    reserved -1 RPC value and is always scored incorrect by the database.
     """
     wallet_address = _wallet(wallet)
     qid = _question_id(question_id)
-    index = _answer_index(answer)
+    index = (-1 if answer is None else None) if skipped else _answer_index(answer)
     if not wallet_address or not qid or index is None:
         return {"success": False, "status": "rejected", "code": "invalid_request",
                 "message": "A wallet, question, and valid answer are required."}
