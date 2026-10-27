@@ -194,9 +194,11 @@ function run(opts) {
 
   let nextTimerId = 1;
   const timeoutCallbacks = new Map();
+  const windowListeners = {};
   const sandbox = {
     document: doc, console,
-    addEventListener: () => {},
+    addEventListener: (name, fn) => { (windowListeners[name] = windowListeners[name] || []).push(fn); },
+    dispatchWindowEvent: (name, event) => (windowListeners[name] || []).forEach(fn => fn(event)),
     setInterval: () => 1,
     clearInterval: () => {},
     setTimeout: fn => {
@@ -1292,6 +1294,62 @@ function feedFetch(handler, feedRows) {
     ok('the Buy Airtime item is still an anchor',
        airtime.tagName === 'A' && airtime.href === '/reloadly/?embed=1#topup',
        airtime.tagName + ' ' + airtime.href);
+
+    const childReplies = [];
+    const childWindow = { postMessage: (message, origin) => childReplies.push({ message, origin }) };
+    store.cfAirtimeFrame.contentWindow = childWindow;
+    let verificationOpens = 0;
+    let modalWasClosedBeforeVerification = false;
+    sandbox.openClaimOrVerify = () => {
+      verificationOpens++;
+      modalWasClosedBeforeVerification = store.cfAirtimeModal.hidden === true;
+    };
+    const verificationRequest = {
+      channel: 'gm-reloadly-embed', version: 1,
+      type: 'request-community-verification', requestId: 'airtime-fv-123-abc'
+    };
+    api.openAirtime();
+    sandbox.dispatchWindowEvent('message', {
+      origin: 'https://untrusted.example', source: childWindow, data: verificationRequest,
+    });
+    sandbox.dispatchWindowEvent('message', {
+      origin: sandbox.location.origin, source: { postMessage() {} }, data: verificationRequest,
+    });
+    sandbox.dispatchWindowEvent('message', {
+      origin: sandbox.location.origin, source: childWindow,
+      data: Object.assign({}, verificationRequest, { version: 2 }),
+    });
+    api.closeAirtime();
+    sandbox.dispatchWindowEvent('message', {
+      origin: sandbox.location.origin, source: childWindow, data: verificationRequest,
+    });
+    ok('invalid Airtime iframe messages are ignored',
+       verificationOpens === 0 && store.cfAirtimeModal.hidden === true);
+
+    api.openAirtime();
+    sandbox._walletFvReason = undefined;
+    sandbox.dispatchWindowEvent('message', {
+      origin: sandbox.location.origin, source: childWindow, data: verificationRequest,
+    });
+    ok('a valid Airtime verification request opens the shared Community modal',
+       verificationOpens === 1 && modalWasClosedBeforeVerification
+         && sandbox._walletNeedsFV === true && sandbox._walletFvReason === 'not_verified'
+         && store.cfAirtimeModal.hidden === true);
+    ok('the parent acknowledges the handled request and stays on Community',
+       childReplies.length === 1
+         && childReplies[0].message.type === 'community-verification-ack'
+         && childReplies[0].message.requestId === verificationRequest.requestId
+         && !String(sandbox.location.href || '').includes('/wallet'));
+
+    // Preserve a distinct re-verification state instead of rewriting it as first-time.
+    api.openAirtime();
+    sandbox._walletFvReason = 're_verification_needed';
+    const reverifyRequest = Object.assign({}, verificationRequest, { requestId: 'airtime-fv-124-def' });
+    sandbox.dispatchWindowEvent('message', {
+      origin: sandbox.location.origin, source: childWindow, data: reverifyRequest,
+    });
+    ok('the handoff preserves the existing re-verification reason',
+       verificationOpens === 2 && sandbox._walletFvReason === 're_verification_needed');
   }
 
   // ── 13e. Claim Free G$ opens the wallet claim sheet IN the feed ───────────
