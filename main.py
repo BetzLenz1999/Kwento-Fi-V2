@@ -133,16 +133,19 @@ app.config['SQLALCHEMY_MAX_OVERFLOW'] = 2
 # URLs and defeats stale cache entries.
 # ---------------------------------------------------------------------------
 def _compute_asset_version():
-    env_version = (
-        os.environ.get('ASSET_VERSION')
-        or os.environ.get('VERCEL_GIT_COMMIT_SHA')
+    # Prefer an immutable build identifier over ASSET_VERSION: the latter is
+    # sometimes configured as a static environment value, which would leave
+    # one-year immutable asset URLs and the service-worker cache frozen across
+    # deployments.
+    build_version = (
+        os.environ.get('VERCEL_GIT_COMMIT_SHA')
         or os.environ.get('GIT_COMMIT_SHA')
         or os.environ.get('RENDER_GIT_COMMIT')
         or os.environ.get('SOURCE_VERSION')
         or os.environ.get('HEROKU_SLUG_COMMIT')
     )
-    if env_version:
-        return env_version[:12]
+    if build_version:
+        return build_version[:12]
     try:
         result = subprocess.run(
             ['git', 'rev-parse', '--short=12', 'HEAD'],
@@ -154,6 +157,10 @@ def _compute_asset_version():
             return sha
     except Exception:
         pass
+    # ASSET_VERSION remains supported for deployments without git metadata.
+    env_version = os.environ.get('ASSET_VERSION')
+    if env_version:
+        return env_version[:12]
     return str(int(time()))
 
 
