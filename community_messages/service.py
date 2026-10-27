@@ -12,6 +12,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
+from community_feed import notifications as feed_notifications
 from community_feed import service as profile_service
 import web_push_service
 
@@ -295,14 +296,29 @@ def _other_participant(db, conversation_id: str, viewer: str) -> str | None:
     return None
 
 
-def _notify_recipient(db, conversation_id: str, viewer: str) -> None:
-    # Notification delivery is best-effort and must never make a saved message fail.
-    recipient = _other_participant(db, conversation_id, viewer)
+def _notify_recipient(db, conversation_id: str, viewer: str, message_id: str) -> None:
+    # Both inbox persistence and browser push are best-effort; a saved message
+    # must not fail because either notification channel is unavailable.
+    try:
+        recipient = _other_participant(db, conversation_id, viewer)
+    except Exception as exc:  # noqa: BLE001 - notification lookup is not message delivery
+        logger.info("community_messages: recipient lookup for notification skipped: %s", exc)
+        return
     if not recipient:
         return
     try:
-        web_push_service.notify_new_message(
-            recipient, profile_service.get_username(viewer) or "Community member", conversation_id)
+        actor_name = profile_service.get_username(viewer) or "Community member"
+    except Exception as exc:  # noqa: BLE001 - use a generic label if profile lookup fails
+        logger.info("community_messages: actor lookup for notification skipped: %s", exc)
+        actor_name = "Community member"
+    try:
+        feed_notifications.notify_message(
+            actor_wallet=viewer, actor_username=actor_name, recipient_wallet=recipient,
+            conversation_id=conversation_id, message_id=message_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_messages: in-app notification failed: %s", exc)
+    try:
+        web_push_service.notify_new_message(recipient, actor_name, conversation_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_messages: push notification failed: %s", exc)
 
@@ -351,7 +367,7 @@ def start_conversation(viewer_wallet: str, username: str) -> dict:
 
 def _public_conversation(db, row: dict, viewer_wallet: str) -> dict:
     cid = row.get("id")
-    participants = _rows(db.table("community_dm_participants").select("wallet_address,username_snapshot")
+    participants = _rows(db.table("community_dm_participants").select("wallet_address,username_snapshot,last_read_at")
                           .eq("conversation_id", cid).execute())
     viewer = _wallet(viewer_wallet)
     other = next((p for p in participants if _wallet(p.get("wallet_address")) != viewer), None)
@@ -359,14 +375,15 @@ def _public_conversation(db, row: dict, viewer_wallet: str) -> dict:
         "username": "Community member", "avatar_url": None}
     unread = 0
     participant = next((p for p in participants if _wallet(p.get("wallet_address")) == viewer), None)
-    if participant and participant.get("last_read_at"):
-        try:
-            unread_result = (db.table("community_dm_messages").select("id", count="exact")
-                             .eq("conversation_id", cid).neq("sender_wallet", viewer)
-                             .is_("deleted_at", "null").gt("created_at", participant["last_read_at"]).execute())
-            unread = int(getattr(unread_result, "count", None) or len(_rows(unread_result)))
-        except Exception:  # noqa: BLE001
-            unread = 0
+    if participant:
+        unread_query = (db.table("community_dm_messages").select("id", count="exact")
+                        .eq("conversation_id", cid).neq("sender_wallet", viewer)
+                        .is_("deleted_at", "null"))
+        if participant.get("last_read_at"):
+            unread_query = unread_query.gt("created_at", participant["last_read_at"])
+        unread_result = unread_query.execute()
+        unread_count = getattr(unread_result, "count", None)
+        unread = int(unread_count if unread_count is not None else len(_rows(unread_result)))
     return {"id": cid, "username": person["username"], "avatar_url": person["avatar_url"],
             "last_message": row.get("last_message_preview") or "", "last_message_at": row.get("last_message_at"),
             "unread_count": unread}
@@ -382,12 +399,15 @@ def list_conversations(viewer_wallet: str) -> dict:
                       .eq("wallet_address", viewer).execute())
         ids = [row.get("conversation_id") for row in links if row.get("conversation_id")]
         if not ids:
-            return {"success": True, "conversations": [], "unread_total": 0}
+            return {"success": True, "conversations": [], "unread_total": 0,
+                    "unread_conversation_count": 0}
         rows = _rows(db.table("community_dm_conversations").select("id,pair_key,status,created_at,last_message_at,last_message_preview")
                      .in_("id", ids).eq("status", "active").order("last_message_at", desc=True).execute())
         conversations = [_public_conversation(db, row, viewer) for row in rows]
         return {"success": True, "conversations": conversations,
-                "unread_total": sum(item["unread_count"] for item in conversations)}
+                "unread_total": sum(item["unread_count"] for item in conversations),
+                "unread_conversation_count": sum(1 for item in conversations
+                                                  if item["unread_count"] > 0)}
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_messages: list failed: %s", exc)
         return {"success": False, "code": "db_error", "error": "Could not load messages.", "conversations": []}
@@ -478,7 +498,7 @@ def send_message(viewer_wallet: str, conversation_id: str, body: str,
         now = datetime.now(timezone.utc).isoformat()
         preview = text[:160] if text else "Attachment"
         db.table("community_dm_conversations").update({"last_message_at": now, "last_message_preview": preview}).eq("id", conversation_id).execute()
-        _notify_recipient(db, conversation_id, viewer)
+        _notify_recipient(db, conversation_id, viewer, message.get("id"))
         return {"success": True, "message": {"id": message.get("id"), "body": text,
                 "created_at": message.get("created_at") or now, "is_me": True,
                 "attachment": _public_attachment(stored_attachment)}}
@@ -519,7 +539,7 @@ def send_transfer_message(viewer_wallet: str, username: str, tip: dict) -> dict:
         preview = f"On-chain transfer: {transfer['amount']} {transfer['token_label']}"
         db.table("community_dm_conversations").update({"last_message_at": now,
             "last_message_preview": preview}).eq("id", cid).execute()
-        _notify_recipient(db, cid, viewer)
+        _notify_recipient(db, cid, viewer, row.get("id"))
         return {"success": True, "duplicate": False, "message": _public_message(row, viewer),
                 "conversation_id": cid}
     except Exception as exc:  # noqa: BLE001
@@ -534,8 +554,13 @@ def mark_read(viewer_wallet: str, conversation_id: str) -> dict:
     try:
         if not _authorized_participant(db, conversation_id, viewer):
             return {"success": False, "code": "forbidden", "error": "Conversation not found."}
-        db.table("community_dm_participants").update({"last_read_at": datetime.now(timezone.utc).isoformat()}) \
+        read_at = datetime.now(timezone.utc).isoformat()
+        db.table("community_dm_participants").update({"last_read_at": read_at}) \
           .eq("conversation_id", conversation_id).eq("wallet_address", viewer).execute()
+        try:
+            feed_notifications.mark_messages_read_for_conversation(viewer, conversation_id, read_at)
+        except Exception as exc:  # noqa: BLE001 - bell state must not block reading DMs
+            logger.info("community_messages: DM bell read update skipped: %s", exc)
         return {"success": True}
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_messages: mark read failed: %s", exc)
