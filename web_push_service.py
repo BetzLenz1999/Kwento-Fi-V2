@@ -19,10 +19,14 @@ _MAX_ENDPOINT = 2048
 
 def _db():
     try:
-        from supabase_client import get_supabase_admin_client, get_supabase_client
-        return get_supabase_admin_client() or get_supabase_client()
+        from supabase_client import get_supabase_admin_client
+        # community_push_subscriptions has RLS enabled and intentionally grants
+        # no anon/authenticated policies. Never fall back to the anon client:
+        # doing so turns a missing service-role secret into a late, generic
+        # upsert error after the user has already accepted browser permission.
+        return get_supabase_admin_client()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("web push: database unavailable: %s", exc)
+        logger.warning("web push: service-role database client unavailable (%s)", type(exc).__name__)
         return None
 
 
@@ -36,6 +40,23 @@ def public_key() -> str:
 
 def configured() -> bool:
     return bool(public_key() and os.getenv("VAPID_PRIVATE_KEY") and os.getenv("VAPID_SUBJECT"))
+
+
+def storage_ready() -> bool:
+    """Return whether the private subscription table is reachable as service role."""
+    db = _db()
+    if db is None:
+        return False
+    try:
+        db.table(_TABLE).select(
+            "wallet_address,endpoint,p256dh,auth,user_agent,revoked_at"
+        ).limit(1).execute()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        # This commonly means the migration is missing or the service-role
+        # credential lacks access. Keep the user-facing response non-sensitive.
+        logger.warning("web push: subscription storage is not ready (%s)", type(exc).__name__)
+        return False
 
 
 def _valid_endpoint(value: str | None) -> bool:
@@ -80,8 +101,9 @@ def save_subscription(wallet: str, subscription: dict, user_agent: str | None = 
             return {"success": False, "code": "db_unavailable", "error": "Could not verify the saved notification subscription."}
         return {"success": True, "enabled": configured(), "subscribed": True}
     except Exception as exc:  # noqa: BLE001
-        logger.warning("web push: subscription save failed: %s", exc)
-        return {"success": False, "code": "db_error", "error": "Could not enable notifications."}
+        logger.warning("web push: subscription save failed (%s)", type(exc).__name__)
+        return {"success": False, "code": "db_error",
+                "error": "Permission was granted, but this device could not be registered on the server. Please retry; Messages are still available."}
 
 
 def has_subscription(wallet: str, endpoint: str) -> bool | None:
@@ -102,7 +124,7 @@ def has_subscription(wallet: str, endpoint: str) -> bool | None:
                   .eq("endpoint", endpoint).is_("revoked_at", "null").limit(1).execute())
         return bool(getattr(result, "data", None) or [])
     except Exception as exc:  # noqa: BLE001
-        logger.warning("web push: subscription status lookup failed: %s", exc)
+        logger.warning("web push: subscription status lookup failed (%s)", type(exc).__name__)
         return None
 
 
