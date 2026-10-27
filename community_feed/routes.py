@@ -1326,7 +1326,8 @@ def api_daily_learn_answer():
     from .daily_learn_attempts import submit_answer
 
     result = submit_answer(
-        wallet, body.get("day_utc"), body.get("question_id"), body.get("answer"))
+        wallet, body.get("day_utc"), body.get("question_id"), body.get("answer"),
+        skipped=body.get("skipped") is True)
     if result.get("success") and result.get("status") == "completed":
         # Both hooks are idempotent/best-effort. Replaying the final answer is a
         # safe repair path if a prior process died after saving completion.
