@@ -4056,6 +4056,39 @@
             });
     }
 
+    function isVaultDonationUserRejection(error) {
+        var queue = [error];
+        var seen = [];
+        var messages = [];
+        var rejected = false;
+        while (queue.length) {
+            var item = queue.shift();
+            if (!item) continue;
+            if (typeof item === 'string') {
+                messages.push(item);
+                continue;
+            }
+            if (typeof item !== 'object' || seen.indexOf(item) >= 0) continue;
+            seen.push(item);
+            var code = String(item.code == null ? '' : item.code).toUpperCase();
+            if (code === '4001' || code === 'ACTION_REJECTED') rejected = true;
+            if (typeof item.message === 'string') messages.push(item.message);
+            ['cause', 'data', 'error', 'originalError', 'info'].forEach(function (key) {
+                if (item[key] && typeof item[key] === 'object') queue.push(item[key]);
+                else if (typeof item[key] === 'string') messages.push(item[key]);
+            });
+        }
+        return rejected || /user\s+(?:rejected|denied|cancelled|canceled)|(?:cancelled|canceled)\s+by\s+user|request\s+(?:was\s+)?rejected|rejected\s+by\s+(?:the\s+)?user/i.test(messages.join(' '));
+    }
+
+    function recordVaultDonationHash(intent, rawHash) {
+        var txHash = String(rawHash || '').toLowerCase();
+        if (!/^0x[0-9a-f]{64}$/.test(txHash)) return null;
+        var pending = { donation_id: intent.donation_id, tx_hash: txHash };
+        savePendingVaultDonation(pending);
+        return pending;
+    }
+
     function continueVaultDonationToWallet() {
         if (!WALLET) { requiresLogin(); return Promise.resolve(false); }
         if (_vaultDonationBusy) return Promise.resolve(false);
@@ -4086,7 +4119,6 @@
         }
         _vaultDonationBusy = true;
         setDonationReviewActionsDisabled(true);
-        var sendStarted = false;
         try {
             window.P2PWallet.configure({
                 wallet: WALLET,
@@ -4100,20 +4132,30 @@
             return Promise.resolve(false);
         }
         donationStatus('Review and approve the exact transfer in your wallet.');
-        sendStarted = true;
+        var broadcastAttempted = false;
+        var submittedPending = null;
         return Promise.resolve().then(function () {
             return window.P2PWallet.sendTx(
                 intent.token_address,
                 'function transfer(address to,uint256 value) returns (bool)',
-                [intent.vault_address, String(intent.amount_base_units)]
+                [intent.vault_address, String(intent.amount_base_units)],
+                '0x0',
+                {
+                    waitForReceipt: false,
+                    noRetryAfterSendRequest: true,
+                    onBroadcastStarted: function () { broadcastAttempted = true; },
+                    onTransactionHash: function (txHash) {
+                        submittedPending = recordVaultDonationHash(intent, txHash);
+                    }
+                }
             );
         }).then(function (txHash) {
             txHash = String(txHash || '').toLowerCase();
             if (!/^0x[0-9a-f]{64}$/.test(txHash)) {
                 throw new Error('Wallet did not return a valid transaction hash.');
             }
-            var pending = { donation_id: intent.donation_id, tx_hash: txHash };
-            savePendingVaultDonation(pending);
+            var pending = submittedPending || recordVaultDonationHash(intent, txHash);
+            if (!pending) throw new Error('The submitted transaction hash could not be saved for verification.');
             _vaultDonationIntent = null;
             var entry = $('cfVaultDonationEntry');
             var review = $('cfVaultDonationReview');
@@ -4127,24 +4169,38 @@
             return checkPendingVaultDonation(pending);
         }).catch(function (error) {
             _vaultDonationBusy = false;
-            var code = String(error && (error.code || (error.data && error.data.code)) || '');
             var message = String(error && error.message || '');
-            var rejected = code === '4001' || /user rejected|user denied|request rejected/i.test(message);
-            if (rejected) {
+            if (submittedPending) {
+                _vaultDonationIntent = null;
+                var savedEntry = $('cfVaultDonationEntry');
+                var savedReview = $('cfVaultDonationReview');
+                var savedRecovery = $('cfVaultDonationRecovery');
+                if (savedEntry) savedEntry.hidden = true;
+                if (savedReview) savedReview.hidden = true;
+                if (savedRecovery) savedRecovery.hidden = true;
+                var savedHash = $('cfVaultDonationTxHash');
+                if (savedHash) { savedHash.disabled = true; savedHash.value = ''; }
+                donationStatus('A transaction hash was saved. Checking that same transfer now; no second transfer will be sent.');
+                return checkPendingVaultDonation(submittedPending);
+            }
+            if (isVaultDonationUserRejection(error)) {
                 setDonationReviewActionsDisabled(false);
-                donationStatus('You cancelled the wallet request. No transfer was sent; you can continue or edit these details.');
+                donationStatus('You cancelled the wallet request. No transfer was sent; you can continue or edit these details.', 'error');
                 return false;
             }
-            if (sendStarted) {
+            if (broadcastAttempted) {
                 var recovery = $('cfVaultDonationRecovery');
                 if (recovery) recovery.hidden = false;
                 var recoveryHash = $('cfVaultDonationTxHash');
                 if (recoveryHash) { recoveryHash.disabled = false; recoveryHash.focus(); }
                 setDonationReviewActionsDisabled(true);
-                donationStatus('The wallet did not return a transaction hash. Do not send again if the transfer appears in wallet activity; paste its hash below for verification.', 'error');
+                donationStatus('The wallet did not return a transaction hash.', 'error');
             } else {
                 setDonationReviewActionsDisabled(false);
-                donationStatus(message || 'Wallet signing failed. No transfer was sent.', 'error');
+                var noSendSuffix = /no transaction was sent|no transfer was sent/i.test(message)
+                    ? '' : ' No transfer was sent.';
+                donationStatus((message || 'Wallet setup or preflight failed.') + noSendSuffix
+                    + ' You can retry or edit these details.', 'error');
             }
             return false;
         });
