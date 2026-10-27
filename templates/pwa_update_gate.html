@@ -21,7 +21,9 @@
       document.documentElement.classList.remove('gm-pwa-update-gate-pending');
       var status = document.getElementById('gm-pwa-update-status');
       var copy = document.getElementById('gm-pwa-update-copy');
+      var progress = document.getElementById('gm-pwa-startup-progress');
       var button = document.getElementById('gm-pwa-continue');
+      if (progress) progress.hidden = true;
       if (status) status.textContent = 'The update checker could not load. You can continue with the current version.';
       if (copy) copy.textContent = 'The app could not check for updates. You may continue, then try again on your next launch.';
       if (button) {
@@ -41,6 +43,12 @@
     h1 { margin: 0 0 12px; font-size: clamp(1.35rem, 6vw, 1.8rem); }
     p { margin: 0 0 18px; line-height: 1.55; color: #526273; }
     #gm-pwa-update-status { min-height: 1.5em; margin-bottom: 14px; font-size: .94rem; }
+    #gm-pwa-startup-progress { margin: 18px 0 8px; text-align: left; }
+    #gm-pwa-startup-progress[hidden] { display: none !important; }
+    .gm-pwa-progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: #526273; font-size: .86rem; font-weight: 700; }
+    #gm-pwa-progress-percent { color: #19344d; font-variant-numeric: tabular-nums; }
+    .gm-pwa-progress-track { height: 8px; overflow: hidden; border-radius: 999px; background: #e8edf1; }
+    #gm-pwa-progress-fill { width: 1%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #e8720a, #ffb24a); transition: width .28s ease; }
     .gm-pwa-update-actions { display: grid; gap: 10px; }
     button, a.gm-pwa-continue { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; width: 100%; border: 0; border-radius: 12px; padding: 12px 18px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
     #gm-pwa-update-now { background: #e8720a; color: #fff; }
@@ -58,15 +66,20 @@
       .gm-pwa-spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; border: 2px solid #d6dce2; border-top-color: #e8720a; border-radius: 50%; vertical-align: -2px; animation: gm-spin .8s linear infinite; }
       @keyframes gm-spin { to { transform: rotate(360deg); } }
     }
+    @media (prefers-reduced-motion: reduce) { #gm-pwa-progress-fill { transition: none; } }
   </style>
   <script defer src="{{ url_for('static', filename='js/pwa-update-gate.js', v=ASSET_VERSION) }}"></script>
 </head>
   <body data-next-url="{{ post_login_path|e }}" data-build-version="{{ ASSET_VERSION|e }}">
   <main aria-labelledby="gm-pwa-update-title">
     <img src="{{ url_for('static', filename='icons/goodmarket-only-192.png', v=ASSET_VERSION) }}" width="76" height="76" alt="GoodMarket">
-    <h1 id="gm-pwa-update-title">Checking GoodMarket</h1>
+    <h1 id="gm-pwa-update-title">Opening GoodMarket</h1>
     <p id="gm-pwa-update-copy">We’ll check for an app update before opening your page.</p>
-    <div id="gm-pwa-update-status" role="status" aria-live="polite"><span class="gm-pwa-spinner" aria-hidden="true"></span>Checking for updates…</div>
+    <div id="gm-pwa-update-status" role="status" aria-live="polite"><span class="gm-pwa-spinner" aria-hidden="true"></span>Preparing your app…</div>
+    <div id="gm-pwa-startup-progress" role="progressbar" aria-label="Estimated GoodMarket startup progress" aria-valuemin="1" aria-valuemax="99" aria-valuenow="1">
+      <div class="gm-pwa-progress-meta"><span id="gm-pwa-progress-stage">Starting GoodMarket…</span><span id="gm-pwa-progress-percent">1%</span></div>
+      <div class="gm-pwa-progress-track" aria-hidden="true"><div id="gm-pwa-progress-fill"></div></div>
+    </div>
     <div class="gm-pwa-update-actions">
       <button id="gm-pwa-update-now" type="button" hidden>Update app</button>
       <button id="gm-pwa-update-retry" type="button" hidden>Try again</button>
