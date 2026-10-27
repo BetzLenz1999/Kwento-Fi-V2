@@ -669,14 +669,58 @@
 
 {% if is_embed and embed_blocked %}
 {# Unverified wallet inside the modal. A top-level redirect to /wallet would
-   load the whole wallet page into the dialog, so the store renders the notice
-   in place and the CTA escapes the frame (`target="_top"`). #}
+   load the whole wallet page into the dialog, so the notice stays in place and
+   asks the parent Community page to open its shared verification modal. The
+   wallet URL remains the no-JavaScript / missing-parent fallback. #}
 <div class="gm-embed-blocked">
     <div style="font-size:44px">🪪</div>
     <h2>Face verification needed</h2>
-    <p>Buying airtime requires a face-verified GoodDollar wallet. Finish verification in the wallet, then reopen this window.</p>
-    <a href="/wallet?fv_required=1" target="_top">Verify in Wallet</a>
+    <p>Buying airtime requires a face-verified GoodDollar wallet. Start verification here; after completing it, return to Community and reopen Buy Airtime.</p>
+    <a href="/wallet?fv_required=1" target="_top" onclick="return requestCommunityVerification(event)">Verify to continue</a>
 </div>
+<script>
+(function () {
+    var channel = 'gm-reloadly-embed';
+    var version = 1;
+    var pending = Object.create(null);
+
+    window.addEventListener('message', function (event) {
+        if (event.source !== window.parent || event.origin !== window.location.origin) return;
+        var data = event.data;
+        if (!data || data.channel !== channel || data.version !== version
+                || data.type !== 'community-verification-ack'
+                || typeof data.requestId !== 'string' || !pending[data.requestId]) return;
+        window.clearTimeout(pending[data.requestId]);
+        delete pending[data.requestId];
+    });
+
+    window.requestCommunityVerification = function (event) {
+        if (!window.parent || window.parent === window
+                || typeof window.parent.postMessage !== 'function') return true;
+        var requestId = 'airtime-fv-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+        var link = event && event.currentTarget;
+        var fallback = link && link.href ? link.href : '/wallet?fv_required=1';
+        try {
+            pending[requestId] = window.setTimeout(function () {
+                delete pending[requestId];
+                window.top.location.href = fallback;
+            }, 1500);
+            window.parent.postMessage({
+                channel: channel,
+                version: version,
+                type: 'request-community-verification',
+                requestId: requestId
+            }, window.location.origin);
+        } catch (_) {
+            window.clearTimeout(pending[requestId]);
+            delete pending[requestId];
+            return true;
+        }
+        if (event && event.preventDefault) event.preventDefault();
+        return false;
+    };
+})();
+</script>
 {% else %}
 
 {% if is_guest %}
