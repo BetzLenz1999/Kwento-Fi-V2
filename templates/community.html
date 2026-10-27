@@ -40,6 +40,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/community-feed.css', v=ASSET_VERSION) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/community-push-optin.css', v=ASSET_VERSION) }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/claim-modal.css', v=ASSET_VERSION) }}">
 
     {# Page-level layout only. The feed's look lives in community-feed.css; this
@@ -703,6 +704,24 @@
    boot object below) so the destination list lives in ONE place. Labels are
    written with textContent — user-supplied data never reaches it. #}
 <nav class="cf-bottom-nav" id="cfBottomNav" aria-label="Community navigation"></nav>
+{% if not is_guest and messages_enabled %}
+<div class="cf-push-optin" id="cfMessagePushPrompt" hidden>
+    <div class="cf-push-optin-backdrop"></div>
+    <section class="cf-push-optin-card" role="dialog" aria-modal="true"
+             aria-labelledby="cfMessagePushTitle" aria-describedby="cfMessagePushCopy">
+        <span class="cf-push-optin-icon" aria-hidden="true">🔔</span>
+        <h2 id="cfMessagePushTitle">Get message notifications?</h2>
+        <p id="cfMessagePushCopy">Enable notifications on this device so you’ll know when someone sends you a Community message. You can change this later.</p>
+        <p class="cf-push-optin-status" id="cfMessagePushStatus" role="status" aria-live="polite" hidden></p>
+        <div class="cf-push-optin-actions">
+            <button type="button" class="cf-push-optin-enable" id="cfMessagePushEnable"
+                    onclick="GMCommunity.enableMessageNotifications()" disabled>Checking…</button>
+            <button type="button" class="cf-push-optin-later" id="cfMessagePushLater"
+                    onclick="GMCommunity.declineMessageNotifications()">Not now</button>
+        </div>
+    </section>
+</div>
+{% endif %}
 
 {# Read-only lightbox for media. #}
 <div class="cf-lightbox" id="cfLightbox" hidden role="dialog" aria-modal="true"
@@ -743,6 +762,7 @@
 <script>
 window.GM_COMMUNITY_BOOT = {
     isGuest: {{ 'true' if is_guest else 'false' }},
+    messagesEnabled: {{ 'true' if messages_enabled else 'false' }},
     wallet: {{ (wallet or '')|tojson }},
     username: {{ (username or '')|tojson }},
     avatarUrl: {{ (avatar_url or '')|tojson }},
@@ -851,6 +871,7 @@ window.GM_WALLET_BOOT = {
 <script src="{{ url_for('static', filename='js/minipay-fee-currency.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/p2p/p2p-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/community-push.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
 {% endif %}
 
