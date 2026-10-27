@@ -2852,7 +2852,10 @@
         });
     }
 
-    function refresh() { loadFeed(true); }
+    function refresh() {
+        loadFeed(true);
+        loadMessageUnread();
+    }
 
     function loadMore() {
         var button = $('cfLoadMore');
@@ -2894,6 +2897,9 @@
     var SEARCH_MIN = 2;
     var _searchTimer = null;
     var _searchSeq = 0;
+    var _messageUnreadLoading = false;
+    var _messageUnreadPollTimer = null;
+    var _messageUnreadLifecycleInitialized = false;
     var _notifications = [];
     var _notificationCursor = null;
     var _notificationUnread = 0;
@@ -2986,11 +2992,37 @@
         item.setAttribute('aria-label', total ? 'Messages, ' + total + ' unread' : 'Messages');
     }
     function loadMessageUnread() {
-        if (!WALLET || !NAV.some(function (item) { return item.action === 'messages'; })) return;
-        fetch('/api/messages/conversations', { credentials: 'same-origin' })
-            .then(function (response) { return response.ok ? response.json() : null; })
-            .then(function (data) { if (data && data.success) setMessageUnread(data.unread_total); })
-            .catch(function () {});
+        if (!WALLET || !NAV.some(function (item) { return item.action === 'messages'; })
+                || _messageUnreadLoading) return Promise.resolve(false);
+        _messageUnreadLoading = true;
+        return api('/api/messages/conversations').then(function (result) {
+            var data = result && result.data;
+            var count = data && Number(data.unread_conversation_count);
+            if (!result.ok || !data || data.success !== true || !isFinite(count) || count < 0) {
+                return false;
+            }
+            setMessageUnread(count);
+            return true;
+        }).catch(function () {
+            // A failed background read is not proof there are no unread threads.
+            return false;
+        }).then(function (success) {
+            _messageUnreadLoading = false;
+            return success;
+        });
+    }
+    function initMessageUnreadRefresh() {
+        if (!WALLET || _messageUnreadLifecycleInitialized
+                || !NAV.some(function (item) { return item.action === 'messages'; })) return;
+        _messageUnreadLifecycleInitialized = true;
+        function refreshIfVisible() {
+            if (!document.visibilityState || document.visibilityState === 'visible') {
+                loadMessageUnread();
+            }
+        }
+        document.addEventListener('visibilitychange', refreshIfVisible);
+        window.addEventListener('focus', refreshIfVisible);
+        _messageUnreadPollTimer = window.setInterval(refreshIfVisible, 60000);
     }
 
     // ── Private in-app Community notifications ──────────────────────────────
@@ -3018,6 +3050,7 @@
             }[String(item.reaction || '')] || '';
             return actor + ' reacted' + (reaction ? ' ' + reaction : '') + ' to your post.';
         }
+        if (type === 'message') return actor + ' sent you a message.';
         if (type === 'comment') return actor + ' commented on your post.';
         if (type === 'reply') return actor + ' replied to your comment.';
         if (type === 'post_reply') return actor + ' replied in your post.';
@@ -3025,6 +3058,7 @@
     }
 
     function notificationIcon(item) {
+        if (item && item.notification_type === 'message') return '✉';
         if (item && item.notification_type === 'reaction') {
             return ({ like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢', angry: '😡' })[
                 String(item.reaction || '')] || '🔔';
@@ -3141,8 +3175,17 @@
     }
 
     function openNotification(item) {
-        if (!item || !/^\d+$/.test(String(item.id || ''))
-                || !/^\d+$/.test(String(item.post_id || ''))) return;
+        if (!item || !/^\d+$/.test(String(item.id || ''))) return;
+        var destination;
+        if (item.notification_type === 'message') {
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+                    .test(String(item.conversation_id || ''))) return;
+            destination = '/messages?conversation=' + encodeURIComponent(item.conversation_id);
+        } else {
+            if (!/^\d+$/.test(String(item.post_id || ''))) return;
+            destination = '/community/p/' + encodeURIComponent(item.post_id)
+                + '#post-' + encodeURIComponent(item.post_id);
+        }
         if (!item.read_at) {
             item.read_at = new Date().toISOString();
             setNotificationUnread(_notificationUnread - 1);
@@ -3154,8 +3197,7 @@
             }).catch(function () {});
         }
         closeNotifications(false);
-        window.location.href = '/community/p/' + encodeURIComponent(item.post_id)
-            + '#post-' + encodeURIComponent(item.post_id);
+        window.location.href = destination;
     }
 
     function markAllNotificationsRead() {
@@ -3930,6 +3972,7 @@
         bind();
         renderNav();
         loadMessageUnread();
+        initMessageUnreadRefresh();
         initNotifications();
         loadRewards().then(function () {
             if (!WALLET) return;
