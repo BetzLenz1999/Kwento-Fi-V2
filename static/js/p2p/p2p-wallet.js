@@ -23,6 +23,8 @@ window.P2PWallet = (function () {
         "https://1rpc.io/celo",
         "https://celo.publicnode.com",
     ];
+    // Match the existing Community transaction fallback used by chatroom-widget.js.
+    var CELO_FALLBACK_GAS_PRICE = 500000000000n;
 
     // Celo Mainnet fee-currency adapters MiniPay accepts on eth_sendTransaction.
     var MINIPAY_FEE_CURRENCY = {
@@ -180,25 +182,115 @@ window.P2PWallet = (function () {
         return null; // may still land; caller can link to CeloScan
     }
 
+    function _parseChainId(value) {
+        if (typeof value === "number") return Number.isSafeInteger(value) ? value : null;
+        var raw = String(value || "").trim();
+        var parsed = /^0x[0-9a-f]+$/i.test(raw)
+            ? parseInt(raw, 16)
+            : (/^\d+$/.test(raw) ? parseInt(raw, 10) : NaN);
+        return Number.isSafeInteger(parsed) ? parsed : null;
+    }
+
+    async function _readChainId(ep) {
+        var reported;
+        try {
+            reported = await ep.request({ method: "eth_chainId" });
+        } catch (_) {
+            throw new Error("Could not verify your wallet's active network. No transaction was sent.");
+        }
+        var chainId = _parseChainId(reported);
+        if (chainId === null) {
+            throw new Error("Your wallet did not report its active network. No transaction was sent.");
+        }
+        return chainId;
+    }
+
+    async function _assertCelo(ep) {
+        if (ep.isGoodMarketWcBridge) return; // bridge routes wallet requests to its configured Celo session
+        if (await _readChainId(ep) !== Number(cfg.chainId)) {
+            throw new Error("Your wallet is not on Celo Mainnet. Switch to Celo and try again. No transaction was sent.");
+        }
+    }
+
+    function _walletErrorDetails(err) {
+        var queue = [err];
+        var seen = [];
+        var codes = [];
+        var messages = [];
+        while (queue.length) {
+            var item = queue.shift();
+            if (!item) continue;
+            if (typeof item === "string") {
+                messages.push(item);
+                continue;
+            }
+            if (typeof item !== "object" || seen.indexOf(item) >= 0) continue;
+            seen.push(item);
+            if (item.code !== undefined && item.code !== null) {
+                var code = Number(item.code);
+                if (Number.isFinite(code)) codes.push(code);
+                if (String(item.code).toUpperCase() === "ACTION_REJECTED") codes.push(4001);
+            }
+            if (typeof item.message === "string") messages.push(item.message);
+            ["cause", "data", "error", "originalError", "info"].forEach(function (key) {
+                if (item[key] && typeof item[key] === "object") queue.push(item[key]);
+                else if (typeof item[key] === "string") messages.push(item[key]);
+            });
+        }
+        return { codes: codes, message: messages.join(" ").toLowerCase() };
+    }
+
+    function _isWalletUserRejection(err) {
+        var details = _walletErrorDetails(err);
+        return details.codes.indexOf(4001) >= 0
+            || /user (?:rejected|denied)|rejected by (?:the )?user|request was rejected|cancelled by user|canceled by user/.test(details.message);
+    }
+
+    function _isUnknownChainError(err) {
+        if (_isWalletUserRejection(err)) return false;
+        var details = _walletErrorDetails(err);
+        return details.codes.indexOf(4902) >= 0
+            || details.codes.indexOf(-32603) >= 0
+            || /unrecognized chain|unknown chain|chain (?:is )?(?:not added|not found|not recognized|unknown|missing)/.test(details.message);
+    }
+
     async function _ensureCelo(ep) {
         if (ep.isGoodMarketWcBridge) return; // bridge is Celo-scoped
+        var expectedChainId = Number(cfg.chainId);
+        if (!Number.isSafeInteger(expectedChainId) || expectedChainId <= 0) {
+            throw new Error("Celo network configuration is invalid. No transaction was sent.");
+        }
+        if (await _readChainId(ep) === expectedChainId) return;
+
+        var hex = "0x" + expectedChainId.toString(16);
         try {
-            var ch = await ep.request({ method: "eth_chainId" });
-            if (parseInt(ch, 16) === cfg.chainId) return;
-            var hex = "0x" + cfg.chainId.toString(16);
+            await ep.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
+        } catch (switchErr) {
+            if (_isWalletUserRejection(switchErr)) {
+                throw new Error("Celo network switch was cancelled. No transaction was sent.");
+            }
+            if (!_isUnknownChainError(switchErr)) {
+                throw new Error("Could not switch your wallet to Celo Mainnet. No transaction was sent.");
+            }
             try {
-                await ep.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
-            } catch (_) {
                 await ep.request({
                     method: "wallet_addEthereumChain",
                     params: [{
                         chainId: hex, chainName: "Celo Mainnet",
                         nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
-                        rpcUrls: ["https://forno.celo.org"], blockExplorerUrls: ["https://celoscan.io"],
+                        rpcUrls: CELO_RPC_URLS.slice(), blockExplorerUrls: ["https://celoscan.io"],
                     }],
                 });
+                // Adding a network does not guarantee that the wallet activated it.
+                await ep.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
+            } catch (networkErr) {
+                if (_isWalletUserRejection(networkErr)) {
+                    throw new Error("Celo network setup was cancelled. No transaction was sent.");
+                }
+                throw new Error("Could not activate Celo Mainnet in your wallet. No transaction was sent.");
             }
-        } catch (_) {}
+        }
+        await _assertCelo(ep);
     }
 
 
@@ -271,6 +363,7 @@ window.P2PWallet = (function () {
             var p = { from: from, to: to, data: data, value: value, gas: gasHex };
             if (attempts[k]) p.feeCurrency = attempts[k];
             try {
+                await _assertCelo(ep);
                 var txHash = await ep.request({ method: "eth_sendTransaction", params: [p] });
                 await _waitReceipt(ep, txHash);
                 return txHash;
@@ -317,9 +410,20 @@ window.P2PWallet = (function () {
             gasHex = "0x" + (BigInt(est) * 130n / 100n).toString(16);
         } catch (_) { gasHex = "0x7A120"; }
 
+        var gasPrice = CELO_FALLBACK_GAS_PRICE;
+        try {
+            var estimatedGasPrice = BigInt(await ep.request({ method: "eth_gasPrice", params: [] }));
+            if (estimatedGasPrice > 0n) gasPrice = estimatedGasPrice;
+        } catch (_) { /* keep the proven Celo fallback instead of making the wallet estimate fees */ }
+
+        // The wallet can be switched while gas is being prepared; verify again
+        // immediately before signing. Do not include a non-standard chainId
+        // transaction field because some injected wallets (including Trust) reject it.
+        await _assertCelo(ep);
+
         var txHash = await ep.request({
             method: "eth_sendTransaction",
-            params: [{ from: from, to: to, data: data, value: valueHex || "0x0", gas: gasHex }],
+            params: [{ from: from, to: to, data: data, value: valueHex || "0x0", gas: gasHex, gasPrice: "0x" + gasPrice.toString(16) }],
         });
         if (!txHash) throw new Error("Transaction failed");
         await _waitReceipt(ep, txHash);
