@@ -1088,6 +1088,42 @@ body {
     background: #f1f2f6; color: #4b5563;
     border-color: rgba(75, 85, 99, 0.25);
 }
+.cf-earn-overview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(10.5rem, 13rem);
+    align-items: center;
+    gap: 0.85rem;
+    margin-top: 0.65rem;
+    min-width: 0;
+}
+.cf-earn-overview[hidden] { display: none !important; }
+.cf-earn-overview-no-balance { grid-template-columns: minmax(0, 1fr); }
+.cf-earn-overview-no-balance .cf-earn-actions {
+    justify-self: end;
+    width: min(100%, 15rem);
+}
+.cf-earn-actions {
+    display: grid;
+    align-content: start;
+    gap: 0.45rem;
+    min-width: 0;
+}
+.cf-earn-actions[hidden] { display: none !important; }
+.cf-earn-actions .cf-earn-withdraw-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+    margin: 0;
+}
+.cf-earn-actions .cf-earn-withdraw { width: 100%; min-height: 44px; }
+.cf-earn-actions .cf-earn-withdraw-status {
+    align-self: stretch;
+    margin: 0.15rem 0 0;
+    font-size: 0.78rem;
+}
+.cf-earn-actions .cf-earn-history { margin: 0; }
+.cf-earn-actions .cf-earn-history-toggle { width: 100%; min-height: 44px; }
 .cf-earn-balance-wrap { margin: 0; }
 .cf-earn-balance {
     margin: 0.55rem 0 0; display: flex; align-items: baseline; gap: 0.3rem;
@@ -1145,8 +1181,8 @@ body {
 .cf-earn-budget-note { font-size: 0.64rem; line-height: 1.25; color: var(--cf-earn-ink-2); }
 .cf-earn-budget-total { border-color: var(--cf-earn-line); }
 .cf-earn-budgets[hidden] { display: none; }
-/* The rates stay collapsed until the accessible disclosure button is opened.
-   Their amounts still come from the server and retain the readable 2x2 tiles. */
+/* Retain server-sourced rate-tile styling for a possible future disclosure;
+   the current Community card intentionally does not mount that panel. */
 .cf-earn-rates-toggle {
     margin-top: 0.5rem; padding: 0.38rem 0.7rem;
     display: inline-flex; align-items: center; justify-content: center;
@@ -1295,6 +1331,13 @@ body {
         padding: 0.85rem 0.9rem 0.9rem;
         border-radius: 14px;
     }
+    .cf-earn-overview { grid-template-columns: minmax(0, 1fr); gap: 0.72rem; }
+    .cf-earn-actions { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.5rem; }
+    .cf-earn-actions .cf-earn-withdraw-row,
+    .cf-earn-actions .cf-earn-history { flex: 1 1 140px; min-width: 0; }
+    .cf-earn-actions .cf-earn-withdraw-row { flex-direction: row; flex-wrap: wrap; }
+    .cf-earn-actions .cf-earn-withdraw-status { flex: 1 0 100%; }
+    .cf-earn-overview-no-balance .cf-earn-actions { justify-self: stretch; width: 100%; }
     .cf-earn-amount { font-size: 1.95rem; }
     .cf-earn-rates { gap: 0.35rem; }
     .cf-composer { border-radius: 12px; border-color: var(--cf-hairline); }
