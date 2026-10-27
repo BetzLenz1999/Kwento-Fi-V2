@@ -2461,12 +2461,164 @@
     function syncTodayHub() {
         var hub = $('cfTodayHub');
         if (!hub) return;
-        var cardIds = ['cfDailyPrompt', 'cfDailyLearn', 'cfLearnDone', 'cfEarn'];
+        var cardIds = ['cfDailyPrompt', 'cfDailyLearn', 'cfLearnDone'];
         var hasVisibleCard = cardIds.some(function (id) {
             var card = $(id);
             return !!(card && !card.hidden);
         });
+        var earnCard = $('cfEarn');
+        var cardsContent = $('cfCommunityCardsContent');
+        var earnStillBelongsInHub = !isCommunityCardsMobileLayout()
+            || !cardsContent || (earnCard && earnCard.parentNode !== cardsContent);
+        if (earnCard && !earnCard.hidden && earnStillBelongsInHub) hasVisibleCard = true;
         hub.hidden = !hasVisibleCard;
+    }
+
+    function isCommunityCardsMobileLayout() {
+        if (window && typeof window.matchMedia === 'function') {
+            return window.matchMedia('(max-width: 899px)').matches;
+        }
+        return typeof window.innerWidth === 'number' && window.innerWidth < 900;
+    }
+
+    function moveCommunityCardsIntoModal() {
+        var content = $('cfCommunityCardsContent');
+        if (!content || typeof document.createComment !== 'function') return;
+        ['cfEarn', 'cfVaultDonationCard', 'cfDailyHeading', 'cfRail'].forEach(function (id) {
+            var node = $(id);
+            if (!node || !node.parentNode || node.parentNode === content) return;
+            var marker = document.createComment('cf-community-card-slot:' + id);
+            node.parentNode.insertBefore(marker, node);
+            _communityCardsSlots.push({ node: node, marker: marker });
+            content.appendChild(node);
+        });
+    }
+
+    function restoreCommunityCardsToFeed() {
+        _communityCardsSlots.forEach(function (slot) {
+            var marker = slot.marker;
+            var parent = marker && marker.parentNode;
+            if (!parent || !slot.node) return;
+            parent.insertBefore(slot.node, marker);
+            parent.removeChild(marker);
+        });
+        _communityCardsSlots = [];
+    }
+
+    function communityCardsKeydown(event) {
+        if (!_communityCardsOpen || !event) return;
+        if (event.key === 'Escape') {
+            if (event.preventDefault) event.preventDefault();
+            closeCommunityCards();
+            return;
+        }
+        if (event.key !== 'Tab') return;
+        var modal = $('cfCommunityCardsModal');
+        if (!modal) return;
+        var focusable = Array.prototype.slice.call(modal.querySelectorAll(
+            'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(function (node) {
+            return !node.hidden && (!node.getClientRects || node.getClientRects().length > 0);
+        });
+        if (!focusable.length) {
+            if (event.preventDefault) event.preventDefault();
+            if (modal.focus) modal.focus();
+            return;
+        }
+        var first = focusable[0];
+        var last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+            if (event.preventDefault) event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            if (event.preventDefault) event.preventDefault();
+            first.focus();
+        }
+    }
+
+    function bindCommunityCardsModal() {
+        var modal = $('cfCommunityCardsModal');
+        if (!modal || _communityCardsModalBound) return;
+        _communityCardsModalBound = true;
+        modal.addEventListener('click', function (event) {
+            if (event && event.target === modal) closeCommunityCards();
+        });
+        var closeButton = $('cfCommunityCardsClose');
+        if (closeButton) closeButton.addEventListener('click', function () {
+            closeCommunityCards();
+        });
+        document.addEventListener('keydown', communityCardsKeydown);
+    }
+
+    function syncCommunityCardsPlacement() {
+        if (isCommunityCardsMobileLayout()) {
+            moveCommunityCardsIntoModal();
+        } else {
+            if (_communityCardsOpen && !closeCommunityCards(false)) return;
+            restoreCommunityCardsToFeed();
+        }
+        syncTodayHub();
+    }
+
+    function setupCommunityCardsLayout() {
+        if (_communityCardsLayoutBound) return;
+        _communityCardsLayoutBound = true;
+        bindCommunityCardsModal();
+        var media = typeof window.matchMedia === 'function'
+            ? window.matchMedia('(max-width: 899px)') : null;
+        syncCommunityCardsPlacement();
+        if (media && typeof media.addEventListener === 'function') {
+            media.addEventListener('change', syncCommunityCardsPlacement);
+        } else if (media && typeof media.addListener === 'function') {
+            media.addListener(syncCommunityCardsPlacement);
+        } else if (typeof window.addEventListener === 'function') {
+            window.addEventListener('resize', syncCommunityCardsPlacement);
+        }
+    }
+
+    function openCommunityCards(trigger) {
+        if (!isCommunityCardsMobileLayout()) return false;
+        var modal = $('cfCommunityCardsModal');
+        if (!modal) return false;
+        bindCommunityCardsModal();
+        moveCommunityCardsIntoModal();
+        if (_communityCardsOpen) return true;
+        _communityCardsReturnFocus = trigger || document.activeElement || null;
+        _communityCardsBodyWasLocked = document.body.classList.contains('cf-modal-open');
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        if (_communityCardsReturnFocus && _communityCardsReturnFocus.setAttribute) {
+            _communityCardsReturnFocus.setAttribute('aria-expanded', 'true');
+        }
+        document.body.classList.add('cf-modal-open');
+        _communityCardsOpen = true;
+        var closeButton = $('cfCommunityCardsClose');
+        if (closeButton && closeButton.focus) closeButton.focus();
+        return true;
+    }
+
+    function closeCommunityCards(restoreFocus) {
+        if (!_communityCardsOpen) return true;
+        var recovery = $('cfVaultDonationRecovery');
+        if (recovery && !recovery.hidden) {
+            donationStatus('Keep Community Cards open to verify this donation. Do not send another transfer.', 'error');
+            return false;
+        }
+        var modal = $('cfCommunityCardsModal');
+        if (modal) {
+            modal.hidden = true;
+            modal.setAttribute('aria-hidden', 'true');
+        }
+        var trigger = _communityCardsReturnFocus;
+        if (trigger && trigger.setAttribute) trigger.setAttribute('aria-expanded', 'false');
+        _communityCardsReturnFocus = null;
+        _communityCardsOpen = false;
+        if (!_communityCardsBodyWasLocked) document.body.classList.remove('cf-modal-open');
+        _communityCardsBodyWasLocked = false;
+        if (!isCommunityCardsMobileLayout()) restoreCommunityCardsToFeed();
+        syncTodayHub();
+        if (restoreFocus !== false && trigger && trigger.focus) trigger.focus();
+        return true;
     }
 
     function renderRewards(data) {
@@ -2921,6 +3073,12 @@
     var _notificationLoading = false;
     var _notificationPanelOpen = false;
     var _notificationPollTimer = null;
+    var _communityCardsSlots = [];
+    var _communityCardsLayoutBound = false;
+    var _communityCardsModalBound = false;
+    var _communityCardsOpen = false;
+    var _communityCardsReturnFocus = null;
+    var _communityCardsBodyWasLocked = false;
 
     function buildNavItem(item) {
         var isLink = !!item.href;
@@ -2934,6 +3092,11 @@
             + (item.active ? ' is-active' : '')
             + (item.gold ? ' cf-nav-gold' : '');
         node.setAttribute('data-nav', item.id || '');
+        if (item.action === 'community-cards') {
+            node.setAttribute('aria-haspopup', 'dialog');
+            node.setAttribute('aria-controls', 'cfCommunityCardsModal');
+            node.setAttribute('aria-expanded', 'false');
+        }
         if (isLink) node.href = item.href;
         else node.type = 'button';
         var icon = el('span', 'cf-nav-icon', item.icon || '');
@@ -2941,6 +3104,11 @@
         node.appendChild(icon);
         node.appendChild(el('span', 'cf-nav-label', item.label || ''));
         node.onclick = function (event) {
+            if (item.action === 'community-cards') {
+                if (event && event.preventDefault) event.preventDefault();
+                openCommunityCards(node);
+                return;
+            }
             if (item.action === 'search') {
                 if (event && event.preventDefault) event.preventDefault();
                 openSearch();
@@ -4236,6 +4404,7 @@
         // Guests read the feed too — reading is public, only writing is gated.
         // The composer is absent from a guest's DOM, so bind()'s null-checks
         // make that half a no-op; the feed wiring is what matters here.
+        setupCommunityCardsLayout();
         bind();
         renderNav();
         initMessagePushPrompt();
@@ -4333,6 +4502,8 @@
         closeSearch: closeSearch,
         searchInput: searchInput,
         searchKeydown: searchKeydown,
+        openCommunityCards: openCommunityCards,
+        closeCommunityCards: closeCommunityCards,
         openSheet: openSheet,
         closeSheet: closeSheet,
         sheetGo: sheetGo,
