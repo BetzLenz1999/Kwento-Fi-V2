@@ -2157,3 +2157,109 @@ body.cf-modal-open { overflow: hidden; }
     .cf-vault-donation-summary > div { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
     .cf-donation-card { border-radius: 0; border-right: 0; border-left: 0; }
 }
+
+
+/* Messages push opt-in. Keep these rules in the main Community bundle: the
+   standalone asset was missing from production and left the dialog in document
+   flow at the bottom of the page. */
+.cf-push-optin[hidden] { display: none !important; }
+body.cf-push-optin-open { overflow: hidden; }
+.cf-push-optin {
+    position: fixed;
+    inset: 0;
+    z-index: 2600;
+    display: grid;
+    place-items: center;
+    padding: max(20px, env(safe-area-inset-top, 0px)) 18px max(20px, env(safe-area-inset-bottom, 0px));
+}
+.cf-push-optin-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(13, 28, 42, 0.55);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+.cf-push-optin-card {
+    position: relative;
+    width: min(100%, 410px);
+    max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    padding: 28px 24px 22px;
+    border: 1px solid var(--cf-border);
+    border-radius: 22px;
+    background: var(--cf-card);
+    color: var(--cf-ink);
+    box-shadow: 0 22px 70px rgba(7, 25, 43, 0.26);
+    font-family: var(--cf-sans);
+    text-align: center;
+}
+.cf-push-optin-icon {
+    display: grid;
+    width: 54px;
+    height: 54px;
+    margin: 0 auto 14px;
+    place-items: center;
+    border-radius: 50%;
+    background: #fff2df;
+    font-size: 1.6rem;
+}
+.cf-push-optin-card h2 {
+    margin: 0 0 10px;
+    color: var(--cf-ink);
+    font-size: 1.2rem;
+    line-height: 1.3;
+}
+.cf-push-optin-card > p {
+    margin: 0;
+    color: var(--cf-dim);
+    font-size: 0.94rem;
+    line-height: 1.5;
+}
+.cf-push-optin-card > .cf-push-optin-status {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--cf-field);
+    color: var(--cf-ink);
+    font-size: 0.86rem;
+    text-align: left;
+}
+.cf-push-optin-card > .cf-push-optin-status.is-error {
+    background: #fff1f0;
+    color: #9f2d2d;
+}
+.cf-push-optin-actions {
+    display: grid;
+    gap: 10px;
+    margin-top: 22px;
+}
+.cf-push-optin-actions button {
+    min-height: 48px;
+    border: 0;
+    border-radius: 13px;
+    padding: 12px 16px;
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+.cf-push-optin-enable {
+    background: var(--cf-accent);
+    color: #fff;
+}
+.cf-push-optin-later {
+    background: var(--cf-field);
+    color: var(--cf-ink);
+}
+.cf-push-optin-actions button:disabled {
+    opacity: 0.58;
+    cursor: wait;
+}
+.cf-push-optin-actions button:focus-visible {
+    outline: 3px solid var(--cf-accent-2);
+    outline-offset: 3px;
+}
+@media (max-width: 380px) {
+    .cf-push-optin { padding-inline: 12px; }
+    .cf-push-optin-card { padding: 24px 18px 18px; }
+}
