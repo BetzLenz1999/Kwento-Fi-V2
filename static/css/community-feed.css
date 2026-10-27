@@ -1566,13 +1566,6 @@ body.cf-modal-open { overflow: hidden; }
 }
 .cf-airtime-head h3 { font-size: 0.95rem; font-weight: 800; color: #fff; }
 .cf-airtime-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
-.cf-airtime-expand {
-    color: #cfd5f5; font-size: 0.7rem; font-weight: 700;
-    text-decoration: none; white-space: nowrap;
-    padding: 0.32rem 0.6rem; border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.28);
-}
-.cf-airtime-expand:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
 .cf-airtime-close {
     border: 1px solid rgba(255, 255, 255, 0.36);
     background: rgba(255, 255, 255, 0.16); color: #fff;
