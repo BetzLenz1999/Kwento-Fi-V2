@@ -141,6 +141,7 @@ function run(opts) {
    'cfEditSaveBtn', 'cfComposer',
    'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
    'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
+   'cfCommunityCardsModal', 'cfCommunityCardsClose', 'cfCommunityCardsContent',
    'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame',
    'cfMessagePushPrompt', 'cfMessagePushStatus', 'cfMessagePushCopy',
    'cfMessagePushEnable', 'cfMessagePushLater',
@@ -170,6 +171,7 @@ function run(opts) {
   // The Buy Airtime iframe ships with the modal: `hidden` until opened, and
   // its src parked on data-src so the store never loads until a tap.
   registry.cfAirtimeModal.hidden = true;
+  registry.cfCommunityCardsModal.hidden = true;
   registry.cfMessagePushPrompt.hidden = true;
   registry.cfAirtimeFrame.setAttribute('data-src', '/reloadly/?embed=1#topup');
   // The shared claim dialog is rendered directly and starts closed.
@@ -223,6 +225,7 @@ function run(opts) {
     isNaN, parseInt, parseFloat, encodeURIComponent,
   };
   sandbox.window = sandbox;
+  sandbox.innerWidth = opts.innerWidth === undefined ? 1280 : opts.innerWidth;
   sandbox.globalThis = sandbox;
   sandbox.GM_COMMUNITY_BOOT = opts.boot || {};
   sandbox.prompt = () => '';
@@ -251,14 +254,14 @@ const MEMBER = {
   loginMethod: 'local', maxCaption: 2200, maxMedia: 4,
   maxImageMb: 10, maxVideoMb: 100, storageReady: true,
   // The same destination list the template emits (GM_COMMUNITY_BOOT.nav).
-  // No "Feed" tab: this page IS the feed. Its slot carries the Claim Free G$
-  // entry point: `action: 'claim'` opens the framed wallet claim sheet in an
-  // in-page dialog, and the href is the real page for middle-click / no-JS.
+  // Community Cards is public and opens in a mobile-only dialog; Your Wallet
+  // remains in the desktop rail while CSS hides that duplicate tile on phones.
   nav: [
     { id: 'claim', icon: '🪙', label: 'Claim Free G$', href: '/wallet?claim=1', action: 'claim', gold: true, guestOk: false },
     { id: 'search', icon: '🔍', label: 'Search', action: 'search', guestOk: true },
-    { id: 'earn', icon: '💰', label: 'Earn', action: 'earn', guestOk: false },
+    { id: 'messages', icon: '💬', label: 'Messages', href: '/messages', action: 'messages', guestOk: false },
     { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
+    { id: 'community-cards', icon: '🗂️', label: 'Community Cards', action: 'community-cards', guestOk: true },
     { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet', guestOk: false },
   ],
   reactions: { like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢', angry: '😡' },
@@ -1073,12 +1076,12 @@ function feedFetch(handler, feedRows) {
   {
     const { api, store, sandbox } = run({ boot: MEMBER });
     const items = store.cfBottomNav.children;
-    ok('the bottom nav renders every destination', items.length === 5,
+    ok('the bottom nav renders every destination', items.length === 6,
        JSON.stringify(items.length));
     const labels = items.map(n => n.querySelector('.cf-nav-label').textContent);
-    ok('the nav carries Claim Free G$, Search, Earn, Buy Airtime and Your Wallet',
+    ok('the nav carries Claim Free G$, Search, Messages, Buy Airtime, Community Cards and Your Wallet',
        JSON.stringify(labels) ===
-       JSON.stringify(['Claim Free G$', 'Search', 'Earn', 'Buy Airtime', 'Your Wallet']),
+       JSON.stringify(['Claim Free G$', 'Search', 'Messages', 'Buy Airtime', 'Community Cards', 'Your Wallet']),
        JSON.stringify(labels));
     // The Feed tab is gone: this page IS the feed, so a tab pointing back at
     // /community was a dead tap. Nothing claims to be the active tab now.
@@ -1103,11 +1106,16 @@ function feedFetch(handler, feedRows) {
     // Your Wallet links to the wallet page.
     const wallet = items.filter(n => /Your Wallet/.test(n.textContent))[0];
     ok('Your Wallet links to /wallet', wallet.href === '/wallet', wallet.href);
+    const communityCards = items.filter(n => /Community Cards/.test(n.textContent))[0];
+    ok('Community Cards is an accessible dialog button',
+       communityCards.tagName === 'BUTTON'
+         && communityCards.getAttribute('aria-haspopup') === 'dialog'
+         && communityCards.getAttribute('aria-controls') === 'cfCommunityCardsModal');
 
-    // Earn opens the sheet for a member…
+    // The earning destinations sheet remains separate from Community Cards…
     api.closeSheet();
     api.openSheet();
-    ok('Earn opens the sheet', store.cfSheetEarn.className.includes('open'));
+    ok('the earning destinations sheet still opens', store.cfSheetEarn.className.includes('open'));
     ok('opening the sheet also shows the overlay',
        store.cfSheetOverlay.className.includes('open'));
     // The sheet also locks the page scroll behind it.
@@ -1132,6 +1140,7 @@ function feedFetch(handler, feedRows) {
     let connectCalls = 0;
     const { api, store, sandbox } = run({
       boot: GUEST,
+      innerWidth: 390,
       fetchImpl: feedFetch(() => Promise.resolve({
         ok: true, json: () => Promise.resolve({ success: true }) })),
     });
@@ -1141,23 +1150,29 @@ function feedFetch(handler, feedRows) {
     await tick();
 
     ok('a guest still gets the whole nav (reading is public)',
-       store.cfBottomNav.children.length === 5);
+       store.cfBottomNav.children.length === 6);
 
     const items = store.cfBottomNav.children;
-    const earn = items.filter(n => /Earn/.test(n.textContent))[0];
     const airtime = items.filter(n => /Buy Airtime/.test(n.textContent))[0];
     const search = items.filter(n => /Search/.test(n.textContent))[0];
     const claim = items.filter(n => /Claim Free G\$/.test(n.textContent))[0];
+    const messages = items.filter(n => /Messages/.test(n.textContent))[0];
+    const communityCards = items.filter(n => /Community Cards/.test(n.textContent))[0];
     const wallet = items.filter(n => /Your Wallet/.test(n.textContent))[0];
 
-    // Earn is a signed-in destination: a guest tap raises the connect card and
-    // must NOT open the sheet.
-    api.closeSheet();
-    earn.onclick({ preventDefault() {} });
-    ok('a guest tapping Earn never opens the sheet',
-       !store.cfSheetEarn.className.includes('open'));
-    ok('a guest tapping Earn opens the connect card', connectCalls === 1,
+    messages.onclick({ preventDefault() {} });
+    ok('a guest tapping Messages opens the connect card', connectCalls === 1,
        String(connectCalls));
+
+    communityCards.onclick({ preventDefault() {} });
+    ok('a guest may open Community Cards without a login gate',
+       store.cfCommunityCardsModal.hidden === false && connectCalls === 1);
+    ok('opening Community Cards locks page scroll',
+       sandbox.document.body.classList.contains('cf-modal-open'));
+    api.closeCommunityCards();
+    ok('closing Community Cards restores the page and modal state',
+       store.cfCommunityCardsModal.hidden === true
+         && !sandbox.document.body.classList.contains('cf-modal-open'));
 
     // Buy Airtime is also signed-in only: the tap is swallowed and the card
     // shows, so the guest is never dropped on a page they cannot use — and the
