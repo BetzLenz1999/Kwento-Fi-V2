@@ -2,7 +2,7 @@
    Kept out of the template so community.html stays small and cacheable.
 
    Palette is the app's LIGHT theme on a PURE WHITE canvas: white page, white
-   cards, soft orange accents. The page canvas used to be warm cream; the owner
+   cards, sky-blue accents. The page canvas used to be warm cream; the owner
    asked for pure white, so the feed and the shared profile are white. On a
    white canvas a borderless card is invisible, so the card keeps its 1px
    border — that hairline is what separates card from page, not decoration.
@@ -23,7 +23,8 @@
    What we deliberately do NOT copy: the other site's brand blue, wordmark and
    logo. AGENTS.md carries an impersonation-risk rule (Blockaid flagged the app
    once) — dressing a wallet in another company's trade dress is that same
-   mistake. Accents stay GoodMarket orange / G$ gold.
+   mistake. Use GoodMarket's distinct sky-blue accents / G$ gold, not another
+   product's trademark blue.
    ------------------------------------------------------------------------- */
 
 :root {
@@ -43,17 +44,16 @@
     --cf-ink: #292524;
     --cf-dim: #6b5d48;
     --cf-muted: #8a8378;
-    --cf-accent: #e8720a;
-    --cf-accent-rgb: 232, 114, 10;
-    --cf-accent-2: #c2410c;
-    --cf-accent-ink: #9a3412;
-    /* The caption field's resting border. 3.07:1 on white — clears the 3:1
-       non-text floor WCAG sets for UI boundaries, which the old --cf-border
-       (a warm hairline) did not. The field is the one control a post cannot be
-       written without, so it is allowed to read as interactive. */
-    --cf-accent-border: #e8720a;
+    --cf-accent: #0369a1;
+    --cf-accent-rgb: 3, 105, 161;
+    --cf-accent-2: #075985;
+    --cf-accent-ink: #075985;
+    /* The caption field's resting border. 5.93:1 on white — clearly above the
+       3:1 non-text floor WCAG sets for UI boundaries. The field is the one
+       control a post cannot be written without, so it reads as interactive. */
+    --cf-accent-border: #0369a1;
     /* The focus halo. Kept as a token so the ring and the border cannot drift. */
-    --cf-accent-soft: rgba(232, 114, 10, 0.16);
+    --cf-accent-soft: rgba(14, 165, 233, 0.17);
     --cf-gold: #f5a623;
     --cf-gold-deep: #d97e0a;
     --cf-gold-ink: #1f1300;
@@ -273,7 +273,7 @@ body {
 .cf-avatar {
     width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
     display: grid; place-items: center; font-weight: 800; font-size: 0.95rem;
-    background: linear-gradient(135deg, #f97316, #ea580c);
+    background: linear-gradient(135deg, #0369a1, #075985);
     color: #fff;
     position: relative; overflow: hidden;
 }
@@ -917,7 +917,7 @@ body {
     width: 110px; height: 110px; border-radius: 50%; margin: 0.25rem auto 0;
     display: grid; place-items: center; overflow: hidden;
     font-weight: 800; font-size: 2.6rem; color: #fff;
-    background: linear-gradient(135deg, #f97316, #ea580c);
+    background: linear-gradient(135deg, #0369a1, #075985);
     box-shadow: 0 0 0 3px var(--cf-card), 0 0 0 5px rgba(var(--cf-accent-rgb), 0.5);
 }
 .cf-avatar-preview .cf-avatar-img { border-radius: 50%; }
@@ -1554,14 +1554,14 @@ body.cf-modal-open { overflow: hidden; }
     font-family: inherit; color: inherit; cursor: pointer;
     transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
 }
-.cf-sheet-item:hover { border-color: rgba(var(--cf-accent-rgb), 0.4); background: #fff7ed; }
+.cf-sheet-item:hover { border-color: rgba(var(--cf-accent-rgb), 0.4); background: #f0f9ff; }
 .cf-sheet-item:active { transform: scale(0.97); }
 .cf-sheet-item:focus-visible { outline: 2px solid var(--cf-accent-2); outline-offset: 1px; }
 .cf-sheet-circle {
     width: 44px; height: 44px;
     display: flex; align-items: center; justify-content: center;
     border-radius: 50%; font-size: 1.25rem; line-height: 1;
-    background: linear-gradient(135deg, #f97316, #ea580c);
+    background: linear-gradient(135deg, #0284c7, #075985);
     color: #fff;
 }
 .cf-sheet-name { font-size: 0.72rem; font-weight: 800; color: var(--cf-dim); text-align: center; }
@@ -1671,12 +1671,12 @@ body.cf-modal-open { overflow: hidden; }
     color: var(--cf-ink); text-decoration: none;
     background: var(--cf-card); border: 1px solid var(--cf-border);
 }
-.cf-search-result:hover { border-color: rgba(var(--cf-accent-rgb), 0.4); background: #fff7ed; }
+.cf-search-result:hover { border-color: rgba(var(--cf-accent-rgb), 0.4); background: #f0f9ff; }
 .cf-search-avatar {
     width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%;
     display: grid; place-items: center;
     font-weight: 800; font-size: 0.85rem;
-    background: linear-gradient(135deg, #f97316, #ea580c); color: #fff;
+    background: linear-gradient(135deg, #0369a1, #075985); color: #fff;
     overflow: hidden;
 }
 .cf-search-name { font-size: 0.88rem; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -1788,7 +1788,7 @@ body.cf-modal-open { overflow: hidden; }
     padding: 0.58rem 1rem;
     border: 0;
     border-radius: 999px;
-    background: var(--cf-accent);
+    background: linear-gradient(135deg, var(--cf-accent), var(--cf-accent-2));
     color: #fff;
     font: inherit;
     font-weight: 800;
