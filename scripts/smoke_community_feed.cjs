@@ -2156,6 +2156,10 @@ function feedFetch(handler, feedRows) {
         action: 'messages', guestOk: false }],
     });
     const { api, store, sandbox } = run({ boot });
+    sandbox.Notification = { permission: 'default' };
+    sandbox.isSecureContext = true;
+    sandbox.PushManager = function () {};
+    sandbox.navigator.serviceWorker = {};
     let enableCalls = 0;
     sandbox.GMCommunityPush = {
       inspect: () => Promise.resolve({ state: 'needs-setup' }),
@@ -2185,6 +2189,31 @@ function feedFetch(handler, feedRows) {
     await tick();
     declined.api.declineMessageNotifications();
     ok('Not now opens Messages without calling enable', declined.sandbox.location.href === '/messages');
+
+    const alreadyGranted = run({ boot });
+    alreadyGranted.sandbox.Notification = { permission: 'granted' };
+    let inspectCalls = 0;
+    alreadyGranted.sandbox.GMCommunityPush = {
+      inspect: () => { inspectCalls++; return Promise.resolve({ state: 'enabled' }); },
+    };
+    alreadyGranted.api._internals.renderNav();
+    const grantedButton = alreadyGranted.store.cfBottomNav.children.find(
+      n => n.getAttribute('data-nav') === 'messages');
+    grantedButton.onclick({ preventDefault() {} });
+    ok('granted permission opens Messages immediately without the opt-in popup',
+       alreadyGranted.sandbox.location.href === '/messages'
+         && alreadyGranted.store.cfMessagePushPrompt.hidden === true);
+    ok('the fast path does not re-run the push readiness check', inspectCalls === 0);
+
+    const permissionBlocked = run({ boot });
+    permissionBlocked.sandbox.Notification = { permission: 'denied' };
+    permissionBlocked.sandbox.GMCommunityPush = {
+      inspect: () => { throw new Error('Blocked permission must not reopen the prompt'); },
+    };
+    permissionBlocked.api._internals.openMessages();
+    ok('blocked permission opens Messages directly for settings guidance',
+       permissionBlocked.sandbox.location.href === '/messages'
+         && permissionBlocked.store.cfMessagePushPrompt.hidden === true);
   }
 
   console.log('');
