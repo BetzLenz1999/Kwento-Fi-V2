@@ -38,6 +38,8 @@ def _result(result: dict):
         status = 404
     if result.get("code") == "db_unavailable":
         status = 503
+    if result.get("code") == "db_error":
+        status = 503
     return jsonify(result), status
 
 
