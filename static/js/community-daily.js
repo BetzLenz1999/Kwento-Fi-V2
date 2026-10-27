@@ -17,7 +17,7 @@
     var _advanceTimer = null;
     var _questionDeadline = 0;
     var _activeQuestion = null;
-    var DAILY_QUESTION_SECONDS = 15;
+    var DAILY_QUESTION_SECONDS = 20;
     var ANSWER_FEEDBACK_DELAY_MS = 1000;
 
     function $(id) { return document.getElementById(id); }
