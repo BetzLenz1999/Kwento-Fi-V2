@@ -674,12 +674,8 @@
                 <h3 id="cfAirtimeTitle">📱 Buy Airtime</h3>
             </div>
             <div class="cf-airtime-actions">
-                {# Escape hatch. Some signing paths only work top-level: an injected
-                   wallet (MiniPay / Trust) may not expose `window.ethereum` to a
-                   frame, and Privy opens its own popups. `target="_top"` also
-                   escapes in the case where the feed itself is framed. #}
-                <a class="cf-airtime-expand" href="/reloadly/#topup" target="_top"
-                   rel="noopener">Open full page ↗</a>
+                {# Keep Reloadly's provider-specific signing code, including its
+                   existing Privy path, untouched; this modal stays in Community. #}
                 <button type="button" class="cf-airtime-close" aria-label="Close Buy Airtime"
                         onclick="GMCommunity.closeAirtime()">×</button>
             </div>
