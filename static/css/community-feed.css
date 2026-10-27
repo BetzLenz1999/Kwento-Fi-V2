@@ -727,6 +727,14 @@ body {
     margin-left: 0.2rem;
 }
 .cf-count { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--cf-ink); }
+.cf-reaction-count-trigger {
+    display: inline-flex; align-items: center; gap: 0.28rem;
+    border: 0; border-radius: 999px; padding: 0.18rem 0.25rem;
+    background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.cf-reaction-count-trigger:hover:not(:disabled) { background: var(--cf-field); }
+.cf-reaction-count-trigger:focus-visible { outline: 2px solid var(--cf-accent); outline-offset: 2px; }
+.cf-reaction-count-trigger:disabled { cursor: default; }
 
 /* Caption — Instagram's shape: the author's name in BOLD, then the text, on
    the same line. `.cf-caption-author` is an anchor to the public profile, so
@@ -828,6 +836,11 @@ body {
 }
 .cf-comment-author-line { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.12rem; }
 .cf-comment-body strong { display: block; font-size: 0.76rem; color: var(--cf-ink); }
+.cf-comment-profile-link { color: var(--cf-ink); text-decoration: none; border-radius: 3px; }
+.cf-comment-profile-link:hover { text-decoration: underline; }
+.cf-comment-profile-link:focus-visible { outline: 2px solid var(--cf-accent); outline-offset: 2px; }
+.cf-comment-profile-avatar-link { flex: 0 0 26px; border-radius: 50%; text-decoration: none; }
+.cf-comment-profile-avatar-link:focus-visible { outline: 2px solid var(--cf-accent); outline-offset: 2px; }
 .cf-author-badge { color: var(--cf-accent); font-size: 0.62rem; font-weight: 800; }
 .cf-reply-mention { color: var(--cf-accent); font-weight: 750; }
 .cf-comment-actions { display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
@@ -1638,6 +1651,67 @@ body.cf-modal-open { overflow: hidden; }
         width: min(92vw, 760px); max-height: min(88dvh, 900px);
         min-height: 0; border-radius: 18px;
     }
+}
+
+.cf-reactions-modal[hidden] { display: none !important; }
+.cf-reactions-modal {
+    position: fixed; inset: 0; z-index: 1400;
+    display: flex; align-items: flex-end; justify-content: center;
+    padding: 0; background: rgba(20, 28, 38, 0.48);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.cf-reactions-panel {
+    display: flex; flex-direction: column; width: min(100%, 560px);
+    max-height: min(84dvh, 720px); min-height: min(38dvh, 360px);
+    overflow: hidden; background: var(--cf-card); color: var(--cf-ink);
+    border: 1px solid var(--cf-border); border-top-left-radius: 20px;
+    border-top-right-radius: 20px; box-shadow: 0 -12px 40px rgba(20, 28, 38, 0.2);
+}
+.cf-reactions-header {
+    display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between;
+    gap: 0.75rem; padding: 0.8rem 1rem 0.7rem; border-bottom: 1px solid var(--cf-hairline);
+}
+.cf-reactions-header h2 { margin: 0; color: var(--cf-ink); font-size: 1.08rem; }
+.cf-reactions-filters {
+    display: flex; flex: 0 0 auto; gap: 0.4rem; overflow-x: auto;
+    padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--cf-hairline);
+    overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
+}
+.cf-reaction-filter {
+    flex: 0 0 auto; min-height: 36px; padding: 0.35rem 0.65rem;
+    border: 1px solid var(--cf-border); border-radius: 999px;
+    background: var(--cf-card); color: var(--cf-ink-2); font: inherit;
+    font-size: 0.76rem; font-weight: 800; cursor: pointer;
+}
+.cf-reaction-filter[aria-pressed="true"] { background: var(--cf-soft); border-color: var(--cf-accent); color: var(--cf-accent-ink); }
+.cf-reaction-filter:focus-visible,
+.cf-reactions-more:focus-visible,
+.cf-reactions-retry:focus-visible { outline: 2px solid var(--cf-accent); outline-offset: 2px; }
+.cf-reactions-status { flex: 0 0 auto; min-height: 1.3em; margin: 0; padding: 0.55rem 1rem 0; color: var(--cf-ink-2); font-size: 0.8rem; }
+.cf-reactions-list {
+    display: flex; flex: 1 1 auto; flex-direction: column; gap: 0.12rem;
+    min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch; margin: 0; padding: 0.35rem 0.85rem 0.75rem;
+    list-style: none;
+}
+.cf-reactor-row { display: flex; align-items: center; gap: 0.65rem; min-height: 52px; padding: 0.35rem 0.25rem; }
+.cf-reactor-avatar { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; font-size: 0.78rem; }
+.cf-reactor-copy { min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 0.1rem; }
+.cf-reactor-name { overflow-wrap: anywhere; color: var(--cf-ink); font-size: 0.86rem; font-weight: 800; text-decoration: none; }
+.cf-reactor-name:hover { text-decoration: underline; }
+.cf-reactor-name:focus-visible { outline: 2px solid var(--cf-accent); outline-offset: 2px; border-radius: 2px; }
+.cf-reactor-type { color: var(--cf-muted); font-size: 0.72rem; }
+.cf-reactor-emoji { flex: 0 0 auto; font-size: 1.15rem; }
+.cf-reactions-footer { display: flex; flex: 0 0 auto; justify-content: center; gap: 0.6rem; padding: 0.7rem 1rem calc(0.8rem + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--cf-hairline); }
+.cf-reactions-more, .cf-reactions-retry {
+    min-height: 42px; padding: 0.5rem 1.1rem; border: 1px solid var(--cf-border);
+    border-radius: 999px; background: var(--cf-field); color: var(--cf-ink);
+    font: inherit; font-size: 0.82rem; font-weight: 800; cursor: pointer;
+}
+.cf-reactions-more[hidden], .cf-reactions-retry[hidden] { display: none !important; }
+@media (min-width: 900px) {
+    .cf-reactions-modal { align-items: center; padding: 1rem; }
+    .cf-reactions-panel { width: min(92vw, 540px); max-height: min(82dvh, 680px); min-height: 0; border-radius: 18px; }
 }
 
 /* ── Buy Airtime modal ──────────────────────────────────────────────────────
