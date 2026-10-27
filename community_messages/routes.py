@@ -40,6 +40,8 @@ def _result(result: dict):
         status = 503
     if result.get("code") == "db_error":
         status = 503
+    if result.get("code") == "storage_unavailable":
+        status = 503
     return jsonify(result), status
 
 
@@ -77,6 +79,13 @@ def push_status():
     if not wallet:
         return _auth_error()
     configured = web_push_service.configured()
+    if not configured:
+        return jsonify({"success": True, "enabled": False, "public_key": "",
+                        "storage_ready": False, "subscribed": False})
+    if not web_push_service.storage_ready():
+        return jsonify({"success": False, "code": "storage_unavailable",
+                        "enabled": True, "storage_ready": False,
+                        "error": "Message notifications cannot be enabled right now. Please try again later."}), 503
     body = {}
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
@@ -87,7 +96,7 @@ def push_status():
         if subscribed is None:
             return jsonify({"success": False, "code": "status_unavailable",
                             "error": "Could not verify this device’s notification setup."}), 503
-    return jsonify({"success": True, "enabled": configured,
+    return jsonify({"success": True, "enabled": True, "storage_ready": True,
                     "public_key": web_push_service.public_key(),
                     "subscribed": subscribed})
 
@@ -101,6 +110,9 @@ def push_subscribe():
         return _auth_error()
     if not web_push_service.configured():
         return jsonify({"success": False, "code": "not_configured", "error": "Notifications are not configured yet."}), 503
+    if not web_push_service.storage_ready():
+        return jsonify({"success": False, "code": "storage_unavailable",
+                        "error": "Message notifications cannot be enabled right now. Please try again later."}), 503
     data = request.get_json(silent=True) or {}
     return _result(web_push_service.save_subscription(wallet, data.get("subscription"),
                                                        request.headers.get("User-Agent")))
