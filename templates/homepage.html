@@ -258,6 +258,14 @@
         .gm-loader-dots span:nth-child(2) { animation-delay: 0.16s; }
         .gm-loader-dots span:nth-child(3) { animation-delay: 0.32s; }
 
+        .gm-loader-progress { display: none; width: min(100%, 300px); margin: 1.25rem auto 0; text-align: left; }
+        .gm-welcome-loader.is-pwa-startup .gm-loader-progress { display: block; }
+        .gm-loader-progress[hidden] { display: none !important; }
+        .gm-loader-progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.45rem; color: rgba(219, 234, 254, 0.88); font-size: 0.8rem; font-weight: 700; }
+        .gm-loader-progress-percent { color: #bfdbfe; font-variant-numeric: tabular-nums; }
+        .gm-loader-progress-track { height: 7px; overflow: hidden; border-radius: 999px; background: rgba(191, 219, 254, 0.18); }
+        .gm-loader-progress-fill { width: 1%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #60a5fa, #34d399); transition: width 0.18s linear; }
+
         @keyframes gmLoaderSpin {
             to { transform: rotate(360deg); }
         }
@@ -270,9 +278,11 @@
         @media (prefers-reduced-motion: reduce) {
             .gm-loader-orb::before,
             .gm-loader-dots span,
+            .gm-loader-progress-fill,
             .fs-books, .fs-game, .fs-phone {
                 animation: none;
             }
+            .gm-loader-progress-fill { transition: none; }
         }
 
         /* Header */
@@ -2484,6 +2494,10 @@
                 <span class="gm-loader-chip is-phone">📡</span>
             </div>
             <div class="gm-loader-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div id="gmLoaderProgress" class="gm-loader-progress" hidden>
+                <div class="gm-loader-progress-meta"><span id="gmLoaderProgressStage">Starting GoodMarket…</span><span id="gmLoaderProgressPercent" class="gm-loader-progress-percent">1%</span></div>
+                <div id="gmLoaderProgressTrack" class="gm-loader-progress-track" role="progressbar" aria-label="Estimated GoodMarket startup progress" aria-valuemin="1" aria-valuemax="100" aria-valuenow="1"><div id="gmLoaderProgressFill" class="gm-loader-progress-fill"></div></div>
+            </div>
         </div>
     </div>
     <!-- Header -->
@@ -3743,10 +3757,50 @@
             const startedAt = Date.now();
             let pageLoaded = document.readyState === 'complete';
             let hidden = false;
+            let progressValue = 1;
+            let progressTimer = null;
+
+            let standalone = false;
+            try {
+                standalone = !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+                    || navigator.standalone === true;
+            } catch (_) {}
+            const progress = document.getElementById('gmLoaderProgress');
+            const progressTrack = document.getElementById('gmLoaderProgressTrack');
+            const progressFill = document.getElementById('gmLoaderProgressFill');
+            const progressPercent = document.getElementById('gmLoaderProgressPercent');
+            const progressStage = document.getElementById('gmLoaderProgressStage');
+
+            const setProgress = (value, stage) => {
+                progressValue = Math.max(progressValue, Math.min(100, Math.max(1, Math.floor(value))));
+                if (progressTrack) progressTrack.setAttribute('aria-valuenow', String(progressValue));
+                if (progressPercent) progressPercent.textContent = progressValue + '%';
+                if (progressFill) progressFill.style.width = progressValue + '%';
+                if (stage && progressStage) progressStage.textContent = stage;
+            };
+
+            if (standalone && progress) {
+                loader.classList.add('is-pwa-startup');
+                progress.hidden = false;
+                if (pageLoaded) {
+                    setProgress(100, 'GoodMarket is ready');
+                } else {
+                    progressTimer = window.setInterval(() => {
+                        const elapsed = Date.now() - startedAt;
+                        const estimate = Math.min(99, 1 + Math.floor(98 * elapsed / MAX_VISIBLE_MS));
+                        const stage = elapsed < 900 ? 'Starting GoodMarket…'
+                            : elapsed < 2200 ? 'Preparing your app…'
+                            : elapsed < MAX_VISIBLE_MS ? 'Opening your page…'
+                            : 'Still opening GoodMarket…';
+                        setProgress(estimate, stage);
+                    }, 120);
+                }
+            }
 
             const hideLoader = () => {
                 if (hidden) return;
                 hidden = true;
+                if (progressTimer !== null) window.clearInterval(progressTimer);
                 loader.classList.add('is-hidden');
                 window.setTimeout(() => loader.remove(), 650);
             };
@@ -3754,6 +3808,7 @@
             const hideWhenReady = () => {
                 const elapsed = Date.now() - startedAt;
                 if (pageLoaded && elapsed >= MIN_VISIBLE_MS) {
+                    if (standalone) setProgress(100, 'GoodMarket is ready');
                     hideLoader();
                     return;
                 }
@@ -3764,12 +3819,22 @@
             if (!pageLoaded) {
                 window.addEventListener('load', () => {
                     pageLoaded = true;
+                    if (standalone) {
+                        setProgress(100, 'GoodMarket is ready');
+                        if (progressTimer !== null) {
+                            window.clearInterval(progressTimer);
+                            progressTimer = null;
+                        }
+                    }
                     hideWhenReady();
                 }, { once: true });
             }
 
             hideWhenReady();
-            window.setTimeout(hideLoader, MAX_VISIBLE_MS);
+            window.setTimeout(() => {
+                if (!pageLoaded && standalone) setProgress(99, 'Still opening GoodMarket…');
+                hideLoader();
+            }, MAX_VISIBLE_MS);
         })();
     </script>
 </body>
