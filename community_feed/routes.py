@@ -74,6 +74,12 @@ def _session_wallet() -> str | None:
     return wallet
 
 
+def _community_messages_enabled() -> bool:
+    return (os.getenv("COMMUNITY_DIRECT_MESSAGES_ENABLED", "1") or "1").strip().lower() not in {
+        "0", "false", "off", "no"
+    }
+
+
 def _admin_wallet() -> str | None:
     wallet = session.get("wallet") or session.get("wallet_address")
     if not wallet:
@@ -250,6 +256,7 @@ def community_feed_home():
             fv_return_to="/community",
         ),
         is_guest=not bool(wallet),
+        messages_enabled=_community_messages_enabled(),
         vault_donations_enabled=vault_donations.donations_enabled(),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
@@ -311,6 +318,7 @@ def community_feed_post(post_id: int):
             fv_return_to=canonical_url,
         ),
         is_guest=not bool(wallet),
+        messages_enabled=_community_messages_enabled(),
         vault_donations_enabled=vault_donations.donations_enabled(),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
