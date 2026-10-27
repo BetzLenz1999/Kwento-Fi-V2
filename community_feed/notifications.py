@@ -9,19 +9,27 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
 _WALLET_RE = re.compile(r"^0x[0-9a-f]{40}$")
 _REACTIONS = {"like", "love", "haha", "wow", "sad", "angry"}
-_PUBLIC_TYPES = {"reaction", "comment", "reply", "post_reply"}
+_PUBLIC_TYPES = {"reaction", "comment", "reply", "post_reply", "message"}
 _DEFAULT_ACTOR = "Community member"
 
 
 def _wallet(value: Any) -> str:
     candidate = str(value or "").strip().lower()
     return candidate if _WALLET_RE.fullmatch(candidate) else ""
+
+
+def _uuid(value: Any) -> str:
+    try:
+        return str(uuid.UUID(str(value or "")))
+    except (ValueError, TypeError, AttributeError):
+        return ""
 
 
 def _actor_name(value: Any) -> str:
@@ -130,15 +138,62 @@ def notify_comment(db: Any, *, actor_wallet: str, actor_username: str,
     return saved
 
 
+def notify_message(*, actor_wallet: str, actor_username: str,
+                   recipient_wallet: str, conversation_id: str,
+                   message_id: str) -> bool:
+    """Persist a generic DM bell item after a message is saved.
+
+    No body, attachment, transfer details, or client-supplied recipient enters
+    this record. UUID-scoped dedupe allows every distinct message in one thread.
+    """
+    actor = _wallet(actor_wallet)
+    recipient = _wallet(recipient_wallet)
+    conversation = _uuid(conversation_id)
+    message = _uuid(message_id)
+    if not actor or not recipient or actor == recipient or not conversation or not message:
+        return False
+    db = _db_admin()
+    return _insert(db, {
+        "recipient_wallet": recipient,
+        "actor_wallet": actor,
+        "actor_username_snapshot": _actor_name(actor_username),
+        "notification_type": "message",
+        "post_id": None,
+        "comment_id": None,
+        "reaction": None,
+        "conversation_id": conversation,
+        "message_id": message,
+        "dedupe_key": f"message:{message}",
+    })
+
+
 def _public_notification(row: dict) -> dict | None:
     """Build an allow-listed response object; never copy raw database rows."""
     try:
         notification_id = int(row.get("id"))
-        post_id = int(row.get("post_id"))
     except (TypeError, ValueError, OverflowError):
         return None
     kind = str(row.get("notification_type") or "")
-    if notification_id <= 0 or post_id <= 0 or kind not in _PUBLIC_TYPES:
+    if notification_id <= 0 or kind not in _PUBLIC_TYPES:
+        return None
+    base = {
+        "id": str(notification_id),
+        "notification_type": kind,
+        "actor_username": _actor_name(row.get("actor_username_snapshot")),
+        "created_at": row.get("created_at"),
+        "read_at": row.get("read_at"),
+    }
+    if kind == "message":
+        conversation_id = _uuid(row.get("conversation_id"))
+        if not conversation_id:
+            return None
+        base["conversation_id"] = conversation_id
+        return base
+    try:
+        post_id = int(row.get("post_id"))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if post_id <= 0:
         return None
     comment_id = row.get("comment_id")
     if comment_id is not None:
@@ -151,16 +206,8 @@ def _public_notification(row: dict) -> dict | None:
     reaction = row.get("reaction") if kind == "reaction" else None
     if reaction not in _REACTIONS:
         reaction = None
-    return {
-        "id": str(notification_id),
-        "notification_type": kind,
-        "actor_username": _actor_name(row.get("actor_username_snapshot")),
-        "post_id": post_id,
-        "comment_id": comment_id,
-        "reaction": reaction,
-        "created_at": row.get("created_at"),
-        "read_at": row.get("read_at"),
-    }
+    base.update({"post_id": post_id, "comment_id": comment_id, "reaction": reaction})
+    return base
 
 
 def list_for_wallet(wallet: str, *, limit: int = 20,
@@ -182,7 +229,7 @@ def list_for_wallet(wallet: str, *, limit: int = 20,
         return {"success": False, "code": "db", "error": "Notifications are temporarily unavailable."}
     try:
         query = (db.table("community_feed_notifications")
-                 .select("id,notification_type,actor_username_snapshot,post_id,comment_id,reaction,created_at,read_at")
+                 .select("id,notification_type,actor_username_snapshot,post_id,comment_id,reaction,conversation_id,created_at,read_at")
                  .eq("recipient_wallet", recipient)
                  .order("id", desc=True)
                  .limit(limit + 1))
@@ -214,6 +261,31 @@ def list_for_wallet(wallet: str, *, limit: int = 20,
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_notifications: list failed: %s", exc)
         return {"success": False, "code": "db", "error": "Notifications are temporarily unavailable."}
+
+
+def mark_messages_read_for_conversation(wallet: str, conversation_id: str,
+                                       read_through: str | None = None) -> bool:
+    """Mark this recipient's DM alerts read after the authorized thread is read."""
+    recipient = _wallet(wallet)
+    conversation = _uuid(conversation_id)
+    if not recipient or not conversation:
+        return False
+    db = _db_admin()
+    if db is None:
+        return False
+    try:
+        (db.table("community_feed_notifications")
+         .update({"read_at": datetime.now(timezone.utc).isoformat()})
+         .eq("recipient_wallet", recipient)
+         .eq("notification_type", "message")
+         .eq("conversation_id", conversation)
+         .lte("created_at", read_through or datetime.now(timezone.utc).isoformat())
+         .is_("read_at", "null")
+         .execute())
+        return True
+    except Exception as exc:  # noqa: BLE001 - message reads must remain available
+        logger.info("community_notifications: DM read update skipped: %s", exc)
+        return False
 
 
 def mark_one_read(wallet: str, notification_id: int) -> dict:
