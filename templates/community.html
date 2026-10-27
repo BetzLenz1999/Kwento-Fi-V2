@@ -216,8 +216,9 @@
          Signed-in members see their balance/goal by default; operators can hide
          it with COMMUNITY_REWARD_SHOW_BALANCE=0. Guests never see a personal
          balance. The figure is a server-side ledger balance until a direct
-         wallet withdrawal is confirmed on Celo. Earning-rate details start
-         collapsed behind an accessible toggle and come only from the server.
+         wallet withdrawal is confirmed on Celo. Reward-budget and earning-rate
+         detail panels are intentionally not shown here; server-side limits and
+         rate configuration remain active.
 
          Starts `hidden` and is revealed by the bundle only when the feature is
          enabled, so a disabled deployment renders nothing.
@@ -241,7 +242,8 @@
         <!-- The personal figure stays hidden until the server response arrives,
              preventing a stale/zero flash. The bundle reveals it for members
              when `show_balance` is true, but never for guests. -->
-        <div class="cf-earn-balance-wrap" id="cfEarnBalance" hidden>
+        <div class="cf-earn-overview" id="cfEarnOverview" hidden>
+          <div class="cf-earn-balance-wrap" id="cfEarnBalance" hidden>
             <p class="cf-earn-balance">
                 <span class="cf-earn-amount" id="cfEarnAmount">0</span>
                 <span class="cf-earn-unit">G$</span>
@@ -253,38 +255,23 @@
                 <span class="cf-earn-bar-fill" id="cfEarnBarFill"></span>
             </div>
         </div>
-        <div class="cf-earn-budgets" id="cfEarnBudgets" hidden aria-live="polite">
-            <div class="cf-earn-budget-head">
-                <strong>Today’s reward budgets</strong>
-                <span id="cfEarnBudgetReset">Resets at 08:00 PH (00:00 UTC)</span>
+          {% if not is_guest %}
+          <div class="cf-earn-actions" id="cfEarnActions" hidden>
+            <div class="cf-earn-withdraw-row" id="cfEarnWithdrawRow" hidden>
+                <button type="button" class="cf-earn-withdraw" id="cfEarnWithdrawBtn"
+                        onclick="GMCommunity.checkWithdrawalEligibility()">Withdraw</button>
+                <p class="cf-earn-withdraw-status" id="cfEarnWithdrawStatus"
+                   role="status" aria-live="polite" hidden></p>
             </div>
-            <div class="cf-earn-budget-grid">
-                <div class="cf-earn-budget" id="cfEarnSocialBudget">
-                    <span class="cf-earn-budget-label">Social</span>
-                    <span class="cf-earn-budget-value" id="cfEarnSocialBudgetValue"></span>
-                    <span class="cf-earn-budget-note" id="cfEarnSocialBudgetNote"></span>
-                </div>
-                <div class="cf-earn-budget" id="cfEarnQuizBudget">
-                    <span class="cf-earn-budget-label">Daily Learn</span>
-                    <span class="cf-earn-budget-value" id="cfEarnQuizBudgetValue"></span>
-                    <span class="cf-earn-budget-note" id="cfEarnQuizBudgetNote"></span>
-                </div>
-                <div class="cf-earn-budget cf-earn-budget-total" id="cfEarnCombinedBudget">
-                    <span class="cf-earn-budget-label">Combined</span>
-                    <span class="cf-earn-budget-value" id="cfEarnCombinedBudgetValue"></span>
-                    <span class="cf-earn-budget-note" id="cfEarnCombinedBudgetNote"></span>
-                </div>
+            <div class="cf-earn-history" id="cfEarnHistory" hidden>
+                <button type="button" class="cf-earn-history-toggle" id="cfEarnHistoryToggle"
+                        aria-controls="cfEarnHistoryPanel" aria-expanded="false" hidden>
+                    Transaction history
+                </button>
             </div>
+          </div>
+          {% endif %}
         </div>
-        <button type="button" class="cf-earn-rates-toggle" id="cfEarnRatesToggle"
-                aria-controls="cfEarnRates" aria-expanded="false" hidden>
-            Show earning rates
-        </button>
-        <!-- The rates come from the server (`rates` in the rewards payload),
-             so this list is rendered by the bundle and can never quote a rate
-             the ledger does not actually pay. It is collapsed until the member
-             or guest asks to expand it. -->
-        <ul class="cf-earn-rates" id="cfEarnRates" hidden></ul>
         <p class="cf-earn-note" id="cfEarnNote" hidden></p>
         {% if not is_guest %}
         {# Revealed only after the authenticated status endpoint confirms a
@@ -305,27 +292,17 @@
                role="status" aria-live="polite" aria-atomic="true" hidden></p>
         </div>
         {% endif %}
-        <div class="cf-earn-withdraw-row" id="cfEarnWithdrawRow" hidden>
-            <button type="button" class="cf-earn-withdraw" id="cfEarnWithdrawBtn"
-                    onclick="GMCommunity.checkWithdrawalEligibility()">Withdraw</button>
-            <p class="cf-earn-withdraw-status" id="cfEarnWithdrawStatus"
-               role="status" aria-live="polite" hidden></p>
-        </div>
-        <div class="cf-earn-history" id="cfEarnHistory" hidden>
-            <button type="button" class="cf-earn-history-toggle" id="cfEarnHistoryToggle"
-                    aria-controls="cfEarnHistoryPanel" aria-expanded="false" hidden>
-                Transaction history
+        {% if not is_guest %}
+        <section class="cf-earn-history-panel" id="cfEarnHistoryPanel"
+                 aria-label="On-chain withdrawal history" hidden>
+            <p class="cf-earn-history-message" id="cfEarnHistoryMessage"
+               role="status" aria-live="polite"></p>
+            <ul class="cf-earn-history-list" id="cfEarnHistoryList"></ul>
+            <button type="button" class="cf-earn-history-more" id="cfEarnHistoryMore" hidden>
+                Load older
             </button>
-            <section class="cf-earn-history-panel" id="cfEarnHistoryPanel"
-                     aria-label="On-chain withdrawal history" hidden>
-                <p class="cf-earn-history-message" id="cfEarnHistoryMessage"
-                   role="status" aria-live="polite"></p>
-                <ul class="cf-earn-history-list" id="cfEarnHistoryList"></ul>
-                <button type="button" class="cf-earn-history-more" id="cfEarnHistoryMore" hidden>
-                    Load older
-                </button>
-            </section>
-        </div>
+        </section>
+        {% endif %}
     </section>
     </aside>
 
