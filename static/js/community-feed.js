@@ -192,19 +192,34 @@
         return wrap;
     }
 
+    function hasReactionEvidence(post, count) {
+        if (count > 0 || (post && post.my_reaction && REACTIONS[post.my_reaction])) return true;
+        var breakdown = post && post.reaction_breakdown;
+        return !!(breakdown && typeof breakdown === 'object'
+            && Object.keys(breakdown).some(function (key) {
+                return !!REACTIONS[key] && Number(breakdown[key]) > 0;
+            }));
+    }
+
     function buildReactionUsersTrigger(post) {
         var count = Number(post && post.reaction_count) || 0;
+        var hasReactions = hasReactionEvidence(post, count);
         var trigger = el('button', 'cf-reaction-count-trigger');
         trigger.type = 'button';
-        trigger.disabled = count <= 0;
+        trigger.disabled = !hasReactions;
         trigger.setAttribute('aria-haspopup', 'dialog');
         trigger.setAttribute('aria-controls', 'cfReactionUsersModal');
         trigger.setAttribute('aria-expanded', 'false');
-        trigger.setAttribute('aria-label', 'View ' + count + ' reactions');
+        trigger.setAttribute('aria-label', hasReactions
+            ? (count > 0 ? 'See who reacted; ' + count + ' reactions' : 'See who reacted')
+            : 'No reactions yet');
         trigger.appendChild(buildSummaryEmojis(post));
-        var countNode = el('span', 'cf-count', countLabel(count) || '0');
-        countNode.setAttribute('aria-live', 'polite');
-        trigger.appendChild(countNode);
+        if (count > 0 || !hasReactions) {
+            var countNode = el('span', 'cf-count', countLabel(count) || '0');
+            countNode.setAttribute('aria-live', 'polite');
+            trigger.appendChild(countNode);
+        }
+        if (hasReactions) trigger.appendChild(el('span', 'cf-reaction-view-label', 'See who reacted'));
         trigger.onclick = function () { openReactionUsers(post, trigger); };
         return trigger;
     }
