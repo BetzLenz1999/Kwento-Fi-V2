@@ -54,6 +54,15 @@
     var _posting = false;
     var _reactionInFlight = {};  // post_id -> true (serialise per post)
     var _activeReactionPicker = null;
+    var _reactionUsersOpen = false;
+    var _reactionUsersBound = false;
+    var _reactionUsersPostId = null;
+    var _reactionUsersFilter = 'all';
+    var _reactionUsersCursor = null;
+    var _reactionUsersBusy = false;
+    var _reactionUsersRequestId = 0;
+    var _reactionUsersReturnFocus = null;
+    var _reactionUsersBodyWasLocked = false;
     var _commentsOpen = {};    // post_id -> true
     var _commentCache = {};    // post_id -> [comments]
     var _replyingTo = {};      // post_id -> comment/reply id
@@ -126,6 +135,12 @@
         node.textContent = (esc(username) || 'A')[0].toUpperCase();
     }
 
+    function communityProfilePath(username) {
+        var name = esc(username).trim().replace(/^@+/, '');
+        if (!/^[A-Za-z0-9_]{3,24}$/.test(name)) return '';
+        return '/community/u/' + encodeURIComponent(name);
+    }
+
     /* ── Reaction summary ─────────────────────────────────────────────────
        The stacked emoji row a social feed shows above the caption: the
        reactions a post actually received, most-used first, then a trailing
@@ -177,6 +192,23 @@
         return wrap;
     }
 
+    function buildReactionUsersTrigger(post) {
+        var count = Number(post && post.reaction_count) || 0;
+        var trigger = el('button', 'cf-reaction-count-trigger');
+        trigger.type = 'button';
+        trigger.disabled = count <= 0;
+        trigger.setAttribute('aria-haspopup', 'dialog');
+        trigger.setAttribute('aria-controls', 'cfReactionUsersModal');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.setAttribute('aria-label', 'View ' + count + ' reactions');
+        trigger.appendChild(buildSummaryEmojis(post));
+        var countNode = el('span', 'cf-count', countLabel(count) || '0');
+        countNode.setAttribute('aria-live', 'polite');
+        trigger.appendChild(countNode);
+        trigger.onclick = function () { openReactionUsers(post, trigger); };
+        return trigger;
+    }
+
     function toast(message, kind) {
         var node = $('cfToast');
         if (!node) return;
@@ -213,6 +245,218 @@
         n = Number(n) || 0;
         if (n <= 0) return '';
         return n > 999 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K' : String(n);
+    }
+
+    var REACTION_USERS_PAGE_SIZE = 25;
+
+    function renderReactionUserFilters() {
+        var filters = $('cfReactionUsersFilters');
+        if (!filters) return;
+        filters.textContent = '';
+        var choices = [{ key: 'all', label: 'All' }];
+        Object.keys(REACTIONS).forEach(function (key) {
+            choices.push({ key: key, label: REACTIONS[key] + ' ' + key.charAt(0).toUpperCase() + key.slice(1) });
+        });
+        choices.forEach(function (choice) {
+            var button = el('button', 'cf-reaction-filter', choice.label);
+            button.type = 'button';
+            button.setAttribute('data-reaction-filter', choice.key);
+            button.setAttribute('aria-pressed', _reactionUsersFilter === choice.key ? 'true' : 'false');
+            button.onclick = function () {
+                if (_reactionUsersFilter === choice.key) return;
+                _reactionUsersFilter = choice.key;
+                renderReactionUserFilters();
+                loadReactionUsers(true);
+            };
+            filters.appendChild(button);
+        });
+    }
+
+    function appendReactionUser(item) {
+        var list = $('cfReactionUsersList');
+        if (!list || !item || typeof item !== 'object') return;
+        var displayName = String(item.username || 'Community member').trim() || 'Community member';
+        var itemReaction = String(item.reaction || '').toLowerCase();
+        var emoji = REACTIONS[itemReaction] || '';
+        var row = el('li', 'cf-reactor-row');
+        var path = communityProfilePath(item.profile_username);
+        var avatar = avatarNode(item.avatar_url, item.profile_username || displayName,
+            'cf-avatar cf-reactor-avatar');
+        if (path) {
+            var avatarLink = el('a', 'cf-comment-profile-avatar-link');
+            avatarLink.href = path;
+            avatarLink.setAttribute('aria-label', 'View @' + item.profile_username + "'s profile");
+            avatarLink.appendChild(avatar);
+            row.appendChild(avatarLink);
+        } else {
+            row.appendChild(avatar);
+        }
+        var copy = el('span', 'cf-reactor-copy');
+        if (path) {
+            var nameLink = el('a', 'cf-reactor-name', displayName);
+            nameLink.href = path;
+            copy.appendChild(nameLink);
+        } else {
+            copy.appendChild(el('span', 'cf-reactor-name', displayName));
+        }
+        copy.appendChild(el('span', 'cf-reactor-type', emoji ? 'Reacted with ' + itemReaction : 'Reacted'));
+        row.appendChild(copy);
+        if (emoji) {
+            var icon = el('span', 'cf-reactor-emoji', emoji);
+            icon.setAttribute('aria-hidden', 'true');
+            row.appendChild(icon);
+        }
+        list.appendChild(row);
+    }
+
+    function loadReactionUsers(reset) {
+        if (!_reactionUsersOpen || !_reactionUsersPostId) return Promise.resolve(false);
+        if (!reset && (_reactionUsersBusy || !_reactionUsersCursor)) return Promise.resolve(false);
+        var list = $('cfReactionUsersList');
+        var status = $('cfReactionUsersStatus');
+        var more = $('cfReactionUsersMore');
+        var retry = $('cfReactionUsersRetry');
+        if (reset) {
+            _reactionUsersRequestId += 1;
+            _reactionUsersBusy = false;
+            _reactionUsersCursor = null;
+            if (list) list.textContent = '';
+            if (more) more.hidden = true;
+            if (retry) retry.hidden = true;
+            if (status) status.textContent = 'Loading reactions…';
+        }
+        var requestId = ++_reactionUsersRequestId;
+        var query = 'limit=' + REACTION_USERS_PAGE_SIZE;
+        if (_reactionUsersFilter !== 'all') query += '&reaction=' + encodeURIComponent(_reactionUsersFilter);
+        if (_reactionUsersCursor) query += '&cursor=' + encodeURIComponent(_reactionUsersCursor);
+        _reactionUsersBusy = true;
+        if (more) more.disabled = true;
+        if (retry) retry.hidden = true;
+        return api('/community/api/posts/' + encodeURIComponent(_reactionUsersPostId)
+            + '/reactions?' + query, { cache: 'no-store' }).then(function (result) {
+            if (requestId !== _reactionUsersRequestId || !_reactionUsersOpen) return false;
+            if (!result.ok || !result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not load reactions.');
+            }
+            var reactors = Array.isArray(result.data.reactors) ? result.data.reactors : [];
+            reactors.forEach(appendReactionUser);
+            _reactionUsersCursor = typeof result.data.next_cursor === 'string'
+                && result.data.next_cursor ? result.data.next_cursor : null;
+            var hasMore = result.data.has_more === true && !!_reactionUsersCursor;
+            if (status) {
+                status.textContent = list && list.children.length
+                    ? '' : 'No reactions yet.';
+            }
+            if (more) {
+                more.hidden = !hasMore;
+                more.disabled = false;
+            }
+            return true;
+        }).catch(function (error) {
+            if (requestId !== _reactionUsersRequestId || !_reactionUsersOpen) return false;
+            if (status) status.textContent = (error && error.message) || 'Could not load reactions.';
+            if (retry) retry.hidden = false;
+            if (more) { more.hidden = true; more.disabled = false; }
+            return false;
+        }).then(function (result) {
+            if (requestId === _reactionUsersRequestId) _reactionUsersBusy = false;
+            return result;
+        });
+    }
+
+    function reactionUsersKeydown(event) {
+        if (!_reactionUsersOpen || !event) return;
+        if (event.key === 'Escape') {
+            if (event.preventDefault) event.preventDefault();
+            closeReactionUsers();
+            return;
+        }
+        if (event.key !== 'Tab') return;
+        var modal = $('cfReactionUsersModal');
+        if (!modal) return;
+        var focusable = Array.prototype.slice.call(modal.querySelectorAll(
+            'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(function (node) {
+            return !node.hidden && (!node.getClientRects || node.getClientRects().length > 0);
+        });
+        if (!focusable.length) {
+            if (event.preventDefault) event.preventDefault();
+            if (modal.focus) modal.focus();
+            return;
+        }
+        var first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+            if (event.preventDefault) event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            if (event.preventDefault) event.preventDefault();
+            first.focus();
+        }
+    }
+
+    function bindReactionUsersModal() {
+        if (_reactionUsersBound) return;
+        var modal = $('cfReactionUsersModal');
+        if (!modal) return;
+        _reactionUsersBound = true;
+        modal.addEventListener('click', function (event) {
+            if (event && event.target === modal) closeReactionUsers();
+        });
+        var close = $('cfReactionUsersClose');
+        if (close) close.addEventListener('click', function () { closeReactionUsers(); });
+        var more = $('cfReactionUsersMore');
+        if (more) more.addEventListener('click', function () { loadReactionUsers(false); });
+        var retry = $('cfReactionUsersRetry');
+        if (retry) retry.addEventListener('click', function () { loadReactionUsers(true); });
+        document.addEventListener('keydown', reactionUsersKeydown);
+    }
+
+    function openReactionUsers(post, trigger) {
+        var modal = $('cfReactionUsersModal');
+        var postId = post && String(post.id || '');
+        if (!modal || !/^\d+$/.test(postId) || Number(postId) <= 0) return false;
+        bindReactionUsersModal();
+        _reactionUsersReturnFocus = trigger || document.activeElement || null;
+        _reactionUsersBodyWasLocked = document.body.classList.contains('cf-modal-open');
+        _reactionUsersPostId = postId;
+        _reactionUsersFilter = 'all';
+        _reactionUsersOpen = true;
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        if (_reactionUsersReturnFocus && _reactionUsersReturnFocus.setAttribute) {
+            _reactionUsersReturnFocus.setAttribute('aria-expanded', 'true');
+        }
+        document.body.classList.add('cf-modal-open');
+        renderReactionUserFilters();
+        var status = $('cfReactionUsersStatus');
+        if (status) status.textContent = 'Loading reactions…';
+        var list = $('cfReactionUsersList');
+        if (list) list.textContent = '';
+        var close = $('cfReactionUsersClose');
+        if (close && close.focus) close.focus();
+        loadReactionUsers(true);
+        return true;
+    }
+
+    function closeReactionUsers(restoreFocus) {
+        if (!_reactionUsersOpen) return true;
+        var modal = $('cfReactionUsersModal');
+        if (modal) {
+            modal.hidden = true;
+            modal.setAttribute('aria-hidden', 'true');
+        }
+        _reactionUsersRequestId += 1;
+        _reactionUsersBusy = false;
+        _reactionUsersCursor = null;
+        var trigger = _reactionUsersReturnFocus;
+        if (trigger && trigger.setAttribute) trigger.setAttribute('aria-expanded', 'false');
+        _reactionUsersReturnFocus = null;
+        _reactionUsersPostId = null;
+        _reactionUsersOpen = false;
+        if (!_reactionUsersBodyWasLocked) document.body.classList.remove('cf-modal-open');
+        _reactionUsersBodyWasLocked = false;
+        if (restoreFocus !== false && trigger && trigger.focus) trigger.focus();
+        return true;
     }
 
     // Non-capturing group on purpose: a capturing group shifts String.replace's
@@ -1357,10 +1601,7 @@
 
         var summary = el('div', 'cf-summary');
         var summaryLeft = el('div', 'cf-summary-left');
-        summaryLeft.appendChild(buildSummaryEmojis(post));
-        var reactionCount = el('span', 'cf-count', countLabel(post.reaction_count) || '0');
-        reactionCount.setAttribute('aria-live', 'polite');
-        summaryLeft.appendChild(reactionCount);
+        summaryLeft.appendChild(buildReactionUsersTrigger(post));
         summary.appendChild(summaryLeft);
         summary.appendChild(el('span', null, countLabel(post.comment_count)
             ? countLabel(post.comment_count) + ' comment' + (post.comment_count === 1 ? '' : 's')
@@ -1525,11 +1766,7 @@
         // row, keeping the separate engagement controls directly below them.
         var summary = el('div', 'cf-summary');
         var left = el('div', 'cf-summary-left');
-        left.appendChild(buildSummaryEmojis(post));
-        var countNode = el('span', 'cf-count', countLabel(post.reaction_count) || '0');
-        // Announce the change without re-reading the whole card.
-        countNode.setAttribute('aria-live', 'polite');
-        left.appendChild(countNode);
+        left.appendChild(buildReactionUsersTrigger(post));
         summary.appendChild(left);
         summary.appendChild(el('span', null, countLabel(post.comment_count)
             ? countLabel(post.comment_count) + ' comment' + (post.comment_count === 1 ? '' : 's')
@@ -1730,15 +1967,35 @@
         var node = el('div', 'cf-comment-node');
         node.setAttribute('data-comment-id', String(comment.id));
         var row = el('div', 'cf-comment');
+        var profilePath = !comment.is_deleted
+            ? communityProfilePath(comment.profile_username) : '';
+        var commenterName = profilePath ? comment.profile_username : comment.username;
         if (!comment.is_deleted) {
-            row.appendChild(avatarNode(comment.avatar_url, comment.username,
-                'cf-comment-avatar'));
+            var commentAvatar = avatarNode(comment.avatar_url, commenterName,
+                'cf-comment-avatar');
+            if (profilePath) {
+                var avatarLink = el('a', 'cf-comment-profile-avatar-link');
+                avatarLink.href = profilePath;
+                avatarLink.setAttribute('aria-label', 'View @' + comment.profile_username + "'s profile");
+                avatarLink.appendChild(commentAvatar);
+                row.appendChild(avatarLink);
+            } else {
+                row.appendChild(commentAvatar);
+            }
         } else {
             row.appendChild(el('span', 'cf-comment-avatar cf-comment-deleted-avatar', '…'));
         }
         var bubble = el('div', 'cf-comment-body');
         var authorLine = el('div', 'cf-comment-author-line');
-        authorLine.appendChild(el('strong', null, comment.username));
+        if (profilePath) {
+            var profileLink = el('a', 'cf-comment-profile-link');
+            profileLink.href = profilePath;
+            profileLink.setAttribute('aria-label', 'View @' + comment.profile_username + "'s profile");
+            profileLink.appendChild(el('strong', null, commenterName));
+            authorLine.appendChild(profileLink);
+        } else {
+            authorLine.appendChild(el('strong', null, comment.username));
+        }
         if (comment.is_post_author) authorLine.appendChild(el('span', 'cf-author-badge', 'Author'));
         bubble.appendChild(authorLine);
         if (comment.reply_to_username) {
@@ -4405,6 +4662,7 @@
         // The composer is absent from a guest's DOM, so bind()'s null-checks
         // make that half a no-op; the feed wiring is what matters here.
         setupCommunityCardsLayout();
+        bindReactionUsersModal();
         bind();
         renderNav();
         initMessagePushPrompt();
@@ -4504,6 +4762,8 @@
         searchKeydown: searchKeydown,
         openCommunityCards: openCommunityCards,
         closeCommunityCards: closeCommunityCards,
+        openReactionUsers: openReactionUsers,
+        closeReactionUsers: closeReactionUsers,
         openSheet: openSheet,
         closeSheet: closeSheet,
         sheetGo: sheetGo,
@@ -4529,6 +4789,7 @@
             buildFollowButton: buildFollowButton,
             buildVideoFrame: buildVideoFrame,
             buildActionRow: buildActionRow,
+            renderCommentNode: renderCommentNode,
             buildRail: buildRail,
             buildRailItem: buildRailItem,
             railAuthors: railAuthors,
