@@ -319,11 +319,16 @@
     if (name) name.textContent = '@' + escapeName(BOOT.initialUsername); if (status) status.textContent = 'New conversation';
     avatar($('gmMsgThreadAvatar'), { username: BOOT.initialUsername }); if (input && input.focus) input.focus();
   }
+  function refreshCurrentThreadIfVisible() {
+    if (document.visibilityState && document.visibilityState !== 'visible') return;
+    if (state.view === 'thread' && state.current) openThread(state.current);
+  }
   function startPolling() {
-    stopPolling(); state.timer = setInterval(function () { if (state.view === 'thread' && state.current) openThread(state.current); }, 15000);
+    stopPolling(); state.timer = setInterval(refreshCurrentThreadIfVisible, 60000);
   }
   function stopPolling() { if (state.timer) { clearInterval(state.timer); state.timer = null; } }
 
+  document.addEventListener('visibilitychange', refreshCurrentThreadIfVisible);
   var back = $('gmMsgThreadBack'), retry = $('gmMsgRetry'), composer = $('gmMsgComposer'), attach = $('gmMsgAttach'), file = $('gmMsgFile'), remove = $('gmMsgAttachmentRemove');
   if (back) back.onclick = showInbox; if (retry) retry.onclick = loadInbox; if (composer) composer.onsubmit = send;
   if (attach && file) attach.onclick = function () { file.click(); }; if (file) file.onchange = function () { uploadFile(file.files && file.files[0]); };
