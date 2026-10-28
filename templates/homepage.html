@@ -5,19 +5,19 @@
     <script>window.GM_DISPLAY_BRAND = {{ brand_display_name|tojson }};</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KwentoFi — G$ Community &amp; Wallet on Celo</title>
-    <meta name="description" content="KwentoFi is an independent community for G$ users on Celo. Share posts, support members with G$, explore eligible rewards, and discover community tools.">
+    <title>KwentoFi | Social Community (formerly GoodMarket)</title>
+    <meta name="description" content="KwentoFi, formerly GoodMarket, is a social community to share stories, connect, and join conversations. Post, react, comment, and follow members.">
     <!-- Open Graph / link-sharing previews (Telegram, Facebook, X) -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="KwentoFi">
-    <meta property="og:title" content="KwentoFi — G$ Community &amp; Wallet">
-    <meta property="og:description" content="Join conversations, support community posts with G$ on Celo, explore eligible rewards, and discover supported G$ utilities.">
-    <meta property="og:image" content="{{ request.url_root }}static/icons/goodmarket-only-512.png">
+    <meta property="og:title" content="KwentoFi | Social Community (formerly GoodMarket)">
+    <meta property="og:description" content="KwentoFi is a social community to share stories, connect, and join conversations. Post updates, react, comment, and follow members.">
+    <meta property="og:image" content="{{ request.url_root }}static/icons/kwentofi-pwa-512.png">
     <meta property="og:url" content="{{ request.url_root }}">
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="KwentoFi — G$ Community &amp; Wallet">
-    <meta name="twitter:description" content="Join conversations, support community posts with G$ on Celo, explore eligible rewards, and discover supported G$ utilities.">
-    <meta name="twitter:image" content="{{ request.url_root }}static/icons/goodmarket-only-512.png">
+    <meta name="twitter:title" content="KwentoFi | Social Community (formerly GoodMarket)">
+    <meta name="twitter:description" content="KwentoFi is a social community to share stories, connect, and join conversations. Post updates, react, comment, and follow members.">
+    <meta name="twitter:image" content="{{ request.url_root }}static/icons/kwentofi-pwa-512.png">
     <!-- Telegram Mini App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
@@ -27,8 +27,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="KwentoFi">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/png" href="/static/icons/goodmarket-only-192.png?v={{ ASSET_VERSION }}">
-    <link rel="apple-touch-icon" href="/static/icons/goodmarket-only-192.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
     <!-- Shared "Install app" (PWA) banner styles. -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pwa-install.css', v=ASSET_VERSION) }}">
     <style>
@@ -448,6 +449,23 @@
             50%      { opacity: 0.45; }
         }
 
+        .brand-transition-note {
+            display: inline-flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.25rem 0.4rem;
+            max-width: 100%;
+            margin: 0 0 1rem;
+            padding: 0.55rem 0.85rem;
+            border: 1px solid rgba(245, 158, 11, 0.28);
+            border-radius: 999px;
+            background: rgba(245, 158, 11, 0.08);
+            color: rgba(226, 232, 240, 0.88);
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+        .brand-transition-note strong { color: #fde68a; }
+
         .hero-title {
             font-size: clamp(2.4rem, 5.4vw, 4.4rem);
             font-weight: 800;
@@ -643,104 +661,140 @@
             line-height: 1.6;
         }
 
-        /* Stats panel — floating cards over a glowing G$ orb */
-        .hero-stats-stage {
+        /* Illustrative social post preview — no live or private feed data. */
+        .hero-social-preview {
             position: relative;
-            min-height: 460px;
             display: flex;
             align-items: center;
             justify-content: center;
+            min-height: 430px;
+            padding: 1rem 0;
+            isolation: isolate;
         }
-        .hero-orb {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            pointer-events: none;
-        }
-        .hero-orb::before {
+        .hero-social-preview::before {
             content: '';
             position: absolute;
-            width: 320px;
-            height: 320px;
+            z-index: -1;
+            width: min(82%, 370px);
+            aspect-ratio: 1;
             border-radius: 50%;
-            background: radial-gradient(circle at 35% 35%, rgba(96,165,250,0.6) 0%, rgba(37,99,235,0.35) 38%, rgba(37,99,235,0.0) 72%);
-            filter: blur(2px);
-            animation: heroOrbFloat 9s ease-in-out infinite;
+            background: radial-gradient(circle at 35% 35%, rgba(99,102,241,0.36), rgba(124,58,237,0.12) 52%, transparent 74%);
+            filter: blur(10px);
         }
-        .hero-orb-symbol {
+        .hero-social-card {
             position: relative;
-            font-size: clamp(7rem, 14vw, 12rem);
-            font-weight: 800;
-            color: rgba(125,211,252,0.14);
-            letter-spacing: -0.04em;
-            line-height: 1;
-            text-shadow: 0 0 60px rgba(59,130,246,0.35);
+            z-index: 1;
+            width: min(100%, 460px);
+            padding: 1.25rem;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 24px;
+            background: rgba(15, 23, 42, 0.82);
+            box-shadow: 0 24px 60px rgba(8, 12, 32, 0.42);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
         }
-        @keyframes heroOrbFloat {
-            0%, 100% { transform: translateY(-6px); }
-            50% { transform: translateY(8px); }
-        }
-
-        .hero-stat-card {
-            position: absolute;
-            background: rgba(15, 23, 42, 0.55);
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
-            border-radius: 18px;
-            padding: 1rem 1.15rem;
-            min-width: 220px;
-            box-shadow: 0 24px 48px rgba(8, 12, 32, 0.45);
-            z-index: 3;
-        }
-        .hero-stat-card .stat-eyebrow {
-            display: inline-flex;
+        .hero-social-card-top,
+        .hero-social-author-row,
+        .hero-social-actions {
+            display: flex;
             align-items: center;
-            gap: 0.45rem;
-            font-size: 0.7rem;
-            font-weight: 700;
+        }
+        .hero-social-card-top {
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 1.15rem;
+        }
+        .hero-social-preview-kicker {
+            color: rgba(226, 232, 240, 0.62);
+            font-size: 0.67rem;
+            font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.12em;
-            color: rgba(226, 232, 240, 0.6);
-            margin-bottom: 0.5rem;
         }
-        .hero-stat-card .stat-value {
-            font-size: 1.85rem;
+        .hero-social-preview-label {
+            padding: 0.3rem 0.6rem;
+            border: 1px solid rgba(129, 140, 248, 0.3);
+            border-radius: 999px;
+            background: rgba(99, 102, 241, 0.13);
+            color: #c7d2fe;
+            font-size: 0.64rem;
             font-weight: 800;
-            line-height: 1.05;
-            letter-spacing: -0.02em;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .hero-social-author-row { gap: 0.7rem; }
+        .hero-social-avatar {
+            display: grid;
+            place-items: center;
+            flex: 0 0 42px;
+            width: 42px;
+            height: 42px;
+            border: 1px solid rgba(199, 210, 254, 0.3);
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #7c3aed);
             color: #ffffff;
+            font-size: 0.82rem;
+            font-weight: 800;
         }
-        .hero-stat-card .stat-foot {
-            margin-top: 0.45rem;
-            font-size: 0.78rem;
-            font-weight: 600;
-            color: rgba(148, 163, 184, 0.85);
+        .hero-social-author { display: flex; flex-direction: column; gap: 0.15rem; }
+        .hero-social-author strong { color: #f8fafc; font-size: 0.88rem; }
+        .hero-social-author small { color: rgba(203, 213, 225, 0.62); font-size: 0.7rem; }
+        .hero-social-more {
+            margin-left: auto;
+            color: rgba(203, 213, 225, 0.65);
+            font-size: 1.05rem;
+            letter-spacing: 0.12em;
         }
-        .hero-stat-card .stat-usd {
-            margin-top: 0.3rem;
-            font-size: 0.86rem;
+        .hero-social-post-copy {
+            margin: 1.15rem 0 1rem;
+            color: #f1f5f9;
+            font-size: 1.03rem;
+            line-height: 1.55;
+        }
+        .hero-social-topic-row { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 1rem; }
+        .hero-social-topic {
+            padding: 0.3rem 0.62rem;
+            border: 1px solid rgba(129, 140, 248, 0.24);
+            border-radius: 999px;
+            background: rgba(99, 102, 241, 0.1);
+            color: #c7d2fe;
+            font-size: 0.7rem;
             font-weight: 700;
-            color: #67e8f9;
-            display: flex;
+        }
+        .hero-social-actions {
             flex-wrap: wrap;
-            align-items: baseline;
-            gap: 0.35rem;
+            gap: 0.85rem 1.1rem;
+            padding-top: 0.85rem;
+            border-top: 1px solid rgba(148, 163, 184, 0.16);
+            color: rgba(203, 213, 225, 0.78);
+            font-size: 0.73rem;
+            font-weight: 700;
         }
-        .hero-stat-card .stat-usd-rate {
-            font-size: 0.68rem;
-            font-weight: 600;
-            color: rgba(148, 163, 184, 0.85);
+        .hero-social-action { display: inline-flex; align-items: center; gap: 0.35rem; }
+        .hero-social-action-icon { color: #a5b4fc; font-size: 0.95rem; }
+        .hero-social-footer {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            margin-top: 1rem;
+            padding: 0.68rem 0.75rem;
+            border-radius: 14px;
+            background: rgba(99, 102, 241, 0.12);
+            color: rgba(224, 231, 255, 0.9);
+            font-size: 0.74rem;
+            line-height: 1.4;
         }
-        .hero-stat-card.stat-disbursed { top: 6%; right: 6%; }
-        .hero-stat-card.stat-disbursed .stat-value { color: #67e8f9; }
-        .hero-stat-card.stat-disbursed .stat-foot { color: #34d399; }
-        .hero-stat-card.stat-earners { top: 38%; right: -2%; border-color: rgba(124,58,237,0.32); }
-        .hero-stat-card.stat-earners .stat-value { color: #34d399; }
-        .hero-stat-card.stat-tasks { bottom: 8%; left: 4%; }
-        .hero-stat-card.stat-tasks .stat-value { color: #fbbf24; }
+        .hero-social-footer-icon {
+            display: grid;
+            place-items: center;
+            flex: 0 0 28px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(99, 102, 241, 0.25);
+            color: #c7d2fe;
+            font-size: 0.9rem;
+        }
 
         /* ── Feature Showcase — visual app-style cards under the hero ── */
         @keyframes fsFloat {
@@ -1522,23 +1576,23 @@
                 font-size: 0.9rem;
             }
 
-            .hero-stats-stage {
-                position: relative;
-                min-height: auto;
-                display: grid;
-                grid-template-columns: 1fr;
-                gap: 0.7rem;
-                padding: 0.5rem 0;
+            .brand-transition-note {
+                width: 100%;
+                border-radius: 14px;
+                font-size: 0.76rem;
             }
 
-            .hero-orb { display: none; }
-            .hero-stat-card {
-                position: static;
-                width: 100%;
-                min-width: 0;
-                padding: 0.85rem 1rem;
+            .hero-social-preview {
+                min-height: auto;
+                padding: 0.15rem 0;
             }
-            .hero-stat-card .stat-value { font-size: 1.5rem; }
+            .hero-social-card {
+                width: 100%;
+                padding: 1rem;
+                border-radius: 20px;
+            }
+            .hero-social-post-copy { font-size: 0.96rem; }
+            .hero-social-actions { gap: 0.65rem 0.9rem; font-size: 0.7rem; }
 
             .features-grid {
                 grid-template-columns: 1fr;
@@ -2137,27 +2191,26 @@
         }
         .hero-tagline { color: var(--text-muted); }
 
-        .hero-orb::before {
-            background: radial-gradient(circle at 35% 35%,
-                rgba(251, 191, 36, 0.55) 0%, rgba(245, 158, 11, 0.25) 42%, transparent 74%);
-        }
-        .hero-stat-card {
+        .hero-social-card {
             background: rgba(15, 23, 42, 0.6);
             border: 1px solid var(--border);
             box-shadow: var(--card-shadow);
         }
-        .hero-stat-card .stat-eyebrow { color: var(--text-muted); }
-        .hero-stat-card .stat-value { color: #ffffff; }
-        .hero-stat-card .stat-foot { color: var(--text-muted); }
-        .hero-stat-card .stat-usd { color: var(--action); }
-        .hero-stat-card .stat-usd-rate { color: var(--text-muted); }
-        /* Stats share one accent family: gold for money, violet for people.
-           (Was cyan / green / gold — three unrelated hues.) */
-        .hero-stat-card.stat-disbursed .stat-value { color: var(--action); }
-        .hero-stat-card.stat-disbursed .stat-foot  { color: var(--action); }
-        .hero-stat-card.stat-earners { border-color: rgba(99,102,241,0.34); }
-        .hero-stat-card.stat-earners .stat-value   { color: var(--primary-text); }
-        .hero-stat-card.stat-tasks .stat-value     { color: #ffffff; }
+        .hero-social-preview-kicker { color: var(--text-muted); }
+        .hero-social-preview-label,
+        .hero-social-topic {
+            border-color: rgba(129, 140, 248, 0.34);
+            background: var(--primary-soft);
+            color: var(--primary-text);
+        }
+        .hero-social-actions {
+            border-top-color: var(--border);
+            color: var(--text-dim);
+        }
+        .hero-social-footer {
+            background: var(--primary-soft);
+            color: var(--primary-text);
+        }
 
         /* ── Feature showcase ── */
         .feature-showcase-head .fs-eyebrow {
@@ -2442,7 +2495,6 @@
 
 
         @media (prefers-reduced-motion: reduce) {
-            .hero-orb::before,
             .wallet-option-card,
             .wallet-option-card:hover {
                 animation: none;
@@ -2485,7 +2537,7 @@
     <div id="gmWelcomeLoader" class="gm-welcome-loader" role="status" aria-live="polite" aria-label="KwentoFi loading">
         <div class="gm-loader-card">
             <div class="gm-loader-orb" aria-hidden="true">
-                <img class="gm-loader-mark" src="/static/icons/goodmarket-only-192.png?v={{ ASSET_VERSION }}" alt="" width="74" height="74">
+                <img class="gm-loader-mark" src="/static/icons/kwentofi-pwa-192.png?v={{ ASSET_VERSION }}" alt="" width="74" height="74">
             </div>
             <h1 class="gm-loader-title">Welcome to KwentoFi</h1>
             <p class="gm-loader-subtitle">Your everyday G$ wallet on Celo — earn, save, swap and spend.</p>
@@ -2532,19 +2584,19 @@
           aria-labelledby="gmPwaGateTitle" aria-describedby="gmPwaGateCopy">
         <div class="gm-pwa-gate-card">
             <div class="gm-pwa-gate-icon" aria-hidden="true">📲</div>
-            <p class="gm-pwa-gate-eyebrow">GOODMARKET APP</p>
+            <p class="gm-pwa-gate-eyebrow">KWENTOFI SOCIAL</p>
             <h1 id="gmPwaGateTitle">Install KwentoFi to continue</h1>
             <p id="gmPwaGateCopy" class="gm-pwa-gate-copy">
                 Add KwentoFi to your device, then open it from your home screen or app launcher to access the homepage.
             </p>
-            <div class="gm-pwa-gate-stats" aria-label="KwentoFi community statistics">
+            <div class="gm-pwa-gate-stats" aria-label="KwentoFi community highlights">
                 <div class="gm-pwa-gate-stat">
                     <span>Registered users</span>
                     <strong>{{ homepage_stats.total_users_formatted|default('—') }}</strong>
                 </div>
-                <div class="gm-pwa-gate-stat">
-                    <span>Total G$ Distributed</span>
-                    <strong>{{ homepage_stats.total_g_disbursed_formatted|default('—') }}</strong>
+                <div class="gm-pwa-gate-stat gm-pwa-gate-social">
+                    <span>What you can do</span>
+                    <strong>Post · React · Connect</strong>
                 </div>
             </div>
             <div class="gm-pwa-gate-actions">
@@ -2599,78 +2651,80 @@
     <section class="hero-section" id="overview">
         <div class="hero-grid">
             <div class="hero-content">
-                <span class="hero-eyebrow"><span class="pulse-dot"></span>KwentoFi Community · Built for G$ users</span>
+                <span class="hero-eyebrow"><span class="pulse-dot"></span>KwentoFi Social Community</span>
+                <p class="brand-transition-note">
+                    <strong>GoodMarket is now KwentoFi.</strong>
+                    <span>The community you know, with a new name.</span>
+                </p>
                 <h1 class="hero-title">
-                    <span class="line">Share. Connect.</span>
-                    <span class="line">Support <span class="highlight">one another.</span></span>
+                    <span class="line">Share your story.</span>
+                    <span class="line">Find your <span class="highlight">people.</span></span>
                 </h1>
                 <p class="hero-description">
-                    Join conversations, follow community members, and support posts with G$ on Celo. Explore eligible rewards, skill games, and supported G$ utilities.
+                    Post what matters, join conversations, and connect with people who share your interests. The integrated wallet is there when you need it.
                 </p>
                 <p class="hero-tagline">
-                    A community to share what matters and discover how G$ works.
+                    A place to share, connect, and keep the conversation going.
                 </p>
                 <div class="hero-buttons">
                     {% if community_feed_visible %}
-                    <a class="btn-primary" href="/community">Open Community <span class="arrow">→</span></a>
+                    <a class="btn-primary" href="/community">Join the Community <span class="arrow">→</span></a>
                     {% else %}
                     <a class="btn-primary" href="/community-stories/featured">Explore Community Stories <span class="arrow">→</span></a>
                     {% endif %}
-                    <button class="btn-secondary" onclick="showSection('what-is')">See how G$ works <span class="arrow">→</span></button>
-                    <a class="btn-utility" href="/reloadly">Use G$ for airtime &amp; data <span class="arrow">→</span></a>
+                    <a class="btn-secondary" href="#feature-showcase-title">Explore KwentoFi <span class="arrow">→</span></a>
                 </div>
                 <div class="hero-checks">
-                    <span class="hero-check">Public community</span>
-                    <span class="hero-check">Clear balance status</span>
-                    <span class="hero-check">On-chain utility</span>
+                    <span class="hero-check">Create posts</span>
+                    <span class="hero-check">Join conversations</span>
+                    <span class="hero-check">Follow people</span>
                 </div>
                 <p class="hero-community-note">
-                    🤝 Independent community project for <strong>G$</strong> users on the GoodDollar protocol. Not an official GoodDollar product.
+                    🤝 An independent social community. Wallet features are optional.
                 </p>
             </div>
-            <div class="hero-stats-stage" aria-label="KwentoFi community statistics">
-                <div class="hero-orb" aria-hidden="true">
-                    <span class="hero-orb-symbol">G$</span>
-                </div>
-                <div class="hero-stat-card stat-disbursed">
-                    <div class="stat-eyebrow">🌐 Total G$ Distributed</div>
-                    <div class="stat-value" id="heroStatDisbursed">{{ homepage_stats.total_g_disbursed_formatted }}</div>
-                    {% if homepage_stats.total_g_disbursed_usd_formatted %}
-                    <div class="stat-usd" id="heroStatDisbursedUsd">
-                        ≈ {{ homepage_stats.total_g_disbursed_usd_formatted }} USD
-                        <span class="stat-usd-rate">@ ${{ '%.6f'|format(homepage_stats.gd_usd_price) }}/G$</span>
+            <aside class="hero-social-preview" aria-label="Illustrative KwentoFi community feed preview">
+                <article class="hero-social-card">
+                    <div class="hero-social-card-top">
+                        <span class="hero-social-preview-kicker">KwentoFi Community</span>
+                        <span class="hero-social-preview-label">Sample post</span>
                     </div>
-                    {% endif %}
-                    <div class="stat-foot" id="heroStatDisbursedFoot">
-                        {% if homepage_stats.total_g_disbursed_week_growth_pct is not none %}
-                            {% if homepage_stats.total_g_disbursed_week_growth_pct >= 0 %}+{% endif %}{{ homepage_stats.total_g_disbursed_week_growth_pct }}% this week
-                        {% else %}
-                            On-chain · Celo
-                        {% endif %}
+                    <div class="hero-social-author-row">
+                        <span class="hero-social-avatar" aria-hidden="true">K</span>
+                        <span class="hero-social-author">
+                            <strong>Community member</strong>
+                            <small>Sharing with the community</small>
+                        </span>
+                        <span class="hero-social-more" aria-hidden="true">•••</span>
                     </div>
-                </div>
-                <div class="hero-stat-card stat-earners">
-                    <div class="stat-eyebrow">👥 Registered users</div>
-                    <div class="stat-value" id="heroStatRegistered">{{ homepage_stats.total_users_formatted|default('—') }}</div>
-                    <div class="stat-foot">KwentoFi community</div>
-                </div>
-                <div class="hero-stat-card stat-tasks">
-                    <div class="stat-eyebrow">✅ Active earners</div>
-                    <div class="stat-value" id="heroStatEarners">{{ homepage_stats.active_earners_formatted }}</div>
-                    <div class="stat-foot">Across eligible features</div>
-                </div>
-            </div>
+                    <p class="hero-social-post-copy">
+                        What is something you’re excited to share with your community today?
+                    </p>
+                    <div class="hero-social-topic-row" aria-label="Example post topics">
+                        <span class="hero-social-topic">Stories</span>
+                        <span class="hero-social-topic">Ideas</span>
+                    </div>
+                    <div class="hero-social-actions" aria-label="Example community interactions">
+                        <span class="hero-social-action"><span class="hero-social-action-icon" aria-hidden="true">♡</span>React</span>
+                        <span class="hero-social-action"><span class="hero-social-action-icon" aria-hidden="true">◯</span>Comment</span>
+                        <span class="hero-social-action"><span class="hero-social-action-icon" aria-hidden="true">↗</span>Share</span>
+                    </div>
+                    <div class="hero-social-footer">
+                        <span class="hero-social-footer-icon" aria-hidden="true">✦</span>
+                        <span>Follow people and join conversations around what matters to you.</span>
+                    </div>
+                </article>
+            </aside>
         </div>
     </section>
 
-    <!-- Community-first entry block. Live feed preview is intentionally deferred
-         until a safe public/cache-backed preview is approved. -->
+    <!-- Live feed data is intentionally not embedded here; the hero preview is illustrative. -->
     <section class="community-entry-section" aria-labelledby="community-entry-title">
         <div class="community-entry-card">
             <div class="community-entry-copy">
                 <span class="section-kicker">The KwentoFi Community</span>
-                <h2 id="community-entry-title">Your next G$ journey starts with people.</h2>
-                <p>Post updates, react, follow members, and support a post’s author with G$. Verified support is acknowledged in the Community Feed.</p>
+                <h2 id="community-entry-title">Your next connection starts with a conversation.</h2>
+                <p>Post updates, react to what others share, follow members, and find people who share your interests. Your integrated wallet is there when you need it.</p>
                 {% if community_feed_visible %}
                 <a class="fs-cta fs-cta-primary" href="/community">Open Community Feed <span class="arrow">→</span></a>
                 {% else %}
@@ -2690,15 +2744,15 @@
     <section class="feature-showcase" aria-labelledby="feature-showcase-title">
         <div class="feature-showcase-head">
             <span class="fs-eyebrow">✦ Four ways to participate</span>
-            <h2 id="feature-showcase-title">One community. Clearer G$ journeys.</h2>
-            <p>Choose how you want to connect, explore, play, or use eligible on-chain G$.</p>
+            <h2 id="feature-showcase-title">One community. More ways to connect.</h2>
+            <p>Share stories, join conversations, and engage with people who share your interests. Optional wallet tools are there when you need them.</p>
         </div>
         <div class="feature-showcase-grid social-card-grid">
             <article class="feature-card-ui social-feature-card social-card-community">
                 <div class="fs-card-label">01 · Community <span class="fs-tag fs-tag-blue">Connect</span></div>
                 <div class="social-card-icon" aria-hidden="true">◎</div>
                 <div class="fs-card-title">Share what matters. Support one another.</div>
-                <p class="fs-card-sub">Post updates, join conversations, follow members, and support a post’s author with G$.</p>
+                <p class="fs-card-sub">Post updates, join conversations, follow members, and support one another in the community.</p>
                 {% if community_feed_visible %}
                 <a class="fs-cta" href="/community">Open Community <span class="arrow">→</span></a>
                 {% else %}
