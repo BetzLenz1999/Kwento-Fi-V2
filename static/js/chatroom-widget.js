@@ -13,6 +13,7 @@
 // a tiny indexed query.
 (function () {
   'use strict';
+  var DISPLAY_BRAND = String(window.GM_DISPLAY_BRAND || 'GoodMarket');
 
   // Poll cadence. FAST is the "someone may be typing" cadence while the panel
   // is open; IDLE is used while collapsed (we only need the unread badge).
@@ -357,7 +358,7 @@
       if (String(accounts[i]).toLowerCase() === wanted) { from = accounts[i]; break; }
     }
     if (!from) {
-      throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet before posting.');
+      throw new Error('Wrong wallet connected. Please switch to your ' + DISPLAY_BRAND + ' wallet before posting.');
     }
     await _tipEnsureChain(provider, net);
 
@@ -523,7 +524,7 @@
       // An extension exists but none holds the session wallet — name it so the
       // user knows to switch accounts rather than seeing a WalletConnect error.
       throw new Error('Wrong wallet connected. ' + _tipProviderLabel(first)
-        + ' has a different account selected — open it and switch to your GoodMarket wallet, then try again.');
+        + ' has a different account selected — open it and switch to your ' + DISPLAY_BRAND + ' wallet, then try again.');
     }
     return null;
   }
@@ -580,7 +581,7 @@
       TIP_SIGNER = 'WalletConnect';
       return await GMWalletConnect.getProvider();
     }
-    throw new Error('No wallet detected. Please open GoodMarket in MetaMask, Trust Wallet or another Celo wallet.');
+    throw new Error('No wallet detected. Please open ' + DISPLAY_BRAND + ' in MetaMask, Trust Wallet or another Celo wallet.');
   }
 
   function _tokenMeta(key) {
@@ -700,7 +701,7 @@
       if (String(accounts[i]).toLowerCase() === wanted) { from = accounts[i]; break; }
     }
     if (!from) {
-      throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet before tipping.');
+      throw new Error('Wrong wallet connected. Please switch to your ' + DISPLAY_BRAND + ' wallet before tipping.');
     }
     await _tipEnsureChain(provider, prep.network);
     // Send an explicit fee so the wallet never has to look one up through its
