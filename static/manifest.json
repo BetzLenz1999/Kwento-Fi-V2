@@ -1,14 +1,14 @@
 {
   "id": "/",
-  "name": "GoodMarket",
-  "short_name": "GoodMarket",
-  "description": "GoodMarket — community wallet for the G$ token (GoodDollar protocol) on Celo",
+  "name": "KwentoFi",
+  "short_name": "KwentoFi",
+  "description": "KwentoFi — social community and wallet for G$ (GoodDollar protocol) on Celo",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f7f1e8",
-  "theme_color": "#e8720a",
+  "background_color": "#0A1220",
+  "theme_color": "#4f46e5",
   "icons": [
     {
       "src": "/static/icons/goodmarket-only-512.png",
