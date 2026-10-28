@@ -1551,6 +1551,20 @@
         };
         actions.appendChild(commentBtn);
 
+        if (BOOT.postSupport && BOOT.postSupport.enabled
+                && post.post_type === 'user' && !post.is_mine) {
+            var supportBtn = el('button', 'cf-action-btn cf-support-action');
+            supportBtn.type = 'button';
+            supportBtn.appendChild(el('span', 'cf-act-icon', '♥'));
+            supportBtn.appendChild(el('span', null, 'Support with G$'));
+            supportBtn.setAttribute('aria-label', 'Support @' + post.username + ' with G$ (minimum 20 G$)');
+            supportBtn.onclick = function () {
+                if (!WALLET) { requiresLogin(); return; }
+                if (window.GMCommunitySupport) window.GMCommunitySupport.open(post);
+            };
+            actions.appendChild(supportBtn);
+        }
+
         var shareBtn = el('button', 'cf-action-btn');
         shareBtn.type = 'button';
         shareBtn.classList.add('cf-share-action');
@@ -1580,9 +1594,9 @@
         var head = el('div', 'cf-donation-card-head');
         var author = el('div', 'cf-donation-system-author');
         author.appendChild(el('span', 'cf-donation-system-mark', 'S'));
-        author.appendChild(el('strong', null, 'Sytem'));
+        author.appendChild(el('strong', null, 'GoodMarket'));
         head.appendChild(author);
-        head.appendChild(el('span', 'cf-donation-pin-label', 'Pinned'));
+        if (post.is_pinned) head.appendChild(el('span', 'cf-donation-pin-label', 'Pinned'));
         card.appendChild(head);
 
         var body = el('div', 'cf-card-body');
@@ -1630,9 +1644,51 @@
         return card;
     }
 
+    function buildSupportCard(post) {
+        var card = el('article', 'cf-donation-card cf-support-post-card');
+        card.setAttribute('data-post-id', post.id);
+        var head = el('div', 'cf-donation-card-head');
+        var author = el('div', 'cf-donation-system-author');
+        author.appendChild(el('span', 'cf-donation-system-mark', 'G$'));
+        author.appendChild(el('strong', null, 'GoodMarket'));
+        head.appendChild(author);
+        card.appendChild(head);
+        var body = el('div', 'cf-card-body');
+        body.appendChild(el('p', 'cf-donation-card-copy', post.body || 'A community member supported a post with G$.'));
+        body.appendChild(el('small', 'cf-donation-card-meta', 'A real G$ transfer confirmed on Celo.'));
+        var txUrl = String(post.tx_url || '');
+        if (/^https:\/\/celoscan\.io\/tx\/0x[0-9a-f]{64}$/i.test(txUrl)) {
+            var links = el('div', 'cf-donation-card-links');
+            var txLink = el('a', null, 'View Celo transaction');
+            txLink.href = txUrl;
+            txLink.target = '_blank';
+            txLink.rel = 'noopener noreferrer';
+            links.appendChild(txLink);
+            body.appendChild(links);
+        }
+        var stamp = timeAgo(post.created_at);
+        if (stamp) body.appendChild(el('time', 'cf-donation-card-time', stamp));
+        var summary = el('div', 'cf-summary');
+        var summaryLeft = el('div', 'cf-summary-left');
+        summaryLeft.appendChild(buildReactionUsersTrigger(post));
+        summary.appendChild(summaryLeft);
+        var comments = countLabel(post.comment_count);
+        summary.appendChild(el('span', null, comments
+            ? comments + ' comment' + (comments === 1 ? '' : 's') : ''));
+        body.appendChild(summary);
+        var engagement = el('div', 'cf-engagement');
+        engagement.appendChild(buildActionRow(post, engagement));
+        body.appendChild(engagement);
+        card.appendChild(body);
+        return card;
+    }
+
     function buildCard(post) {
         if (post && post.post_type === 'system_vault_donation') {
             return buildDonationCard(post);
+        }
+        if (post && post.post_type === 'system_support') {
+            return buildSupportCard(post);
         }
         var card = el('article', 'cf-card');
         card.setAttribute('data-post-id', post.id);
@@ -2264,7 +2320,7 @@
         var url = window.location.origin + '/community/p/' + encodeURIComponent(post.id);
         var text = post.body ? post.body.slice(0, 120) : 'Check out this post on GoodMarket Community';
         var title = post.post_type === 'system_vault_donation'
-            ? 'Community Vault donation · Sytem'
+            ? 'Community Vault donation · GoodMarket'
             : '@' + (post.username || 'member') + ' on GoodMarket Community';
         if (navigator.share) {
             navigator.share({
@@ -4330,7 +4386,7 @@
                     var recoveryHash = $('cfVaultDonationTxHash');
                     if (recoveryHash) { recoveryHash.disabled = true; recoveryHash.value = ''; }
                     donationStatus('Donation confirmed: ' + (data.amount_gd || '')
-                        + ' G$ sent to the Community Withdrawal Vault. Sytem has pinned your acknowledgment.', 'success');
+                        + ' G$ sent to the Community Withdrawal Vault. GoodMarket has published an unpinned acknowledgment in the Community Feed.', 'success');
                     if (check) check.hidden = true;
                     if (statusClose) statusClose.hidden = !!entry;
                     loadFeed(true);
@@ -4374,6 +4430,10 @@
         $('cfVaultDonationReviewName').textContent = String(intent.public_name || '');
         $('cfVaultDonationReviewToken').textContent = String(intent.token_address || '');
         $('cfVaultDonationReviewRecipient').textContent = String(intent.vault_address || '');
+        var supportContractRow = $('cfVaultDonationReviewSupportContractRow');
+        var supportContract = $('cfVaultDonationReviewSupportContract');
+        if (supportContractRow) supportContractRow.hidden = !intent.support_contract_address;
+        if (supportContract) supportContract.textContent = String(intent.support_contract_address || '');
         var linkedinCell = $('cfVaultDonationReviewLinkedIn');
         var linkedin = String(intent.linkedin_url || '');
         if (linkedinCell) {
@@ -4571,23 +4631,45 @@
             donationStatus((error && error.message) || 'Wallet signing is unavailable. No transfer was sent.', 'error');
             return Promise.resolve(false);
         }
-        donationStatus('Review and approve the exact transfer in your wallet.');
+        donationStatus(intent.support_contract_address
+            ? 'Confirm the exact G$ approval first, then confirm the donation call in your wallet.'
+            : 'Review and approve the exact transfer in your wallet.');
         var broadcastAttempted = false;
         var submittedPending = null;
         return Promise.resolve().then(function () {
+            var txOptions = {
+                waitForReceipt: false,
+                noRetryAfterSendRequest: true,
+                onBroadcastStarted: function () { broadcastAttempted = true; },
+                onTransactionHash: function (txHash) {
+                    submittedPending = recordVaultDonationHash(intent, txHash);
+                }
+            };
+            if (intent.support_contract_address) {
+                donationStatus('Confirm exact G$ approval in your wallet. No donation is sent in this step.');
+                return window.P2PWallet.sendTx(
+                    intent.token_address,
+                    'function approve(address spender,uint256 amount) returns (bool)',
+                    [intent.support_contract_address, String(intent.amount_base_units)],
+                    '0x0',
+                    { waitForReceipt: true, noRetryAfterSendRequest: true }
+                ).then(function () {
+                    donationStatus('Approval confirmed. Now confirm donateToVault in your wallet; G$ will go directly to the Community Vault.');
+                    return window.P2PWallet.sendTx(
+                        intent.support_contract_address,
+                        'function donateToVault(uint256 amount)',
+                        [String(intent.amount_base_units)],
+                        '0x0',
+                        txOptions
+                    );
+                });
+            }
             return window.P2PWallet.sendTx(
                 intent.token_address,
                 'function transfer(address to,uint256 value) returns (bool)',
                 [intent.vault_address, String(intent.amount_base_units)],
                 '0x0',
-                {
-                    waitForReceipt: false,
-                    noRetryAfterSendRequest: true,
-                    onBroadcastStarted: function () { broadcastAttempted = true; },
-                    onTransactionHash: function (txHash) {
-                        submittedPending = recordVaultDonationHash(intent, txHash);
-                    }
-                }
+                txOptions
             );
         }).then(function (txHash) {
             txHash = String(txHash || '').toLowerCase();
