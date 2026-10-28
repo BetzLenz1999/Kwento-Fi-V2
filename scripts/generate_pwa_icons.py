@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Generate the PWA PNG icon set from the approved GoodMarket-only artwork.
+"""Generate KwentoFi PWA, favicon, and compact mark assets from approved art.
 
-The editable source is the AI-generated, text-free mark at
-`static/branding/goodmarket/goodmarket-only-app-icon.png`. It contains no G$,
-lettering, or currency symbols. This script exports distinct 192px and 512px
-icons for both ordinary and Android maskable use.
+Source artwork lives in ``static/branding/kwentofi/``. The PWA source is a
+square, text-free app mark. Maskable outputs scale the art into the central
+safe circle; ordinary outputs retain the full designed canvas.
 
 Usage:
     python scripts/generate_pwa_icons.py
@@ -18,56 +17,86 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "static" / "branding" / "goodmarket" / "goodmarket-only-app-icon.png"
-OUT_DIR = ROOT / "static" / "icons"
-BACKGROUND = (247, 241, 232)  # #f7f1e8, matching manifest background_color
+BRAND_DIR = ROOT / "static" / "branding" / "kwentofi"
+ICON_DIR = ROOT / "static" / "icons"
+PWA_SOURCE = BRAND_DIR / "kwentofi-pwa-icon-source.png"
+FAVICON_SOURCE = BRAND_DIR / "kwentofi-favicon-source.png"
 SIZES = (512, 192)
+MASKABLE_SCALE = 0.84
 
 
-def _load_source() -> Image.Image:
-    """Load the square source art as RGB and fail clearly on malformed input."""
-    image = Image.open(SOURCE).convert("RGB")
+def _load_square(path: Path) -> Image.Image:
+    image = Image.open(path).convert("RGB")
     if image.width != image.height:
-        raise ValueError(f"source icon must be square, got {image.width}x{image.height}")
+        raise ValueError(f"source must be square, got {image.width}x{image.height}: {path}")
     return image
 
 
-def _render(source: Image.Image, size: int, *, maskable: bool) -> Image.Image:
-    """Resize artwork and return a solid-background square PNG image.
+def _resize(source: Image.Image, size: int) -> Image.Image:
+    return ImageOps.fit(
+        source,
+        (size, size),
+        method=Image.Resampling.LANCZOS,
+        centering=(0.5, 0.5),
+    )
 
-    The generated source keeps the market mark inside the Android adaptive-icon
-    safe circle. Ordinary and maskable files are written separately so the
-    manifest can declare their intended purposes without reusing one URL.
-    """
-    resampling = Image.Resampling.LANCZOS
-    artwork = ImageOps.fit(source, (size, size), method=resampling, centering=(0.5, 0.5))
-    if maskable:
-        # The source artwork is already composed for the central safe circle;
-        # retain its full designed scale instead of shrinking it a second time.
-        return artwork
-    return artwork
+
+def _maskable(source: Image.Image, size: int) -> Image.Image:
+    """Keep the mark within the central 80% Android adaptive-icon safe area."""
+    background = source.getpixel((0, 0))
+    inner_size = round(size * MASKABLE_SCALE)
+    artwork = _resize(source, inner_size)
+    canvas = Image.new("RGB", (size, size), background)
+    offset = ((size - inner_size) // 2, (size - inner_size) // 2)
+    canvas.paste(artwork, offset)
+    return canvas
 
 
 def main() -> int:
-    if not SOURCE.is_file():
-        print(f"missing GoodMarket-only icon source: {SOURCE}", file=sys.stderr)
+    missing = [path for path in (PWA_SOURCE, FAVICON_SOURCE) if not path.is_file()]
+    if missing:
+        for path in missing:
+            print(f"missing KwentoFi source artwork: {path}", file=sys.stderr)
         return 1
 
     try:
-        source = _load_source()
+        pwa_source = _load_square(PWA_SOURCE)
+        favicon_source = _load_square(FAVICON_SOURCE)
     except Exception as exc:
-        print(f"could not load GoodMarket-only icon source: {exc}", file=sys.stderr)
+        print(f"could not load KwentoFi source artwork: {exc}", file=sys.stderr)
         return 1
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    ICON_DIR.mkdir(parents=True, exist_ok=True)
+    BRAND_DIR.mkdir(parents=True, exist_ok=True)
+
     for size in SIZES:
         for purpose in ("any", "maskable"):
-            suffix = "" if purpose == "any" else "-maskable"
-            output = OUT_DIR / f"goodmarket-only{suffix}-{size}.png"
-            _render(source, size, maskable=(purpose == "maskable")).save(
-                output, "PNG", optimize=True
+            name = (
+                f"kwentofi-pwa-{size}.png"
+                if purpose == "any"
+                else f"kwentofi-pwa-maskable-{size}.png"
             )
+            image = _resize(pwa_source, size) if purpose == "any" else _maskable(pwa_source, size)
+            output = ICON_DIR / name
+            image.save(output, "PNG", optimize=True)
             print(f"wrote {output.relative_to(ROOT)} ({size}x{size}, {purpose})")
+
+    favicon32 = _resize(favicon_source, 32)
+    favicon32.save(ICON_DIR / "kwentofi-favicon-32.png", "PNG", optimize=True)
+    favicon48 = _resize(favicon_source, 48)
+    favicon48.save(ICON_DIR / "kwentofi-favicon-48.png", "PNG", optimize=True)
+    ico_master = _resize(favicon_source, 48)
+    ico_master.save(
+        ICON_DIR / "favicon.ico",
+        format="ICO",
+        sizes=[(16, 16), (32, 32), (48, 48)],
+    )
+
+    touch = _resize(pwa_source, 180)
+    touch.save(ICON_DIR / "kwentofi-apple-touch-180.png", "PNG", optimize=True)
+    symbol = _resize(favicon_source, 64)
+    symbol.save(BRAND_DIR / "kwentofi-symbol-64.png", "PNG", optimize=True)
+    print(f"wrote {ICON_DIR.relative_to(ROOT)}/favicon.ico (16, 32, 48)")
     return 0
 
 
