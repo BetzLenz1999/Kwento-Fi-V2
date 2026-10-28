@@ -21,11 +21,11 @@
             <div class="gm-guest-connect-icon" aria-hidden="true">{{ guest_card_icon|default('👋') }}</div>
             <div class="gm-guest-connect-heading-text">
                 <div class="gm-guest-connect-kicker">{{ guest_card_kicker|default('Connect to continue') }}</div>
-                <h2 class="gm-guest-connect-title">{{ guest_card_title|default('Connect your GoodMarket wallet') }}</h2>
+                <h2 class="gm-guest-connect-title">{{ guest_card_title|default('Connect your ' ~ (brand_display_name|default('GoodMarket', true)) ~ ' wallet') }}</h2>
             </div>
         </div>
         <p class="gm-guest-connect-body">
-            {{ guest_card_body|default('Connect or create a free GoodMarket wallet to continue — email + PIN, no app to install. Your keys stay on your device.') }}
+            {{ guest_card_body|default('Connect or create a free ' ~ (brand_display_name|default('GoodMarket', true)) ~ ' wallet to continue — email + PIN, no app to install. Your keys stay on your device.') }}
         </p>
         {% if guest_card_highlights|default([], true) %}
         <ul class="gm-guest-connect-highlights" aria-label="{{ guest_card_highlights_label|default('Highlights') }}">
