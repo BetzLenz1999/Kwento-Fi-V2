@@ -463,8 +463,8 @@
                     </div>
                     <div class="cf-vault-donation-disclosure">
                         <h3>Public donation acknowledgment</h3>
-                        <p>After your G$ transfer is confirmed on Celo, <strong>Sytem</strong> will automatically publish and pin a post in the Community Feed. The post will show your donation amount, Community display name, and LinkedIn profile link. Every confirmed donation post will remain pinned, with the newest donations shown first.</p>
-                        <p>Your Celo transaction is public and can be linked to your wallet. The post will appear only in the Community Feed; we will not publish it to LinkedIn. This is a direct, irreversible transfer to the Community Withdrawal Vault and does not give you a personal claim to the donated G$. You pay the Celo network fee.</p>
+                        <p>After your G$ donation is confirmed on Celo, <strong>GoodMarket</strong> will automatically publish an acknowledgment in the Community Feed. It will show your donation amount, Community display name, and LinkedIn profile link. The post appears chronologically and is not pinned.</p>
+                        <p>Your Celo transaction is public and can be linked to your wallet. The post will appear only in the Community Feed; we will not publish it to LinkedIn. The G$ goes directly to the Community Withdrawal Vault and does not give you a personal claim to the donated G$. You pay Celo network fees. When the Community Support contract is enabled, expect two wallet confirmations: exact-amount G$ approval, then the donation call; the contract does not custody the donation.</p>
                         <p>The name you enter is saved privately in your Community account for future donation forms; each confirmed post keeps a snapshot of the name you approved for that donation. The app validates the LinkedIn URL format but does not verify profile ownership.</p>
                     </div>
                     <label class="cf-vault-donation-consent" for="cfVaultDonationConsent">
@@ -491,10 +491,11 @@
                         <div><dt>Network</dt><dd id="cfVaultDonationReviewNetwork">Celo Mainnet (42220)</dd></div>
                         <div><dt>G$ token</dt><dd id="cfVaultDonationReviewToken"></dd></div>
                         <div><dt>Vault recipient</dt><dd id="cfVaultDonationReviewRecipient"></dd></div>
+                        <div id="cfVaultDonationReviewSupportContractRow" hidden><dt>Routing contract</dt><dd id="cfVaultDonationReviewSupportContract"></dd></div>
                     </dl>
                     <div class="cf-vault-donation-disclosure cf-vault-donation-review-disclosure">
                         <h4>After confirmation</h4>
-                        <p>Sytem will publish and pin a Community Feed post showing the amount, name, and LinkedIn URL above. Every confirmed donation remains pinned. The transfer is direct and irreversible; you pay the Celo network fee.</p>
+                        <p>GoodMarket will publish an unpinned Community Feed acknowledgment showing the amount, name, and LinkedIn URL above. It appears chronologically. The transfer is irreversible; you pay Celo network fees. If the Community Support contract is enabled, confirm both the exact-amount approval and the donation call.</p>
                     </div>
                     <div class="cf-vault-donation-actions">
                         <button type="button" class="cf-vault-donation-cancel"
@@ -766,6 +767,7 @@
 window.GM_COMMUNITY_BOOT = {
     isGuest: {{ 'true' if is_guest else 'false' }},
     messagesEnabled: {{ 'true' if messages_enabled else 'false' }},
+    postSupport: {{ post_support_config|default({'enabled': false}, true)|tojson }},
     wallet: {{ (wallet or '')|tojson }},
     username: {{ (username or '')|tojson }},
     avatarUrl: {{ (avatar_url or '')|tojson }},
@@ -835,6 +837,7 @@ window.GM_COMMUNITY_BOOT = {
    signs nothing, so it needs no ethers of its own. #}
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/community-support.js', v=ASSET_VERSION) }}"></script>
 {% set get_started_boot = {'return_to': '/community'} %}
 {% include "_get_started_modal.html" %}
 {% else %}
@@ -877,6 +880,7 @@ window.GM_WALLET_BOOT = {
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-push.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/community-support.js', v=ASSET_VERSION) }}"></script>
 {% endif %}
 
 <script src="{{ url_for('static', filename='js/community-daily.js', v=ASSET_VERSION) }}"></script>
