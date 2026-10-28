@@ -3432,7 +3432,8 @@
     var _communityCardsBodyWasLocked = false;
 
     function buildNavItem(item) {
-        var isLink = !!item.href;
+        var isDisabled = !!item.disabled;
+        var isLink = !!item.href && !isDisabled;
         var node = document.createElement(isLink ? 'a' : 'button');
         // `active` is data-driven: this bar only renders on /community, and
         // /community IS the feed, so no tab claims to be the current page any
@@ -3450,11 +3451,20 @@
         }
         if (isLink) node.href = item.href;
         else node.type = 'button';
+        if (isDisabled) {
+            node.disabled = true;
+            node.setAttribute('aria-disabled', 'true');
+            node.title = item.disabledTitle || ((item.label || 'This action') + ' is unavailable from Community');
+        }
         var icon = el('span', 'cf-nav-icon', item.icon || '');
         icon.setAttribute('aria-hidden', 'true');
         node.appendChild(icon);
         node.appendChild(el('span', 'cf-nav-label', item.label || ''));
         node.onclick = function (event) {
+            if (isDisabled) {
+                if (event && event.preventDefault) event.preventDefault();
+                return;
+            }
             if (item.action === 'community-cards') {
                 if (event && event.preventDefault) event.preventDefault();
                 openCommunityCards(node);
