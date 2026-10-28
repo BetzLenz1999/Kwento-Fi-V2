@@ -1654,7 +1654,29 @@
         head.appendChild(author);
         card.appendChild(head);
         var body = el('div', 'cf-card-body');
-        body.appendChild(el('p', 'cf-donation-card-copy', post.body || 'A community member supported a post with G$.'));
+        var copy = el('p', 'cf-donation-card-copy');
+        var donorUsername = String(post.donor_username || '').trim().replace(/^@+/, '');
+        var authorUsername = String(post.author_username || '').trim().replace(/^@+/, '');
+        var supportAmount = String(post.amount_gd || '');
+        var validSupportNames = /^[A-Za-z0-9_]{3,24}$/;
+        if (validSupportNames.test(donorUsername) && validSupportNames.test(authorUsername)
+                && /^\d+(?:\.\d+)?$/.test(supportAmount)) {
+            function appendProfileLink(username) {
+                var link = el('a', 'cf-support-profile-link', '@' + username);
+                link.href = '/community/u/' + encodeURIComponent(username);
+                link.setAttribute('aria-label', 'View @' + username + "'s profile");
+                copy.appendChild(link);
+            }
+            copy.appendChild(document.createTextNode('Thanks to '));
+            appendProfileLink(donorUsername);
+            copy.appendChild(document.createTextNode(' for supporting '));
+            appendProfileLink(authorUsername);
+            copy.appendChild(document.createTextNode(' with ' + supportAmount
+                + ' G$! Your generosity helps great ideas, useful learning, and thoughtful conversations grow in our community.'));
+        } else {
+            copy.textContent = post.body || 'A community member supported a post with G$.';
+        }
+        body.appendChild(copy);
         body.appendChild(el('small', 'cf-donation-card-meta', 'A real G$ transfer confirmed on Celo.'));
         var txUrl = String(post.tx_url || '');
         if (/^https:\/\/celoscan\.io\/tx\/0x[0-9a-f]{64}$/i.test(txUrl)) {
