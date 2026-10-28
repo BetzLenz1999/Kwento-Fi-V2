@@ -1627,6 +1627,52 @@ def api_unfollow(username: str):
     return jsonify(result), (200 if result.get("success") else 400)
 
 
+@community_feed_bp.route("/api/posts/<int:post_id>/support/prepare", methods=["POST"])
+def api_post_support_prepare(post_id: int):
+    """Prepare a signed, budget-reserved G$ support transaction for a post."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    if not _withdrawal_origin_ok():
+        return jsonify({"success": False, "error": "Invalid request origin."}), 403
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    wait = _throttle(f"post-support-prepare:{wallet}", 10, allow=3)
+    if wait:
+        return jsonify({"success": False, "error": "Please wait before preparing another support.",
+                        "code": "rate_limited", "retry_after": wait}), 429
+    from . import post_support
+    body = _json_body()
+    result = post_support.prepare(wallet, post_id, body.get("amount_gd"))
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
+@community_feed_bp.route("/api/posts/support/<support_id>/confirm", methods=["POST"])
+def api_post_support_confirm(support_id: str):
+    """Verify a support receipt and atomically settle the bonus/system post."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    if not _withdrawal_origin_ok():
+        return jsonify({"success": False, "error": "Invalid request origin."}), 403
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    wait = _throttle(f"post-support-confirm:{wallet}", 5, allow=6)
+    if wait:
+        return jsonify({"success": False, "error": "Please wait before checking this support again.",
+                        "code": "rate_limited", "retry_after": wait}), 429
+    from . import post_support
+    body = _json_body()
+    result = post_support.confirm(wallet, support_id, body.get("tx_hash"))
+    if result.get("success"):
+        status_code = 200
+    elif result.get("retryable") or result.get("status") in {"pending", "rpc_unavailable", "settlement_pending"}:
+        status_code = 202
+    else:
+        status_code = 400
+    return jsonify(result), status_code
+
+
 @community_feed_bp.route("/api/profile/<username>/tip/prepare", methods=["POST"])
 def api_profile_tip_prepare(username: str):
     """Prepare a non-custodial Celo transfer to this username."""
