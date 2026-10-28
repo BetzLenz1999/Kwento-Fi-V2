@@ -44,7 +44,7 @@
   function signingLabel(loginMethod) {
     switch (String(loginMethod || '').toLowerCase()) {
       case 'local':
-        return 'In-app GoodMarket wallet (PIN unlock)';
+        return 'In-app ' + (window.GM_DISPLAY_BRAND || 'GoodMarket') + ' wallet (PIN unlock)';
       case 'walletconnect':
       case 'manual':
       case 'manual_address':
