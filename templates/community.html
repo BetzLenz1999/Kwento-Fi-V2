@@ -757,6 +757,19 @@
     {% include "_community_avatar_modal.html" %}
 {% endwith %}
 
+<div class="cf-support-modal" id="cfSupportModal" role="dialog" aria-modal="true" aria-labelledby="cfSupportTitle" hidden>
+  <section class="cf-support-panel">
+    <button type="button" class="cf-support-close" aria-label="Close support review" onclick="GMCommunity.closeSupport()">×</button>
+    <h2 id="cfSupportTitle">Support this creator</h2>
+    <p>Send G$ directly to <strong id="cfSupportAuthor">the creator</strong>. This is a public post showing both usernames. The transfer is visible on-chain; you pay network gas and must approve the transaction in your wallet.</p>
+    <label for="cfSupportAmount">Support amount (G$)</label>
+    <input id="cfSupportAmount" type="number" min="25" step="1" inputmode="decimal">
+    <p class="cf-support-minimum" id="cfSupportMinimum">25 G$ minimum</p>
+    <p>A confirmed eligible support earns a minimum/admin-configured default reward of 5 G$ to your Community rewards ledger; this reward is separate from the on-chain transfer.</p>
+    <p class="cf-support-status" id="cfSupportStatus" role="status" aria-live="polite"></p>
+    <div class="cf-support-actions"><button type="button" onclick="GMCommunity.closeSupport()">Cancel</button><button type="button" id="cfSupportSubmit" onclick="GMCommunity.support()">Review &amp; continue</button></div>
+  </section>
+</div>
 <div class="cf-toast" id="cfToast" role="status" aria-live="polite" hidden></div>
 
 {# ── Boot config ────────────────────────────────────────────────────────────
@@ -771,6 +784,7 @@ window.GM_COMMUNITY_BOOT = {
     avatarUrl: {{ (avatar_url or '')|tojson }},
     usernameRequired: {{ 'true' if username_required else 'false' }},
     loginMethod: {{ (login_method or '')|tojson }},
+    supportMinimumAmountGd: {{ (community_support_minimum_gd|default(25))|int }},
     walletConnectProjectId: {{ (walletconnect_project_id or '')|tojson }},
     claimOnly: true,
     gdTokenAddress: '',
