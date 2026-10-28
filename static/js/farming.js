@@ -17,6 +17,7 @@
  */
 (function () {
     "use strict";
+    var DISPLAY_BRAND = String(window.GM_DISPLAY_BRAND || "GoodMarket");
 
     var boot = window.GM_FARM_BOOT || {};
     var WALLET = String(boot.wallet || "");
@@ -276,7 +277,7 @@
                 var p = new ethers.BrowserProvider(provider);
                 return p.getSigner().then(function (signer) {
                     if (_toLower(signer.address) !== _toLower(WALLET)) {
-                        throw new Error("Wrong wallet connected. Please use your GoodMarket wallet.");
+                        throw new Error("Wrong wallet connected. Please use your " + DISPLAY_BRAND + " wallet.");
                     }
                     return { signer: signer, provider: provider };
                 });
@@ -290,7 +291,7 @@
                         var p = new ethers.BrowserProvider(wcProvider);
                         return p.getSigner().then(function (signer) {
                             if (_toLower(signer.address) !== _toLower(WALLET)) {
-                                throw new Error("Wrong WalletConnect wallet connected. Please switch to your GoodMarket wallet.");
+                                throw new Error("Wrong WalletConnect wallet connected. Please switch to your " + DISPLAY_BRAND + " wallet.");
                             }
                             return { signer: signer, provider: wcProvider };
                         });
@@ -324,7 +325,7 @@
                             // wrong-wallet error — mobile dApp browsers inject
                             // several (MetaMask + Trust + MiniPay) at once.
                             var next = accounts.length
-                                ? new Error("Wrong wallet connected. Please switch to your GoodMarket wallet (" +
+                                ? new Error("Wrong wallet connected. Please switch to your " + DISPLAY_BRAND + " wallet (" +
                                     WALLET.slice(0, 6) + "…) before continuing.")
                                 : (lastErr || new Error("No wallet account available. Please unlock your wallet and try again."));
                             return tryProvider(index + 1, next);
@@ -1118,7 +1119,7 @@
                 walletAddress: WALLET,
                 loginMethod: LOGIN_METHOD,
                 projectId: boot.walletconnectProjectId || "",
-                dappName: "GoodMarket — Farming",
+                dappName: DISPLAY_BRAND + " — Farming",
                 dappDescription: "Farm chickens and earn G$ egg rewards on Celo",
                 assetVersion: boot.assetVersion || "",
             });
