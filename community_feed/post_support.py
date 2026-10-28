@@ -59,8 +59,17 @@ def _rpc(db, name: str, args: dict) -> dict:
 def _settings() -> dict:
     result = reward_settings.get_settings()
     if result.get("success") is not True:
-        raise RuntimeError("Community reward settings are unavailable")
+        raise _RewardSettingsError(
+            result.get("error") or "Community reward settings are unavailable",
+            result.get("code"),
+        )
     return result
+
+
+class _RewardSettingsError(RuntimeError):
+    def __init__(self, message: str, code: str | None):
+        super().__init__(message)
+        self.code = code
 
 
 def _config_address(name: str) -> str | None:
@@ -253,8 +262,28 @@ def prepare(supporter_wallet: str, post_id: int, amount_gd: Any) -> dict:
         return {"success": False, "code": "database", "error": "Support is temporarily unavailable."}
     try:
         settings = _settings()
+    except _RewardSettingsError as exc:
+        if exc.code == "temporarily_unavailable":
+            logger.warning(
+                "post support settings unavailable from database RPC (%s)",
+                exc.code,
+            )
+            return {
+                "success": False,
+                "code": "temporarily_unavailable",
+                "error": "Support is temporarily unavailable. Please try again shortly.",
+            }
+        logger.warning("post support settings are not configured (code=%s)", exc.code)
+        return {
+            "success": False,
+            "code": "configuration",
+            "error": "Support is not configured yet.",
+        }
     except Exception as exc:  # fail closed until migration/settings are available
-        logger.warning("post support settings unavailable: %s", exc)
+        logger.exception(
+            "post support settings load failed unexpectedly (%s.%s)",
+            type(exc).__module__, type(exc).__name__,
+        )
         return {"success": False, "code": "configuration", "error": "Support is not configured yet."}
     if not _feature_is_enabled(settings):
         return {"success": False, "code": "disabled", "error": "G$ support is not available right now."}
