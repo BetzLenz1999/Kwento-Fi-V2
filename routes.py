@@ -4626,6 +4626,34 @@ def get_quiz_settings():
         except Exception as exc:  # noqa: BLE001 - preserve full quiz diagnostics
             logger.warning("Could not resolve Community reward settings: %s", exc)
 
+        # Budget usage is live database state rather than editable configuration.
+        # Expose it only through this admin-protected endpoint.
+        try:
+            from supabase_client import get_supabase_admin_client
+            db = get_supabase_admin_client()
+            if db:
+                summary_result = db.rpc("community_post_support_budget_summary", {}).execute()
+                summary = getattr(summary_result, "data", None)
+                if isinstance(summary, list):
+                    summary = summary[0] if summary else None
+                if isinstance(summary, str):
+                    summary = json.loads(summary)
+                if isinstance(summary, dict):
+                    community.update({
+                        "support_bonus_used_gd": summary.get("spent_gd"),
+                        "support_bonus_budget_used_gd": summary.get("spent_gd"),
+                        "support_bonus_reserved_gd": summary.get("reserved_gd"),
+                        "support_bonus_budget_reserved_gd": summary.get("reserved_gd"),
+                        "support_bonus_available_gd": summary.get("remaining_gd"),
+                        "support_bonus_budget_available_gd": summary.get("remaining_gd"),
+                        "support_count": summary.get("support_count"),
+                        "support_total_count": summary.get("support_count"),
+                        "reward_count": summary.get("reward_count"),
+                        "support_reward_count": summary.get("reward_count"),
+                    })
+        except Exception as exc:  # summary is useful but does not block config repair
+            logger.warning("Could not resolve Community support budget summary: %s", exc)
+
         available = bool(community.get("success"))
         # Even an invalid configuration may expose safely readable values for
         # explicit repair. Never fall back to quiz_manager's stale cached rate.
@@ -4634,6 +4662,19 @@ def get_quiz_settings():
         settings["community_daily_learn_daily_cap"] = community.get("daily_learn_cap")
         settings["community_social_daily_cap"] = community.get("daily_cap")
         settings["community_reward_config_version"] = community.get("config_version")
+        for key in (
+            "support_bonus_enabled", "support_bonus_rate_gd",
+            "support_min_amount_gd", "support_max_amount_gd",
+            "support_bonus_per_wallet_daily_cap_gd",
+            "support_bonus_global_daily_cap_gd", "support_bonus_budget_gd",
+            "support_bonus_budget_used_gd", "support_bonus_budget_reserved_gd",
+            "support_bonus_budget_available_gd",
+            "support_bonus_used_gd", "support_bonus_reserved_gd",
+            "support_bonus_available_gd", "support_count", "support_total_count",
+            "reward_count", "support_reward_count",
+        ):
+            if key in community:
+                settings[key] = community[key]
         return jsonify({
             "success": True,
             "settings": settings,
@@ -4942,6 +4983,10 @@ def update_quiz_settings():
             'daily_learn_rate', 'daily_learn_rate_max', 'daily_learn_cap',
             'community_daily_learn_reward_per_correct',
             'community_daily_learn_rate_max', 'community_daily_learn_daily_cap',
+            'support_bonus_enabled', 'support_bonus_rate_gd',
+            'support_min_amount_gd', 'support_max_amount_gd',
+            'support_bonus_per_wallet_daily_cap_gd',
+            'support_bonus_global_daily_cap_gd', 'support_bonus_budget_gd',
         }
         full_quiz_keys = {
             'questions_per_quiz', 'time_per_question', 'max_reward_per_quiz',
@@ -4964,6 +5009,14 @@ def update_quiz_settings():
                     if name in data:
                         values[target] = data[name]
                         break
+            for key in (
+                'support_bonus_enabled', 'support_bonus_rate_gd',
+                'support_min_amount_gd', 'support_max_amount_gd',
+                'support_bonus_per_wallet_daily_cap_gd',
+                'support_bonus_global_daily_cap_gd', 'support_bonus_budget_gd',
+            ):
+                if key in data:
+                    values[key] = data[key]
             reason = str(data.get('reason') or '').strip()
             if not reason:
                 return jsonify({"success": False, "error": "A reason is required"}), 400
