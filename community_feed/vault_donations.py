@@ -1,9 +1,10 @@
 """Member-funded Community Vault donations.
 
-Donations are standard wallet-signed G$ ERC-20 transfers to the same configured
-Community Withdrawal Vault used by Community G$ withdrawals. The browser never
-chooses the token, chain, or recipient. Public system posts are created only by
-the service-role finalization RPC after exact receipt verification.
+When the verified Community Support contract is enabled, the wallet approves
+the exact G$ amount and calls its donateToVault method; otherwise the legacy
+direct G$ transfer remains available. The browser never chooses the token,
+chain, or recipient. Public system posts are created only by the service-role
+finalization RPC after exact receipt verification.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit, urlunsplit
 
 from . import withdrawals
+from . import post_support
 
 logger = logging.getLogger(__name__)
 CONSENT_VERSION = "community-vault-donation-v1"
@@ -161,6 +163,15 @@ def create_intent(wallet: str | None, payload: dict) -> dict:
         return {"success": False, "error": str(exc), "code": exc.code}
     except withdrawals.WithdrawalPolicyError as exc:
         return {"success": False, "error": str(exc), "code": "vault_unavailable"}
+    if post_support.is_available():
+        try:
+            post_support.validate_deployed_contract(
+                expected_token=runtime.token_address,
+                expected_vault=runtime.vault_address,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("community vault donation: support contract validation failed: %s", exc)
+            return {"success": False, "error": "The Community Support contract does not match the configured Celo G$ token and vault. No donation intent was created.", "code": "contract"}
     parsed = _parse_amount(payload.get("amount_gd"), runtime.decimals)
     if not parsed:
         return {"success": False,
@@ -185,6 +196,7 @@ def create_intent(wallet: str | None, payload: dict) -> dict:
         logger.error("community display name save failed: %s", exc)
         return {"success": False, "error": "Could not save your Community display name. No transfer was sent.", "code": "profile"}
     donation_id = str(uuid.uuid4())
+    support_contract = post_support.contract_address() if post_support.is_available() else None
     row = {
         "id": donation_id,
         "wallet_address": wallet.lower(),
@@ -195,6 +207,7 @@ def create_intent(wallet: str | None, payload: dict) -> dict:
         "chain_id": withdrawals.CELO_CHAIN_ID,
         "token_address": runtime.token_address.lower(),
         "vault_address": runtime.vault_address.lower(),
+        "support_contract_address": support_contract.lower() if support_contract else None,
         "status": "pending",
         "consent_version": CONSENT_VERSION,
         "consented_at": now.isoformat(),
@@ -223,6 +236,7 @@ def create_intent(wallet: str | None, payload: dict) -> dict:
         "chain_id": withdrawals.CELO_CHAIN_ID,
         "token_address": runtime.token_address,
         "vault_address": runtime.vault_address,
+        "support_contract_address": support_contract,
         "decimals": runtime.decimals,
         "explorer_url": "https://celoscan.io/tx/",
         "expires_at": row["expires_at"],
@@ -315,7 +329,12 @@ def confirm_transaction(wallet: str | None, donation_id: str, tx_hash: str) -> d
         return {"success": True, "status": "pending", "tx_hash": tx_hash,
                 "message": "Transaction submitted. Waiting for Celo confirmation."}
     try:
-        amount_base = withdrawals.verify_funding_receipt(runtime, receipt, tx, wallet)
+        if row.get("support_contract_address"):
+            amount_base = _verify_custom_vault_donation(
+                runtime, receipt, tx, wallet, row
+            )
+        else:
+            amount_base = withdrawals.verify_funding_receipt(runtime, receipt, tx, wallet)
     except withdrawals.WithdrawalPolicyError as exc:
         if int(receipt.get("status", 0)) == 0:
             try:
@@ -365,3 +384,82 @@ def confirm_transaction(wallet: str | None, donation_id: str, tx_hash: str) -> d
                 "tx_hash": tx_hash,
                 "error": "The transfer is confirmed, but the acknowledgment is still processing. Retry this same confirmation; do not send again.",
                 "code": "finalization_pending"}
+
+
+def _verify_custom_vault_donation(runtime, receipt, tx, wallet: str, row: dict) -> int:
+    """Verify both the CommunitySupport event and the resulting G$ token transfer."""
+    try:
+        from web3 import Web3
+
+        support_contract = str(row.get("support_contract_address") or "").lower()
+        vault = str(row.get("vault_address") or "").lower()
+        token = str(row.get("token_address") or "").lower()
+        if not _WALLET_RE.fullmatch(support_contract):
+            raise ValueError("The support contract address in the donation intent is invalid.")
+        if int(receipt.get("status") or 0) != 1:
+            raise ValueError("The Community Vault donation transaction failed on Celo.")
+        if str(tx.get("to") or "").lower() != support_contract:
+            raise ValueError("The transaction was not sent to the Community Support contract.")
+        if str(tx.get("from") or "").lower() != wallet.lower():
+            raise ValueError("The transaction was not sent from the donating wallet.")
+
+        tx_input = tx.get("input") or tx.get("data") or "0x"
+        if isinstance(tx_input, (bytes, bytearray)):
+            tx_input = "0x" + bytes(tx_input).hex()
+        tx_input = str(tx_input).lower()
+        selector = "0x" + bytes(Web3.keccak(text="donateToVault(uint256)")[:4]).hex()
+        if not tx_input.startswith(selector) or len(tx_input) != 74:
+            raise ValueError("The call is not a donateToVault transaction.")
+        call_amount = int(tx_input[10:74], 16)
+        expected_amount = int(row.get("amount_base_units") or 0)
+        if call_amount != expected_amount:
+            raise ValueError("The contract call amount does not match the reviewed donation.")
+
+        vault_event = "0x" + bytes(Web3.keccak(text="VaultDonation(address,address,uint256)")).hex()
+        # Compute the standard ERC-20 event topic rather than relying on a
+        # copied literal.
+        transfer_event = "0x" + bytes(Web3.keccak(text="Transfer(address,address,uint256)")).hex()
+        contract_events = []
+        token_transfers = []
+        for log in receipt.get("logs") or []:
+            address = str(log.get("address") or "").lower()
+            topics = log.get("topics") or []
+            if len(topics) < 3:
+                continue
+            topic0 = topics[0].hex() if hasattr(topics[0], "hex") else str(topics[0])
+            if not topic0.startswith("0x"):
+                topic0 = "0x" + topic0
+            topic0 = topic0.lower()
+            data = log.get("data") or "0x"
+            if isinstance(data, (bytes, bytearray)):
+                data = "0x" + bytes(data).hex()
+            data = str(data)
+            if not data.startswith("0x"):
+                data = "0x" + data
+            if address == support_contract and topic0 == vault_event.lower():
+                donor_topic = topics[1].hex() if hasattr(topics[1], "hex") else str(topics[1])
+                vault_topic = topics[2].hex() if hasattr(topics[2], "hex") else str(topics[2])
+                donor_topic = donor_topic if donor_topic.startswith("0x") else "0x" + donor_topic
+                vault_topic = vault_topic if vault_topic.startswith("0x") else "0x" + vault_topic
+                event_amount = int(data, 16)
+                if ("0x" + donor_topic[-40:]).lower() == wallet.lower() \
+                        and ("0x" + vault_topic[-40:]).lower() == vault \
+                        and event_amount == expected_amount:
+                    contract_events.append(event_amount)
+            if address == token and topic0 == transfer_event.lower():
+                from_topic = topics[1].hex() if hasattr(topics[1], "hex") else str(topics[1])
+                to_topic = topics[2].hex() if hasattr(topics[2], "hex") else str(topics[2])
+                from_topic = from_topic if from_topic.startswith("0x") else "0x" + from_topic
+                to_topic = to_topic if to_topic.startswith("0x") else "0x" + to_topic
+                value = int(data, 16)
+                if ("0x" + from_topic[-40:]).lower() == wallet.lower() \
+                        and ("0x" + to_topic[-40:]).lower() == vault \
+                        and value == expected_amount:
+                    token_transfers.append(value)
+        if len(contract_events) != 1:
+            raise ValueError("No unique matching VaultDonation event was found.")
+        if len(token_transfers) != 1:
+            raise ValueError("No matching G$ transfer to the configured Community Vault was found.")
+        return contract_events[0]
+    except Exception as exc:  # noqa: BLE001
+        raise withdrawals.WithdrawalPolicyError(str(exc)) from exc
