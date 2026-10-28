@@ -35,6 +35,7 @@ from . import storage
 from . import vault_donations
 from . import notifications as community_notifications
 from . import withdrawals as withdrawal_vault
+from . import post_support
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,7 @@ def community_feed_home():
         is_guest=not bool(wallet),
         messages_enabled=_community_messages_enabled(),
         vault_donations_enabled=vault_donations.donations_enabled(),
+        post_support_config=post_support.public_config(),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
         avatar_url=svc.get_avatar_url(wallet) if wallet else None,
@@ -320,6 +322,7 @@ def community_feed_post(post_id: int):
         is_guest=not bool(wallet),
         messages_enabled=_community_messages_enabled(),
         vault_donations_enabled=vault_donations.donations_enabled(),
+        post_support_config=post_support.public_config(),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
         avatar_url=svc.get_avatar_url(wallet) if wallet else None,
@@ -1469,6 +1472,48 @@ def api_feed():
         result["pinned_posts"] = pinned.get("posts", []) if pinned.get("success") else []
         result["pinned_next_cursor"] = pinned.get("next_cursor") if pinned.get("success") else None
     return jsonify(result)
+
+
+@community_feed_bp.route("/api/posts/<int:post_id>/support/prepare", methods=["POST"])
+def api_prepare_post_support(post_id: int):
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Sign in with your GoodMarket wallet to support a post."}, 401)
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "This request could not be verified."}, 403)
+    wait = _throttle("post-support-prepare:" + wallet.lower(), 60, allow=5)
+    if wait:
+        return _private_withdrawal_json({"success": False, "error": "Please wait before preparing another support transaction."}, 429)
+    result = post_support.prepare_support(wallet, post_id, _json_body().get("amount"))
+    if result.get("success"):
+        return _private_withdrawal_json(result)
+    status = 503 if result.get("code") in {"database", "disabled", "contract"} else 400
+    return _private_withdrawal_json(result, status)
+
+
+@community_feed_bp.route("/api/posts/<int:post_id>/support/confirm", methods=["POST"])
+def api_confirm_post_support(post_id: int):
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Sign in with your GoodMarket wallet to confirm support."}, 401)
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "This request could not be verified."}, 403)
+    wait = _throttle("post-support-confirm:" + wallet.lower(), 60, allow=30)
+    if wait:
+        return _private_withdrawal_json({"success": False, "status": "confirming", "error": "Please wait before checking this support transaction again."}, 429)
+    result = post_support.confirm_support(
+        wallet, post_id, _json_body().get("tx_hash") or ""
+    )
+    if result.get("success"):
+        return _private_withdrawal_json(result)
+    if result.get("status") in {"confirming", "submitted"}:
+        return _private_withdrawal_json(result, 202)
+    status = 503 if result.get("code") in {"database", "disabled", "recording"} else 400
+    return _private_withdrawal_json(result, status)
 
 
 @community_feed_bp.route("/api/feed/pinned-donations", methods=["GET"])
