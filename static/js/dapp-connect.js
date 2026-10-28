@@ -247,7 +247,7 @@
                     name: "GoodMarket",
                     description: "GoodMarket in-app wallet",
                     url: (global.location ? global.location.origin : ""),
-                    icons: [(global.location ? global.location.origin : "") + "/static/icons/icon-192x192.png"]
+                    icons: [(global.location ? global.location.origin : "") + "/static/icons/kwentofi-pwa-192.png"]
                 }
             });
         }).then(function (client) {
