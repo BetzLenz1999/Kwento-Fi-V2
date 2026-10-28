@@ -37,6 +37,7 @@
     var SW_URL = '/static/service-worker.js';
     var SW_SCOPE = '/';
     var INSTALLED_KEY = 'gmPwaInstalled_v1';
+    var BROWSER_CONTINUE_KEY = 'gmPwaContinueInBrowser_v1';
     var INSTALL_BASELINE_PENDING_KEY = 'gmPwaInstallBaselinePending_v1';
     var INSTALL_BASELINE_INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
     var MODULE_BUILD_VERSION = _moduleBuildVersion();
@@ -73,6 +74,11 @@
 
     function _writeFlag(key) {
         try { localStorage.setItem(key, '1'); } catch (_) { /* private mode */ }
+    }
+
+    function _hasBrowserContinueChoice() {
+        try { return localStorage.getItem(BROWSER_CONTINUE_KEY) === '1'; }
+        catch (_) { return false; }
     }
 
     function _moduleBuildVersion() {
@@ -315,10 +321,12 @@
 
     function _releaseHomepageGate(reason) {
         var isDappBypass = reason === 'dapp';
+        var isBrowserChoice = reason === 'browser';
         var gate = _homepageGate();
         // The ordinary browser gate may only release in standalone mode. The
-        // existing DApp-browser bypass remains an explicit separate reason.
-        if (gate && !isDappBypass && !isStandalone()) return false;
+        // existing DApp-browser bypass and explicit user browser-mode choice
+        // remain separate, intentional reasons to release it.
+        if (gate && !isDappBypass && !isBrowserChoice && !isStandalone()) return false;
         _stopHomepageProgress();
         _homepageGateReleased = true;
         var root = document.documentElement;
@@ -364,6 +372,10 @@
         if (_hasDappBrowserSignal()) {
             _releaseHomepageGate('dapp');
             return Promise.resolve('dapp');
+        }
+        if (_hasBrowserContinueChoice()) {
+            _releaseHomepageGate('browser');
+            return Promise.resolve('browser');
         }
         var gate = _homepageGate();
         if (gate) {
@@ -731,6 +743,16 @@
             if (copyLinkBtn) {
                 event.preventDefault();
                 _copyHomepageLink();
+                return;
+            }
+
+            var continueBrowserBtn = target.closest('[data-gm-pwa-continue-browser]');
+            if (continueBrowserBtn) {
+                event.preventDefault();
+                if (_homepageGate() && _homepageInstallState === 'manual') {
+                    _writeFlag(BROWSER_CONTINUE_KEY);
+                    _releaseHomepageGate('browser');
+                }
                 return;
             }
 
