@@ -529,7 +529,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         return {
             "id": row.get("id"),
             "post_type": "system_vault_donation",
-            "username": "GoodMarket",
+            "username": "KwentoFi",
             "body": body,
             "avatar_url": None,
             "media": [],
@@ -560,7 +560,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         return {
             "id": row.get("id"),
             "post_type": "system_support",
-            "username": "GoodMarket",
+            "username": "KwentoFi",
             "body": row.get("body") or "A community member supported a post with G$.",
             "avatar_url": None,
             "media": [],
@@ -573,7 +573,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
             "is_mine": False,
             "is_following": False,
             "is_edited": False,
-            "is_pinned": bool(row.get("is_pinned")),
+            "is_pinned": False,
             "is_interactive": True,
             "created_at": row.get("created_at"),
             "edited_at": None,
@@ -1148,7 +1148,7 @@ def _support_rows_for_posts(supabase, post_ids: list) -> dict[int, dict]:
 def get_pinned_donation_feed(viewer: str | None = None,
                              cursor: int | None = None,
                              limit: int | None = None) -> dict:
-    """Return one keyset page of verified, pinned donor acknowledgments."""
+    """Return one keyset page of confirmed, pinned System donation posts."""
     supabase = _get_supabase()
     if not supabase:
         return {"success": False, "error": "Database unavailable", "posts": []}
@@ -1159,45 +1159,31 @@ def get_pinned_donation_feed(viewer: str | None = None,
     size = max(1, min(MAX_PAGE_SIZE, size))
     try:
         query = (supabase.table("community_feed_posts").select("*")
-                 .in_("post_type", ["system_vault_donation", "system_support"])
+                 .eq("post_type", "system_vault_donation")
                  .eq("is_pinned", True).eq("is_hidden", False)
                  .eq("is_deleted", False))
         if cursor:
             query = query.lt("id", int(cursor))
         rows = _rows(query.order("id", desc=True).limit(size + 1).execute())
     except Exception as exc:  # noqa: BLE001
-        logger.error("community_feed: pinned donor query failed: %s", exc)
-        return {"success": False, "error": "Could not load pinned donor acknowledgments", "posts": []}
+        logger.error("community_feed: pinned donation query failed: %s", exc)
+        return {"success": False, "error": "Could not load pinned donations", "posts": []}
     has_more = len(rows) > size
     rows = rows[:size]
     post_ids = [row.get("id") for row in rows if row.get("id") is not None]
     donations = _donation_rows_for_posts(supabase, post_ids)
-    supports = _support_rows_for_posts(supabase, post_ids)
     viewer_reactions = _reactions_for_posts(supabase, post_ids, viewer)
     reaction_breakdowns = _reaction_breakdowns_for_posts(supabase, post_ids)
-    posts = []
-    for row in rows:
-        post_id = row.get("id")
-        if post_id is None:
-            continue
-        post_id = int(post_id)
-        donation = donations.get(post_id)
-        support = supports.get(post_id)
-        if row.get("post_type") == "system_vault_donation":
-            if not donation or not donation.get("tx_hash"):
-                continue
-        elif row.get("post_type") == "system_support":
-            if not support or not support.get("tx_hash"):
-                continue
-        else:
-            continue
-        posts.append(_public_post(
+    posts = [
+        _public_post(
             row, [], viewer,
             my_reaction=viewer_reactions.get(row.get("id")),
             reactions=reaction_breakdowns.get(row.get("id")),
-            donation=donation,
-            support=support,
-        ))
+            donation=donations[int(row["id"])],
+        )
+        for row in rows
+        if row.get("id") is not None and int(row["id"]) in donations
+    ]
     return {
         "success": True,
         "posts": posts,
@@ -1231,9 +1217,6 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
             .in_("post_type", ["user", "system_support", "system_vault_donation"])
             .eq("is_deleted", False)
             .eq("is_hidden", False)
-            # Donor announcements are rendered in the dedicated pinned area,
-            # not duplicated in the chronological member-post stream.
-            .or_("post_type.eq.user,is_pinned.eq.false")
         )
         if author:
             query = query.ilike("wallet_address", author)
