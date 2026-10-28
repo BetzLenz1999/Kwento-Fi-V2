@@ -40,7 +40,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             loginMethod: window.GM_WALLET_BOOT.loginMethod,
             projectId: window.GM_WALLET_BOOT.walletConnectProjectId,
             sidecarEnabled: false, // Disabled to prevent QR during signing - use existing WC session
-            dappName: "GoodMarket — Wallet",
+            dappName: WALLET_DISPLAY_BRAND + " — Wallet",
             dappDescription: "Community wallet for the G$ token (GoodDollar protocol) on Celo",
             assetVersion: window.GM_WALLET_BOOT.assetVersion,
         });
@@ -165,7 +165,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 return String(account || '').toLowerCase() === expected;
             });
             if (!match) {
-                throw new Error('Wrong wallet connected. Please use your GoodMarket wallet.');
+                throw new Error('Wrong wallet connected. Please use your ' + WALLET_DISPLAY_BRAND + ' wallet.');
             }
             return match;
         });
@@ -206,7 +206,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             const signer = await browserProvider.getSigner();
             const signerAddress = await signer.getAddress();
             if (signerAddress.toLowerCase() !== WALLET.toLowerCase()) {
-                throw new Error('Wrong wallet unlocked. Please use your GoodMarket wallet.');
+                throw new Error('Wrong wallet unlocked. Please use your ' + WALLET_DISPLAY_BRAND + ' wallet.');
             }
             return { provider: browserProvider, signer };
         }
@@ -229,7 +229,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         // session may still be able to sign (legacy logins that predate
         // login_method persistence).
         if (!ep) ep = await _walletGetWcProviderIfPreferred();
-        if (!ep) throw new Error('No wallet detected. Please connect your GoodMarket wallet via MetaMask, Trust Wallet, MiniPay, or WalletConnect.');
+        if (!ep) throw new Error('No wallet detected. Please connect your ' + WALLET_DISPLAY_BRAND + ' wallet via MetaMask, Trust Wallet, MiniPay, or WalletConnect.');
         // Reject a wrong injected/WC account before chain switching or any
         // raffle contract call. BrowserProvider.getSigner() also checks this
         // later, but the explicit preflight gives a stable, actionable error
@@ -256,7 +256,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         const signer = await browserProvider.getSigner();
         const signerAddress = await signer.getAddress();
         if (signerAddress.toLowerCase() !== WALLET.toLowerCase()) {
-            throw new Error('Wrong wallet connected. Please use your GoodMarket wallet.');
+            throw new Error('Wrong wallet connected. Please use your ' + WALLET_DISPLAY_BRAND + ' wallet.');
         }
         return { provider: browserProvider, signer };
     }
@@ -1252,7 +1252,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             return SignClient.init({
                 projectId: window.GM_WALLET_BOOT.walletConnectProjectId,
                 metadata: {
-                    name: 'GoodMarket — Wallet',
+                    name: WALLET_DISPLAY_BRAND + ' — Wallet',
                     description: 'Claim and send GoodDollar on Celo',
                     url: window.location.origin,
                     icons: [window.location.origin + '/static/icons/icon-192x192.png']
@@ -1701,7 +1701,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             const signer = await browserProvider.getSigner();
             const addr = await signer.getAddress();
             if ((addr || '').toLowerCase() !== (WALLET || '').toLowerCase()) {
-                throw new Error('Wrong wallet unlocked. Please use your GoodMarket wallet.');
+                throw new Error('Wrong wallet unlocked. Please use your ' + WALLET_DISPLAY_BRAND + ' wallet.');
             }
             return signer;
         }
@@ -1713,13 +1713,13 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             ep = await _walletGetWcProviderIfPreferred();
         }
         if (!ep) ep = await _vAwaitEthProvider();
-        if (!ep) throw new Error('No wallet detected. Please connect your GoodMarket wallet via MetaMask, Trust Wallet, or WalletConnect.');
+        if (!ep) throw new Error('No wallet detected. Please connect your ' + WALLET_DISPLAY_BRAND + ' wallet via MetaMask, Trust Wallet, or WalletConnect.');
         await _aiSwapEnsureCeloChain(ep);
         const browserProvider = new ethers.BrowserProvider(ep);
         const signer = await browserProvider.getSigner();
         const addr = await signer.getAddress();
         if ((addr || '').toLowerCase() !== (WALLET || '').toLowerCase()) {
-            throw new Error('Wrong wallet connected. Please use your GoodMarket wallet.');
+            throw new Error('Wrong wallet connected. Please use your ' + WALLET_DISPLAY_BRAND + ' wallet.');
         }
         return signer;
     }
@@ -2922,7 +2922,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         // here up-front before an injected MetaMask (a different account)
         // gets prompted.
         if (isLocalLogin && isFuseToken) {
-            showAlert('sendAlert', 'alert-error', '❌ Your in-app GoodMarket wallet can sign Celo & XDC transactions only. Sending ' + (meta.label || 'this token') + ' on Fuse needs MetaMask or WalletConnect — log in with that wallet to use it.');
+            showAlert('sendAlert', 'alert-error', '❌ Your in-app ' + WALLET_DISPLAY_BRAND + ' wallet can sign Celo & XDC transactions only. Sending ' + (meta.label || 'this token') + ' on Fuse needs MetaMask or WalletConnect — log in with that wallet to use it.');
             return;
         }
 
@@ -2979,14 +2979,14 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                     }
                 }
                 if (!provider) {
-                    throw new Error('No wallet detected. Please connect your GoodMarket wallet via MetaMask, Trust Wallet, MiniPay, or use WalletConnect to sign transactions.');
+                    throw new Error('No wallet detected. Please connect your ' + WALLET_DISPLAY_BRAND + ' wallet via MetaMask, Trust Wallet, MiniPay, or use WalletConnect to sign transactions.');
                 }
 
                 const accounts = await provider.request({ method: 'eth_requestAccounts' });
                 if (!accounts || !accounts.length) throw new Error('No wallet account available.');
                 const from = accounts[0];
                 if (from.toLowerCase() !== WALLET.toLowerCase()) {
-                    throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                    throw new Error('Wrong wallet connected. Please switch to your ' + WALLET_DISPLAY_BRAND + ' wallet.');
                 }
 
                 const targetChainId = Number(txData.chain_id || meta.chainId);
@@ -3324,7 +3324,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             if (!accounts || !accounts.length) throw new Error('No wallet account available.');
             const from = accounts[0];
             if (from.toLowerCase() !== WALLET.toLowerCase()) {
-                throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                throw new Error('Wrong wallet connected. Please switch to your ' + WALLET_DISPLAY_BRAND + ' wallet.');
             }
 
             btn.innerHTML = '<span class="spinner"></span> Confirm in wallet…';
@@ -3591,7 +3591,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             const signer = await provider.getSigner();
             const addr = await signer.getAddress();
             if ((addr || '').toLowerCase() !== (WALLET || '').toLowerCase()) {
-                throw new Error('Please unlock your GoodMarket wallet (the one tied to this account) to continue.');
+                throw new Error('Please unlock your ' + WALLET_DISPLAY_BRAND + ' wallet (the one tied to this account) to continue.');
             }
             return signer;
         }
@@ -3603,7 +3603,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 const signer = await provider.getSigner();
                 const addr = await signer.getAddress();
                 if ((addr || '').toLowerCase() !== (WALLET || '').toLowerCase()) {
-                    throw new Error('Wrong Privy wallet connected. Please use your GoodMarket wallet.');
+                    throw new Error('Wrong Privy wallet connected. Please use your ' + WALLET_DISPLAY_BRAND + ' wallet.');
                 }
                 return signer;
             }
@@ -3618,19 +3618,19 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 const signer = await provider.getSigner();
                 const addr = await signer.getAddress();
                 if ((addr || '').toLowerCase() !== (WALLET || '').toLowerCase()) {
-                    throw new Error('Wrong WalletConnect wallet connected. Please switch to your GoodMarket wallet.');
+                    throw new Error('Wrong WalletConnect wallet connected. Please switch to your ' + WALLET_DISPLAY_BRAND + ' wallet.');
                 }
                 return signer;
             }
         }
         const ep = await _vAwaitEthProvider();
         if (!ep) {
-            throw new Error('No wallet detected. Please connect your GoodMarket wallet via MetaMask, Trust Wallet, MiniPay, or WalletConnect.');
+            throw new Error('No wallet detected. Please connect your ' + WALLET_DISPLAY_BRAND + ' wallet via MetaMask, Trust Wallet, MiniPay, or WalletConnect.');
         }
         const accounts = await ep.request({ method: 'eth_requestAccounts' });
         if (!accounts || !accounts.length) throw new Error('No wallet account available.');
         if ((accounts[0] || '').toLowerCase() !== (WALLET || '').toLowerCase()) {
-            throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+            throw new Error('Wrong wallet connected. Please switch to your ' + WALLET_DISPLAY_BRAND + ' wallet.');
         }
         await _aiSwapEnsureCeloChain(ep);
         const provider = new ethers.BrowserProvider(ep);
@@ -3954,7 +3954,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         let ep = null;
         if ((LOGIN_METHOD || '').toLowerCase() === 'local') {
             if (typeof GMLocalWallet === 'undefined') {
-                throw new Error('Local GoodMarket wallet is not available on this page.');
+                throw new Error('Local ' + WALLET_DISPLAY_BRAND + ' wallet is not available on this page.');
             }
             if (!GMLocalWallet.isUnlocked()) {
                 await _lwUnlockIfNeeded().catch(function (e) {
@@ -3973,7 +3973,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             ep = await _vAwaitEthProvider();
         }
         if (!ep) {
-            throw new Error('No wallet detected. Please connect your GoodMarket wallet via MetaMask, Trust Wallet, or WalletConnect.');
+            throw new Error('No wallet detected. Please connect your ' + WALLET_DISPLAY_BRAND + ' wallet via MetaMask, Trust Wallet, or WalletConnect.');
         }
         const switched = await _aiEnsureXdcChain(ep);
         if (!switched) throw new Error('Could not switch your wallet to the XDC network — open your wallet app, switch to "XDC Network" manually, then retry.');
@@ -3981,7 +3981,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         const address = accounts && accounts[0];
         if (!address) throw new Error('No wallet account available.');
         if ((address || '').toLowerCase() !== (WALLET || '').toLowerCase()) {
-            throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+            throw new Error('Wrong wallet connected. Please switch to your ' + WALLET_DISPLAY_BRAND + ' wallet.');
         }
         return { provider: ep, address: address };
     }
@@ -4334,7 +4334,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                     amountInput.dispatchEvent(new Event('input', { bubbles: true }));
                 }
                 if (result) {
-                    result.innerHTML = '<div style="color:#34d399;">✅ GoodMarket Agent prepared this G$ stream. Review the wallet prompt before signing.</div>';
+                    result.innerHTML = '<div style="color:#34d399;">✅ ' + WALLET_DISPLAY_BRAND + ' Agent prepared this G$ stream. Review the wallet prompt before signing.</div>';
                     result.style.display = 'block';
                 }
                 if (typeof calculateStreamBuffer === 'function') await calculateStreamBuffer();
@@ -4407,7 +4407,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             }
             if (alert) {
                 alert.className = 'alert alert-success show';
-                alert.innerHTML = '✅ GoodMarket Agent prepared this send. Review the wallet prompt before signing.';
+                alert.innerHTML = '✅ ' + WALLET_DISPLAY_BRAND + ' Agent prepared this send. Review the wallet prompt before signing.';
             }
             if (typeof doSend === 'function') await doSend();
         }, 150);
@@ -5738,11 +5738,11 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 } else if (unified) {
                     note.textContent = 'Both networks are claimed together in one PIN-authorized action.';
                 } else if (_isUnifiedLocalUbiClaim()) {
-                    note.textContent = 'Your in-app GoodMarket wallet handles Celo and XDC together.';
+                    note.textContent = 'Your in-app ' + WALLET_DISPLAY_BRAND + ' wallet handles Celo and XDC together.';
                 } else if (selectedClaimNetwork) {
                     note.textContent = `You chose ${selectedClaimNetwork.toUpperCase()}. Tap its button again to claim, or pick another network.`;
                 } else {
-                    note.textContent = 'GoodMarket recommends Celo first, but you can claim on any network that is available to you.';
+                    note.textContent = WALLET_DISPLAY_BRAND + ' recommends Celo first, but you can claim on any network that is available to you.';
                 }
             }
         }
@@ -5855,7 +5855,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 label.textContent = `Claim ${amt} G$ on Fuse`;
                 icon.textContent = '🔥';
                 btn.disabled = false;
-                setStatus('Fuse claim is available. GoodMarket will switch your wallet to Fuse when you tap claim.', 'var(--green)');
+                setStatus('Fuse claim is available. ' + WALLET_DISPLAY_BRAND + ' will switch your wallet to Fuse when you tap claim.', 'var(--green)');
             } else if (recommendedClaimNetwork === 'xdc') {
                 const amt = claims.xdc && claims.xdc.claimable_formatted ? claims.xdc.claimable_formatted : 'G$';
                 label.textContent = `Claim ${amt} G$ on XDC`;
@@ -6272,7 +6272,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             // native browser, so the UI funnels everyone through Copy.
             card.innerHTML =
                 '<div style="font-weight:700;color:#fbbf24;margin-bottom:0.35rem;">⚠️ MiniPay detected</div>' +
-                '<div style="margin-bottom:0.65rem;">Face Verification often fails inside MiniPay\'s in-app browser (the face scan sometimes errors out on Opera\'s restricted WebView), so for the most reliable experience we recommend finishing it outside MiniPay. Tap <strong>Copy</strong> below, then <strong>open Chrome (or your preferred browser) outside MiniPay and paste the link there</strong> to complete verification. Your signature is already embedded in the link — you will <em>not</em> need to sign or reconnect. After verifying, return to MiniPay and reopen GoodMarket to claim your G$.</div>' +
+                '<div style="margin-bottom:0.65rem;">Face Verification often fails inside MiniPay\'s in-app browser (the face scan sometimes errors out on Opera\'s restricted WebView), so for the most reliable experience we recommend finishing it outside MiniPay. Tap <strong>Copy</strong> below, then <strong>open Chrome (or your preferred browser) outside MiniPay and paste the link there</strong> to complete verification. Your signature is already embedded in the link — you will <em>not</em> need to sign or reconnect. After verifying, return to MiniPay and reopen ' + WALLET_DISPLAY_BRAND + ' to claim your G$.</div>' +
                 '<div style="display:flex;flex-direction:column;gap:0.45rem;">' +
                   '<div style="display:flex;gap:0.4rem;align-items:center;background:rgba(251,191,36,0.07);border:1px solid rgba(251,191,36,0.28);border-radius:10px;padding:0.45rem 0.6rem;font-family:ui-monospace,SFMono-Regular,monospace;font-size:0.72rem;color:#fcd34d;overflow:hidden;">' +
                     '<span id="fvMiniPayLinkPreview" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + shortLink + '</span>' +
@@ -6284,7 +6284,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                       '<li>Tap <strong>Copy link</strong> above.</li>' +
                       '<li>Leave MiniPay and open <strong>Chrome</strong> (or Safari / any browser outside MiniPay).</li>' +
                       '<li>Paste the link into the address bar and complete Face Verification there.</li>' +
-                      '<li>Return to MiniPay, reopen GoodMarket, and claim your G$.</li>' +
+                      '<li>Return to MiniPay, reopen ' + WALLET_DISPLAY_BRAND + ', and claim your G$.</li>' +
                     '</ol>' +
                   '</div>' +
                   '<button type="button" id="fvMiniPayForceTryBtn" style="background:transparent;border:1px solid rgba(251,191,36,0.45);color:#fcd34d;font-size:0.78rem;font-weight:500;padding:0.4rem 0.9rem;border-radius:10px;cursor:pointer;">Try inside MiniPay anyway</button>' +
@@ -6418,7 +6418,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                     notice.innerHTML =
                         '<div style="font-weight:700;color:#fbbf24;margin-bottom:0.45rem;">⚠️ Trust Wallet is not recommended for Face Verification</div>' +
                         '<div style="margin-bottom:0.6rem;">Trust Wallet\'s in-app browser can sign you in and let you claim daily G$, but its Face Verification flow is unreliable — the wallet often signs the request but never delivers the signature back to this page, leaving you stuck on <em>"Preparing verification…"</em>.</div>' +
-                        '<div style="margin-bottom:0.6rem;"><strong>Never share or enter your wallet recovery phrase or raw signing credentials on GoodMarket.</strong></div>' +
+                        '<div style="margin-bottom:0.6rem;"><strong>Never share or enter your wallet recovery phrase or raw signing credentials on ' + WALLET_DISPLAY_BRAND + '.</strong></div>' +
                         '<div style="margin-bottom:0.75rem;">Log out and reconnect here via <strong>WalletConnect</strong>. That routes the signature through Trust Wallet\'s main app (instead of the in-app browser), which also works reliably.</div>' +
                         '<a href="/logout" target="_top" style="display:block;text-align:center;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.55rem 1rem;border-radius:10px;font-size:0.9rem;">🔐 Log out & reconnect via WalletConnect</a>';
                     wrap.appendChild(notice);
@@ -7048,7 +7048,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             try {
                 label.textContent = 'Claiming on XDC…';
                 icon.textContent = '💠';
-                appendStatusLine('💠 Celo submitted. Claiming your available XDC UBI with the same GoodMarket wallet…', 'var(--text-dim)');
+                appendStatusLine('💠 Celo submitted. Claiming your available XDC UBI with the same ' + WALLET_DISPLAY_BRAND + ' wallet…', 'var(--text-dim)');
                 await ensureXdcGasReadyBeforeClaim();
                 const txHash = await claimXdcInjected(provider, from);
                 logGoodMarketClaim(txHash, 'xdc', 'submitted');
@@ -7208,7 +7208,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                         if (!r || !r.proceed) {
                             if (r && r.cooldown) {
                                 const human = r.cooldownSeconds ? Math.ceil(r.cooldownSeconds / 3600) + ' hours' : 'some time';
-                                throw new Error('⏳ The GoodMarket cUSD faucet is on cooldown. Please wait ~' + human + ' or add cUSD / USDT / USDC manually.');
+                                throw new Error('⏳ The ' + WALLET_DISPLAY_BRAND + ' cUSD faucet is on cooldown. Please wait ~' + human + ' or add cUSD / USDT / USDC manually.');
                             }
                             if (r && r.cancelled) throw new Error('❌ Gas top-up was cancelled. Please try again.');
                             throw new Error('❌ MiniPay stablecoin gas top-up did not complete. ' + (r && r.error ? r.error : 'Please try again.'));
@@ -7286,7 +7286,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 console.log('[ensureInjectedWalletClaim] From address:', from);
                 
                 if (!from || from.toLowerCase() !== WALLET.toLowerCase()) {
-                    throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                    throw new Error('Wrong wallet connected. Please switch to your ' + WALLET_DISPLAY_BRAND + ' wallet.');
                 }
 
                 // Update provider reference to use the signer for the claim transaction
@@ -7585,7 +7585,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 if (!accounts || !accounts.length) throw new Error('No wallet account available.');
                 const from = accounts[0];
                 if (from.toLowerCase() !== WALLET.toLowerCase()) {
-                    throw new Error('Wrong wallet unlocked. Please use your GoodMarket wallet.');
+                    throw new Error('Wrong wallet unlocked. Please use your ' + WALLET_DISPLAY_BRAND + ' wallet.');
                 }
                 return { provider: localProvider, from };
             }
@@ -7611,7 +7611,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             if (!accounts || !accounts.length) throw new Error('No wallet account available.');
             const from = accounts[0];
             if (from.toLowerCase() !== WALLET.toLowerCase()) {
-                throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                throw new Error('Wrong wallet connected. Please switch to your ' + WALLET_DISPLAY_BRAND + ' wallet.');
             }
             return { provider, from };
         }
@@ -8204,7 +8204,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 // Only injected/WC/Privy providers expose wallet_watchAsset.
                 // The in-app wallet has no token list, so this is a no-op there.
                 if ((LOGIN_METHOD || '').toLowerCase() === 'local' && typeof GMLocalWallet !== 'undefined') {
-                    _gdWatchStatus('Your G$ balance is already shown inside GoodMarket — this wallet has no separate token list to add to.', 'info');
+                    _gdWatchStatus('Your G$ balance is already shown inside ' + WALLET_DISPLAY_BRAND + ' — this wallet has no separate token list to add to.', 'info');
                     return;
                 }
                 const added = await provider.request({ method: 'wallet_watchAsset', params: GD_WATCH_ASSET });
@@ -8304,7 +8304,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 selectedClaimNetwork = 'celo';
                 recommendedClaimNetwork = 'celo';
                 renderClaimNetworks();
-                appendStatusLine('🪙 Your GoodMarket wallet will claim available UBI on Celo and XDC in one PIN-authorized action.', 'var(--text-dim)');
+                appendStatusLine('🪙 Your ' + WALLET_DISPLAY_BRAND + ' wallet will claim available UBI on Celo and XDC in one PIN-authorized action.', 'var(--text-dim)');
             }
             if (recommendedClaimNetwork === 'fuse' || recommendedClaimNetwork === 'xdc') {
                 await executeNetworkClaim(recommendedClaimNetwork);
@@ -8500,7 +8500,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
 
             const connected = accounts[0];
             if (connected.toLowerCase() !== address.toLowerCase()) {
-                throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet and try again.');
+                throw new Error('Wrong wallet connected. Please switch to your ' + WALLET_DISPLAY_BRAND + ' wallet and try again.');
             }
 
             // Make sure the wallet is on Celo before issuing personal_sign.
@@ -8591,7 +8591,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             }
             const connected = accounts[0];
             if (connected.toLowerCase() !== address.toLowerCase()) {
-                throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet and try again.');
+                throw new Error('Wrong wallet connected. Please switch to your ' + WALLET_DISPLAY_BRAND + ' wallet and try again.');
             }
 
             // If we fell back to a plain injected provider (no WC session), the
