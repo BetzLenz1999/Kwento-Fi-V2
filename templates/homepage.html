@@ -1,29 +1,31 @@
+{% set brand_display_name = 'KwentoFi' %}
 <!DOCTYPE html>
 <html lang="en"{% if pwa_installable %} class="gm-pwa-gate-checking"{% endif %}>
 <head>
+    <script>window.GM_DISPLAY_BRAND = {{ brand_display_name|tojson }};</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GoodMarket — G$ Community &amp; Wallet on Celo</title>
-    <meta name="description" content="GoodMarket is an independent community for G$ users on Celo. Share posts, support members with G$, explore eligible rewards, and discover community tools.">
+    <title>KwentoFi — G$ Community &amp; Wallet on Celo</title>
+    <meta name="description" content="KwentoFi is an independent community for G$ users on Celo. Share posts, support members with G$, explore eligible rewards, and discover community tools.">
     <!-- Open Graph / link-sharing previews (Telegram, Facebook, X) -->
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="GoodMarket">
-    <meta property="og:title" content="GoodMarket — G$ Community &amp; Wallet">
+    <meta property="og:site_name" content="KwentoFi">
+    <meta property="og:title" content="KwentoFi — G$ Community &amp; Wallet">
     <meta property="og:description" content="Join conversations, support community posts with G$ on Celo, explore eligible rewards, and discover supported G$ utilities.">
     <meta property="og:image" content="{{ request.url_root }}static/icons/goodmarket-only-512.png">
     <meta property="og:url" content="{{ request.url_root }}">
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="GoodMarket — G$ Community &amp; Wallet">
+    <meta name="twitter:title" content="KwentoFi — G$ Community &amp; Wallet">
     <meta name="twitter:description" content="Join conversations, support community posts with G$ on Celo, explore eligible rewards, and discover supported G$ utilities.">
     <meta name="twitter:image" content="{{ request.url_root }}static/icons/goodmarket-only-512.png">
     <!-- Telegram Mini App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
     <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#7c3aed">
+    <meta name="theme-color" content="#4f46e5">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="GoodMarket">
+    <meta name="apple-mobile-web-app-title" content="KwentoFi">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
     <link rel="icon" type="image/png" href="/static/icons/goodmarket-only-192.png?v={{ ASSET_VERSION }}">
     <link rel="apple-touch-icon" href="/static/icons/goodmarket-only-192.png?v={{ ASSET_VERSION }}">
@@ -2471,7 +2473,7 @@
                 loginMethod: "{{ login_method|default('', true) }}",
                 projectId: "{{ walletconnect_project_id|default('', true) }}",
                 sidecarEnabled: {{ 'true' if walletconnect_sidecar_enabled|default(true) else 'false' }},
-                dappName: "GoodMarket",
+                dappName: "KwentoFi",
                 dappDescription: "Community wallet for the G$ token (GoodDollar protocol) on Celo",
                 assetVersion: "{{ ASSET_VERSION }}",
             });
@@ -2480,12 +2482,12 @@
 </head>
 <body>
     <!-- Entrance loading screen: hidden once the homepage is ready. -->
-    <div id="gmWelcomeLoader" class="gm-welcome-loader" role="status" aria-live="polite" aria-label="GoodMarket loading">
+    <div id="gmWelcomeLoader" class="gm-welcome-loader" role="status" aria-live="polite" aria-label="KwentoFi loading">
         <div class="gm-loader-card">
             <div class="gm-loader-orb" aria-hidden="true">
                 <img class="gm-loader-mark" src="/static/icons/goodmarket-only-192.png?v={{ ASSET_VERSION }}" alt="" width="74" height="74">
             </div>
-            <h1 class="gm-loader-title">Welcome to GoodMarket</h1>
+            <h1 class="gm-loader-title">Welcome to KwentoFi</h1>
             <p class="gm-loader-subtitle">Your everyday G$ wallet on Celo — earn, save, swap and spend.</p>
             <div class="gm-loader-mosaic" aria-hidden="true">
                 <span class="gm-loader-chip">📚</span>
@@ -2494,15 +2496,15 @@
             </div>
             <div class="gm-loader-dots" aria-hidden="true"><span></span><span></span><span></span></div>
             <div id="gmLoaderProgress" class="gm-loader-progress" hidden>
-                <div class="gm-loader-progress-meta"><span id="gmLoaderProgressStage">Starting GoodMarket…</span><span id="gmLoaderProgressPercent" class="gm-loader-progress-percent">1%</span></div>
-                <div id="gmLoaderProgressTrack" class="gm-loader-progress-track" role="progressbar" aria-label="Estimated GoodMarket startup progress" aria-valuemin="1" aria-valuemax="100" aria-valuenow="1"><div id="gmLoaderProgressFill" class="gm-loader-progress-fill"></div></div>
+                <div class="gm-loader-progress-meta"><span id="gmLoaderProgressStage">Starting KwentoFi…</span><span id="gmLoaderProgressPercent" class="gm-loader-progress-percent">1%</span></div>
+                <div id="gmLoaderProgressTrack" class="gm-loader-progress-track" role="progressbar" aria-label="Estimated KwentoFi startup progress" aria-valuemin="1" aria-valuemax="100" aria-valuenow="1"><div id="gmLoaderProgressFill" class="gm-loader-progress-fill"></div></div>
             </div>
         </div>
     </div>
     <!-- Header -->
     <header class="header">
         <div class="header-container">
-            <a href="/" class="logo">GoodMarket</a>
+            <a href="/" class="logo">KwentoFi</a>
             <nav class="nav-links">
                 <a href="/overview" class="active">Overview</a>
                 <a href="/news">News</a>
@@ -2531,11 +2533,11 @@
         <div class="gm-pwa-gate-card">
             <div class="gm-pwa-gate-icon" aria-hidden="true">📲</div>
             <p class="gm-pwa-gate-eyebrow">GOODMARKET APP</p>
-            <h1 id="gmPwaGateTitle">Install GoodMarket to continue</h1>
+            <h1 id="gmPwaGateTitle">Install KwentoFi to continue</h1>
             <p id="gmPwaGateCopy" class="gm-pwa-gate-copy">
-                Add GoodMarket to your device, then open it from your home screen or app launcher to access the homepage.
+                Add KwentoFi to your device, then open it from your home screen or app launcher to access the homepage.
             </p>
-            <div class="gm-pwa-gate-stats" aria-label="GoodMarket community statistics">
+            <div class="gm-pwa-gate-stats" aria-label="KwentoFi community statistics">
                 <div class="gm-pwa-gate-stat">
                     <span>Registered users</span>
                     <strong>{{ homepage_stats.total_users_formatted|default('—') }}</strong>
@@ -2548,16 +2550,16 @@
             <div class="gm-pwa-gate-actions">
                 <button type="button" id="gmPwaGateInstallButton"
                         class="gm-pwa-install-btn" data-gm-pwa-install>
-                    Install GoodMarket
+                    Install KwentoFi
                 </button>
             </div>
             <div class="gm-pwa-gate-progress" data-gm-pwa-progress-wrap hidden>
                 <div class="gm-pwa-gate-progress-heading">
-                    <span data-gm-pwa-progress-label>GoodMarket install progress</span>
+                    <span data-gm-pwa-progress-label>KwentoFi install progress</span>
                     <strong data-gm-pwa-progress-value>0%</strong>
                 </div>
                 <progress data-gm-pwa-progress max="100" value="0"
-                          aria-label="GoodMarket installation progress"
+                          aria-label="KwentoFi installation progress"
                           aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
                           aria-valuetext="Installation has not started"></progress>
                 <p class="gm-pwa-gate-progress-message" data-gm-pwa-progress-message>
@@ -2572,14 +2574,14 @@
                     Browser menus and install support vary by device and version. A shortcut may still open in the browser and not pass the installed-app check. If no install option appears, copy the link and open it in a browser that supports installing web apps.
                 </p>
                 <button type="button" class="gm-pwa-copy-link-btn" data-gm-pwa-copy-link>
-                    Copy GoodMarket link
+                    Copy KwentoFi link
                 </button>
                 <button type="button" class="gm-pwa-continue-browser-btn"
                         data-gm-pwa-continue-browser>
                     Continue in browser
                 </button>
                 <p class="gm-pwa-manual-note">
-                    This opens the website in this browser; it does not install the app. You can install GoodMarket later from a browser that supports PWA installation.
+                    This opens the website in this browser; it does not install the app. You can install KwentoFi later from a browser that supports PWA installation.
                 </p>
                 <p class="gm-pwa-copy-status" data-gm-pwa-copy-status
                    role="status" aria-live="polite"></p>
@@ -2587,7 +2589,7 @@
             <p class="gm-pwa-gate-status" id="gmPwaGateStatus" data-gm-pwa-status
                role="status" aria-live="polite">Checking whether this is an installed app or a wallet browser…</p>
             <p class="gm-pwa-gate-note">
-                If you tap Install and no system prompt opens, GoodMarket has not been installed. Follow the manual steps shown; after installing, open the app from its new icon.
+                If you tap Install and no system prompt opens, KwentoFi has not been installed. Follow the manual steps shown; after installing, open the app from its new icon.
             </p>
         </div>
     </main>
@@ -2597,7 +2599,7 @@
     <section class="hero-section" id="overview">
         <div class="hero-grid">
             <div class="hero-content">
-                <span class="hero-eyebrow"><span class="pulse-dot"></span>GoodMarket Community · Built for G$ users</span>
+                <span class="hero-eyebrow"><span class="pulse-dot"></span>KwentoFi Community · Built for G$ users</span>
                 <h1 class="hero-title">
                     <span class="line">Share. Connect.</span>
                     <span class="line">Support <span class="highlight">one another.</span></span>
@@ -2626,7 +2628,7 @@
                     🤝 Independent community project for <strong>G$</strong> users on the GoodDollar protocol. Not an official GoodDollar product.
                 </p>
             </div>
-            <div class="hero-stats-stage" aria-label="GoodMarket community statistics">
+            <div class="hero-stats-stage" aria-label="KwentoFi community statistics">
                 <div class="hero-orb" aria-hidden="true">
                     <span class="hero-orb-symbol">G$</span>
                 </div>
@@ -2650,7 +2652,7 @@
                 <div class="hero-stat-card stat-earners">
                     <div class="stat-eyebrow">👥 Registered users</div>
                     <div class="stat-value" id="heroStatRegistered">{{ homepage_stats.total_users_formatted|default('—') }}</div>
-                    <div class="stat-foot">GoodMarket community</div>
+                    <div class="stat-foot">KwentoFi community</div>
                 </div>
                 <div class="hero-stat-card stat-tasks">
                     <div class="stat-eyebrow">✅ Active earners</div>
@@ -2666,7 +2668,7 @@
     <section class="community-entry-section" aria-labelledby="community-entry-title">
         <div class="community-entry-card">
             <div class="community-entry-copy">
-                <span class="section-kicker">The GoodMarket Community</span>
+                <span class="section-kicker">The KwentoFi Community</span>
                 <h2 id="community-entry-title">Your next G$ journey starts with people.</h2>
                 <p>Post updates, react, follow members, and support a post’s author with G$. Verified support is acknowledged in the Community Feed.</p>
                 {% if community_feed_visible %}
@@ -2735,7 +2737,7 @@
         <div class="balance-explainer-head">
             <span class="section-kicker">Know your balance</span>
             <h2 id="balance-explainer-title">Not all balances work the same way.</h2>
-            <p>GoodMarket keeps community rewards, game winnings, and on-chain wallet G$ separate so your status stays clear.</p>
+            <p>KwentoFi keeps community rewards, game winnings, and on-chain wallet G$ separate so your status stays clear.</p>
         </div>
         <div class="balance-grid">
             <div class="balance-item"><strong>Community G$</strong><span>Configured community ledger balance. Withdrawal is not yet available.</span></div>
@@ -2744,7 +2746,7 @@
         </div>
     </section>
     <!-- How it works — 3-step strip for first-time visitors -->
-    <section class="hiw-section" aria-label="How GoodMarket works">
+    <section class="hiw-section" aria-label="How KwentoFi works">
         <div class="hiw-grid">
             <div class="hiw-step">
                 <span class="hiw-step-num">1</span>
@@ -2766,24 +2768,24 @@
 
     <!-- Section navigation — the single entry point to every homepage panel. -->
     <div class="submenu-wrapper" id="main-menu-submenu">
-        <div class="submenu-label">Explore GoodMarket</div>
+        <div class="submenu-label">Explore KwentoFi</div>
         <nav class="section-nav submenu-nav" aria-label="Homepage sections">
-            <button class="section-tab active" id="tab-what-is" onclick="showSection('what-is')">💰 What is GoodMarket?</button>
+            <button class="section-tab active" id="tab-what-is" onclick="showSection('what-is')">💰 What is KwentoFi?</button>
             <button class="section-tab" id="tab-learn-earn" onclick="showSection('learn-earn')">🎓 Learn &amp; Earn</button>
             <button class="section-tab" id="tab-daily-tasks" onclick="showSection('daily-tasks')">📱 Daily Social Tasks</button>
             <button class="section-tab" id="tab-minigames" onclick="showSection('minigames')">🎮 Play &amp; Earn</button>
             <button class="section-tab" id="tab-community-stories" onclick="showSection('community-stories')">🌟 Community Stories</button>
             <button class="section-tab" id="tab-referral" onclick="showSection('referral')">🔗 Referral Program</button>
             <button class="section-tab" id="tab-ubi-tracker" onclick="showSection('ubi-tracker')">📊 UBI Tracker</button>
-            <button class="section-tab" id="tab-why-choose" onclick="showSection('why-choose')">⭐ Why Choose GoodMarket?</button>
+            <button class="section-tab" id="tab-why-choose" onclick="showSection('why-choose')">⭐ Why Choose KwentoFi?</button>
             <button class="section-tab" id="tab-developers" onclick="showSection('developers')">👨‍💻 Meet our Developers</button>
         </nav>
     </div>
 
-    <!-- Panel: What is GoodMarket? — shows directly below submenu tabs -->
+    <!-- Panel: What is KwentoFi? — shows directly below submenu tabs -->
     <div class="section-panel" id="panel-what-is">
         <h2 class="panel-title">💰 Multiple Ways to Earn G$</h2>
-        <p class="panel-subtitle">GoodMarket lets you earn GoodDollar tokens by completing easy tasks — no experience needed.</p>
+        <p class="panel-subtitle">KwentoFi lets you earn GoodDollar tokens by completing easy tasks — no experience needed.</p>
         <div class="earn-grid">
             <div class="earn-card">
                 <div class="earn-card-icon">🌟</div>
@@ -2859,7 +2861,7 @@
             <div class="earn-card">
                 <div class="earn-card-icon">🐦</div>
                 <div class="earn-card-title">Twitter / X Tasks</div>
-                <p class="earn-card-desc">Post about GoodDollar on Twitter/X — share a tweet, retweet, or tag the community. Submit your post link in GoodMarket to claim your reward.</p>
+                <p class="earn-card-desc">Post about GoodDollar on Twitter/X — share a tweet, retweet, or tag the community. Submit your post link in KwentoFi to claim your reward.</p>
                 <ul class="earn-card-list">
                     <li>🟢 <strong style="color:#fbbf24;">100 G$</strong> per completed task</li>
                     <li>🟢 Resets every 72 hours</li>
@@ -2921,7 +2923,7 @@
             <div class="earn-card">
                 <div class="earn-card-icon">💸</div>
                 <div class="earn-card-title">Withdrawals</div>
-                <p class="earn-card-desc">All game winnings accumulate as virtual tokens in your GoodMarket balance. Once you reach the <strong>minimum withdrawal threshold</strong>, you can convert them to real G$ tokens sent on-chain to your wallet.</p>
+                <p class="earn-card-desc">All game winnings accumulate as virtual tokens in your KwentoFi balance. Once you reach the <strong>minimum withdrawal threshold</strong>, you can convert them to real G$ tokens sent on-chain to your wallet.</p>
                 <p class="earn-card-note">✅ Withdrawals require UBI verification.</p>
             </div>
         </div>
@@ -2956,7 +2958,7 @@
             <div class="earn-card">
                 <div class="earn-card-icon">📸</div>
                 <div class="earn-card-title">How to Submit</div>
-                <p class="earn-card-desc">Post your GoodDollar story on Twitter/X, then come to GoodMarket during the open window, paste your post link or upload a screenshot, and our team will review and approve it for your G$ reward.</p>
+                <p class="earn-card-desc">Post your GoodDollar story on Twitter/X, then come to KwentoFi during the open window, paste your post link or upload a screenshot, and our team will review and approve it for your G$ reward.</p>
             </div>
         </div>
     </div>
@@ -2964,12 +2966,12 @@
     <!-- Panel: Referral Program -->
     <div class="section-panel" id="panel-referral">
         <h2 class="panel-title">🔗 Referral Program</h2>
-        <p class="panel-subtitle">Invite friends to GoodMarket and both of you earn G$ rewards when they create a new account (free local email + PIN wallet) and get verified.</p>
+        <p class="panel-subtitle">Invite friends to KwentoFi and both of you earn G$ rewards when they create a new account (free local email + PIN wallet) and get verified.</p>
         <div class="earn-grid">
             <div class="earn-card">
                 <div class="earn-card-icon">📨</div>
                 <div class="earn-card-title">How to Refer</div>
-                <p class="earn-card-desc">Every GoodMarket user gets a unique referral link — no matter how YOU log in (MetaMask, WalletConnect, MiniPay, or a local account). Share it with friends, family, or on social media. Rewards apply when your friend creates a fresh GoodMarket account with the free local email+PIN wallet and enters your code at sign-up — not when they connect an existing wallet.</p>
+                <p class="earn-card-desc">Every KwentoFi user gets a unique referral link — no matter how YOU log in (MetaMask, WalletConnect, MiniPay, or a local account). Share it with friends, family, or on social media. Rewards apply when your friend creates a fresh KwentoFi account with the free local email+PIN wallet and enters your code at sign-up — not when they connect an existing wallet.</p>
             </div>
             <div class="earn-card">
                 <div class="earn-card-icon">💰</div>
@@ -2989,7 +2991,7 @@
             <div class="earn-card">
                 <div class="earn-card-icon">📊</div>
                 <div class="earn-card-title">Track Your Referrals</div>
-                <p class="earn-card-desc">Log into GoodMarket and check your <strong>Referral Dashboard</strong> to see how many friends you've referred, how many have verified, and your total referral earnings so far.</p>
+                <p class="earn-card-desc">Log into KwentoFi and check your <strong>Referral Dashboard</strong> to see how many friends you've referred, how many have verified, and your total referral earnings so far.</p>
             </div>
         </div>
     </div>
@@ -3023,15 +3025,15 @@
             <div class="earn-card">
                 <div class="earn-card-icon">🛡️</div>
                 <div class="earn-card-title">Why It Matters</div>
-                <p class="earn-card-desc">UBI verification is required for most GoodMarket features. The UBI Tracker helps you confirm your eligibility, understand your claim history, and see how you compare in the GoodDollar community.</p>
+                <p class="earn-card-desc">UBI verification is required for most KwentoFi features. The UBI Tracker helps you confirm your eligibility, understand your claim history, and see how you compare in the GoodDollar community.</p>
                 <p class="earn-card-note">🔓 Available to all users — no login required to look up a wallet.</p>
             </div>
         </div>
     </div>
 
-    <!-- Panel: Why Choose GoodMarket? -->
+    <!-- Panel: Why Choose KwentoFi? -->
     <div class="section-panel" id="panel-why-choose">
-        <h2 class="panel-title">⭐ Why Choose GoodMarket?</h2>
+        <h2 class="panel-title">⭐ Why Choose KwentoFi?</h2>
         <p class="panel-subtitle">Everything you need to grow your G$ earnings — all in one place.</p>
         <div class="features-grid">
             <div class="feature-card">
@@ -3062,7 +3064,7 @@
             <div class="feature-card">
                 <div class="feature-icon">🌍</div>
                 <h3 class="feature-title">Built for Everyone</h3>
-                <p class="feature-description">GoodMarket is built for the GoodDollar ecosystem — designed to give everyone access to universal basic income.</p>
+                <p class="feature-description">KwentoFi is built for the GoodDollar ecosystem — designed to give everyone access to universal basic income.</p>
             </div>
         </div>
     </div>
@@ -3070,7 +3072,7 @@
     <!-- Panel: Meet our Developers -->
     <div class="section-panel" id="panel-developers">
         <h2 class="panel-title">👨‍💻 Meet our Developers</h2>
-        <p class="panel-subtitle">The team behind GoodMarket.</p>
+        <p class="panel-subtitle">The team behind KwentoFi.</p>
         <div class="dev-grid" id="developerGrid">
             <div class="dev-card" style="opacity:0.35;">
                 <div style="width:80px;height:80px;border-radius:50%;background:#e5e7eb;margin:0 auto 1rem;"></div>
@@ -3166,7 +3168,7 @@
 
     <!-- Footer small print -->
     <footer class="site-footer">
-        <p>⚠️ GoodMarket is an independent community project &mdash; not an official product of, or affiliated with, GoodDollar (gooddollar.org).</p>
+        <p>⚠️ KwentoFi is an independent community project &mdash; not an official product of, or affiliated with, GoodDollar (gooddollar.org).</p>
         <p>Built by the community, for users of the G$ token on the GoodDollar protocol &middot; Powered by Celo</p>
     </footer>
 
@@ -3295,7 +3297,7 @@
                         <div class="video-iframe-wrapper">
                             <iframe
                                 src="${v.embed_url}?rel=0&modestbranding=1"
-                                title="${v.title || 'GoodMarket Video'}"
+                                title="${v.title || 'KwentoFi Video'}"
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                 allowfullscreen
                                 loading="${i === 0 ? 'eager' : 'lazy'}"
@@ -3802,15 +3804,15 @@
                 loader.classList.add('is-pwa-startup');
                 progress.hidden = false;
                 if (pageLoaded) {
-                    setProgress(100, 'GoodMarket is ready');
+                    setProgress(100, 'KwentoFi is ready');
                 } else {
                     progressTimer = window.setInterval(() => {
                         const elapsed = Date.now() - startedAt;
                         const estimate = Math.min(99, 1 + Math.floor(98 * elapsed / MAX_VISIBLE_MS));
-                        const stage = elapsed < 900 ? 'Starting GoodMarket…'
+                        const stage = elapsed < 900 ? 'Starting KwentoFi…'
                             : elapsed < 2200 ? 'Preparing your app…'
                             : elapsed < MAX_VISIBLE_MS ? 'Opening your page…'
-                            : 'Still opening GoodMarket…';
+                            : 'Still opening KwentoFi…';
                         setProgress(estimate, stage);
                     }, 120);
                 }
@@ -3827,7 +3829,7 @@
             const hideWhenReady = () => {
                 const elapsed = Date.now() - startedAt;
                 if (pageLoaded && elapsed >= MIN_VISIBLE_MS) {
-                    if (standalone) setProgress(100, 'GoodMarket is ready');
+                    if (standalone) setProgress(100, 'KwentoFi is ready');
                     hideLoader();
                     return;
                 }
@@ -3839,7 +3841,7 @@
                 window.addEventListener('load', () => {
                     pageLoaded = true;
                     if (standalone) {
-                        setProgress(100, 'GoodMarket is ready');
+                        setProgress(100, 'KwentoFi is ready');
                         if (progressTimer !== null) {
                             window.clearInterval(progressTimer);
                             progressTimer = null;
@@ -3851,7 +3853,7 @@
 
             hideWhenReady();
             window.setTimeout(() => {
-                if (!pageLoaded && standalone) setProgress(99, 'Still opening GoodMarket…');
+                if (!pageLoaded && standalone) setProgress(99, 'Still opening KwentoFi…');
                 hideLoader();
             }, MAX_VISIBLE_MS);
         })();
