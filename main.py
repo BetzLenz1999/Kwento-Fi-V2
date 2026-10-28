@@ -892,7 +892,21 @@ try:
     else:
         logger.info("ℹ️ Community Daily Learn reward reconciler not started (disabled)")
 except Exception as e:
-    logger.error(f"❌ Community Daily Learn reward reconciler initialization failed: {e}")
+    logger.error(f"❌ Community Daily Learn reconciler initialization failed: {e}")
+
+# Community Post Support reconciliation: verifies submitted Celo receipts,
+# atomically finalizes delayed ledger/system-post writes, and frees expired
+# reservations. _start_serverless_background_job gates unsupported runtimes.
+try:
+    from community_feed.post_support_reconciler import init_post_support_reconciler
+    if _start_serverless_background_job(
+        "Community Post Support", init_post_support_reconciler, app
+    ):
+        logger.info("✅ Community Post Support reconciler started")
+    else:
+        logger.info("ℹ️ Community Post Support reconciler not started (disabled/unsupported runtime)")
+except Exception as e:
+    logger.error(f"❌ Community Post Support reconciler initialization failed: {e}")
 
 # Initialize G$ Savings
 logger.info("💰 Initializing G$ Savings system...")
