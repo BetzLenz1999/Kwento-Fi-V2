@@ -213,6 +213,11 @@ html.gm-pwa-gate-required .gm-pwa-gate { display: grid; }
     line-height: 1.15;
     overflow-wrap: anywhere;
 }
+.gm-pwa-gate-stat.gm-pwa-gate-social strong {
+    color: #c7d2fe;
+    font-size: clamp(0.78rem, 3vw, 0.95rem);
+    line-height: 1.3;
+}
 .gm-pwa-gate-actions { display: flex; justify-content: center; }
 .gm-pwa-gate .gm-pwa-install-btn {
     min-width: min(100%, 17rem);
