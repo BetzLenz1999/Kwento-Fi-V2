@@ -552,7 +552,7 @@ async function _wcGetClient() {
                 name: SWAP_DISPLAY_BRAND,
                 description: 'Swap G$ tokens with ' + SWAP_DISPLAY_BRAND + ' on Celo',
                 url: window.location.origin,
-                icons: [window.location.origin + '/static/icons/icon-192x192.png?v=' + window.GM_SWAP_BOOT.assetVersion]
+                icons: [window.location.origin + '/static/icons/kwentofi-pwa-192.png?v=' + window.GM_SWAP_BOOT.assetVersion]
             }
         });
         try { window._wcSignClient = _wcSignClient; } catch (_) {}
