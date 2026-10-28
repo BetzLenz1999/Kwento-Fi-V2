@@ -689,6 +689,14 @@ body {
 .cf-action-btn .cf-act-icon { font-size: 1.28rem; line-height: 1; }
 .cf-action-btn:hover { background: var(--cf-field); }
 .cf-action-btn:focus-visible { outline: 2px solid var(--cf-accent); outline-offset: 1px; }
+.cf-support-action {
+    border: 1px solid var(--cf-earn-line);
+    background: var(--cf-earn-bg1);
+    color: var(--cf-earn-ink);
+    font-weight: 900;
+}
+.cf-support-action:hover { filter: brightness(0.97); background: var(--cf-earn-bg1); }
+.cf-support-action .cf-act-icon { color: var(--cf-accent-ink); }
 /* The liked heart is the one red thing on the card, exactly like Instagram. */
 .cf-action-btn.is-liked .cf-act-icon { color: var(--cf-danger); }
 .cf-action-btn.is-liked { color: var(--cf-danger); }
@@ -2448,6 +2456,48 @@ body.cf-modal-open { overflow: hidden; }
     border: 1px solid var(--cf-accent-border); border-radius: 8px;
     background: var(--cf-field); color: var(--cf-ink); font: 0.82rem ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+.cf-support-modal[hidden] { display: none !important; }
+.cf-support-modal {
+    position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
+    padding: 1rem; background: rgba(17, 24, 39, 0.62);
+}
+.cf-support-panel {
+    width: min(100%, 30rem); max-height: min(90dvh, 48rem); overflow: auto;
+    padding: 1.15rem; border: 1px solid var(--cf-border); border-radius: 18px;
+    background: var(--cf-card-solid); color: var(--cf-ink); box-shadow: var(--cf-shadow);
+}
+.cf-support-panel h2 { margin: 0; font-size: 1.18rem; }
+.cf-support-author { margin: 0.45rem 0 1rem; color: var(--cf-ink-2); }
+.cf-support-route { display: block; margin: -0.65rem 0 0.8rem; color: var(--cf-dim); font-size: 0.72rem; line-height: 1.4; overflow-wrap: anywhere; }
+.cf-support-label { display: grid; gap: 0.35rem; font-weight: 800; }
+.cf-support-input {
+    min-height: 48px; width: 100%; padding: 0.65rem 0.75rem;
+    border: 1px solid var(--cf-border); border-radius: 10px;
+    background: var(--cf-field); color: var(--cf-ink); font: inherit; font-weight: 800;
+}
+.cf-support-input:focus-visible { outline: 3px solid var(--cf-accent); outline-offset: 2px; }
+.cf-support-presets { display: flex; gap: 0.5rem; margin-top: 0.65rem; }
+.cf-support-preset, .cf-support-cancel, .cf-support-submit {
+    min-height: 42px; padding: 0.55rem 0.8rem; border-radius: 10px;
+    font: inherit; font-weight: 800; cursor: pointer;
+}
+.cf-support-preset, .cf-support-cancel {
+    border: 1px solid var(--cf-border); background: var(--cf-card-solid); color: var(--cf-ink);
+}
+.cf-support-minimum { display: block; margin-top: 0.45rem; color: var(--cf-dim); }
+.cf-support-disclosure {
+    margin-top: 0.85rem; padding: 0.75rem; border-radius: 10px;
+    background: var(--cf-soft); color: var(--cf-ink-2); font-size: 0.82rem; line-height: 1.5;
+}
+.cf-support-status { min-height: 1.4em; margin: 0.8rem 0 0; color: var(--cf-ink-2); font-size: 0.84rem; line-height: 1.45; overflow-wrap: anywhere; }
+.cf-support-status.is-error { color: var(--cf-danger); }
+.cf-support-status.is-success { color: var(--cf-ok-ink); }
+.cf-support-status a { color: var(--cf-accent-ink); font-weight: 800; }
+.cf-support-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.55rem; margin-top: 0.85rem; }
+.cf-support-submit { border: 1px solid var(--cf-earn-line); background: var(--cf-earn-bg1); color: var(--cf-earn-ink); }
+.cf-support-submit:disabled { opacity: 0.65; cursor: wait; }
+body.cf-support-modal-open { overflow: hidden; }
+.cf-support-post-card .cf-donation-system-mark { font-size: 0.72rem; }
 .cf-vault-donation-status-actions:empty { display: none; }
 .cf-pinned-donation-feed { display: grid; gap: 0.65rem; }
 .cf-donation-card {
