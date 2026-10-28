@@ -76,7 +76,7 @@
 <body class="cf-page">
 
 <header class="cf-nav">
-    <a class="cf-brand" href="/wallet">
+    <div class="cf-brand">
         <img class="cf-brand-mark kwentofi-symbol" src="{{ url_for('static', filename='branding/kwentofi/kwentofi-symbol-64.png', v=ASSET_VERSION) }}" alt="" width="32" height="32">
         <span class="cf-brand-text">
             <span class="cf-brand-org">KwentoFi</span>
@@ -84,7 +84,7 @@
                 <span class="cf-brand-dot" aria-hidden="true"></span>Community Feed
             </span>
         </span>
-    </a>
+    </div>
     <div class="cf-nav-right">
         {# The feed is a daily surface: Daily Learn resets at 00:00 UTC, so the
            day boundary is real and worth showing. Hidden below 480px, where the
@@ -106,7 +106,7 @@
         </button>
         <button type="button" class="cf-nav-btn" id="cfRefreshBtn" aria-label="Refresh Community Feed"
                 onclick="GMCommunity.refresh()"><span aria-hidden="true">↻</span><span class="cf-nav-refresh-label"> Refresh</span></button>
-        <a class="cf-nav-btn" href="/wallet">Your Wallet</a>
+        <button type="button" class="cf-nav-btn" disabled aria-disabled="true" title="Your Wallet is unavailable from Community">Your Wallet</button>
         {% endif %}
     </div>
 
@@ -813,7 +813,7 @@ window.GM_COMMUNITY_BOOT = {
         { id: 'messages', icon: '💬', label: 'Messages',    href: '/messages', action: 'messages', guestOk: false },
         { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
         { id: 'community-cards', icon: '🗂️', label: 'Community Cards', action: 'community-cards', guestOk: true },
-        { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet',     guestOk: false }
+        { id: 'wallet', icon: '👛', label: 'Your Wallet', disabled: true, guestOk: false }
     ],
     reactions: {
         like: '👍', love: '❤️', haha: '😂',
