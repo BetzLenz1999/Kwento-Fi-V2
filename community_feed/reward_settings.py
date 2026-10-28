@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -17,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 RPC_GET = "community_reward_settings_get"
 RPC_UPDATE = "community_reward_settings_update"
+RPC_GET_MAX_ATTEMPTS = 2
+RPC_GET_RETRY_BASE_DELAY_SECONDS = 0.25
 SETTING_KEYS = frozenset({
     "rates", "daily_cap", "post_cap", "daily_learn_rate",
     "daily_learn_rate_max", "daily_learn_cap", "combined_cap",
@@ -68,6 +71,15 @@ def _failure(error: str, **extra: Any) -> dict[str, Any]:
     return result
 
 
+def _is_retryable_transport_error(exc: Exception) -> bool:
+    """Retry only HTTP transport failures, never PostgREST/SQL/API errors."""
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - httpx is supplied by supabase-py
+        return False
+    return isinstance(exc, httpx.TransportError)
+
+
 def get_settings(supabase=None) -> dict:
     """Read the authoritative merged settings through the SQL RPC.
 
@@ -78,12 +90,42 @@ def get_settings(supabase=None) -> dict:
     if db is None:
         return _failure("Reward configuration database is unavailable",
                         code="configuration_unavailable")
-    try:
-        result = db.rpc(RPC_GET, {}).execute()
-    except Exception as exc:  # noqa: BLE001 - fail closed at the facade boundary
-        logger.warning("community reward settings read failed: %s", exc)
-        return _failure("Reward configuration RPC is unavailable",
-                        code="configuration_unavailable")
+    for attempt in range(1, RPC_GET_MAX_ATTEMPTS + 1):
+        try:
+            result = db.rpc(RPC_GET, {}).execute()
+            break
+        except Exception as exc:  # noqa: BLE001 - classify before deciding to retry
+            retryable = _is_retryable_transport_error(exc)
+            if retryable and attempt < RPC_GET_MAX_ATTEMPTS:
+                delay = RPC_GET_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1))
+                logger.warning(
+                    "community reward settings RPC transport failure "
+                    "(%s.%s), attempt %d/%d; retrying after %.2fs",
+                    type(exc).__module__, type(exc).__name__, attempt,
+                    RPC_GET_MAX_ATTEMPTS, delay,
+                )
+                time.sleep(delay)
+                continue
+
+            if retryable:
+                logger.error(
+                    "community reward settings RPC transport failure after "
+                    "%d attempts (%s.%s)",
+                    attempt, type(exc).__module__, type(exc).__name__,
+                    exc_info=True,
+                )
+            else:
+                logger.error(
+                    "community reward settings RPC failed without retry "
+                    "(%s.%s)",
+                    type(exc).__module__, type(exc).__name__,
+                    exc_info=True,
+                )
+            return _failure(
+                "Reward configuration service is temporarily unavailable",
+                code=("temporarily_unavailable" if retryable
+                      else "configuration_unavailable"),
+            )
     payload = _payload(result)
     if payload is None:
         return _failure("Reward configuration RPC returned malformed data",
