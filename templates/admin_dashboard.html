@@ -3662,6 +3662,9 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     break;
                 case 'feature-visibility':
                     loadFeatureVisibility();
+                    // Community Support Rewards controls live in this section and
+                    // are hydrated by the shared admin reward-settings loader.
+                    loadQuizSettings();
                     break;
                 case 'referral-stats':
                     loadReferralKeyBalance();
