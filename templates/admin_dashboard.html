@@ -2738,16 +2738,6 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                             </p>
                             <div id="community-budget-fields"></div>
                             <input type="hidden" id="community-reward-config-version" value="">
-                            <div id="community-support-rewards-panel" style="margin-top:1.25rem;padding:1rem;background:rgba(255,255,255,0.04);border-radius:10px;">
-                                <h3 style="margin-bottom:0.5rem;font-size:1rem;">Community Support Rewards</h3>
-                                <p style="font-size:0.82rem;">Support rewards are off by default and remain disabled until explicitly enabled and funded. Amounts and caps are proposed settings; the server remains authoritative.</p>
-                                <div id="community-support-rewards-fields"></div>
-                                <h4 style="margin:0.75rem 0 0.5rem;">Budget and activity summary</h4>
-                                <div id="community-support-rewards-summary" role="status" aria-live="polite">Unavailable — summary fields were not provided by the configuration API.</div>
-                                <div id="community-support-rewards-status" role="status" aria-live="polite" style="margin-top:0.5rem;font-size:0.82rem;"></div>
-                                <button class="btn btn-primary" type="button" onclick="saveCommunitySupportRewardsSettings()" style="width:100%;padding:0.9rem;font-size:1rem;margin-top:0.75rem;">💾 Save Support Rewards Settings</button>
-                                <div id="community-support-rewards-result" style="margin-top:0.75rem;display:none;"></div>
-                            </div>
                             <div id="community-budget-config-status" role="status" aria-live="polite" style="margin-top:0.6rem;font-size:0.82rem;color:rgba(241,245,249,0.7);"></div>
                             <button class="btn btn-primary" type="button" onclick="saveCommunityQuizSettings()" style="width:100%;padding:0.9rem;font-size:1rem;margin-top:0.9rem;">
                                 💾 Save Community Quiz &amp; Budget Settings
@@ -3662,9 +3652,6 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     break;
                 case 'feature-visibility':
                     loadFeatureVisibility();
-                    // Community Support Rewards controls live in this section and
-                    // are hydrated by the shared admin reward-settings loader.
-                    loadQuizSettings();
                     break;
                 case 'referral-stats':
                     loadReferralKeyBalance();
@@ -5003,48 +4990,6 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
             if (note) note.textContent = 'Read-only mirror of the DB-authoritative Community Quiz rate. Edit the dedicated Community Quiz controls below so the rate, ceiling, cap, and config version are saved together; this full Quiz Settings save never changes it.';
         }
 
-        function renderCommunitySupportRewards(settings) {
-            const fields = document.getElementById('community-support-rewards-fields');
-            if (!fields) return;
-            settings = settings || {};
-            const spec = [
-                ['support-bonus-rate-gd','support_bonus_rate_gd','Bonus rate',5],
-                ['support-min-amount-gd','support_min_amount_gd','Minimum qualifying support',25],
-                ['support-max-amount-gd','support_max_amount_gd','Maximum qualifying support',10000],
-                ['support-bonus-wallet-daily-cap-gd','support_bonus_per_wallet_daily_cap_gd','Per-wallet daily bonus cap',25],
-                ['support-bonus-global-daily-cap-gd','support_bonus_global_daily_cap_gd','Global daily bonus cap',0],
-                ['support-bonus-budget-gd','support_bonus_budget_gd','Funded bonus budget',0]
-            ];
-            fields.innerHTML = '<label style="display:flex;gap:.6rem;align-items:center;margin-bottom:.75rem;"><input type="checkbox" id="support-bonus-enabled"' + (settings.support_bonus_enabled === true ? ' checked' : '') + '> Enable Community Support Rewards (explicit opt-in)</label>' + spec.map(function (item) {
-                const raw = settings[item[1]], value = raw === undefined || raw === null || !Number.isFinite(Number(raw)) || Number(raw) < 0 ? item[3] : raw;
-                return '<div style="margin:.65rem 0;"><label for="' + item[0] + '" style="display:block;margin-bottom:.3rem;">' + item[2] + ' (G$)</label><input type="number" id="' + item[0] + '" min="0" step="0.01" value="' + value + '" style="width:100%;padding:.7rem;background:rgba(255,255,255,.1);color:#f1f5f9;"></div>';
-            }).join('');
-            const summary = document.getElementById('community-support-rewards-summary');
-            if (summary) {
-                const metrics = [['Used budget',['support_bonus_used_gd','support_bonus_budget_used_gd']],['Reserved budget',['support_bonus_reserved_gd']],['Available budget',['support_bonus_available_gd']],['Support count',['support_count','support_total_count']],['Reward count',['reward_count','support_reward_count']]];
-                summary.innerHTML = metrics.map(function (m) {
-                    let value = 'Unavailable';
-                    for (const key of m[1]) if (settings[key] !== undefined && settings[key] !== null && Number.isFinite(Number(settings[key]))) { value = settings[key] + (m[0].includes('budget') ? ' G$' : ''); break; }
-                    return '<div><strong>' + m[0] + ':</strong> ' + value + '</div>';
-                }).join('');
-            }
-        }
-        async function saveCommunitySupportRewardsSettings() {
-            const result = document.getElementById('community-support-rewards-result'), status = document.getElementById('community-support-rewards-status');
-            const reasonEl = document.getElementById('reward-rates-reason'), reason = (reasonEl && reasonEl.value || '').trim();
-            const version = document.getElementById('community-reward-config-version');
-            if (!reason) { if (result) { result.style.display='block'; result.textContent='❌ A reason is required.'; } return; }
-            const read = function (id, label) { const el=document.getElementById(id), raw=el && String(el.value).trim(); if (!raw || !/^(?:\d+(?:\.\d{1,4})?|\.\d{1,4})$/.test(raw) || !Number.isFinite(Number(raw)) || Number(raw)<0) throw new Error(label+' must be a non-negative number with up to 4 decimal places.'); return Number(raw); };
-            let payload;
-            try {
-                const min=read('support-min-amount-gd','Minimum support amount'), max=read('support-max-amount-gd','Maximum support amount');
-                if (max<min) throw new Error('Maximum support amount must be at least the minimum.');
-                payload={support_bonus_enabled:!!document.getElementById('support-bonus-enabled').checked,support_bonus_rate_gd:read('support-bonus-rate-gd','Bonus rate'),support_min_amount_gd:min,support_max_amount_gd:max,support_bonus_per_wallet_daily_cap_gd:read('support-bonus-wallet-daily-cap-gd','Per-wallet daily cap'),support_bonus_global_daily_cap_gd:read('support-bonus-global-daily-cap-gd','Global daily cap'),support_bonus_budget_gd:read('support-bonus-budget-gd','Funded bonus budget'),reason:reason,config_version:version&&version.value?Number(version.value):null};
-            } catch(e) { if(result){result.style.display='block';result.textContent='❌ '+e.message;} return; }
-            if(status) status.textContent='Saving Community Support Rewards configuration…';
-            try { const response=await fetch('/api/admin/quiz-settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const data=await response.json(); if(!response.ok||!data.success) throw new Error(data.error||'Could not save Support Rewards settings'); if(result){result.style.display='block';result.textContent='✅ Community Support Rewards settings saved.';} if(status) status.textContent='Support Rewards configuration saved.'; if(reasonEl)reasonEl.value=''; await loadQuizSettings(); }
-            catch(e){if(result){result.style.display='block';result.textContent='❌ '+(e.message||'Could not save Support Rewards settings');} if(status)status.textContent='Support Rewards save failed; previous configuration remains active.';}
-        }
         async function loadQuizSettings() {
             try {
                 const response = await fetch('/api/admin/quiz-settings');
@@ -5066,9 +5011,6 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     document.getElementById('time-per-question').value = settings.time_per_question;
                     document.getElementById('max-reward-per-quiz').value = settings.max_reward_per_quiz;
                     document.getElementById('quiz-cooldown-hours').value = settings.cooldown_hours || 24;
-                    renderCommunitySupportRewards(settings);
-                    const versionInput = document.getElementById('community-reward-config-version');
-                    if (versionInput && settings.config_version !== undefined && settings.config_version !== null) versionInput.value = settings.config_version;
                     const communityMirrorSettings = Object.assign({}, settings, {
                         configuration_available: data.configuration_available
                     });
