@@ -23,6 +23,10 @@ from __future__ import annotations
 import logging
 import os
 import re
+import base64
+import hashlib
+import json
+from functools import lru_cache
 from datetime import datetime, timezone
 
 from . import notifications as community_notifications
@@ -51,6 +55,9 @@ UPLOAD_RATE_LIMIT_SECONDS = get_env_int("COMMUNITY_UPLOAD_RATE_LIMIT_SECONDS", 1
 UPLOAD_BURST_ALLOWANCE = max(1, MAX_MEDIA_PER_POST) * 2
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 30
+REACTION_USERS_DEFAULT_PAGE_SIZE = 25
+REACTION_USERS_MAX_PAGE_SIZE = 50
+REACTION_CURSOR_VERSION = 1
 
 # Follow-to-follow. A cap on how many accounts one wallet may follow, so a
 # scripted account cannot mint an unbounded edge table. The follower side is
@@ -544,11 +551,36 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
             "tx_hash": tx_hash,
             "tx_url": tx_url,
         }
+    if row.get("post_type") == "system_post_support":
+        return {
+            "id": row.get("id"),
+            "post_type": "system_post_support",
+            "username": "GoodMarket",
+            "body": row.get("body") or "",
+            "avatar_url": None,
+            "media": [],
+            "reaction_count": int(row.get("reaction_count") or 0),
+            "reaction_breakdown": _clean_breakdown(reactions),
+            "comment_count": int(row.get("comment_count") or 0),
+            "prompt_id": None,
+            "badges": [],
+            "my_reaction": my_reaction,
+            "is_mine": False,
+            "is_following": False,
+            "is_edited": False,
+            "is_pinned": False,
+            "is_interactive": True,
+            "is_system": True,
+            "is_support_post": True,
+            "created_at": row.get("created_at"),
+            "edited_at": None,
+        }
     owner = (row.get("wallet_address") or "").lower()
     # Strip a stored `@` (a legacy/imported row): the card draws its own prefix.
     username = (row.get("username") or "").strip().lstrip("@")
     return {
         "id": row.get("id"),
+        "post_type": row.get("post_type") or "user",
         "username": username or ANON_LABEL,
         "body": row.get("body") or "",
         "avatar_url": public_avatar_path(username) if avatar_url else None,
@@ -601,20 +633,30 @@ def _public_media(row: dict) -> dict:
 
 def _public_comment(row: dict, viewer: str | None,
                     avatar_url: str | None = None,
-                    post_owner: str | None = None) -> dict:
+                    post_owner: str | None = None,
+                    profile_username: str | None = None) -> dict:
     owner = (row.get("wallet_address") or "").lower()
     # Strip a stored `@` for the same reason as `_public_post`: the UI draws
     # the prefix itself, so a legacy row must not render `@@betz`.
     username = (row.get("username") or "").strip().lstrip("@")
     deleted = bool(row.get("is_deleted"))
+    # A stored comment username is a historical display snapshot. Only a live,
+    # current profile name may create a clickable profile identity; deleted or
+    # anonymous comments are never linkable.
+    current_profile = None if deleted else normalize_username(profile_username)
     mention = (row.get("reply_to_username_snapshot") or "").strip().lstrip("@")
     return {
         "id": row.get("id"),
         "parent_comment_id": row.get("parent_comment_id"),
         "reply_to_username": mention or None,
         "username": "Deleted comment" if deleted else (username or ANON_LABEL),
+        "profile_username": current_profile,
         "body": "This comment was deleted." if deleted else (row.get("body") or ""),
-        "avatar_url": public_avatar_path(username) if avatar_url and not deleted else None,
+        # Keep historical public avatar behavior when user_data is unavailable,
+        # but only profile_username creates a clickable profile identity.
+        "avatar_url": (public_avatar_path(current_profile or username)
+                       if avatar_url and not deleted and (current_profile or username)
+                       else None),
         "is_mine": not deleted and bool(viewer) and owner == viewer.lower(),
         "is_post_author": bool(post_owner) and owner == post_owner.lower() and not deleted,
         "is_deleted": deleted,
@@ -673,12 +715,89 @@ def _current_usernames_for_wallets(supabase, wallets: list[str]) -> dict[str, st
             )
             for row in _rows(result):
                 wallet = str(row.get("wallet_address") or "").lower()
+                # This helper also serves reply notifications/snapshots, where
+                # legacy imported names may not satisfy today's handle regex.
+                # Callers that create profile links validate at serialization.
                 username = (row.get("username") or "").strip().lstrip("@")
                 if wallet in batch and username:
                     names[wallet] = username
         except Exception as exc:  # noqa: BLE001
             logger.info("community_feed: batch mention-name lookup skipped: %s", exc)
     return names
+
+
+def _cursor_secret() -> bytes:
+    """Return the application's existing signing secret for private cursors."""
+    try:
+        from flask import current_app
+
+        secret = current_app.secret_key
+        if secret:
+            return str(secret).encode("utf-8")
+    except Exception:  # noqa: BLE001 - service tests may run without Flask context
+        pass
+    # These are the same secret sources and fallback used by main.py. Do not
+    # add a cursor-specific setting: cursors must remain valid across workers.
+    return str(os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY") or
+               "your-secret-key-here").encode("utf-8")
+
+
+@lru_cache(maxsize=8)
+def _reaction_cursor_fernet(secret: bytes):
+    """Derive a Fernet key from the existing app secret; never invent a new env."""
+    from cryptography.fernet import Fernet
+
+    key_bytes = hashlib.pbkdf2_hmac(
+        "sha256", secret, b"goodmarket-community-reactions-v1", iterations=200_000)
+    return Fernet(base64.urlsafe_b64encode(key_bytes))
+
+
+def _encode_reaction_cursor(*, post_id: int, reaction: str | None,
+                            created_at: str, wallet: str) -> str:
+    """Encrypt the private reaction sort key into an opaque cursor token.
+
+    The wallet is a server-only tie-breaker. It is encrypted rather than merely
+    base64 encoded or signed, so it cannot be recovered from a browser cursor.
+    """
+    payload = json.dumps({
+        "version": REACTION_CURSOR_VERSION,
+        "post_id": int(post_id),
+        "reaction": reaction,
+        "created_at": str(created_at),
+        "wallet": str(wallet).lower(),
+    }, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    token = _reaction_cursor_fernet(_cursor_secret()).encrypt(payload)
+    return token.decode("ascii")
+
+
+def _decode_reaction_cursor(cursor: str, *, post_id: int,
+                            reaction: str | None) -> dict | None:
+    """Decode and validate a reaction cursor without exposing its contents."""
+    if not isinstance(cursor, str) or not cursor or len(cursor) > 512:
+        return None
+    try:
+        from cryptography.fernet import InvalidToken
+    except ImportError:  # pragma: no cover - production dependency is declared
+        return None
+    try:
+        payload = _reaction_cursor_fernet(_cursor_secret()).decrypt(
+            cursor.encode("ascii"))
+        value = json.loads(payload.decode("utf-8"))
+        if not isinstance(value, dict) or int(value.get("post_id")) != int(post_id):
+            return None
+        if value.get("version") != REACTION_CURSOR_VERSION:
+            return None
+        if value.get("reaction") != reaction:
+            return None
+        wallet = str(value.get("wallet") or "").lower()
+        if not re.fullmatch(r"0x[a-f0-9]{40}", wallet):
+            return None
+        created_at = str(value.get("created_at") or "")
+        if _parse_dt(created_at) is None:
+            return None
+        return {"created_at": created_at, "wallet": wallet}
+    except (TypeError, ValueError, json.JSONDecodeError, UnicodeError, InvalidToken):
+        return None
 
 
 def get_avatar_url(wallet: str | None) -> str | None:
@@ -1065,7 +1184,7 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
         query = (
             supabase.table("community_feed_posts")
             .select("*")
-            .eq("post_type", "user")
+            .in_("post_type", ["user", "system_post_support"])
             .eq("is_deleted", False)
             .eq("is_hidden", False)
         )
@@ -2161,7 +2280,7 @@ def recount_reaction_count(post_id: int) -> int:
         return 0
 
 
-def _load_visible_post(supabase, post_id: int) -> dict | None:
+def _load_visible_post_status(supabase, post_id: int) -> tuple[dict | None, str | None]:
     try:
         result = (
             supabase.table("community_feed_posts")
@@ -2173,13 +2292,118 @@ def _load_visible_post(supabase, post_id: int) -> dict | None:
         rows = _rows(result)
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_feed: post load failed: %s", exc)
-        return None
+        return None, "db"
     if not rows:
-        return None
+        return None, "not_found"
     row = rows[0]
     if row.get("is_deleted") or row.get("is_hidden"):
-        return None
+        return None, "not_found"
+    return row, None
+
+
+def _load_visible_post(supabase, post_id: int) -> dict | None:
+    row, _error = _load_visible_post_status(supabase, post_id)
     return row
+
+
+def get_reaction_users(post_id: int, *, cursor: str | None = None,
+                       limit: int | None = None,
+                       reaction: str | None = None) -> dict:
+    """Return public reactor identities for one visible post.
+
+    The database query is keyset-paginated by ``created_at`` plus the private
+    wallet tie-breaker. The tie-breaker is carried only inside an encrypted,
+    authenticated cursor and is never serialized into a response.
+    """
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "code": "db",
+                "reactors": []}
+    try:
+        size = REACTION_USERS_DEFAULT_PAGE_SIZE if limit is None else int(limit)
+    except (TypeError, ValueError):
+        return {"success": False, "error": "Invalid reaction page size.",
+                "code": "limit", "reactors": []}
+    if not 1 <= size <= REACTION_USERS_MAX_PAGE_SIZE:
+        return {"success": False, "error": "Invalid reaction page size.",
+                "code": "limit", "reactors": []}
+
+    selected_reaction = None if reaction in (None, "") else str(reaction).strip().lower()
+    if selected_reaction is not None and selected_reaction not in REACTION_KEYS:
+        return {"success": False, "error": "Unknown reaction filter.",
+                "code": "filter", "reactors": []}
+
+    post, post_error = _load_visible_post_status(supabase, post_id)
+    if not post:
+        code = post_error or "not_found"
+        return {"success": False,
+                "error": "Database unavailable" if code == "db" else "Post not found",
+                "code": code,
+                "reactors": []}
+
+    decoded = None
+    if cursor is not None:
+        decoded = _decode_reaction_cursor(
+            cursor, post_id=int(post_id), reaction=selected_reaction)
+        if not decoded:
+            return {"success": False, "error": "Invalid reaction cursor.",
+                    "code": "cursor", "reactors": []}
+
+    try:
+        query = (supabase.table("community_feed_reactions")
+                 .select("wallet_address,reaction,created_at")
+                 .eq("post_id", int(post_id)))
+        if selected_reaction:
+            query = query.eq("reaction", selected_reaction)
+        if decoded:
+            # PostgREST OR keeps the cursor predicate in SQL; no OFFSET or
+            # unbounded in-process scan is used for a live reaction list.
+            created_at = decoded["created_at"]
+            wallet = decoded["wallet"]
+            query = query.or_(
+                f"created_at.lt.{created_at},"
+                f"and(created_at.eq.{created_at},wallet_address.lt.{wallet})")
+        rows = _rows(query.order("created_at", desc=True)
+                     .order("wallet_address", desc=True)
+                     .limit(size + 1).execute())
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: reaction users query failed: %s", exc)
+        return {"success": False, "error": "Could not load reactions", "code": "db",
+                "reactors": []}
+
+    has_more = len(rows) > size
+    page_rows = rows[:size]
+    wallets = [(row.get("wallet_address") or "").lower() for row in page_rows
+               if row.get("wallet_address")]
+    # Exactly one batched profile query and one batched avatar query for the
+    # page. The private wallet values never cross this serializer boundary.
+    names = _current_usernames_for_wallets(supabase, wallets)
+    avatars = _avatars_for_wallets(supabase, wallets)
+    reactors = []
+    for row in page_rows:
+        wallet = (row.get("wallet_address") or "").lower()
+        profile_username = normalize_username(names.get(wallet))
+        reactors.append({
+            "username": profile_username or ANON_LABEL,
+            "profile_username": profile_username,
+            "avatar_url": (public_avatar_path(profile_username)
+                           if profile_username and avatars.get(wallet) else None),
+            "reaction": (row.get("reaction") or "").strip().lower(),
+        })
+    next_cursor = None
+    if has_more and page_rows:
+        last = page_rows[-1]
+        try:
+            next_cursor = _encode_reaction_cursor(
+                post_id=int(post_id), reaction=selected_reaction,
+                created_at=str(last.get("created_at") or ""),
+                wallet=str(last.get("wallet_address") or "").lower())
+        except Exception as exc:  # noqa: BLE001
+            logger.error("community_feed: reaction cursor encryption unavailable: %s", exc)
+            return {"success": False, "error": "Reaction pagination is unavailable.",
+                    "code": "cursor_unavailable", "reactors": []}
+    return {"success": True, "reactors": reactors,
+            "next_cursor": next_cursor, "has_more": has_more}
 
 
 # ── Comments ─────────────────────────────────────────────────────────────────
@@ -2306,7 +2530,8 @@ def add_comment(wallet: str, post_id: int, body: str,
                if parent else None)
     public_comment = _public_comment(
         rows[0], wallet, avatar_url=avatar,
-        post_owner=post_owner)
+        post_owner=post_owner,
+        profile_username=normalize_username(username))
     public_comment["reply_to_username"] = (
         (mention or "").strip().lstrip("@") or None)
     return {"success": True,
@@ -2412,16 +2637,21 @@ def get_comments(post_id: int, viewer: str | None = None, limit: int = 1000) -> 
     rows = [row for row in all_rows if str(row.get("id")) in included]
     avatars = _avatars_for_wallets(
         supabase, [r.get("wallet_address") for r in rows if not r.get("is_deleted")])
-    mention_names = _current_usernames_for_wallets(
-        supabase, [r.get("reply_to_wallet") for r in rows])
+    current_names = _current_usernames_for_wallets(
+        supabase,
+        [r.get("wallet_address") for r in rows if not r.get("is_deleted")]
+        + [r.get("reply_to_wallet") for r in rows],
+    )
     return {"success": True,
             "comments": [
                 _public_comment(r, viewer,
                                 avatar_url=avatars.get(
                                     (r.get("wallet_address") or "").lower()),
-                                post_owner=post.get("wallet_address"))
+                                post_owner=post.get("wallet_address"),
+                                profile_username=current_names.get(
+                                    (r.get("wallet_address") or "").lower()))
                 | {"reply_to_username": (
-                    (mention_names.get((r.get("reply_to_wallet") or "").lower())
+                    (current_names.get((r.get("reply_to_wallet") or "").lower())
                      or r.get("reply_to_username_snapshot") or "").strip().lstrip("@") or None
                 )}
                 for r in rows
