@@ -428,7 +428,7 @@
                     name: 'GoodMarket',
                     description: 'GoodMarket on Celo',
                     url: (typeof window !== "undefined" ? window.location.origin : ""),
-                    icons: [(typeof window !== "undefined" ? window.location.origin : "") + "/static/icons/icon-192x192.png"]
+                    icons: [(typeof window !== "undefined" ? window.location.origin : "") + "/static/icons/kwentofi-pwa-192.png"]
                 }
             });
         }).then(function (client) {
