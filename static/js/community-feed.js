@@ -14,6 +14,7 @@
 
 (function () {
     'use strict';
+    var DISPLAY_BRAND = String(window.GM_DISPLAY_BRAND || 'GoodMarket');
 
     var BOOT = window.GM_COMMUNITY_BOOT || {};
     var WALLET = BOOT.wallet || '';
@@ -1213,8 +1214,7 @@
         container.textContent = '';
         section.hidden = !_pinnedDonations.length;
         _pinnedDonations.forEach(function (post) {
-            container.appendChild(post.post_type === 'system_support'
-                ? buildSupportCard(post) : buildDonationCard(post));
+            container.appendChild(buildDonationCard(post));
         });
         var more = $('cfPinnedDonationMore');
         if (more) more.hidden = !_pinnedDonationCursor;
@@ -1595,7 +1595,7 @@
         var head = el('div', 'cf-donation-card-head');
         var author = el('div', 'cf-donation-system-author');
         author.appendChild(el('span', 'cf-donation-system-mark', 'S'));
-        author.appendChild(el('strong', null, 'GoodMarket'));
+        author.appendChild(el('strong', null, DISPLAY_BRAND));
         head.appendChild(author);
         if (post.is_pinned) head.appendChild(el('span', 'cf-donation-pin-label', 'Pinned'));
         card.appendChild(head);
@@ -1651,9 +1651,8 @@
         var head = el('div', 'cf-donation-card-head');
         var author = el('div', 'cf-donation-system-author');
         author.appendChild(el('span', 'cf-donation-system-mark', 'G$'));
-        author.appendChild(el('strong', null, 'GoodMarket'));
+        author.appendChild(el('strong', null, DISPLAY_BRAND));
         head.appendChild(author);
-        if (post.is_pinned) head.appendChild(el('span', 'cf-donation-pin-label', 'Pinned'));
         card.appendChild(head);
         var body = el('div', 'cf-card-body');
         var copy = el('p', 'cf-donation-card-copy');
@@ -2342,10 +2341,10 @@
 
     function sharePost(post) {
         var url = window.location.origin + '/community/p/' + encodeURIComponent(post.id);
-        var text = post.body ? post.body.slice(0, 120) : 'Check out this post on GoodMarket Community';
+        var text = post.body ? post.body.slice(0, 120) : 'Check out this post on ' + DISPLAY_BRAND + ' Community';
         var title = post.post_type === 'system_vault_donation'
-            ? 'Community Vault donation · GoodMarket'
-            : '@' + (post.username || 'member') + ' on GoodMarket Community';
+            ? 'Community Vault donation · ' + DISPLAY_BRAND
+            : '@' + (post.username || 'member') + ' on ' + DISPLAY_BRAND + ' Community';
         if (navigator.share) {
             navigator.share({
                 title: title,
@@ -3348,8 +3347,7 @@
             var rows = result.data.posts || [];
             if (reset && FOCUS_POST && FOCUS_POST.post_type !== 'system_vault_donation'
                     && FOCUS_POST.id != null
-                    && !rows.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })
-                    && !_pinnedDonations.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })) {
+                    && !rows.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })) {
                 rows = [FOCUS_POST].concat(rows);
             }
             _feed = reset ? rows : _feed.concat(rows);
@@ -3389,16 +3387,16 @@
         return api('/community/api/feed/pinned-donations?limit=10&cursor='
             + encodeURIComponent(_pinnedDonationCursor)).then(function (result) {
             if (!result.data || !result.data.success) {
-                throw new Error((result.data && result.data.error) || 'Could not load pinned donor acknowledgments.');
+                throw new Error((result.data && result.data.error) || 'Could not load pinned donations.');
             }
             _pinnedDonations = _pinnedDonations.concat(result.data.posts || []);
             _pinnedDonationCursor = result.data.next_cursor || null;
             renderPinnedDonations();
         }).catch(function (error) {
-            toast((error && error.message) || 'Could not load pinned donor acknowledgments.', 'error');
+            toast((error && error.message) || 'Could not load pinned donations.', 'error');
         }).then(function () {
             _pinnedDonationLoading = false;
-            if (button) { button.disabled = false; button.textContent = 'Load more acknowledgments'; }
+            if (button) { button.disabled = false; button.textContent = 'Load more pinned donations'; }
         });
     }
 
@@ -4411,7 +4409,7 @@
                     var recoveryHash = $('cfVaultDonationTxHash');
                     if (recoveryHash) { recoveryHash.disabled = true; recoveryHash.value = ''; }
                     donationStatus('Donation confirmed: ' + (data.amount_gd || '')
-                        + ' G$ sent to the Community Withdrawal Vault. GoodMarket has published an unpinned acknowledgment in the Community Feed.', 'success');
+                        + ' G$ sent to the Community Withdrawal Vault. ' + DISPLAY_BRAND + ' has published an unpinned acknowledgment in the Community Feed.', 'success');
                     if (check) check.hidden = true;
                     if (statusClose) statusClose.hidden = !!entry;
                     loadFeed(true);
