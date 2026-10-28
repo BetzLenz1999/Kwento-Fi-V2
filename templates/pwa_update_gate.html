@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#e8720a">
-  <title>Update GoodMarket</title>
+  <meta name="theme-color" content="#4f46e5">
+  <title>Update KwentoFi</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+  <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
   <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
   <script>
     (function () {
@@ -33,37 +36,37 @@
     }, true);
   </script>
   <style>
-    :root { color-scheme: light; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    :root { color-scheme: dark; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
     html, body { min-height: 100%; margin: 0; }
     html.gm-pwa-update-gate-pending body { visibility: hidden; }
-    body { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: #f7f1e8; color: #15263a; }
-    main { width: min(100%, 440px); padding: 30px 26px; border: 1px solid #d6dce2; border-radius: 22px; background: #fff; box-shadow: 0 18px 60px rgba(21,38,58,.12); text-align: center; }
+    body { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: #0A1220; color: #F7F8FC; }
+    main { width: min(100%, 440px); padding: 30px 26px; border: 1px solid #29364B; border-radius: 22px; background: #111C2E; box-shadow: 0 18px 60px rgba(0,0,0,.28); text-align: center; }
     img { width: 76px; height: 76px; object-fit: contain; margin-bottom: 14px; }
     h1 { margin: 0 0 12px; font-size: clamp(1.35rem, 6vw, 1.8rem); }
-    p { margin: 0 0 18px; line-height: 1.55; color: #526273; }
+    p { margin: 0 0 18px; line-height: 1.55; color: #AEB9CC; }
     #gm-pwa-update-status { min-height: 1.5em; margin-bottom: 14px; font-size: .94rem; }
     #gm-pwa-startup-progress { margin: 18px 0 8px; text-align: left; }
     #gm-pwa-startup-progress[hidden] { display: none !important; }
-    .gm-pwa-progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: #526273; font-size: .86rem; font-weight: 700; }
-    #gm-pwa-progress-percent { color: #19344d; font-variant-numeric: tabular-nums; }
-    .gm-pwa-progress-track { height: 8px; overflow: hidden; border-radius: 999px; background: #e8edf1; }
-    #gm-pwa-progress-fill { width: 1%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #e8720a, #ffb24a); transition: width .28s ease; }
+    .gm-pwa-progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: #AEB9CC; font-size: .86rem; font-weight: 700; }
+    #gm-pwa-progress-percent { color: #F7F8FC; font-variant-numeric: tabular-nums; }
+    .gm-pwa-progress-track { height: 8px; overflow: hidden; border-radius: 999px; background: #29364B; }
+    #gm-pwa-progress-fill { width: 1%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4F46E5, #818CF8); transition: width .28s ease; }
     .gm-pwa-update-actions { display: grid; gap: 10px; }
     button, a.gm-pwa-continue { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; width: 100%; border: 0; border-radius: 12px; padding: 12px 18px; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-    #gm-pwa-update-now { background: #e8720a; color: #fff; }
-    #gm-pwa-update-retry { background: #19344d; color: #fff; }
-    #gm-pwa-continue { background: #edf1f4; color: #19344d; }
+    #gm-pwa-update-now { background: #4F46E5; color: #fff; }
+    #gm-pwa-update-retry { background: #29364B; color: #fff; }
+    #gm-pwa-continue { background: #29364B; color: #F7F8FC; }
     button:disabled { opacity: .65; cursor: wait; }
     [hidden] { display: none !important; }
     noscript { display: block; margin-top: 16px; }
-    noscript a { color: #19344d; }
+    noscript a { color: #A5B4FC; }
     html.gm-pwa-update-gate-pending body > noscript {
       position: fixed; inset: 0; z-index: 2; display: grid; place-items: center;
-      visibility: visible !important; padding: 24px; background: #f7f1e8;
+      visibility: visible !important; padding: 24px; background: #0A1220;
     }
     @media (prefers-reduced-motion: no-preference) {
-      .gm-pwa-spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; border: 2px solid #d6dce2; border-top-color: #e8720a; border-radius: 50%; vertical-align: -2px; animation: gm-spin .8s linear infinite; }
+      .gm-pwa-spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; border: 2px solid #42506A; border-top-color: #F3C75B; border-radius: 50%; vertical-align: -2px; animation: gm-spin .8s linear infinite; }
       @keyframes gm-spin { to { transform: rotate(360deg); } }
     }
     @media (prefers-reduced-motion: reduce) { #gm-pwa-progress-fill { transition: none; } }
@@ -72,12 +75,12 @@
 </head>
   <body data-next-url="{{ post_login_path|e }}" data-build-version="{{ ASSET_VERSION|e }}">
   <main aria-labelledby="gm-pwa-update-title">
-    <img src="{{ url_for('static', filename='icons/goodmarket-only-192.png', v=ASSET_VERSION) }}" width="76" height="76" alt="GoodMarket">
-    <h1 id="gm-pwa-update-title">Opening GoodMarket</h1>
+    <img src="{{ url_for('static', filename='icons/kwentofi-pwa-192.png', v=ASSET_VERSION) }}" width="76" height="76" alt="KwentoFi">
+    <h1 id="gm-pwa-update-title">Opening KwentoFi</h1>
     <p id="gm-pwa-update-copy">We’ll check for an app update before opening your page.</p>
     <div id="gm-pwa-update-status" role="status" aria-live="polite"><span class="gm-pwa-spinner" aria-hidden="true"></span>Preparing your app…</div>
-    <div id="gm-pwa-startup-progress" role="progressbar" aria-label="Estimated GoodMarket startup progress" aria-valuemin="1" aria-valuemax="99" aria-valuenow="1">
-      <div class="gm-pwa-progress-meta"><span id="gm-pwa-progress-stage">Starting GoodMarket…</span><span id="gm-pwa-progress-percent">1%</span></div>
+    <div id="gm-pwa-startup-progress" role="progressbar" aria-label="Estimated KwentoFi startup progress" aria-valuemin="1" aria-valuemax="99" aria-valuenow="1">
+      <div class="gm-pwa-progress-meta"><span id="gm-pwa-progress-stage">Starting KwentoFi…</span><span id="gm-pwa-progress-percent">1%</span></div>
       <div class="gm-pwa-progress-track" aria-hidden="true"><div id="gm-pwa-progress-fill"></div></div>
     </div>
     <div class="gm-pwa-update-actions">
@@ -85,7 +88,7 @@
       <button id="gm-pwa-update-retry" type="button" hidden>Try again</button>
       <button id="gm-pwa-continue" type="button" hidden>Continue with current version</button>
     </div>
-    <noscript><p>JavaScript is needed to check app updates.</p><a class="gm-pwa-continue" href="{{ post_login_path|e }}">Continue to GoodMarket</a></noscript>
+    <noscript><p>JavaScript is needed to check app updates.</p><a class="gm-pwa-continue" href="{{ post_login_path|e }}">Continue to KwentoFi</a></noscript>
   </main>
 </body>
 </html>
