@@ -549,8 +549,8 @@ async function _wcGetClient() {
         _wcSignClient = await SignClient.init({
             projectId: WC_PROJECT_ID,
             metadata: {
-                name: 'GoodMarket',
-                description: 'Swap G$ tokens with GoodMarket on Celo',
+                name: SWAP_DISPLAY_BRAND,
+                description: 'Swap G$ tokens with ' + SWAP_DISPLAY_BRAND + ' on Celo',
                 url: window.location.origin,
                 icons: [window.location.origin + '/static/icons/icon-192x192.png?v=' + window.GM_SWAP_BOOT.assetVersion]
             }
@@ -898,7 +898,7 @@ async function _wcSidecarConnect() {
         if (stData.status === 'approved' && stData.address) {
             _wcAddress = stData.address;
             if (_wcAddress.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-                throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.', 4001);
+                throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your ' + SWAP_DISPLAY_BRAND + ' wallet.', 4001);
             }
             return _wcAddress;
         }
@@ -919,7 +919,7 @@ async function _wcBrowserConnect() {
     if (_wcBrowserSession && _wcAddress) {
         _wcMode = "browser";
         if (_wcAddress.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-            throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.', 4001);
+            throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your ' + SWAP_DISPLAY_BRAND + ' wallet.', 4001);
         }
         return _wcAddress;
     }
@@ -953,7 +953,7 @@ async function _wcBrowserConnect() {
     });
     if (!_wcAddress) throw _wcRpcError('No accounts returned from wallet', -32603);
     if (_wcAddress.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-        throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.', 4001);
+        throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your ' + SWAP_DISPLAY_BRAND + ' wallet.', 4001);
     }
     return _wcAddress;
 }
@@ -969,7 +969,7 @@ async function _wcConnectSwap() {
         await _wcGetClient();
         if (_wcBrowserSession && _wcAddress) {
             if (_wcAddress.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-                throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your GoodMarket wallet.', 4001);
+                throw _wcRpcError('Wrong WalletConnect wallet connected. Please connect your ' + SWAP_DISPLAY_BRAND + ' wallet.', 4001);
             }
             _wcMode = "browser";
             return _wcAddress;
@@ -1130,7 +1130,7 @@ async function getConnectedSwapSigner() {
         const signer = await provider.getSigner();
         const addr = await signer.getAddress();
         if ((addr || '').toLowerCase() !== (WALLET_ADDRESS || '').toLowerCase()) {
-            throw new Error('Please unlock your GoodMarket wallet (the one tied to this account) to continue.');
+            throw new Error('Please unlock your ' + SWAP_DISPLAY_BRAND + ' wallet (the one tied to this account) to continue.');
         }
         return signer;
     }
@@ -1155,7 +1155,7 @@ async function getConnectedSwapSigner() {
             const signer = await provider.getSigner();
             const addr = await signer.getAddress();
             if ((addr || '').toLowerCase() !== (WALLET_ADDRESS || '').toLowerCase()) {
-                throw new Error('Wrong Privy wallet connected. Please use your GoodMarket wallet.');
+                throw new Error('Wrong Privy wallet connected. Please use your ' + SWAP_DISPLAY_BRAND + ' wallet.');
             }
             return signer;
         }
@@ -1167,20 +1167,20 @@ async function getConnectedSwapSigner() {
         const wcSigner = await wcProvider.getSigner();
         const wcAddr = await wcSigner.getAddress();
         if (wcAddr.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-            throw new Error("Wrong WalletConnect wallet connected. Please switch to your GoodMarket wallet.");
+            throw new Error("Wrong WalletConnect wallet connected. Please switch to your " + SWAP_DISPLAY_BRAND + " wallet.");
         }
         return wcSigner;
     }
     const ethProvider = await _awaitEthProvider();
     if (!ethProvider) {
-        throw new Error("No wallet detected. Please connect your GoodMarket wallet.");
+        throw new Error("No wallet detected. Please connect your " + SWAP_DISPLAY_BRAND + " wallet.");
     }
 
     const accounts = await ethProvider.request({ method: "eth_requestAccounts" });
     if (!accounts || !accounts.length) throw new Error("No wallet account available.");
     const account = accounts[0];
     if (account.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-        throw new Error("Wrong wallet connected. Please switch to your GoodMarket wallet.");
+        throw new Error("Wrong wallet connected. Please switch to your " + SWAP_DISPLAY_BRAND + " wallet.");
     }
 
     const celoChainHex = "0xa4ec";
@@ -2214,11 +2214,11 @@ async function startSwap() {
             showSwapAlert('alert-error',
                 '❌ Swap requires stablecoin for gas<br><br>'
                 + 'MiniPay uses stablecoins (cUSD/USDT/USDC) for transaction fees, not CELO.<br><br>'
-                + 'Please claim your G$ on GoodMarket first to receive gas support, or keep at least ~0.015 cUSD/USDT/USDC for fees.<br><br>'
+                + 'Please claim your G$ on ' + SWAP_DISPLAY_BRAND + ' first to receive gas support, or keep at least ~0.015 cUSD/USDT/USDC for fees.<br><br>'
                 + '<button onclick="window.location.href=\'/wallet\'" '
                 + 'style="background:linear-gradient(135deg,#7c3aed,#5b21b6);border:none;border-radius:12px;'
                 + 'color:#fff;font-size:0.9rem;font-weight:700;padding:0.7rem 1.2rem;cursor:pointer;">'
-                + '💰 Claim G$ on GoodMarket</button>'
+                + '💰 Claim G$ on ' + SWAP_DISPLAY_BRAND + '</button>'
             );
             setSwapBtnState("enter");
             return;
@@ -2729,25 +2729,25 @@ async function getConnectedFuseSigner() {
     // The in-app wallet signs Celo & XDC only — stop before an
     // injected MetaMask on a different account gets prompted instead.
     if ((LOGIN_METHOD || '').toLowerCase() === 'local') {
-        throw new Error('The in-app GoodMarket wallet supports Celo & XDC only. The Fuse G$ swap needs MetaMask or another Fuse-compatible wallet — log in with that wallet to use it.');
+        throw new Error('The in-app ' + SWAP_DISPLAY_BRAND + ' wallet supports Celo & XDC only. The Fuse G$ swap needs MetaMask or another Fuse-compatible wallet — log in with that wallet to use it.');
     }
     const ethProvider = IS_PRIVY_LOGIN
         ? (await _swapGetPrivyProviderIfPreferred({ promptLogin: true, timeoutMs: 10000 }))
         : await _awaitEthProvider();
     if (!ethProvider) {
-        throw new Error('No wallet detected for Fuse swap. Open GoodMarket in Privy, MetaMask, or another Fuse-compatible wallet.');
+        throw new Error('No wallet detected for Fuse swap. Open ' + SWAP_DISPLAY_BRAND + ' in Privy, MetaMask, or another Fuse-compatible wallet.');
     }
     const accounts = await ethProvider.request({ method: 'eth_requestAccounts' });
     if (!accounts || !accounts.length) throw new Error('No wallet account available.');
     if (accounts[0].toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-        throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+        throw new Error('Wrong wallet connected. Please switch to your ' + SWAP_DISPLAY_BRAND + ' wallet.');
     }
     await ensureFuseNetwork(ethProvider);
     const browserProvider = new ethers.BrowserProvider(ethProvider);
     const signer = await browserProvider.getSigner();
     const signerAddr = await signer.getAddress();
     if (signerAddr.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
-        throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+        throw new Error('Wrong wallet connected. Please switch to your ' + SWAP_DISPLAY_BRAND + ' wallet.');
     }
     return signer;
 }
