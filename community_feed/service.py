@@ -551,36 +551,11 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
             "tx_hash": tx_hash,
             "tx_url": tx_url,
         }
-    if row.get("post_type") == "system_post_support":
-        return {
-            "id": row.get("id"),
-            "post_type": "system_post_support",
-            "username": "GoodMarket",
-            "body": row.get("body") or "",
-            "avatar_url": None,
-            "media": [],
-            "reaction_count": int(row.get("reaction_count") or 0),
-            "reaction_breakdown": _clean_breakdown(reactions),
-            "comment_count": int(row.get("comment_count") or 0),
-            "prompt_id": None,
-            "badges": [],
-            "my_reaction": my_reaction,
-            "is_mine": False,
-            "is_following": False,
-            "is_edited": False,
-            "is_pinned": False,
-            "is_interactive": True,
-            "is_system": True,
-            "is_support_post": True,
-            "created_at": row.get("created_at"),
-            "edited_at": None,
-        }
     owner = (row.get("wallet_address") or "").lower()
     # Strip a stored `@` (a legacy/imported row): the card draws its own prefix.
     username = (row.get("username") or "").strip().lstrip("@")
     return {
         "id": row.get("id"),
-        "post_type": row.get("post_type") or "user",
         "username": username or ANON_LABEL,
         "body": row.get("body") or "",
         "avatar_url": public_avatar_path(username) if avatar_url else None,
@@ -1184,7 +1159,7 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
         query = (
             supabase.table("community_feed_posts")
             .select("*")
-            .in_("post_type", ["user", "system_post_support"])
+            .eq("post_type", "user")
             .eq("is_deleted", False)
             .eq("is_hidden", False)
         )
