@@ -72,6 +72,7 @@
 </head>
 <body class="cf-page">
 
+<div class="cf-sticky-stack">
 <header class="cf-nav">
     <a class="cf-brand" href="/wallet">
         <img class="cf-brand-mark goodmarket-mark" src="{{ url_for('static', filename='branding/goodmarket/goodmarket-mark.svg', v=ASSET_VERSION) }}" alt="" width="32" height="32">
@@ -159,9 +160,10 @@
 </header>
 
 <a class="cf-skip-link" href="#cfPostsTitle">Skip to community posts</a>
-{# One source of navigation destinations; on phones CSS presents this as a
-   compact quick-action tray below the masthead, while desktop keeps its rail. #}
+{# One source of navigation destinations; on phones this stays visible beneath
+   the masthead while the combined stack sticks to the viewport. #}
 <nav class="cf-bottom-nav cf-community-mobile-actions" id="cfBottomNav" aria-label="Community navigation"></nav>
+</div>
 <main class="cf-wrap cf-layout">
     {# Keep the Today hub first in DOM order for the mobile reading sequence.
        The wide-screen grid places this complementary panel on the right; the
@@ -548,13 +550,13 @@
         <section class="cf-posts" aria-labelledby="cfPostsTitle">
             <section class="cf-pinned-donations" id="cfPinnedDonations" aria-labelledby="cfPinnedDonationsTitle" hidden>
                 <div class="cf-feed-section-head">
-                    <h2 id="cfPinnedDonationsTitle">Pinned Community Vault donations</h2>
-                    <span>Every confirmed donor acknowledgment stays pinned.</span>
+                    <h2 id="cfPinnedDonationsTitle">Pinned donor acknowledgments</h2>
+                    <span>Confirmed post-support and Community Vault donation posts stay pinned.</span>
                 </div>
                 <div id="cfPinnedDonationFeed" class="cf-pinned-donation-feed" aria-live="polite"></div>
                 <div class="cf-feed-foot">
                     <button type="button" class="cf-load-more" id="cfPinnedDonationMore"
-                            onclick="GMCommunity.loadMorePinnedDonations()" hidden>Load more pinned donations</button>
+                            onclick="GMCommunity.loadMorePinnedDonations()" hidden>Load more acknowledgments</button>
                 </div>
             </section>
             <div class="cf-feed-section-head">
