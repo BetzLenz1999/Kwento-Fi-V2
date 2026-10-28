@@ -14,10 +14,10 @@
 <div class="modal-overlay gm-claim-support" id="fvIntroModal" aria-hidden="true">
     <div class="modal-sheet gm-claim-sheet">
         <div class="modal-handle"></div><div class="modal-title">🪪 Verify your account to start earning</div>
-        <div class="gm-fv-intro-lead">Daily G$ and GoodMarket's earning features are for verified humans only. Verifying takes about a minute and keeps the shared G$ pool fair for everyone.</div>
+        <div class="gm-fv-intro-lead">Daily G$ and {{ brand_display_name|default('GoodMarket', true) }}'s earning features are for verified humans only. Verifying takes about a minute and keeps the shared G$ pool fair for everyone.</div>
         <div class="gm-fv-intro-card"><strong>🔍 What this verification is (KYC)</strong><p>This is a Know Your Customer check confirming that you are a real, unique person. It is performed by the GoodDollar identity service.</p></div>
         <div class="gm-fv-intro-card"><strong>👤 One person, one account</strong><p>Your verified face can be linked to one account only. This helps keep the daily G$ pool fair.</p></div>
-        <div class="gm-fv-intro-card"><strong>🔒 Your privacy</strong><p>GoodMarket never sees or stores your face, photos, or ID documents. The identity record is anonymized and managed by GoodDollar.</p></div>
+        <div class="gm-fv-intro-card"><strong>🔒 Your privacy</strong><p>{{ brand_display_name|default('GoodMarket', true) }} never sees or stores your face, photos, or ID documents. The identity record is anonymized and managed by GoodDollar.</p></div>
         <div class="modal-sheet-footer"><button type="button" id="fvIntroContinueBtn" onclick="continueFvIntro()" class="btn-primary">Continue</button><button type="button" class="btn-secondary" onclick="closeModal('fvIntroModal')">Not now</button></div>
     </div>
 </div>
