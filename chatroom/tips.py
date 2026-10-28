@@ -248,6 +248,7 @@ def _seconds_until_allowed(sender_wallet: str) -> int:
         result = (
             supabase.table("community_chat_tips")
             .select("created_at")
+            .eq("context", "chat")
             .ilike("sender_wallet", sender_wallet)
             .order("id", desc=True)
             .limit(1)
@@ -606,6 +607,7 @@ def _find_tip_by_hash(supabase, tx_hash: str) -> dict | None:
             supabase.table("community_chat_tips")
             .select("id, sender_wallet, sender_username, recipient_wallet, recipient_username, token, amount, network, tx_hash, created_at")
             .eq("tx_hash", tx_hash)
+            .eq("context", "chat")
             .limit(1)
             .execute()
         )
