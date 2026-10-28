@@ -171,6 +171,8 @@ body {
     padding: 0.42rem 0.85rem; text-decoration: none; cursor: pointer;
 }
 .cf-nav-btn:hover { background: var(--cf-field); color: var(--cf-ink); }
+.cf-nav-btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.cf-nav-btn:disabled:hover { background: transparent; color: var(--cf-ink-2); }
 .cf-notification-button {
     position: relative; flex: 0 0 40px; width: 40px; height: 40px;
     display: grid; place-items: center; padding: 0;
@@ -1488,6 +1490,9 @@ body {
 }
 .cf-nav-item:active { transform: scale(0.96); }
 .cf-nav-item:hover { background: var(--cf-field); }
+.cf-nav-item:disabled { cursor: not-allowed; opacity: 0.55; }
+.cf-nav-item:disabled:hover { background: transparent; }
+.cf-nav-item:disabled:active { transform: none; }
 /* Instagram's active tab is INK, not a brand colour — the current tab is
    distinguished by weight and the filled icon disc, not by hue. */
 .cf-nav-item.is-active { color: var(--cf-ink); }
