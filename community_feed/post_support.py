@@ -196,7 +196,7 @@ def prepare_support(sender_wallet: str, post_id, raw_amount) -> dict:
     if not is_available():
         return {"success": False, "error": "Post support is not available yet.", "code": "disabled"}
     if not _valid_wallet(sender_wallet):
-        return {"success": False, "error": "Connect your GoodMarket wallet first.", "code": "wallet"}
+        return {"success": False, "error": "Connect your KwentoFi wallet first.", "code": "wallet"}
     try:
         post_id = int(post_id)
     except (TypeError, ValueError):
@@ -349,7 +349,7 @@ def confirm_support(sender_wallet: str, post_id, tx_hash: str) -> dict:
     if not is_available():
         return {"success": False, "error": "Post support is not available yet.", "code": "disabled"}
     if not _valid_wallet(sender_wallet):
-        return {"success": False, "error": "Connect your GoodMarket wallet first.", "code": "wallet"}
+        return {"success": False, "error": "Connect your KwentoFi wallet first.", "code": "wallet"}
     try:
         post_id = int(post_id)
         if post_id <= 0:
