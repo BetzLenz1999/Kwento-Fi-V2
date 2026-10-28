@@ -1213,7 +1213,8 @@
         container.textContent = '';
         section.hidden = !_pinnedDonations.length;
         _pinnedDonations.forEach(function (post) {
-            container.appendChild(buildDonationCard(post));
+            container.appendChild(post.post_type === 'system_support'
+                ? buildSupportCard(post) : buildDonationCard(post));
         });
         var more = $('cfPinnedDonationMore');
         if (more) more.hidden = !_pinnedDonationCursor;
@@ -1652,6 +1653,7 @@
         author.appendChild(el('span', 'cf-donation-system-mark', 'G$'));
         author.appendChild(el('strong', null, 'GoodMarket'));
         head.appendChild(author);
+        if (post.is_pinned) head.appendChild(el('span', 'cf-donation-pin-label', 'Pinned'));
         card.appendChild(head);
         var body = el('div', 'cf-card-body');
         var copy = el('p', 'cf-donation-card-copy');
@@ -3346,7 +3348,8 @@
             var rows = result.data.posts || [];
             if (reset && FOCUS_POST && FOCUS_POST.post_type !== 'system_vault_donation'
                     && FOCUS_POST.id != null
-                    && !rows.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })) {
+                    && !rows.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })
+                    && !_pinnedDonations.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })) {
                 rows = [FOCUS_POST].concat(rows);
             }
             _feed = reset ? rows : _feed.concat(rows);
@@ -3386,16 +3389,16 @@
         return api('/community/api/feed/pinned-donations?limit=10&cursor='
             + encodeURIComponent(_pinnedDonationCursor)).then(function (result) {
             if (!result.data || !result.data.success) {
-                throw new Error((result.data && result.data.error) || 'Could not load pinned donations.');
+                throw new Error((result.data && result.data.error) || 'Could not load pinned donor acknowledgments.');
             }
             _pinnedDonations = _pinnedDonations.concat(result.data.posts || []);
             _pinnedDonationCursor = result.data.next_cursor || null;
             renderPinnedDonations();
         }).catch(function (error) {
-            toast((error && error.message) || 'Could not load pinned donations.', 'error');
+            toast((error && error.message) || 'Could not load pinned donor acknowledgments.', 'error');
         }).then(function () {
             _pinnedDonationLoading = false;
-            if (button) { button.disabled = false; button.textContent = 'Load more pinned donations'; }
+            if (button) { button.disabled = false; button.textContent = 'Load more acknowledgments'; }
         });
     }
 
