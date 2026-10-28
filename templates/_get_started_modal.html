@@ -8,13 +8,14 @@
    This partial pulls static/css/get-started.css (in <head>) itself is the
    caller's job; the connect-logic bundle is loaded at the end here. #}
 {% set _gs_boot = get_started_boot|default({}) %}
+{% set _gs_brand = brand_display_name|default('GoodMarket', true) %}
 
     <!-- Wallet Modal -->
     <div class="wallet-modal" id="walletModal">
         <div class="wallet-modal-content">
             <div class="modal-header">
                 <div class="modal-header-inner">
-                    <h2 class="modal-title">Log in or create your GoodMarket account</h2>
+                    <h2 class="modal-title">Log in or create your {{ _gs_brand }} account</h2>
                     <p class="modal-subtitle">Use your email + PIN, or connect a wallet you already have</p>
                 </div>
                 <button class="close-modal" onclick="closeWalletModal()">×</button>
@@ -41,7 +42,7 @@
                 <button id="localWalletBtn" class="wallet-option-card primary" type="button" onclick="openCreatePreflight()">
                     <div class="option-icon">🆓</div>
                     <div class="option-text">
-                        <div class="option-title">Create GoodMarket Wallet</div>
+                        <div class="option-title">Create {{ _gs_brand }} Wallet</div>
                         <p class="option-desc">Email + PIN — no wallet app needed. Your wallet is created instantly, free.</p>
                     </div>
                     <span class="option-arrow">→</span>
@@ -55,7 +56,7 @@
                     <div class="option-icon">🔑</div>
                     <div class="option-text">
                         <div class="option-title">Log in to my wallet</div>
-                        <p class="option-desc">Already have a GoodMarket wallet? Sign in with your email + PIN.</p>
+                        <p class="option-desc">Already have a {{ _gs_brand }} wallet? Sign in with your email + PIN.</p>
                     </div>
                     <span class="option-arrow">→</span>
                 </button>
@@ -115,7 +116,7 @@
                             <span aria-hidden="true">⚠️</span> Before you create a new wallet
                         </div>
                         <p class="lw-preflight-lead">
-                            GoodMarket is <strong>one account per person</strong> — required by GoodDollar's face verification.
+                            {{ _gs_brand }} is <strong>one account per person</strong> — required by GoodDollar's face verification.
                         </p>
                         <p class="lw-preflight-lead">
                             If you <strong>already have</strong> any of these, don't create a new wallet — connect it instead:
@@ -145,7 +146,7 @@
 
                 <div id="lwCreateStep">
                     <p class="wc-panel-note" id="lwModeNote">
-                        Make a free GoodMarket account & wallet — secured by your email and an 8-digit PIN. No app install, no fees.
+                        Make a free {{ _gs_brand }} account & wallet — secured by your email and an 8-digit PIN. No app install, no fees.
                     </p>
                     <div class="wallet-input-group">
                         <label class="wallet-label" for="lwEmail">Email <small style="opacity:0.7;font-weight:normal">(we store only a masked copy)</small></label>
@@ -183,24 +184,24 @@
                         <strong>⚠️ IMPORTANT: You MUST copy and save your 12 recovery words.</strong><br>
                         <strong>These 12 words are the ONLY way to recover your account and your funds.</strong><br>
                         <strong>To recover into MetaMask or Trust Wallet, import this exact 12-word phrase there.</strong><br>
-                        <strong>If you lose these words, nobody — not even GoodMarket support — can recover your wallet.</strong>
+                        <strong>If you lose these words, nobody — not even {{ _gs_brand }} support — can recover your wallet.</strong>
                     </div>
 
                     <button id="lwCopyWordsBtn" class="lw-copy-btn" type="button" onclick="lwCopyRecoveryWords(this)">📋 Copy my 12 recovery words</button>
 
                     <div class="lw-warning">
-                        ⚠️ Anyone with these words can access your funds. GoodMarket support can never reset your PIN or recover your account for you — write the words down and keep them private.
+                        ⚠️ Anyone with these words can access your funds. {{ _gs_brand }} support can never reset your PIN or recover your account for you — write the words down and keep them private.
                         <br><small>🔒 We store only a masked copy of your email — the full address is never saved on our servers.</small>
                     </div>
                     <label class="lw-confirm-row">
                         <input type="checkbox" id="lwPhraseConfirm" onchange="document.getElementById('lwFinishBtn').disabled = !this.checked">
                         <span>I wrote down my 12 recovery words and understand my PIN cannot be reset.</span>
                     </label>
-                    <button id="lwFinishBtn" class="connect-btn" type="button" onclick="finishLocalWalletSignup()" disabled>Continue to GoodMarket</button>
+                    <button id="lwFinishBtn" class="connect-btn" type="button" onclick="finishLocalWalletSignup()" disabled>Continue to {{ _gs_brand }}</button>
 
                     <p class="wc-panel-note lw-community-note">
-                        <strong>Need assistance? Join the GoodMarket Telegram community:</strong>
-                        <a href="https://t.me/GoodMarketCommunity" target="_blank" rel="noopener noreferrer" class="lw-community-link">t.me/GoodMarketCommunity</a>
+                        <strong>Need assistance? Join the {{ _gs_brand }} Telegram community:</strong>
+                        <a href="https://t.me/GoodMarketCommunity" target="_blank" rel="noopener noreferrer" class="lw-community-link">Open the Telegram community</a>
                     </p>
                 </div>
 
@@ -405,7 +406,7 @@
                         const wallet = privyEmbeddedWallet || wallets[0];
                         const address = wallet && wallet.address;
                         if (!address) throw new Error('Privy did not return an EVM wallet address.');
-                        window.showWalletStatus?.('walletConnectStatus', '✍️ Sign the GoodMarket login message in Privy…', 'info');
+                        window.showWalletStatus?.('walletConnectStatus', '✍️ Sign the account login message in Privy…', 'info');
                         const provider = await wallet.getEthereumProvider();
                         window.GMPrivyProvider = provider;
                         window.GMPrivyWalletAddress = address;
