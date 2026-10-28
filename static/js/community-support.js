@@ -15,7 +15,7 @@
     var pendingSupportTx = '';
     var pendingSupportPostId = '';
     var MINIMUM = 20;
-    var CELA_CHAIN_HEX = '0xa4ec';
+    var CELO_CHAIN_HEX = '0xa4ec';
     var CELO_RPC = 'https://forno.celo.org';
     var CELO_EXPLORER = 'https://celoscan.io';
 
