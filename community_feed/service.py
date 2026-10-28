@@ -1,4 +1,4 @@
-"""GoodMarket Community Feed — business logic.
+\"""GoodMarket Community Feed — business logic.
 
 A chronological, Facebook/Instagram-style feed of user posts: a caption plus
 optional images/video. Media bytes live in Cloudflare R2 (``storage/r2.py``);
@@ -529,7 +529,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         return {
             "id": row.get("id"),
             "post_type": "system_vault_donation",
-            "username": "GoodMarket",
+            "username": "KwentoFi",
             "body": body,
             "avatar_url": None,
             "media": [],
@@ -560,7 +560,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         return {
             "id": row.get("id"),
             "post_type": "system_support",
-            "username": "GoodMarket",
+            "username": "KwentoFi",
             "body": row.get("body") or "A community member supported a post with G$.",
             "avatar_url": None,
             "media": [],
