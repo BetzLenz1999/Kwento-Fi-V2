@@ -271,6 +271,7 @@
 
     var REF_CACHE_KEY = 'gm_referral_link_v1';
     var MERGE_WINDOW_MS = 8000; // chips can keep merging for 8s after first open
+    var DISPLAY_BRAND = {{ brand_display_name|default('GoodMarket', true)|tojson }};
 
     var overlay = document.getElementById('gmCeleOverlay');
     var closeBtn = document.getElementById('gmCeleClose');
@@ -286,8 +287,8 @@
         link: '',         // referral link (cached or fresh)
         captionFn: function (link) {
             return (
-                'Curious about UBI? 🎁 Join GoodMarket and start claiming your UBI ' +
-                'in GoodDollar through GoodMarket! You can also earn from daily ' +
+                'Curious about UBI? 🎁 Join ' + DISPLAY_BRAND + ' and start claiming your UBI ' +
+                'in GoodDollar through ' + DISPLAY_BRAND + '! You can also earn from daily ' +
                 'tasks, minigames, quizzes, and more.\n\n' +
                 '👉 ' + link
             );
