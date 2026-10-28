@@ -303,7 +303,7 @@
       progressValue = 1;
       progressStartedAt = Date.now();
       if (progress) progress.hidden = false;
-      setProgress(1, 'Starting GoodMarket…');
+      setProgress(1, 'Starting KwentoFi…');
       progressTimer = setInterval(function () {
         var elapsed = Date.now() - progressStartedAt;
         // Estimated progress follows elapsed work but asymptotically stops at
@@ -319,14 +319,14 @@
       if (navigating) return;
       navigating = true;
       checkGeneration += 1;
-      setProgress(99, 'Opening your GoodMarket page…');
+      setProgress(99, 'Opening your KwentoFi page…');
       if (status) status.textContent = 'App checks complete. Opening your page…';
       stopProgress();
       window.location.replace(target);
     }
 
     function showChecking() {
-      if (title) title.textContent = 'Checking GoodMarket';
+      if (title) title.textContent = 'Checking KwentoFi';
       if (copy) copy.textContent = 'We’ll check for an app update before opening your page.';
       if (status) status.textContent = 'Preparing your app…';
       startProgress();
@@ -341,8 +341,8 @@
       waitingWorker = worker;
       if (title) title.textContent = worker ? 'Update required' : 'Confirm app version';
       if (copy) copy.textContent = worker
-        ? 'A new GoodMarket app version is ready. Update now to continue.'
-        : 'This GoodMarket version is installed. Confirm it before opening your page.';
+        ? 'A new KwentoFi app version is ready. Update now to continue.'
+        : 'This KwentoFi version is installed. Confirm it before opening your page.';
       if (status) status.textContent = worker
         ? 'The new version is ready to install.'
         : 'Confirm this app version to continue.';
@@ -407,7 +407,7 @@
         return registerCurrentWorker();
       }).then(function (reg) {
         if (!reg || reg.worker) return reg;
-        setProgress(38, 'Checking for a newer GoodMarket version…');
+        setProgress(38, 'Checking for a newer KwentoFi version…');
         return checkForUpdate(reg.registration, CHECK_TIMEOUT_MS).then(function (result) {
           setProgress(68, 'Verifying the app version…');
           var worker = result && result.worker;
