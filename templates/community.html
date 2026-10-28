@@ -34,9 +34,10 @@
     {% endif %}
     <meta name="theme-color" content="#4f46e5">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='branding/goodmarket/goodmarket-icon.svg', v=ASSET_VERSION) }}">
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/goodmarket-icon.png', v=ASSET_VERSION) }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='branding/goodmarket/goodmarket-brand.css', v=ASSET_VERSION) }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='branding/kwentofi/kwentofi-brand.css', v=ASSET_VERSION) }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap" rel="stylesheet">
@@ -53,7 +54,7 @@
         .cf-nav {
             padding-top: env(safe-area-inset-top, 0px);
         }
-        .cf-brand .goodmarket-mark {
+        .cf-brand .kwentofi-symbol {
             width: 32px;
             height: 32px;
         }
@@ -76,7 +77,7 @@
 
 <header class="cf-nav">
     <a class="cf-brand" href="/wallet">
-        <img class="cf-brand-mark goodmarket-mark" src="{{ url_for('static', filename='branding/goodmarket/goodmarket-mark.svg', v=ASSET_VERSION) }}" alt="" width="32" height="32">
+        <img class="cf-brand-mark kwentofi-symbol" src="{{ url_for('static', filename='branding/kwentofi/kwentofi-symbol-64.png', v=ASSET_VERSION) }}" alt="" width="32" height="32">
         <span class="cf-brand-text">
             <span class="cf-brand-org">KwentoFi</span>
             <span class="cf-brand-page">
