@@ -21,13 +21,22 @@ SETTING_KEYS = frozenset({
     "rates", "daily_cap", "post_cap", "daily_learn_rate",
     "daily_learn_rate_max", "daily_learn_cap", "combined_cap",
     "rate_max", "max", "min", "names", "config_version",
+    "support_bonus_enabled", "support_bonus_rate_gd", "support_min_amount_gd",
+    "support_max_amount_gd", "support_bonus_per_wallet_daily_cap_gd",
+    "support_bonus_global_daily_cap_gd", "support_bonus_budget_gd",
+    "support_bonus_budget_used_gd", "support_bonus_budget_reserved_gd",
+    "support_bonus_budget_available_gd",
 })
 RATE_NAMES = ("comment_out", "comment_in", "reaction_out", "reaction_in")
 UPDATE_KEYS = frozenset({
     "comment_out", "comment_in", "reaction_out", "reaction_in",
     "rates", "daily_cap", "post_cap", "daily_learn_rate",
     "daily_learn_rate_max", "daily_learn_cap",
+    "support_bonus_enabled", "support_bonus_rate_gd", "support_min_amount_gd",
+    "support_max_amount_gd", "support_bonus_per_wallet_daily_cap_gd",
+    "support_bonus_global_daily_cap_gd", "support_bonus_budget_gd",
 })
+BOOLEAN_KEYS = frozenset({"support_bonus_enabled"})
 
 
 def _admin_client():
@@ -119,7 +128,12 @@ def _validate_patch(values: Any) -> dict | None:
         if any(not _number(value) for value in rates.values()):
             return {"success": False, "error": "Rates must be finite non-negative numbers",
                     "code": "invalid_settings"}
-    for key in UPDATE_KEYS - {"rates"}:
+    for key in BOOLEAN_KEYS:
+        if key in patch and not isinstance(patch[key], bool):
+            return {"success": False,
+                    "error": f"{key} must be a boolean",
+                    "code": "invalid_settings"}
+    for key in UPDATE_KEYS - {"rates"} - BOOLEAN_KEYS:
         if key in patch and not _number(patch[key]):
             return {"success": False,
                     "error": f"{key} must be a finite non-negative number",
