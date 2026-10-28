@@ -1,15 +1,15 @@
 <div id="gm-ai-agent" class="gm-ai-agent" data-ai-agent>
   <button class="gm-ai-toggle" type="button" aria-expanded="false" aria-controls="gm-ai-panel">
     <span>✨</span>
-    <strong>GoodMarket Agent</strong>
+    <strong>{{ brand_display_name|default('GoodMarket', true) }} Agent</strong>
   </button>
-  <section id="gm-ai-panel" class="gm-ai-panel" aria-label="GoodMarket Agent" hidden>
+  <section id="gm-ai-panel" class="gm-ai-panel" aria-label="{{ brand_display_name|default('GoodMarket', true) }} Agent" hidden>
     <header class="gm-ai-header">
       <div>
-        <strong>GoodMarket Agent</strong>
+        <strong>{{ brand_display_name|default('GoodMarket', true) }} Agent</strong>
         <small>Prepares actions only — you still confirm and sign.</small>
       </div>
-      <button type="button" class="gm-ai-close" aria-label="Close GoodMarket Agent">×</button>
+      <button type="button" class="gm-ai-close" aria-label="Close {{ brand_display_name|default('GoodMarket', true) }} Agent">×</button>
     </header>
 
     <!-- The chatroom is a SEPARATE widget (_chatroom.html) with its own
@@ -18,7 +18,7 @@
       <div class="gm-ai-messages" role="log" aria-live="polite">
         <div class="gm-ai-msg gm-ai-msg-bot">
           <div>Hi! Tap a command below or type your own message. Username at wallet address, parehong pwede for send/stream.</div>
-          <div class="gm-ai-command-grid" aria-label="GoodMarket Agent quick commands">
+          <div class="gm-ai-command-grid" aria-label="{{ brand_display_name|default('GoodMarket', true) }} Agent quick commands">
           <button type="button" class="gm-ai-command" data-gm-ai-command="cashout">💸 Cashout</button>
           <button type="button" class="gm-ai-command" data-gm-ai-command="Send Money">💰 Send Money</button>
           <button type="button" class="gm-ai-command" data-gm-ai-command="Swap">🔄 Swap</button>
@@ -27,7 +27,7 @@
         </div>
       </div>
       <form class="gm-ai-form">
-        <input class="gm-ai-input" name="message" type="text" autocomplete="off" placeholder="Ask GoodMarket Agent…" />
+        <input class="gm-ai-input" name="message" type="text" autocomplete="off" placeholder="Ask {{ brand_display_name|default('GoodMarket', true) }} Agent…" />
         <button type="submit">Send</button>
       </form>
     </div>
