@@ -1,8 +1,8 @@
 {# Generic guest "Get Started" connect card for feature pages.
 
    Shown when a not-logged-in visitor opens a feature page (/farming,
-   /reloadly, /learn-earn, /community-stories) instead of bouncing them to the
-   homepage — the same pattern already used on /swap and /savings.
+   /reloadly, /learn-earn, /community-stories, /community) instead of bouncing
+   them to the homepage — the same pattern already used on /swap and /savings.
 
    The button opens the shared homepage connect modal through the public
    `openGoodMarketGetStarted()` entry point (single source of truth for the
@@ -12,23 +12,40 @@
 
    Optional per-page copy via context vars (set with a Jinja `{% with %}`):
    `guest_card_icon`, `guest_card_kicker`, `guest_card_title`,
-   `guest_card_body`, `guest_card_button`. #}
+   `guest_card_body`, `guest_card_button`, `guest_card_highlights`, and
+   `guest_card_highlights_label`. The /community page applies a scoped banner
+   layout; other pages retain the compact shared-card design. #}
 <div class="gm-guest-connect-card">
-    <div class="gm-guest-connect-icon" aria-hidden="true">{{ guest_card_icon|default('👋') }}</div>
-    <div class="gm-guest-connect-kicker">{{ guest_card_kicker|default('Connect to continue') }}</div>
-    <h2 class="gm-guest-connect-title">{{ guest_card_title|default('Connect your GoodMarket wallet') }}</h2>
-    <p class="gm-guest-connect-body">
-        {{ guest_card_body|default('Connect or create a free GoodMarket wallet to continue — email + PIN, no app to install. Your keys stay on your device.') }}
-    </p>
-    <button
-        type="button"
-        class="gm-guest-connect-btn"
-        onclick="if (typeof window.openGoodMarketGetStarted === 'function') { window.openGoodMarketGetStarted(); } else { window.location.href = '/'; }"
-    >
-        {{ guest_card_button|default('Get Started →') }}
-    </button>
-    <p class="gm-guest-connect-foot">
-        Already have a wallet?
-        <a href="#" onclick="if (typeof window.openGoodMarketGetStarted === 'function') { window.openGoodMarketGetStarted(); } else { window.location.href = '/'; } return false;">Log in</a>
-    </p>
+    <div class="gm-guest-connect-copy">
+        <div class="gm-guest-connect-heading">
+            <div class="gm-guest-connect-icon" aria-hidden="true">{{ guest_card_icon|default('👋') }}</div>
+            <div class="gm-guest-connect-heading-text">
+                <div class="gm-guest-connect-kicker">{{ guest_card_kicker|default('Connect to continue') }}</div>
+                <h2 class="gm-guest-connect-title">{{ guest_card_title|default('Connect your GoodMarket wallet') }}</h2>
+            </div>
+        </div>
+        <p class="gm-guest-connect-body">
+            {{ guest_card_body|default('Connect or create a free GoodMarket wallet to continue — email + PIN, no app to install. Your keys stay on your device.') }}
+        </p>
+        {% if guest_card_highlights|default([], true) %}
+        <ul class="gm-guest-connect-highlights" aria-label="{{ guest_card_highlights_label|default('Highlights') }}">
+            {% for highlight in guest_card_highlights %}
+            <li>{{ highlight }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    <div class="gm-guest-connect-actions">
+        <button
+            type="button"
+            class="gm-guest-connect-btn"
+            onclick="if (typeof window.openGoodMarketGetStarted === 'function') { window.openGoodMarketGetStarted(); } else { window.location.href = '/'; }"
+        >
+            {{ guest_card_button|default('Get Started →') }}
+        </button>
+        <p class="gm-guest-connect-foot">
+            Already have a wallet?
+            <a href="#" onclick="if (typeof window.openGoodMarketGetStarted === 'function') { window.openGoodMarketGetStarted(); } else { window.location.href = '/'; } return false;">Log in</a>
+        </p>
+    </div>
 </div>
