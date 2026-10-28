@@ -18,7 +18,7 @@
     <div class="swap-connect-kicker">{{ connect_card_kicker|default('Connect to continue') }}</div>
     <h2 class="swap-connect-title">{{ connect_card_title|default('Swap and bridge G$') }}</h2>
     <p class="swap-connect-body">
-        {{ connect_card_body|default('Connect or create a free GoodMarket wallet — email + PIN, no app to install. Your keys stay on your device.') }}
+        {{ connect_card_body|default('Connect or create a free ' ~ (brand_display_name|default('GoodMarket', true)) ~ ' wallet — email + PIN, no app to install. Your keys stay on your device.') }}
     </p>
     <button
         type="button"
