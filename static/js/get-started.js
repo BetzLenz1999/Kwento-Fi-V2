@@ -7,6 +7,8 @@
  * templates/_get_started_modal.html (replaces the old private Jinja in the
  * inline block: the WalletConnect sidecar flag + the return target).
  */
+var _getStartedDisplayBrand = function () { return String(window.GM_DISPLAY_BRAND || 'GoodMarket'); };
+
 (function () {
 'use strict';
 
@@ -267,7 +269,7 @@ function _lwDetectReturningUser() {
         return false;
     }
 
-    text.innerHTML = '<strong>Welcome back.</strong> This device already has your GoodMarket wallet — log in with your email + PIN.';
+    text.innerHTML = '<strong>Welcome back.</strong> This device already has your ' + _getStartedDisplayBrand() + ' wallet — log in with your email + PIN.';
     banner.classList.add('show');
     // Hoist the log-in card directly under the banner (above "Create") and
     // move the single gold treatment to it, so exactly one card stays loud.
@@ -349,8 +351,8 @@ function setLocalWalletMode(mode) {
     const strengthEl = document.getElementById('lwPinStrength');
     if (strengthEl) strengthEl.style.display = 'none';
     document.getElementById('lwModeNote').textContent = isUnlock
-        ? 'Enter the email and PIN for your GoodMarket account. Works on any device — we fetch your encrypted wallet and your PIN unlocks it here in the browser.'
-        : 'Make a free GoodMarket account & wallet — secured by your email and an 8-digit PIN. No app install, no fees.';
+        ? 'Enter the email and PIN for your ' + _getStartedDisplayBrand() + ' account. Works on any device — we fetch your encrypted wallet and your PIN unlocks it here in the browser.'
+        : 'Make a free ' + _getStartedDisplayBrand() + ' account & wallet — secured by your email and an 8-digit PIN. No app install, no fees.';
     document.getElementById('lwSubmitBtn').textContent = isUnlock ? 'Log in to my account' : 'Create my free wallet';
     document.getElementById('lwToggleNote').innerHTML = isUnlock
         ? 'New here? <button class="back-btn" style="display:inline;margin:0;" type="button" onclick="setLocalWalletMode(\'create\')">Create a free account</button>'
@@ -394,7 +396,7 @@ async function _lwEmailHash(email) {
         const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
         return Array.from(new Uint8Array(digest)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
     }
-    throw new Error('Secure context required. Please open GoodMarket over HTTPS.');
+    throw new Error('Secure context required. Please open ' + _getStartedDisplayBrand() + ' over HTTPS.');
 }
 
 async function submitLocalWallet() {
@@ -1401,7 +1403,7 @@ function initReferralFromUrl() {
             banner.id = 'referralBanner';
             banner.style.cssText = 'position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:9998;max-width:92%;padding:0.7rem 1rem;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.18);font-size:0.86rem;text-align:center;line-height:1.5;';
             // Use textContent to prevent any HTML injection via the URL-derived ref value.
-            banner.textContent = '🎁 Referral applied — Code ' + ref + ' will be used when you create a free GoodMarket account (email + PIN).';
+            banner.textContent = '🎁 Referral applied — Code ' + ref + ' will be used when you create a free ' + _getStartedDisplayBrand() + ' account (email + PIN).';
             document.body.appendChild(banner);
             setTimeout(function () { banner.style.transition = 'opacity 0.6s'; banner.style.opacity = '0'; setTimeout(function () { banner.remove(); }, 700); }, 8000);
         }
@@ -1718,8 +1720,8 @@ function _wcGetClient() {
         return SignClient.init({
             projectId: projectId,
             metadata: {
-                name: 'GoodMarket',
-                description: 'Learn & Earn G$ with GoodMarket on Celo',
+                name: _getStartedDisplayBrand(),
+                description: 'Learn & Earn G$ with ' + _getStartedDisplayBrand() + ' on Celo',
                 url: window.location.origin,
                 icons: [window.location.origin + '/static/icons/icon-192x192.png?v=' + (GM_BOOT.assetVersion || '') + '']
             }
