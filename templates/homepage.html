@@ -2565,10 +2565,23 @@
                     Preparing to start the installation…
                 </p>
             </div>
+            <section class="gm-pwa-manual-help" data-gm-pwa-manual-help hidden
+                     aria-labelledby="gmPwaManualTitle">
+                <h2 id="gmPwaManualTitle">Install from your browser menu</h2>
+                <p data-gm-pwa-manual-instructions></p>
+                <p class="gm-pwa-manual-note">
+                    Browser menus and install support vary by device and version. A shortcut may still open in the browser and not pass the installed-app check. If no install option appears, copy the link and open it in a browser that supports installing web apps.
+                </p>
+                <button type="button" class="gm-pwa-copy-link-btn" data-gm-pwa-copy-link>
+                    Copy GoodMarket link
+                </button>
+                <p class="gm-pwa-copy-status" data-gm-pwa-copy-status
+                   role="status" aria-live="polite"></p>
+            </section>
             <p class="gm-pwa-gate-status" id="gmPwaGateStatus" data-gm-pwa-status
                role="status" aria-live="polite">Checking whether this is an installed app or a wallet browser…</p>
             <p class="gm-pwa-gate-note">
-                If no install prompt appears, follow the browser’s “Install app” or “Add to Home Screen” instructions. After installing, open GoodMarket from its new icon.
+                If you tap Install and no system prompt opens, GoodMarket has not been installed. Follow the manual steps shown; after installing, open the app from its new icon.
             </p>
         </div>
     </main>
