@@ -1,3 +1,4 @@
+{% set brand_display_name = 'KwentoFi' %}
 {# GoodMarket Community Feed — Facebook/Instagram-style posts with media.
 
    Guests may read the feed; they get the shared connect card
@@ -14,10 +15,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>window.GM_DISPLAY_BRAND = {{ brand_display_name|tojson }};</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ share_title|default('GoodMarket Community - GoodMarket', true) }}</title>
-    <meta name="description" content="{{ share_description|default('Share your daily life with the GoodMarket community — post photos and videos, react and comment. A community app for G$ users.', true) }}">
+    <title>{{ share_title|default('KwentoFi Community - KwentoFi', true) }}</title>
+    <meta name="description" content="{{ share_description|default('Share your daily life with the KwentoFi community — post photos and videos, react and comment. A community app for G$ users.', true) }}">
     {% if canonical_url|default('', true) %}
     <link rel="canonical" href="{{ canonical_url }}">
     <meta property="og:type" content="article">
@@ -30,7 +32,7 @@
     <meta name="twitter:description" content="{{ share_description }}">
     <meta name="twitter:image" content="{{ share_image }}">
     {% endif %}
-    <meta name="theme-color" content="#ffffff">
+    <meta name="theme-color" content="#4f46e5">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='branding/goodmarket/goodmarket-icon.svg', v=ASSET_VERSION) }}">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/goodmarket-icon.png', v=ASSET_VERSION) }}">
@@ -76,7 +78,7 @@
     <a class="cf-brand" href="/wallet">
         <img class="cf-brand-mark goodmarket-mark" src="{{ url_for('static', filename='branding/goodmarket/goodmarket-mark.svg', v=ASSET_VERSION) }}" alt="" width="32" height="32">
         <span class="cf-brand-text">
-            <span class="cf-brand-org">GoodMarket</span>
+            <span class="cf-brand-org">KwentoFi</span>
             <span class="cf-brand-page">
                 <span class="cf-brand-dot" aria-hidden="true"></span>Community Feed
             </span>
@@ -188,7 +190,7 @@
     <section class="cf-daily-learn" id="cfDailyLearn" aria-labelledby="cfDailyLearnTitle" hidden>
         <div class="cf-daily-learn-head">
             <div>
-                <p class="cf-daily-learn-kicker">GoodMarket Daily Learn</p>
+                <p class="cf-daily-learn-kicker">KwentoFi Daily Learn</p>
                 <h2 id="cfDailyLearnTitle">Answer today’s 2 questions</h2>
             </div>
             <span class="cf-daily-learn-progress" id="cfDailyLearnProgress"></span>
@@ -315,7 +317,7 @@
         {% with guest_card_icon='💬',
                 guest_card_kicker='Welcome to the Community',
                 guest_card_title='Your Community Feed starts here',
-                guest_card_body='Browse public posts, follow members, and discover what the G$ community is sharing. Connect or create a GoodMarket wallet to join in—and support post authors with G$. Email + PIN; no app to install.',
+                guest_card_body='Browse public posts, follow members, and discover what the G$ community is sharing. Connect or create a KwentoFi wallet to join in—and support post authors with G$. Email + PIN; no app to install.',
                 guest_card_highlights=['Browse public posts', 'React and comment', 'Share photos and videos', 'Support authors with G$'],
                 guest_card_highlights_label='Ways to take part in the Community Feed',
                 guest_card_button='Get Started →' %}
@@ -466,7 +468,7 @@
                     </div>
                     <div class="cf-vault-donation-disclosure">
                         <h3>Public donation acknowledgment</h3>
-                        <p>After your G$ donation is confirmed on Celo, <strong>GoodMarket</strong> will automatically publish an acknowledgment in the Community Feed. It will show your donation amount, Community display name, and LinkedIn profile link. The post appears chronologically and is not pinned.</p>
+                        <p>After your G$ donation is confirmed on Celo, <strong>KwentoFi</strong> will automatically publish an acknowledgment in the Community Feed. It will show your donation amount, Community display name, and LinkedIn profile link. The post appears chronologically and is not pinned.</p>
                         <p>Your Celo transaction is public and can be linked to your wallet. The post will appear only in the Community Feed; we will not publish it to LinkedIn. The G$ goes directly to the Community Withdrawal Vault and does not give you a personal claim to the donated G$. You pay Celo network fees. When the Community Support contract is enabled, expect two wallet confirmations: exact-amount G$ approval, then the donation call; the contract does not custody the donation.</p>
                         <p>The name you enter is saved privately in your Community account for future donation forms; each confirmed post keeps a snapshot of the name you approved for that donation. The app validates the LinkedIn URL format but does not verify profile ownership.</p>
                     </div>
@@ -498,7 +500,7 @@
                     </dl>
                     <div class="cf-vault-donation-disclosure cf-vault-donation-review-disclosure">
                         <h4>After confirmation</h4>
-                        <p>GoodMarket will publish an unpinned Community Feed acknowledgment showing the amount, name, and LinkedIn URL above. It appears chronologically. The transfer is irreversible; you pay Celo network fees. If the Community Support contract is enabled, confirm both the exact-amount approval and the donation call.</p>
+                        <p>KwentoFi will publish an unpinned Community Feed acknowledgment showing the amount, name, and LinkedIn URL above. It appears chronologically. The transfer is irreversible; you pay Celo network fees. If the Community Support contract is enabled, confirm both the exact-amount approval and the donation call.</p>
                     </div>
                     <div class="cf-vault-donation-actions">
                         <button type="button" class="cf-vault-donation-cancel"
@@ -697,7 +699,7 @@
             </div>
         </div>
         <div class="cf-airtime-body">
-            <iframe id="cfAirtimeFrame" title="Buy Airtime — GoodMarket Store"
+            <iframe id="cfAirtimeFrame" title="Buy Airtime — KwentoFi Store"
                     data-src="/reloadly/?embed=1#topup"
                     loading="lazy" referrerpolicy="no-referrer"></iframe>
         </div>
