@@ -1,6 +1,7 @@
 // Extracted from templates/wallet.html inline <script> (load-perf refactor).
 // Per-request values come from window.GM_WALLET_BOOT (set inline in wallet.html).
 (function() {
+            var DISPLAY_BRAND = String(window.GM_DISPLAY_BRAND || 'GoodMarket');
             var voucherCheckInterval = null;
             // Do NOT default to 'walletconnect': an injected (or empty) login
             // would otherwise be treated as a WalletConnect session and trip the
@@ -15,7 +16,7 @@
                     loginMethod: LOGIN_METHOD,
                     projectId: window.GM_WALLET_BOOT.walletConnectProjectId,
                     sidecarEnabled: false,
-                    dappName: "GoodMarket — Voucher",
+                    dappName: DISPLAY_BRAND + " — Voucher",
                     dappDescription: "Claim your daily G$ voucher on Celo",
                     assetVersion: window.GM_WALLET_BOOT.assetVersion,
                 });
@@ -244,7 +245,7 @@
                         signer = await provider.getSigner();
                         receiverAddr = await signer.getAddress();
                         if (SESSION_WALLET && receiverAddr && receiverAddr.toLowerCase() !== SESSION_WALLET.toLowerCase()) {
-                            throw new Error('Wrong wallet connected. Please use your GoodMarket wallet.');
+                            throw new Error('Wrong wallet connected. Please use your ' + DISPLAY_BRAND + ' wallet.');
                         }
                         otpCheck = new ethers.Contract(VOTP_ADDRESS, VOTP_ABI, provider);
                     }
@@ -524,7 +525,7 @@
                 // for MetaMask / MiniPay / WalletConnect / Privy logins — the
                 // server enforces the same gate, this just saves a round-trip.
                 if ((LOGIN_METHOD || '').toLowerCase() !== 'local') {
-                    voucherShowSimple('🚫', 'Not Eligible', "This voucher is exclusively for GoodMarket wallet users — users who created a GoodMarket wallet with their email + PIN inside the app. It's not for MiniPay, MetaMask, or WalletConnect logins. To be eligible, log in with your GoodMarket wallet instead.");
+                    voucherShowSimple('🚫', 'Not Eligible', "This voucher is exclusively for " + DISPLAY_BRAND + " wallet users — users who created a " + DISPLAY_BRAND + " wallet with their email + PIN inside the app. It's not for MiniPay, MetaMask, or WalletConnect logins. To be eligible, log in with your " + DISPLAY_BRAND + " wallet instead.");
                     return;
                 }
 
@@ -581,7 +582,7 @@
                         }
 
                     } else if (data.not_eligible) {
-                        voucherShowSimple('🚫', 'Not Eligible', data.error || "This voucher is exclusively for GoodMarket wallet users — users who created a GoodMarket wallet with their email + PIN inside the app. It's not for MiniPay, MetaMask, or WalletConnect logins. To be eligible, log in with your GoodMarket wallet instead.");
+                        voucherShowSimple('🚫', 'Not Eligible', data.error || "This voucher is exclusively for " + DISPLAY_BRAND + " wallet users — users who created a " + DISPLAY_BRAND + " wallet with their email + PIN inside the app. It's not for MiniPay, MetaMask, or WalletConnect logins. To be eligible, log in with your " + DISPLAY_BRAND + " wallet instead.");
                     } else if (data.already_claimed) {
                         voucherShowSimple('😔', 'Already Claimed!', 'Someone else already claimed this voucher. Come back next time for a new one!');
                         document.getElementById('dailyVoucherBanner').style.display = 'none';
@@ -593,7 +594,7 @@
                     console.error('Claim error:', e);
                     voucherShowSimple('⚠️', 'Error', 'Something went wrong. Please try again.');
                 } finally {
-                    if (btn) { btn.disabled = false; btn.innerHTML = '🎟️ Claim GoodMarket Voucher'; }
+                    if (btn) { btn.disabled = false; btn.innerHTML = '🎟️ Claim ' + DISPLAY_BRAND + ' Voucher'; }
                 }
             }
 
