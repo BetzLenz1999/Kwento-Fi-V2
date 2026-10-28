@@ -499,7 +499,8 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
                  avatar_url: str | None = None,
                  reactions: dict[str, int] | None = None,
                  earned_badges: list[dict] | None = None,
-                 donation: dict | None = None) -> dict:
+                 donation: dict | None = None,
+                 support: dict | None = None) -> dict:
     """Shape a post for the browser.
 
     The wallet address is dropped and ownership is reduced to ``is_mine`` — a
@@ -528,7 +529,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         return {
             "id": row.get("id"),
             "post_type": "system_vault_donation",
-            "username": "Sytem",
+            "username": "GoodMarket",
             "body": body,
             "avatar_url": None,
             "media": [],
@@ -551,11 +552,41 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
             "tx_hash": tx_hash,
             "tx_url": tx_url,
         }
+    if row.get("post_type") == "system_support":
+        support = support or {}
+        tx_hash = str(support.get("tx_hash") or "").lower()
+        tx_url = ("https://celoscan.io/tx/" + tx_hash
+                  if re.fullmatch(r"0x[0-9a-f]{64}", tx_hash) else "")
+        return {
+            "id": row.get("id"),
+            "post_type": "system_support",
+            "username": "GoodMarket",
+            "body": row.get("body") or "A community member supported a post with G$.",
+            "avatar_url": None,
+            "media": [],
+            "reaction_count": int(row.get("reaction_count") or 0),
+            "reaction_breakdown": _clean_breakdown(reactions),
+            "comment_count": int(row.get("comment_count") or 0),
+            "prompt_id": None,
+            "badges": [],
+            "my_reaction": my_reaction,
+            "is_mine": False,
+            "is_following": False,
+            "is_edited": False,
+            "is_pinned": False,
+            "is_interactive": True,
+            "created_at": row.get("created_at"),
+            "edited_at": None,
+            "amount_gd": str(support.get("amount") or ""),
+            "tx_hash": tx_hash,
+            "tx_url": tx_url,
+        }
     owner = (row.get("wallet_address") or "").lower()
     # Strip a stored `@` (a legacy/imported row): the card draws its own prefix.
     username = (row.get("username") or "").strip().lstrip("@")
     return {
         "id": row.get("id"),
+        "post_type": row.get("post_type") or "user",
         "username": username or ANON_LABEL,
         "body": row.get("body") or "",
         "avatar_url": public_avatar_path(username) if avatar_url else None,
@@ -571,6 +602,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         "is_edited": bool(row.get("edited_at")),
         "created_at": row.get("created_at"),
         "edited_at": row.get("edited_at"),
+        "is_pinned": bool(row.get("is_pinned")),
     }
 
 
@@ -1090,6 +1122,27 @@ def _donation_rows_for_posts(supabase, post_ids: list) -> dict[int, dict]:
         return {}
 
 
+def _support_rows_for_posts(supabase, post_ids: list) -> dict[int, dict]:
+    """Load confirmed post-support metadata in one batch without exposing wallets."""
+    if not post_ids:
+        return {}
+    try:
+        rows = _rows(supabase.table("community_chat_tips")
+                     .select("feed_post_id,amount,tx_hash,sender_username,recipient_username")
+                     .in_("feed_post_id", post_ids)
+                     .eq("context", "post_support").execute())
+        result = {}
+        for row in rows:
+            try:
+                result[int(row.get("feed_post_id"))] = row
+            except (TypeError, ValueError):
+                continue
+        return result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: post support metadata load failed: %s", exc)
+        return {}
+
+
 def get_pinned_donation_feed(viewer: str | None = None,
                              cursor: int | None = None,
                              limit: int | None = None) -> dict:
@@ -1159,7 +1212,7 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
         query = (
             supabase.table("community_feed_posts")
             .select("*")
-            .eq("post_type", "user")
+            .in_("post_type", ["user", "system_support", "system_vault_donation"])
             .eq("is_deleted", False)
             .eq("is_hidden", False)
         )
@@ -1196,6 +1249,8 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
     from . import badges as community_badges
     badges_by_wallet = community_badges.public_badges_for_wallets(
         [r.get("wallet_address") for r in rows], client=supabase)
+    supports = _support_rows_for_posts(supabase, post_ids)
+    donations = _donation_rows_for_posts(supabase, post_ids)
 
     posts = [
         _public_post(
@@ -1205,6 +1260,8 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
             avatar_url=avatars.get((row.get("wallet_address") or "").lower()),
             reactions=breakdowns.get(row.get("id")),
             earned_badges=badges_by_wallet.get((row.get("wallet_address") or "").lower(), []),
+            support=supports.get(row.get("id")),
+            donation=donations.get(row.get("id")),
         )
         for row in rows
     ]
@@ -1246,6 +1303,16 @@ def get_post(post_id: int, viewer: str | None = None) -> dict:
                 "post": _public_post(
                     row, [], viewer, reactions.get(row.get("id")),
                     reactions=breakdown.get(row.get("id")), donation=donation)}
+    if row.get("post_type") == "system_support":
+        support = _support_rows_for_posts(supabase, [row.get("id")]).get(int(row["id"]))
+        if not support or not support.get("tx_hash"):
+            return {"success": False, "error": "Post not found", "code": "not_found"}
+        reactions = _reactions_for_posts(supabase, [row.get("id")], viewer)
+        breakdown = _reaction_breakdowns_for_posts(supabase, [row.get("id")])
+        return {"success": True,
+                "post": _public_post(
+                    row, [], viewer, reactions.get(row.get("id")),
+                    reactions=breakdown.get(row.get("id")), support=support)}
     media = _media_for_posts(supabase, [row.get("id")]).get(row.get("id"), [])
     reactions = _reactions_for_posts(supabase, [row.get("id")], viewer)
     avatar = _avatars_for_wallets(
