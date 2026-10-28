@@ -1,894 +1,437 @@
 {% set brand_display_name = 'KwentoFi' %}
-{# GoodMarket Community Feed — Facebook/Instagram-style posts with media.
-
-   Guests may read the feed; they get the shared connect card
-   (`_guest_connect_card.html`, whose button calls the public
-   `window.openGoodMarketGetStarted()` entry point) and are bounced into the
-   same create / log-in flow as the rest of the app.
-
-   Media bytes live in Cloudflare R2. The browser uploads them directly with a
-   presigned PUT (built in the feed bundle) — no bytes pass through Flask,
-   because with gthread + 4 workers a proxied video would hold one of ~16
-   slots for the whole upload.
-
-   User-supplied text is ALWAYS written with textContent, never innerHTML. #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <script>window.GM_DISPLAY_BRAND = {{ brand_display_name|tojson }};</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ share_title|default('KwentoFi Community - KwentoFi', true) }}</title>
-    <meta name="description" content="{{ share_description|default('Share your daily life with the KwentoFi community — post photos and videos, react and comment. A community app for G$ users.', true) }}">
-    {% if canonical_url|default('', true) %}
-    <link rel="canonical" href="{{ canonical_url }}">
-    <meta property="og:type" content="article">
-    <meta property="og:url" content="{{ canonical_url }}">
-    <meta property="og:title" content="{{ share_title }}">
-    <meta property="og:description" content="{{ share_description }}">
-    <meta property="og:image" content="{{ share_image }}">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{{ share_title }}">
-    <meta name="twitter:description" content="{{ share_description }}">
-    <meta name="twitter:image" content="{{ share_image }}">
-    {% endif %}
+    <title>KwentoFi Chicken Farming</title>
     <meta name="theme-color" content="#4f46e5">
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='branding/goodmarket/goodmarket-icon.svg', v=ASSET_VERSION) }}">
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='icons/goodmarket-icon.png', v=ASSET_VERSION) }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='branding/goodmarket/goodmarket-brand.css', v=ASSET_VERSION) }}">
+    <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/svg+xml" href="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/community-feed.css', v=ASSET_VERSION) }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/claim-modal.css', v=ASSET_VERSION) }}">
-
-    {# Page-level layout only. The feed's look lives in community-feed.css; this
-       block carries the two things that depend on the device/viewport rather
-       than the design system: the notch inset on the sticky header, and keeping
-       the header row from widening the document on a narrow phone (the same
-       class of overflow the audit found on /send-link). #}
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <style>
-        .cf-nav {
-            padding-top: env(safe-area-inset-top, 0px);
-        }
-        .cf-brand .goodmarket-mark {
-            width: 32px;
-            height: 32px;
-        }
-        body {
-            overflow-x: clip;
-        }
-        @media (max-width: 480px) {
-            .cf-nav { gap: 0.4rem; padding-left: 0.7rem; padding-right: 0.7rem; }
-            .cf-nav-right { flex-shrink: 0; }
-            /* The row has to carry the two-line brand AND Notifications / Refresh
-               / Your Wallet (or Get Started). The brand itself is tightened in
-               community-feed.css where the rest of the lockup lives; the date
-               chip is dropped here because it is the most expendable item and
-               this block is the overflow guard. Measured in a browser. */
-            .cf-today { display: none; }
+        :root { --bg:#0b1020; --bg2:#151a34; --border:rgba(255,255,255,0.11); --text:#eef2ff; --muted:rgba(238,242,255,0.66); --gold:#facc15; --green:#4ade80; --red:#f87171; }
+        * { box-sizing:border-box; margin:0; padding:0; }
+        body { font-family:Inter,system-ui,sans-serif; min-height:100vh; color:var(--text);
+            background:radial-gradient(circle at 12% 0%,rgba(250,204,21,0.18),transparent 34%),
+                       radial-gradient(circle at 100% 8%,rgba(74,222,128,0.12),transparent 32%),
+                       linear-gradient(180deg,var(--bg),var(--bg2)); max-width:980px; margin:0 auto; padding:1rem 1rem 3rem; }
+        .top { display:flex; align-items:center; justify-content:space-between; gap:0.8rem; margin-bottom:1rem; }
+        .back { color:var(--text); text-decoration:none; background:rgba(255,255,255,0.08); border:1px solid var(--border); border-radius:999px; padding:0.62rem 0.9rem; font-weight:800; }
+        .kicker { color:var(--gold); font-weight:900; letter-spacing:0.08em; text-transform:uppercase; font-size:0.72rem; }
+
+        /* ── hero ─────────────────────────────────────────────────────── */
+        .hero { border:1px solid rgba(250,204,21,0.28); border-radius:28px; padding:1.4rem 1.25rem; overflow:hidden; position:relative;
+            background:linear-gradient(135deg,rgba(250,204,21,0.16),rgba(74,222,128,0.08) 55%,rgba(255,255,255,0.04));
+            box-shadow:0 18px 60px rgba(0,0,0,0.35); }
+        .hero h1 { font-size:clamp(1.9rem,6.4vw,3.4rem); line-height:1; margin:0.45rem 0; letter-spacing:-0.05em; }
+        .hero .copy { color:var(--muted); line-height:1.6; max-width:640px; font-size:0.96rem; }
+        .hero .copy strong { color:#fde68a; }
+        .hero-chips { display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.9rem; }
+        .hero-chip { display:inline-flex; align-items:center; gap:0.4rem; border:1px solid rgba(250,204,21,0.35); background:rgba(250,204,21,0.12);
+            color:#fde68a; border-radius:999px; padding:0.4rem 0.8rem; font-weight:800; font-size:0.76rem; }
+        .egg-rain { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+        .egg-rain span { position:absolute; top:-2rem; font-size:1.1rem; opacity:0; animation:eggFall 7s linear infinite; }
+        .egg-rain span:nth-child(1){ left:12%; animation-delay:0s; }
+        .egg-rain span:nth-child(2){ left:38%; animation-delay:2.3s; }
+        .egg-rain span:nth-child(3){ left:64%; animation-delay:4.1s; }
+        .egg-rain span:nth-child(4){ left:86%; animation-delay:1.4s; }
+        @keyframes eggFall { 0%{transform:translateY(0) rotate(0);opacity:0} 12%{opacity:0.75} 88%{opacity:0.75} 100%{transform:translateY(340px) rotate(180deg);opacity:0} }
+
+        /* ── farm scene (hand-drawn inline SVG, driven by the real farm) ──
+           Sky, sun, hills, fence and coop are scenery; the flock and the nest
+           eggs come from the contract. Every animated property is transform or
+           opacity — animating box-shadow/left/top repaints the whole box. */
+        .hero-grid { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:1.1rem; align-items:center; }
+        .hero-copy { min-width:0; }
+        .hero-chicken { width:100%; max-width:320px; margin:0 auto; }
+        .hero-chicken svg { width:100%; height:auto; display:block; }
+        .farm-sun { transform-box:fill-box; transform-origin:50% 50%; animation:sunGlow 7s ease-in-out infinite; }
+        .farm-chicken { transform-box:fill-box; transform-origin:50% 100%; animation:chickenBob 2.6s ease-in-out infinite; transition:opacity 0.45s ease; }
+        .farm-chicken.is-off { opacity:0; animation:none; }
+        .chicken-peck { transform-box:fill-box; transform-origin:82% 100%; animation:chickenPeck 5.5s ease-in-out infinite; }
+        .chicken-egg { transition:opacity 0.45s ease; }
+        .chicken-egg.is-hidden { opacity:0; }
+        .chicken-egg.is-pop { animation:eggPop 0.9s ease-out 1; transform-box:fill-box; transform-origin:50% 100%; }
+        .chicken-halo { opacity:0; transition:opacity 0.45s ease; }
+        .chicken-caption { margin-top:0.5rem; text-align:center; font-size:0.74rem; font-weight:800; color:#fde68a; letter-spacing:0.02em; }
+        @keyframes chickenBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-2.5px)} }
+        @keyframes chickenPeck { 0%,68%,100%{transform:rotate(0)} 74%{transform:rotate(11deg)} 81%{transform:rotate(-3deg)} 88%{transform:rotate(0)} }
+        @keyframes eggPop { 0%{transform:scale(0.4)} 60%{transform:scale(1.12)} 100%{transform:scale(1)} }
+        @keyframes haloPulse { 0%,100%{opacity:0.28} 50%{opacity:0.6} }
+        @keyframes sunGlow { 0%,100%{opacity:0.85} 50%{opacity:1} }
+
+        /* No farm yet: an empty pasture — no chickens, no eggs, no halo. */
+        .hero-chicken.is-idle .farm-chicken { opacity:0; animation:none; }
+        .hero-chicken.is-idle .chicken-egg { animation:none; }
+        .hero-chicken.is-idle .chicken-caption { color:var(--muted); }
+        /* Mature: the flock basks in a pulsing gold halo. */
+        .hero-chicken.is-mature .chicken-halo { opacity:0.4; animation:haloPulse 2.8s ease-in-out infinite; }
+
+
+        /* ── panels ───────────────────────────────────────────────────── */
+        .panel { margin-top:1rem; background:rgba(255,255,255,0.045); border:1px solid var(--border); border-radius:22px; padding:1.05rem; }
+        .panel h2 { font-size:1.05rem; margin-bottom:0.35rem; }
+        .panel .sub { color:var(--muted); font-size:0.85rem; line-height:1.5; }
+
+        /* ── farm status banner + cycle progress ──────────────────────── */
+        .phase-banner { display:flex; align-items:center; gap:0.7rem; margin-top:0.2rem; padding:0.9rem 1rem; border-radius:18px;
+            background:linear-gradient(135deg,rgba(250,204,21,0.14),rgba(74,222,128,0.1)); border:1px solid rgba(250,204,21,0.3); font-weight:700; }
+        .phase-banner .emoji { font-size:1.6rem; }
+        .progress-track { margin-top:0.7rem; height:12px; border-radius:999px; background:rgba(255,255,255,0.08); overflow:hidden; }
+        .progress-fill { height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg,var(--gold),var(--green)); transition:width 0.4s ease; }
+        .progress-label { color:var(--muted); font-size:0.78rem; margin-top:0.45rem; }
+
+        /* ── action card ──────────────────────────────────────────────── */
+        .game-card { margin-top:1rem; background:rgba(6,11,26,0.72); border:1px solid rgba(250,204,21,0.22); border-radius:22px; padding:1.1rem; }
+        .game-card h2 { font-size:1.12rem; margin-bottom:0.45rem; }
+        .form-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0.7rem; margin-top:0.85rem; }
+        .input { width:100%; border:1px solid var(--border); border-radius:16px; padding:0.9rem 1rem; background:rgba(255,255,255,0.08); color:var(--text); font:inherit; font-weight:800; outline:none; }
+        .input:focus { border-color:rgba(250,204,21,0.7); box-shadow:0 0 0 3px rgba(250,204,21,0.14); }
+        .amount-help { color:var(--muted); font-size:0.84rem; line-height:1.5; margin-top:0.55rem; }
+        .amount-help strong { color:#fde68a; }
+        .quick-amounts { display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.6rem; }
+        .chip { border:1px solid var(--border); border-radius:999px; padding:0.5rem 0.75rem; background:rgba(255,255,255,0.07); color:var(--text); font-weight:800; cursor:pointer; font-family:inherit; }
+        .chip:hover { border-color:rgba(250,204,21,0.55); }
+        .projection { display:grid; grid-template-columns:repeat(2,1fr); gap:0.6rem; margin-top:0.75rem; }
+        .projection .box { border:1px dashed rgba(74,222,128,0.35); border-radius:14px; padding:0.7rem; background:rgba(74,222,128,0.07); }
+        .projection .box span { display:block; color:var(--muted); font-size:0.7rem; text-transform:uppercase; letter-spacing:0.07em; font-weight:800; }
+        .projection .box strong { font-size:1.05rem; color:var(--green); }
+
+        .action-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:0.7rem; margin-top:0.95rem; }
+        .btn { border:0; border-radius:999px; padding:0.9rem 1.1rem; font-weight:900; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:0.45rem; font-family:inherit; font-size:0.92rem; }
+        .primary { background:linear-gradient(135deg,#facc15,#f97316); color:#241300; box-shadow:0 8px 22px rgba(250,204,21,0.28); }
+        .secondary { background:rgba(255,255,255,0.08); color:var(--text); border:1px solid var(--border); }
+        .btn:disabled { opacity:0.5; cursor:not-allowed; filter:saturate(0.6); box-shadow:none; }
+        .btn:not(:disabled):active { transform:scale(0.98); }
+
+        .mini-stats { display:grid; grid-template-columns:repeat(5,1fr); gap:0.55rem; margin-top:0.9rem; }
+        .mini-stat { border:1px solid var(--border); border-radius:14px; padding:0.7rem; background:rgba(255,255,255,0.045); }
+        .mini-stat strong { display:block; font-size:0.95rem; margin-top:0.25rem; word-break:break-word; }
+
+        .tx-progress { display:none; align-items:center; gap:0.5rem; margin-top:0.85rem; padding:0.7rem 0.9rem; border-radius:14px;
+            background:rgba(250,204,21,0.1); border:1px solid rgba(250,204,21,0.28); color:#fde68a; font-weight:700; font-size:0.85rem; }
+        .tx-progress.show { display:flex; }
+        .spinner { width:14px; height:14px; border-radius:50%; border:2px solid rgba(253,230,138,0.35); border-top-color:#fde68a; animation:spin 0.7s linear infinite; flex:0 0 auto; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        .status { margin-top:0.85rem; padding:0.8rem 0.9rem; border-radius:14px; background:rgba(255,255,255,0.07); color:var(--muted); line-height:1.5; font-size:0.88rem; }
+        .status.ok { color:#bbf7d0; background:rgba(34,197,94,0.13); }
+        .status.error { color:#fecaca; background:rgba(239,68,68,0.13); }
+        .status.info { color:#fde68a; background:rgba(250,204,21,0.1); }
+
+        /* ── transaction history ──────────────────────────────────────── */
+        .history-head { display:flex; align-items:flex-start; justify-content:space-between; gap:0.6rem; flex-wrap:wrap; }
+        .history-list { margin-top:0.75rem; display:grid; gap:0.6rem; }
+        .tx-row { border:1px solid var(--border); border-radius:16px; padding:0.8rem 0.9rem; background:rgba(255,255,255,0.04); border-left-width:4px; }
+        .tx-row.ok { border-left-color:var(--green); }
+        .tx-row.pending { border-left-color:var(--gold); }
+        .tx-row.error { border-left-color:var(--red); }
+        .tx-top { display:flex; align-items:center; justify-content:space-between; gap:0.6rem; }
+        .tx-action { font-weight:900; font-size:0.95rem; }
+        .tx-status { font-size:0.72rem; font-weight:800; border-radius:999px; padding:0.22rem 0.6rem; white-space:nowrap; }
+        .tx-status.ok { background:rgba(34,197,94,0.16); color:var(--green); }
+        .tx-status.pending { background:rgba(250,204,21,0.16); color:var(--gold); }
+        .tx-status.error { background:rgba(248,113,113,0.16); color:var(--red); }
+        .tx-meta { display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:0.3rem; color:var(--muted); font-size:0.8rem; }
+        .tx-amount { color:#fde68a; font-weight:800; }
+        .tx-received { margin-top:0.3rem; color:var(--green); font-weight:800; font-size:0.84rem; }
+        .tx-error { margin-top:0.3rem; color:#fecaca; font-size:0.8rem; }
+        .tx-foot { margin-top:0.35rem; }
+        .tx-hash { color:#fde68a; font-size:0.8rem; text-decoration:none; word-break:break-all; }
+        .tx-hash:hover { text-decoration:underline; }
+        .tx-hash.muted { color:var(--muted); }
+        .empty-note { color:var(--muted); font-size:0.86rem; line-height:1.5; margin-top:0.6rem; }
+
+        /* ── steps ────────────────────────────────────────────────────── */
+        .steps { display:grid; gap:0.55rem; color:var(--muted); line-height:1.45; }
+        .step { display:flex; gap:0.6rem; align-items:flex-start; padding:0.75rem; border-radius:14px; background:rgba(0,0,0,0.16); font-size:0.88rem; }
+        .badge { width:26px; height:26px; border-radius:999px; background:rgba(250,204,21,0.18); color:var(--gold); display:flex; align-items:center; justify-content:center; font-weight:900; flex:0 0 auto; }
+
+        .notice { margin-top:0.8rem; color:var(--muted); font-size:0.8rem; line-height:1.45; word-break:break-all; }
+        code { color:#fde68a; }
+
+        /* ── toast ────────────────────────────────────────────────────── */
+        .farm-toast { position:fixed; left:50%; bottom:1.4rem; transform:translate(-50%,140%); z-index:9000; max-width:90vw;
+            padding:0.85rem 1.1rem; border-radius:14px; font-weight:800; font-size:0.88rem; transition:transform 0.28s ease;
+            background:#1d2440; border:1px solid var(--border); color:var(--text); box-shadow:0 16px 40px rgba(0,0,0,0.45); }
+        .farm-toast.show { transform:translate(-50%,0); }
+        .farm-toast.success { background:rgba(34,197,94,0.95); color:#04180c; border-color:transparent; }
+        .farm-toast.error { background:rgba(239,68,68,0.95); color:#fff; border-color:transparent; }
+
+        /* ── close-farm congrats modal ────────────────────────────────── */
+        .modal-overlay { position:fixed; inset:0; z-index:9500; display:none; align-items:center; justify-content:center; padding:1rem; background:rgba(3,6,16,0.78); }
+        .modal-overlay.open { display:flex; }
+        .modal-card { width:100%; max-width:380px; text-align:center; border-radius:24px; padding:1.6rem 1.3rem;
+            background:linear-gradient(160deg,rgba(250,204,21,0.2),rgba(74,222,128,0.14)),#131a33; border:1px solid rgba(250,204,21,0.35);
+            box-shadow:0 24px 70px rgba(0,0,0,0.55); animation:modalPop 0.28s ease; }
+        @keyframes modalPop { from { transform:scale(0.9); opacity:0; } to { transform:scale(1); opacity:1; } }
+        .modal-card .big-emoji { font-size:3.2rem; }
+        .modal-card h3 { font-size:1.35rem; margin:0.4rem 0; }
+        .modal-card .congrats { color:var(--muted); font-size:0.9rem; line-height:1.55; margin-bottom:0.6rem; }
+        .modal-card .paid { font-size:1.9rem; font-weight:900; color:var(--green); margin:0.5rem 0; }
+        .modal-card .tx-line { font-size:0.8rem; color:var(--muted); margin-top:0.4rem; word-break:break-all; }
+        .modal-card a { color:#fde68a; }
+        .modal-card button { margin-top:1rem; width:100%; }
+
+        @media (max-width:720px) { .action-grid, .form-row, .projection { grid-template-columns:1fr; } .mini-stats { grid-template-columns:repeat(2,1fr); } .hero-grid { grid-template-columns:1fr; } .hero-chicken { max-width:280px; } }
+
+        @media (prefers-reduced-motion: reduce) {
+            .egg-rain span { animation:none; opacity:0.25; }
+            .farm-sun, .farm-chicken, .chicken-peck, .chicken-egg, .chicken-halo { animation:none; }
+            .progress-fill, .farm-toast { transition:none; }
+            .modal-card { animation:none; }
         }
     </style>
+    <!-- Shared Get Started modal styles (guest connect flow). -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
 </head>
-<body class="cf-page">
-
-<header class="cf-nav">
-    <a class="cf-brand" href="/wallet">
-        <img class="cf-brand-mark goodmarket-mark" src="{{ url_for('static', filename='branding/goodmarket/goodmarket-mark.svg', v=ASSET_VERSION) }}" alt="" width="32" height="32">
-        <span class="cf-brand-text">
-            <span class="cf-brand-org">KwentoFi</span>
-            <span class="cf-brand-page">
-                <span class="cf-brand-dot" aria-hidden="true"></span>Community Feed
-            </span>
-        </span>
-    </a>
-    <div class="cf-nav-right">
-        {# The feed is a daily surface: Daily Learn resets at 00:00 UTC, so the
-           day boundary is real and worth showing. Hidden below 480px, where the
-           row also has to carry Refresh + Your Wallet. #}
-        <span class="cf-today" id="cfToday" title="Today (UTC)">{{ today_label }}</span>
+<body>
+    <div class="top">
+        <a class="back" href="/wallet">← Wallet</a>
+        <div class="kicker">KwentoFi Farming</div>
         {% if is_guest %}
         <!-- Persistent connect entry point so closing the modal doesn't
-             strand a guest — same flow as the homepage. Without it the only
-             way in is the connect card, and a guest who scrolls past it has
-             nothing left to tap. -->
+             strand a guest — same flow as the homepage. -->
         <button type="button" class="gs-nav-cta" onclick="openGoodMarketGetStarted()">Get Started</button>
-        {% else %}
-        <button type="button" class="cf-notification-button" id="cfNotificationButton"
-                aria-label="Notifications" aria-controls="cfNotificationPanel"
-                aria-expanded="false" title="Notifications"
-                onclick="GMCommunity.toggleNotifications()">
-            <span aria-hidden="true">🔔</span>
-            <span class="cf-notification-badge" id="cfNotificationBadge" hidden></span>
-        </button>
-        <button type="button" class="cf-nav-btn" id="cfRefreshBtn" aria-label="Refresh Community Feed"
-                onclick="GMCommunity.refresh()"><span aria-hidden="true">↻</span><span class="cf-nav-refresh-label"> Refresh</span></button>
-        <a class="cf-nav-btn" href="/wallet">Your Wallet</a>
         {% endif %}
     </div>
 
-    {# ── Member search ──────────────────────────────────────────────────────
-       Read-only, so guests get it too: the bar is toggled from the bottom nav
-       (and the nav CTA for members) and a signed-out visitor can still find and
-       open a public profile. Results link to `/community/u/<username>`; the
-       endpoint returns usernames only, never a wallet.
-
-       It lives INSIDE the sticky header so the two stick as one unit — as a
-       sibling it would need a hard-coded `top:` offset equal to the header's
-       height, which drifts the moment the header's padding changes. #}
-    <div class="cf-search" id="cfSearchBar" hidden role="search">
-        <label class="cf-sr-only" for="cfSearchInput">Search members</label>
-        <div class="cf-search-row">
-            <span class="cf-search-icon" aria-hidden="true">🔍</span>
-            {# The `@` is HARDCODED, not typed: a member searches a username, so
-               the prefix is part of the field's chrome. The input holds only the
-               name, which is what the server matches — with or without a stored
-               `@` on the row. #}
-            <span class="cf-search-at" aria-hidden="true">@</span>
-            <input type="search" id="cfSearchInput" class="cf-search-input"
-                   placeholder="Search members by username" autocomplete="off"
-                   spellcheck="false" maxlength="24"
-                   oninput="GMCommunity.searchInput()"
-                   onkeydown="GMCommunity.searchKeydown(event)">
-            <button type="button" class="cf-search-close" aria-label="Close search"
-                    onclick="GMCommunity.closeSearch()">×</button>
+    <section class="hero">
+        <div class="egg-rain" aria-hidden="true"><span>🥚</span><span>🥚</span><span>🐣</span><span>🥚</span></div>
+        <div class="hero-grid">
+            <div class="hero-copy">
+                <div class="kicker">Chicken-and-Egg Farming</div>
+                <h1>Grow your G$ farm</h1>
+                <p class="copy">Buy chickens with G$, collect eggs every day, and sell them for G$ whenever you like. When the {{ farming_config.farm_days }}-day cycle matures, close the farm to get your capital back <strong>plus</strong> the remaining egg rewards.</p>
+                <div class="hero-chips">
+                    <span class="hero-chip">🐔 {{ farming_config.chicken_price_gd }} G$ = 1 chicken</span>
+                    <span class="hero-chip">🥚 1 egg / chicken / day</span>
+                    <span class="hero-chip">📈 up to {{ farming_config.monthly_profit_percent }}% profit</span>
+                    <span class="hero-chip">🗓 {{ farming_config.farm_days }}-day cycle</span>
+                </div>
+            </div>
+            <div class="hero-chicken is-idle" id="farmScene" role="img" aria-label="Your farm — start a farm to see your chickens">
+                <svg viewBox="0 0 320 240" aria-hidden="true" focusable="false">
+                    <defs>
+                        <linearGradient id="farmSky" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stop-color="#1b2a55"/><stop offset="1" stop-color="#3a4d7a"/>
+                        </linearGradient>
+                        <radialGradient id="farmSunG" cx="50%" cy="50%" r="50%">
+                            <stop offset="0" stop-color="#fef3c7"/><stop offset="0.5" stop-color="#fcd34d"/>
+                            <stop offset="1" stop-color="#f59e0b" stop-opacity="0"/>
+                        </radialGradient>
+                        <linearGradient id="farmHillG" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stop-color="#2c6149"/><stop offset="1" stop-color="#1f4a38"/>
+                        </linearGradient>
+                        <linearGradient id="farmGrassG" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stop-color="#2f6b3a"/><stop offset="1" stop-color="#1a4023"/>
+                        </linearGradient>
+                        <linearGradient id="farmPlumeG" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0" stop-color="#fde68a"/><stop offset="0.55" stop-color="#fbbf24"/>
+                            <stop offset="1" stop-color="#f59e0b"/>
+                        </linearGradient>
+                        <clipPath id="farmClip"><rect x="0" y="0" width="320" height="240" rx="18"/></clipPath>
+                    </defs>
+                    <rect x="0.5" y="0.5" width="319" height="239" rx="18" fill="url(#farmSky)" stroke="rgba(250,204,21,0.4)"/>
+                    <g clip-path="url(#farmClip)">
+                        <circle class="farm-sun" cx="258" cy="46" r="32" fill="url(#farmSunG)"/>
+                        <circle cx="258" cy="46" r="13" fill="#fde68a" opacity="0.92"/>
+                        <path d="M0 130 C42 102 74 98 106 122 C134 86 178 84 212 116 C240 94 284 102 320 126 L320 240 L0 240 Z" fill="url(#farmHillG)"/>
+                        <path d="M0 152 C70 142 132 154 192 148 C242 143 286 150 320 146 L320 240 L0 240 Z" fill="url(#farmGrassG)"/>
+                        <g stroke="#c8a165" stroke-width="2.4" stroke-linecap="round" opacity="0.85">
+                            <path d="M10 146 L10 163 M36 144 L36 161 M62 146 L62 163 M88 144 L88 161 M114 146 L114 163"/>
+                            <path d="M6 151 L118 148 M6 159 L118 156" stroke-width="1.7"/>
+                        </g>
+                        <g>
+                            <path d="M218 136 L218 110 L258 88 L298 110 L298 136 Z" fill="#8b5e3c"/>
+                            <path d="M212 112 L258 82 L304 112 Z" fill="#a97155"/>
+                            <rect x="228" y="118" width="15" height="14" rx="3" fill="#fde68a" opacity="0.55"/>
+                            <rect x="272" y="118" width="15" height="14" rx="3" fill="#fde68a" opacity="0.55"/>
+                            <rect x="250" y="114" width="18" height="22" rx="3" fill="#3b2416"/>
+                            <circle cx="264" cy="126" r="1.7" fill="#facc15"/>
+                        </g>
+                        <ellipse class="chicken-halo" cx="120" cy="186" rx="120" ry="34" fill="#facc15"/>
+                        <g>
+                            <path d="M205 198 C214 216 296 216 305 198 C292 192 218 192 205 198 Z" fill="#a9743f"/>
+                            {% for egg in [ {'x':232,'y':198,'r':-12}, {'x':250,'y':195,'r':0}, {'x':267,'y':199,'r':10}, {'x':283,'y':196,'r':-6} ] %}
+                            <path class="chicken-egg is-hidden" transform="translate({{ egg.x }},{{ egg.y }}) rotate({{ egg.r }})" d="M0 -9 C4 -9 7 -4 7 1 C7 6 4 9 0 9 C-4 9 -7 6 -7 1 C-7 -4 -4 -9 0 -9 Z" fill="#fef3c7" stroke="#e0a82e" stroke-width="1.2"/>
+                            {% endfor %}
+                            <path d="M203 198 C213 218 297 218 307 198 C300 205 278 210 255 210 C232 210 210 205 203 198 Z" fill="#8b5a2b"/>
+                            <g stroke="#6f4520" stroke-width="1.1" opacity="0.75" stroke-linecap="round">
+                                <path d="M214 204 L226 201 M240 207 L252 204 M266 207 L278 204 M292 204 L300 201"/>
+                            </g>
+                        </g>
+                        {% set flock = [ {'x':30,'s':0.84,'d':0.0}, {'x':66,'s':0.96,'d':0.35}, {'x':104,'s':0.80,'d':0.7}, {'x':140,'s':0.92,'d':1.05}, {'x':176,'s':0.78,'d':1.4} ] %}
+                        {% for c in flock %}
+                        <g class="farm-chicken" style="animation-delay:{{ '%.2f'|format(c.d) }}s">
+                            <g transform="translate({{ c.x }},184) scale({{ c.s }})">
+                                <path d="M-20 -14 C-27 -28 -20 -40 -6 -40 C-15 -30 -14 -20 -6 -12 Z" fill="#f59e0b"/>
+                                <ellipse cx="-2" cy="-15" rx="20" ry="13.5" fill="url(#farmPlumeG)"/>
+                                <ellipse cx="-2" cy="-9" rx="16" ry="7" fill="#f59e0b" opacity="0.32"/>
+                                <path d="M-12 -19 C0 -25 12 -19 15 -10 C6 -5 -6 -6 -13 -11 Z" fill="#f59e0b"/>
+                                <path d="M-6 -17 L6 -11 M-8 -14 L3 -8" stroke="#d97706" stroke-width="1.2" stroke-linecap="round" opacity="0.85"/>
+                                <path d="M-4 -1 L-4 -6 M3 -1 L3 -6" stroke="#b45309" stroke-width="2.4" stroke-linecap="round"/>
+                                <path d="M-7 -1 L-4 -1 L-1 -1 M0 -1 L3 -1 L6 -1" stroke="#b45309" stroke-width="1.8" stroke-linecap="round"/>
+                                <g class="chicken-peck" style="animation-delay:{{ '%.2f'|format(c.d * 1.7) }}s">
+                                    <path d="M-6 -40 C-9 -47 -2 -50 1 -44 C3 -51 12 -50 12 -42 Z" fill="#ef4444"/>
+                                    <circle cx="2" cy="-29" r="10" fill="#fcd34d"/>
+                                    <path d="M0 -19 C0 -13 7 -13 7 -19 Z" fill="#ef4444"/>
+                                    <path d="M-8 -30 L-21 -26 L-8 -22 Z" fill="#f97316"/>
+                                    <circle cx="-2" cy="-31" r="2.2" fill="#1f1300"/>
+                                    <circle cx="-2.7" cy="-31.9" r="0.9" fill="#ffffff" opacity="0.85"/>
+                                </g>
+                            </g>
+                        </g>
+                        {% endfor %}
+                        <g fill="#ffffff" opacity="0.5">
+                            <circle cx="40" cy="60" r="1.3"/><circle cx="150" cy="44" r="1.1"/><circle cx="196" cy="70" r="1.2"/>
+                        </g>
+                    </g>
+                </svg>
+                <div class="chicken-caption" id="sceneCaption">Start a farm to see your chickens</div>
+            </div>
         </div>
-        <div class="cf-search-results" id="cfSearchResults" role="listbox"
-             aria-label="Member search results"></div>
-</div>
+    </section>
+
     {% if not is_guest %}
-    <section class="cf-notification-panel" id="cfNotificationPanel" hidden
-             role="dialog" aria-labelledby="cfNotificationTitle">
-        <div class="cf-notification-panel-head">
-            <h2 id="cfNotificationTitle">Notifications</h2>
-            <div class="cf-notification-panel-actions">
-                <button type="button" class="cf-notification-mark-all" id="cfNotificationMarkAll"
-                        onclick="GMCommunity.markAllNotificationsRead()" disabled>Mark all read</button>
-                <button type="button" class="cf-notification-close" aria-label="Close notifications"
-                        onclick="GMCommunity.closeNotifications()">×</button>
-            </div>
-        </div>
-        <div class="cf-notification-list" id="cfNotificationList" role="list"
-             aria-live="polite" aria-busy="false">
-            <p class="cf-notification-empty">Loading notifications…</p>
-        </div>
-        <button type="button" class="cf-notification-more" id="cfNotificationMore"
-                onclick="GMCommunity.loadMoreNotifications()" hidden>Load older notifications</button>
+    <section class="panel">
+        <div class="phase-banner"><span class="emoji">🌾</span><span id="farmStatusBanner">Checking your farm…</span></div>
+        <div class="progress-track"><div class="progress-fill" id="cycleProgressFill"></div></div>
+        <div class="progress-label" id="cycleProgressLabel">Loading your farming cycle…</div>
     </section>
     {% endif %}
-</header>
 
-<a class="cf-skip-link" href="#cfPostsTitle">Skip to community posts</a>
-{# One source of navigation destinations; on phones CSS presents this as a
-   compact quick-action tray below the masthead, while desktop keeps its rail. #}
-<nav class="cf-bottom-nav cf-community-mobile-actions" id="cfBottomNav" aria-label="Community navigation"></nav>
-<main class="cf-wrap cf-layout">
-    {# Keep the Today hub first in DOM order for the mobile reading sequence.
-       The wide-screen grid places this complementary panel on the right; the
-       skip link above gives keyboard users a direct route to the post stream. #}
-    <aside class="cf-today-hub" id="cfTodayHub" aria-labelledby="cfTodayHubTitle" hidden>
-        <div class="cf-today-hub-head">
-            <h1 class="cf-today-hub-title" id="cfTodayHubTitle">Today in Community</h1>
-            <p>Learn. Share. Earn together.</p>
-        </div>
-
-    <section class="cf-daily-prompt" id="cfDailyPrompt" aria-labelledby="cfDailyPromptTitle" hidden>
-        <div class="cf-daily-prompt-kicker">Today’s Community Prompt</div>
-        <h2 id="cfDailyPromptTitle"></h2>
-        <p id="cfDailyPromptBody"></p>
-        <div class="cf-daily-prompt-foot">
-            <span id="cfDailyPromptCount">0 responses</span>
-            <button type="button" class="cf-btn-primary" id="cfAnswerPromptBtn"
-                    onclick="GMCommunity.answerPrompt()">Answer prompt</button>
-            <button type="button" class="cf-btn-text" id="cfSeePromptBtn"
-                    onclick="GMCommunity.seePromptResponses()">See responses</button>
-        </div>
-    </section>
-
-    <section class="cf-daily-learn" id="cfDailyLearn" aria-labelledby="cfDailyLearnTitle" hidden>
-        <div class="cf-daily-learn-head">
-            <div>
-                <p class="cf-daily-learn-kicker">KwentoFi Daily Learn</p>
-                <h2 id="cfDailyLearnTitle">Answer today’s 2 questions</h2>
-            </div>
-            <span class="cf-daily-learn-progress" id="cfDailyLearnProgress"></span>
-        </div>
-        <div class="cf-daily-learn-content" id="cfDailyLearnContent" aria-live="polite"></div>
-        <p class="cf-daily-learn-reset" id="cfDailyLearnReset">Resets daily at 00:00 UTC.</p>
-    </section>
-
-        {% if not is_guest %}
-        {# Completion status is wallet-specific; never render it to guests. #}
-        <div class="cf-learn-done" id="cfLearnDone" hidden>
-            <span class="cf-learn-done-mark" aria-hidden="true">✅</span>
-            <span class="cf-learn-done-text" id="cfLearnDoneText">Daily Learn done today</span>
-            <button type="button" class="cf-learn-done-toggle" id="cfLearnDoneToggle"
-                    aria-controls="cfLearnDoneDetail" aria-expanded="false"
-                    onclick="GMCommunity.toggleLearnDoneDetail()">Details</button>
-        </div>
-        <p class="cf-learn-done-detail" id="cfLearnDoneDetail" role="status"
-           aria-live="polite" hidden></p>
-        {% endif %}
-
-<!-- ── Community G$ card ───────────────────────────────────────────────
-         The community rewards balance lives HERE and ONLY here (never on the
-         wallet page — see docs/COMMUNITY_REWARDS_LEDGER_PROPOSAL.md §0: two G$
-         figures side by side invite "47 + 12 = 59", which is false, because
-         this balance is not spendable and not on-chain).
-
-         Signed-in members see their balance/goal by default; operators can hide
-         it with COMMUNITY_REWARD_SHOW_BALANCE=0. Guests never see a personal
-         balance. The figure is a server-side ledger balance until a direct
-         wallet withdrawal is confirmed on Celo. Reward-budget and earning-rate
-         detail panels are intentionally not shown here; server-side limits and
-         rate configuration remain active.
-
-         Starts `hidden` and is revealed by the bundle only when the feature is
-         enabled, so a disabled deployment renders nothing.
-         See docs/COMMUNITY_REWARDS_CARD_REVAMP_PROPOSAL.md. -->
-    <section class="cf-earn" id="cfEarn" aria-labelledby="cfEarnTitle" hidden>
-        <div class="cf-earn-head">
-            <h2 class="cf-earn-title" id="cfEarnTitle">
-                <span class="cf-earn-mark" aria-hidden="true">🪙</span>
-                <span>Community G$</span>
-            </h2>
-            <button type="button" class="cf-earn-chip" id="cfEarnChip"
-                    data-state="pending" disabled aria-haspopup="dialog"
-                    aria-describedby="cfEarnLead">Pending</button>
-        </div>
-        <!-- Always-visible lead. It carries the state (verify / sign in / just
-             start posting), so the card says what to DO even with the balance
-             hidden for guests or before the server response arrives. Written by
-             the bundle. -->
-        <p class="cf-earn-lead" id="cfEarnLead">Earn G$ from reactions,
-            comments and the daily quiz.</p>
-        <!-- The personal figure stays hidden until the server response arrives,
-             preventing a stale/zero flash. The bundle reveals it for members
-             when `show_balance` is true, but never for guests. -->
-        <div class="cf-earn-overview" id="cfEarnOverview" hidden>
-          <div class="cf-earn-balance-wrap" id="cfEarnBalance" hidden>
-            <p class="cf-earn-balance">
-                <span class="cf-earn-amount" id="cfEarnAmount">0</span>
-                <span class="cf-earn-unit">G$</span>
-            </p>
-            <p class="cf-earn-goal" id="cfEarnGoal">of 500 G$ to unlock</p>
-            <div class="cf-earn-bar" role="progressbar" id="cfEarnBar"
-                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
-                 aria-label="Progress towards the payout minimum">
-                <span class="cf-earn-bar-fill" id="cfEarnBarFill"></span>
-            </div>
-        </div>
-          {% if not is_guest %}
-          <div class="cf-earn-actions" id="cfEarnActions" hidden>
-            <div class="cf-earn-withdraw-row" id="cfEarnWithdrawRow" hidden>
-                <button type="button" class="cf-earn-withdraw" id="cfEarnWithdrawBtn"
-                        onclick="GMCommunity.checkWithdrawalEligibility()">Withdraw</button>
-                <p class="cf-earn-withdraw-status" id="cfEarnWithdrawStatus"
-                   role="status" aria-live="polite" hidden></p>
-            </div>
-            <div class="cf-earn-history" id="cfEarnHistory" hidden>
-                <button type="button" class="cf-earn-history-toggle" id="cfEarnHistoryToggle"
-                        aria-controls="cfEarnHistoryPanel" aria-expanded="false" hidden>
-                    Transaction history
-                </button>
-            </div>
-          </div>
-          {% endif %}
-        </div>
-        <p class="cf-earn-note" id="cfEarnNote" hidden></p>
-        {% if not is_guest %}
-        {# Revealed only after the authenticated status endpoint confirms a
-           signed, claimed reservation. This never signs or sends a payment. #}
-        <div class="cf-earn-reconcile" id="cfEarnReconcile" hidden>
-            <h3 class="cf-sr-only" id="cfEarnReconcileTitle">Reconcile previous withdrawal</h3>
-            <p class="cf-earn-reconcile-copy" id="cfEarnReconcileCopy">
-                A previous payout was submitted but may need checking. This checks and reconciles that submitted payout only; it will not send another payment or ask you to sign.
-            </p>
-            <div class="cf-earn-reconcile-actions">
-                <button type="button" class="cf-earn-reconcile-btn" id="cfEarnReconcileBtn"
-                        aria-controls="cfEarnReconcileStatus"
-                        onclick="GMCommunity.reconcilePreviousWithdrawal()" hidden>
-                    Reconcile previous withdrawal
-                </button>
-            </div>
-            <p class="cf-earn-reconcile-status" id="cfEarnReconcileStatus"
-               role="status" aria-live="polite" aria-atomic="true" hidden></p>
-        </div>
-        {% endif %}
-        {% if not is_guest %}
-        <section class="cf-earn-history-panel" id="cfEarnHistoryPanel"
-                 aria-label="On-chain withdrawal history" hidden>
-            <p class="cf-earn-history-message" id="cfEarnHistoryMessage"
-               role="status" aria-live="polite"></p>
-            <ul class="cf-earn-history-list" id="cfEarnHistoryList"></ul>
-            <button type="button" class="cf-earn-history-more" id="cfEarnHistoryMore" hidden>
-                Load older
-            </button>
-        </section>
-        {% endif %}
-    </section>
-    </aside>
-
-    <div class="cf-primary" id="cfPrimary" role="region" aria-label="Community composer and posts">
     {% if is_guest %}
-    <div class="cf-guest">
-        {% with guest_card_icon='💬',
-                guest_card_kicker='Welcome to the Community',
-                guest_card_title='Your Community Feed starts here',
-                guest_card_body='Browse public posts, follow members, and discover what the G$ community is sharing. Connect or create a KwentoFi wallet to join in—and support post authors with G$. Email + PIN; no app to install.',
-                guest_card_highlights=['Browse public posts', 'React and comment', 'Share photos and videos', 'Support authors with G$'],
-                guest_card_highlights_label='Ways to take part in the Community Feed',
-                guest_card_button='Get Started →' %}
-            {% include "_guest_connect_card.html" %}
+    <section class="game-card" id="playFarm">
+        {# Guest: the play panel (start / sell / close) is not rendered at all
+           until connected — the connect card occupies the action slot. #}
+        {% with guest_card_icon='🐔',
+                guest_card_kicker='Connect to farm',
+                guest_card_title='Start your G$ farm',
+                guest_card_body='Connect or create a free KwentoFi wallet to buy chickens, collect eggs and earn G$. Email + PIN — no app to install.' %}
+        {% include "_guest_connect_card.html" %}
         {% endwith %}
-    </div>
-    {% else %}
+        {% else %}
+        <div class="kicker">Play Farming</div>
+        <h2 id="playTitle">Start, sell eggs, or close your farm</h2>
+        <p class="copy" style="color:var(--muted); line-height:1.55; font-size:0.9rem;">You are already signed in — your wallet opens only when a transaction needs your confirmation.</p>
 
-    <!-- ── Composer ─────────────────────────────────────────────────────── -->
-    <section class="cf-composer" id="cfComposer" aria-labelledby="cfComposerTitle">
-        <h2 class="cf-sr-only" id="cfComposerTitle">Create a post</h2>
-        <div class="cf-composer-entry-row">
-        <div class="cf-composer-head">
-            {# Profile picture. Tapping the ring opens the picture modal, so a
-               member can upload/change/remove their picture without leaving the
-               feed. The initial-letter fallback is used until a picture exists.
-               `display_name` falls back to a shortened wallet address, which
-               contradicts the username gate below. Show the username or a
-               neutral label — never an address, not even your own. #}
-            <button type="button" class="cf-avatar-btn" id="cfAvatarBtn"
-                    onclick="GMCommunity.openAvatarModal()"
-                    aria-label="Change your profile picture">
-                <span class="cf-avatar" id="cfComposerAvatar" aria-hidden="true">
-                    {%- if avatar_url -%}
-                    <img class="cf-avatar-img" src="{{ url_for('community_feed.api_profile_avatar', username=username) }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
-                    {%- else -%}
-                    {{ (username or 'You')[0]|upper }}
-                    {%- endif -%}
-                </span>
-                <span class="cf-avatar-badge" aria-hidden="true">📷</span>
-            </button>
-            <div class="cf-composer-who">
-                <strong>{{ username or 'You' }}</strong>
-                <span>Sharing publicly</span>
-            </div>
+        <div class="form-row">
+            <input class="input" id="farmAmount" type="number" min="{{ farming_config.min_farm_gd }}" step="{{ farming_config.chicken_price_gd }}" value="{{ farming_config.min_farm_gd }}" inputmode="decimal" aria-label="Farm amount in G$">
+            <button class="btn primary" type="button" id="startFarmBtn">🐣 Approve &amp; start farm</button>
+        </div>
+        <p class="amount-help">Every <strong>{{ farming_config.chicken_price_gd }} G$</strong> buys <strong>1 chicken</strong>. Your amount buys <strong id="chickensToBuy">{{ farming_config.min_chickens }}</strong> chickens.</p>
+        <div class="quick-amounts" aria-label="Quick chicken amounts">
+            <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 10 }}">10 chickens</button>
+            <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 20 }}">20 chickens</button>
+            <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 50 }}">50 chickens</button>
+        </div>
+        <div class="projection">
+            <div class="box"><span>Est. egg profit / cycle</span><strong id="projectedProfit">0 G$</strong></div>
+            <div class="box"><span>Est. payout at maturity</span><strong id="projectedPayout">0 G$</strong></div>
         </div>
 
-        <label class="cf-sr-only" for="cfCaption">Caption</label>
-        <div class="cf-caption-wrap">
-            <textarea id="cfCaption" class="cf-caption-input" rows="2"
-                      placeholder="What happened today?"
-                      maxlength="{{ max_caption }}"></textarea>
+        <div class="action-grid">
+            <button class="btn secondary" type="button" id="refreshFarmBtn">🔄 Refresh</button>
+            <button class="btn secondary" type="button" id="sellEggsBtn" disabled>🥚 Sell eggs</button>
+            <button class="btn secondary" type="button" id="closeFarmBtn" disabled>💰 Close farm</button>
         </div>
 
-        <div class="cf-composer-actions">
-            <label class="cf-file-btn" for="cfFileInput" aria-label="Add photos or videos">
-                <span aria-hidden="true">🖼</span> Photo / Video
-            </label>
-            <input type="file" id="cfFileInput" class="cf-sr-only"
-                   accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm"
-                   multiple>
+        <div class="tx-progress" id="txProgress"></div>
+
+        <div class="mini-stats">
+            <div class="mini-stat"><span class="label">Wallet</span><strong id="walletStatus">{{ wallet[:6] }}…{{ wallet[-4:] }}</strong></div>
+            <div class="mini-stat"><span class="label">Chickens</span><strong id="chickenCount">—</strong></div>
+            <div class="mini-stat"><span class="label">Eggs ready</span><strong id="eggsReady">—</strong></div>
+            <div class="mini-stat"><span class="label">Egg value</span><strong id="eggValue">—</strong></div>
+            <div class="mini-stat"><span class="label">Reward pool</span><strong id="rewardPoolValue">—</strong></div>
         </div>
-        <div class="cf-prompt-context" id="cfPromptContext" hidden>
-            <span id="cfPromptContextText">Answering today’s prompt</span>
-            <button type="button" onclick="GMCommunity.cancelPromptMode()"
-                    aria-label="Cancel prompt response mode">Cancel</button>
-        </div>
+        <div class="mini-stats" style="grid-template-columns:repeat(2,1fr);">
+            <div class="mini-stat"><span class="label">Your capital</span><strong id="principalValue">—</strong></div>
+            <div class="mini-stat"><span class="label">Farm phase</span><strong id="farmPhaseValue">—</strong></div>
         </div>
 
-
-
-        {# Username gate. Shown only when the signed-in wallet has no username
-           yet — the composer stays visible so the user can see what they are
-           about to unlock, but posting is blocked until a name is chosen. #}
-        {% if username_required and not username %}
-        <div class="cf-username-gate" id="cfUsernameGate">
-            <p class="cf-username-lead">
-                <strong>Pick a username to start posting.</strong>
-                Posts show your username, never your wallet address.
-            </p>
-            <div class="cf-username-row">
-                <span class="cf-username-at" aria-hidden="true">@</span>
-                <label class="cf-sr-only" for="cfUsernameInput">Username</label>
-                <input type="text" id="cfUsernameInput" class="cf-username-input"
-                       placeholder="yourname" maxlength="24" autocomplete="username"
-                       spellcheck="false" inputmode="text">
-                <button type="button" class="cf-username-save" id="cfUsernameSave"
-                        onclick="GMCommunity.saveUsername()">Save</button>
-            </div>
-            <p class="cf-username-hint" id="cfUsernameHint">
-                Letters, numbers and _ — 3 to 24 characters.
-            </p>
-        </div>
-        {% endif %}
-
-        <div class="cf-previews" id="cfPreviews" hidden></div>
-
-        <div class="cf-upload-status" id="cfUploadStatus" role="status" aria-live="polite" hidden></div>
-
-        <div class="cf-composer-foot">
-            <div class="cf-composer-right">
-                <span class="cf-counter" id="cfCounter">0 / {{ max_caption }}</span>
-                <button type="button" class="cf-post-btn" id="cfPostBtn"
-                        onclick="GMCommunity.submitPost()" disabled>Post</button>
-            </div>
-        </div>
-        <p class="cf-composer-hint" id="cfComposerHint">
-            Up to {{ max_media }} files · images to {{ max_image_mb }}MB, video to {{ max_video_mb }}MB.
-            Post only content you own.
-        </p>
-        {% if not storage_ready %}
-        <p class="cf-warn">Media uploads are not configured on this deployment yet — you can still post text.</p>
+        <div class="status" id="farmStatus">Loading your farm from the Celo network…</div>
         {% endif %}
     </section>
 
-    <section class="cf-vault-donation" id="cfVaultDonationCard" aria-labelledby="cfVaultDonationTitle">
-        <div class="cf-vault-donation-head">
+    {% if not is_guest %}
+    <section class="panel">
+        <div class="history-head">
             <div>
-                <h2 id="cfVaultDonationTitle">Support the Community Vault</h2>
-                <p>Send G$ directly to the shared vault that supports Community withdrawals.</p>
+                <h2>📜 Transaction history</h2>
+                <p class="sub">Your transactions are read straight from the farm contract for <strong>your wallet only</strong> — so they stay even if you clear this browser or switch devices. Every action shows its on-chain status and a Celoscan link, so you always know whether your G$ arrived.</p>
             </div>
-            {% if vault_donations_enabled %}
-            <button type="button" class="cf-vault-donation-open" id="cfVaultDonationOpen"
-                    aria-controls="cfVaultDonationFormWrap" aria-expanded="false"
-                    onclick="GMCommunity.openVaultDonation()">Donate to Community Vault</button>
-            {% else %}
-            <p class="cf-vault-donation-unavailable" role="status">
-                Community Vault donations are temporarily unavailable. Please check back later.
-            </p>
-            {% endif %}
+            <button class="btn secondary" type="button" id="refreshHistoryBtn">🔄 Check on-chain status</button>
         </div>
-        <div class="cf-vault-donation-form-wrap" id="cfVaultDonationFormWrap" hidden>
-            {% if vault_donations_enabled %}
-            <form id="cfVaultDonationForm" onsubmit="return GMCommunity.submitVaultDonation(event)">
-                <div id="cfVaultDonationEntry">
-                    <div class="cf-vault-donation-fields">
-                        <label class="cf-vault-donation-field" for="cfVaultDonationName">
-                            <span>Public name <strong aria-hidden="true">*</strong></span>
-                            <input id="cfVaultDonationName" name="name" type="text" maxlength="80"
-                                   autocomplete="nickname" required>
-                            <small>Saved as your Community display name and shown on confirmed donation posts.</small>
-                        </label>
-                        <label class="cf-vault-donation-field" for="cfVaultDonationLinkedIn">
-                            <span>LinkedIn profile URL <strong aria-hidden="true">*</strong></span>
-                            <input id="cfVaultDonationLinkedIn" name="linkedin_url" type="url"
-                                   inputmode="url" placeholder="https://www.linkedin.com/in/your-profile/"
-                                   maxlength="500" autocomplete="url"
-                                   aria-describedby="cfVaultDonationLinkedInHint" required>
-                            <small id="cfVaultDonationLinkedInHint">Use an HTTPS personal profile URL, such as https://www.linkedin.com/in/your-profile/.</small>
-                        </label>
-                        <label class="cf-vault-donation-field" for="cfVaultDonationAmount">
-                            <span>Donation amount (G$) <strong aria-hidden="true">*</strong></span>
-                            <input id="cfVaultDonationAmount" name="amount_gd" type="text"
-                                   inputmode="decimal" pattern="[0-9]+(\.[0-9]+)?" value="1000"
-                                   aria-describedby="cfVaultDonationMinimum" required>
-                            <small id="cfVaultDonationMinimum">Minimum: 1,000 G$; no preset maximum, limited by your transferable wallet balance.</small>
-                        </label>
-                    </div>
-                    <div class="cf-vault-donation-disclosure">
-                        <h3>Public donation acknowledgment</h3>
-                        <p>After your G$ donation is confirmed on Celo, <strong>KwentoFi</strong> will automatically publish an acknowledgment in the Community Feed. It will show your donation amount, Community display name, and LinkedIn profile link. The post appears chronologically and is not pinned.</p>
-                        <p>Your Celo transaction is public and can be linked to your wallet. The post will appear only in the Community Feed; we will not publish it to LinkedIn. The G$ goes directly to the Community Withdrawal Vault and does not give you a personal claim to the donated G$. You pay Celo network fees. When the Community Support contract is enabled, expect two wallet confirmations: exact-amount G$ approval, then the donation call; the contract does not custody the donation.</p>
-                        <p>The name you enter is saved privately in your Community account for future donation forms; each confirmed post keeps a snapshot of the name you approved for that donation. The app validates the LinkedIn URL format but does not verify profile ownership.</p>
-                    </div>
-                    <label class="cf-vault-donation-consent" for="cfVaultDonationConsent">
-                        <input id="cfVaultDonationConsent" name="consent" type="checkbox" required>
-                        <span>I agree to the public acknowledgment and donation terms above.</span>
-                    </label>
-                    <p class="cf-vault-donation-address" id="cfVaultDonationAddress" hidden></p>
-                    <div class="cf-vault-donation-actions">
-                        <button type="submit" class="cf-vault-donation-submit" id="cfVaultDonationSubmit">Review donation</button>
-                        <button type="button" class="cf-vault-donation-cancel" id="cfVaultDonationCancel"
-                                onclick="GMCommunity.closeVaultDonation()">Cancel</button>
-                        <button type="button" class="cf-vault-donation-check" id="cfVaultDonationRetry"
-                                onclick="GMCommunity.retryVaultDonationConfig()" hidden>Retry vault check</button>
-                    </div>
-                </div>
-                <section class="cf-vault-donation-review" id="cfVaultDonationReview"
-                         aria-labelledby="cfVaultDonationReviewTitle" hidden>
-                    <h3 id="cfVaultDonationReviewTitle" tabindex="-1">Review your donation</h3>
-                    <p>No transfer has been sent yet. Check these public and on-chain details before continuing to your wallet.</p>
-                    <dl class="cf-vault-donation-summary">
-                        <div><dt>Donation amount</dt><dd id="cfVaultDonationReviewAmount"></dd></div>
-                        <div><dt>Public name</dt><dd id="cfVaultDonationReviewName"></dd></div>
-                        <div><dt>LinkedIn profile</dt><dd id="cfVaultDonationReviewLinkedIn"></dd></div>
-                        <div><dt>Network</dt><dd id="cfVaultDonationReviewNetwork">Celo Mainnet (42220)</dd></div>
-                        <div><dt>G$ token</dt><dd id="cfVaultDonationReviewToken"></dd></div>
-                        <div><dt>Vault recipient</dt><dd id="cfVaultDonationReviewRecipient"></dd></div>
-                        <div id="cfVaultDonationReviewSupportContractRow" hidden><dt>Routing contract</dt><dd id="cfVaultDonationReviewSupportContract"></dd></div>
-                    </dl>
-                    <div class="cf-vault-donation-disclosure cf-vault-donation-review-disclosure">
-                        <h4>After confirmation</h4>
-                        <p>KwentoFi will publish an unpinned Community Feed acknowledgment showing the amount, name, and LinkedIn URL above. It appears chronologically. The transfer is irreversible; you pay Celo network fees. If the Community Support contract is enabled, confirm both the exact-amount approval and the donation call.</p>
-                    </div>
-                    <div class="cf-vault-donation-actions">
-                        <button type="button" class="cf-vault-donation-cancel"
-                                id="cfVaultDonationReviewEdit" onclick="GMCommunity.editVaultDonation()">Edit details</button>
-                        <button type="button" class="cf-vault-donation-cancel"
-                                id="cfVaultDonationReviewCancel" onclick="GMCommunity.closeVaultDonation()">Cancel</button>
-                        <button type="button" class="cf-vault-donation-submit"
-                                id="cfVaultDonationContinue" onclick="GMCommunity.continueVaultDonationToWallet()">Continue to Wallet</button>
-                    </div>
-                </section>
-            </form>
-                <section class="cf-vault-donation-recovery" id="cfVaultDonationRecovery"
-                         aria-labelledby="cfVaultDonationRecoveryTitle" hidden>
-                    <h3 id="cfVaultDonationRecoveryTitle">Check a wallet transaction</h3>
-                    <p>The wallet response is unclear: a transfer may or may not have been submitted. Check wallet activity before retrying. If a transfer appears, paste its hash below to verify it.</p>
-                    <label class="cf-vault-donation-field" for="cfVaultDonationTxHash">Celo transaction hash</label>
-                    <input id="cfVaultDonationTxHash" type="text" inputmode="text" autocomplete="off"
-                           placeholder="0x…" pattern="0x[0-9a-fA-F]{64}" maxlength="66" disabled>
-                    <button type="button" class="cf-vault-donation-check"
-                            onclick="GMCommunity.resumeVaultDonationFromHash()">Verify transaction hash</button>
-                </section>
-            {% endif %}
-            <div class="cf-vault-donation-actions cf-vault-donation-status-actions">
-                <button type="button" class="cf-vault-donation-check" id="cfVaultDonationCheck"
-                        onclick="GMCommunity.checkPendingVaultDonation()" hidden>Check donation status</button>
-                <button type="button" class="cf-vault-donation-cancel" id="cfVaultDonationStatusClose"
-                        onclick="GMCommunity.closeVaultDonation()" hidden>Close status</button>
-            </div>
-            <p class="cf-vault-donation-status" id="cfVaultDonationStatus" role="status"
-               aria-live="polite" aria-atomic="true" hidden></p>
-        </div>
+        <div class="history-list" id="farmHistoryList"></div>
+        <div class="empty-note" id="farmHistoryEmpty">No farm transactions yet. Your history appears here after your first farm action.</div>
     </section>
     {% endif %}
 
-<!-- ── Recent posters rail ─────────────────────────────────────────────
-         Instagram's story rail: a sideways run of circular avatars, each with a
-         gradient ring and a label. It is built in the bundle from the authors
-         already on the feed page (`GMCommunity._internals.buildRail`), so it
-         needs no endpoint and no table, and it can never show a member who has
-         not posted. Outside the is_guest branch on purpose — reading is public.
-
-         It starts `hidden` so an empty feed does not flash an empty rail; the
-         bundle reveals it only when there is at least one author. -->
-    <div class="cf-daily-heading" id="cfDailyHeading" hidden>
-        <strong>Recent posters</strong>
-        <span>Daily moments from members</span>
-    </div>
-    <div class="cf-rail" id="cfRail" aria-label="Recent posters" hidden></div>
-
-        <section class="cf-posts" aria-labelledby="cfPostsTitle">
-            <section class="cf-pinned-donations" id="cfPinnedDonations" aria-labelledby="cfPinnedDonationsTitle" hidden>
-                <div class="cf-feed-section-head">
-                    <h2 id="cfPinnedDonationsTitle">Pinned Community Vault donations</h2>
-                    <span>Every confirmed donor acknowledgment stays pinned.</span>
-                </div>
-                <div id="cfPinnedDonationFeed" class="cf-pinned-donation-feed" aria-live="polite"></div>
-                <div class="cf-feed-foot">
-                    <button type="button" class="cf-load-more" id="cfPinnedDonationMore"
-                            onclick="GMCommunity.loadMorePinnedDonations()" hidden>Load more pinned donations</button>
-                </div>
-            </section>
-            <div class="cf-feed-section-head">
-                <h2 id="cfPostsTitle" tabindex="-1">Recent posts</h2>
-            </div>
-<!-- ── Feed ────────────────────────────────────────────────────────────
-         Outside the is_guest branch on purpose: reading is PUBLIC. A guest
-         gets the same cards a member does. Only writing is gated — the JS
-         raises the shared connect card on react/comment, and the server
-         still rejects every unauthenticated write with a 401. -->
-    <section id="cfFeed" class="cf-feed" aria-live="polite" aria-busy="true">
-        <div class="cf-skeleton" aria-hidden="true"></div>
-        <div class="cf-skeleton" aria-hidden="true"></div>
+    <section class="panel">
+        <h2>How it works</h2>
+        <div class="steps">
+            <div class="step"><span class="badge">1</span><span>Start with at least {{ farming_config.min_farm_gd }} G$. Every {{ farming_config.chicken_price_gd }} G$ buys 1 chicken, so the minimum farm starts with {{ farming_config.min_chickens }} chickens.</span></div>
+            <div class="step"><span class="badge">2</span><span>Each chicken produces 1 egg per day during the farming cycle. Egg reward value follows the live contract configuration.</span></div>
+            <div class="step"><span class="badge">3</span><span>Sell eggs during the cycle, or wait until maturity. Closing the farm returns principal plus any remaining egg rewards.</span></div>
+            <div class="step"><span class="badge">4</span><span>Minimum final withdrawal is hardcoded at {{ farming_config.min_withdraw_gd }} G$ in the smart contract.</span></div>
+            <div class="step"><span class="badge">5</span><span>Rewards come from the contract reward pool, funded by admins from the Admin Dashboard. Gas is estimated by the Celo network and your wallet — it is not a hardcoded farming fee.</span></div>
+        </div>
+        <p class="notice">Contract address: <code>{{ farming_contract or 'Not deployed yet — set FARMING_CONTRACT_ADDRESS after deployment' }}</code></p>
     </section>
 
-    <div class="cf-feed-foot">
-        <button type="button" class="cf-load-more" id="cfLoadMore"
-                onclick="GMCommunity.loadMore()" hidden>Load more</button>
-        <p class="cf-empty" id="cfEmpty" hidden>
-            {% if is_guest %}No posts yet.{% else %}No posts yet. Be the first to share something!{% endif %}
-        </p>
-    </div>
-        </section>
-    </div>
-</main>
-
-{# Mobile-only quick access to the auxiliary Community cards. JavaScript moves
-   the existing card nodes here below 900px and restores them to their exact
-   template positions on desktop; IDs and event handlers are never duplicated. #}
-<div class="cf-community-cards-modal" id="cfCommunityCardsModal" role="dialog"
-     aria-modal="true" aria-labelledby="cfCommunityCardsTitle"
-     aria-describedby="cfCommunityCardsDescription" tabindex="-1" hidden>
-    <div class="cf-community-cards-panel">
-        <div class="cf-community-cards-handle" aria-hidden="true"></div>
-        <header class="cf-community-cards-header">
-            <div>
-                <p class="cf-community-cards-kicker">Your community hub</p>
-                <h2 id="cfCommunityCardsTitle">Community Cards</h2>
-                <p id="cfCommunityCardsDescription">Community G$, vault support, and recent posters.</p>
-            </div>
-            <button type="button" class="cf-community-cards-close" id="cfCommunityCardsClose"
-                    aria-label="Close Community Cards">×</button>
-        </header>
-        <div class="cf-community-cards-content" id="cfCommunityCardsContent"></div>
-    </div>
-</div>
-
-{# Public reaction identities load only after a visitor opens a post's reaction
-   summary. The API returns usernames/profile URLs, never wallet addresses. #}
-<div class="cf-reactions-modal" id="cfReactionUsersModal" role="dialog"
-     aria-modal="true" aria-labelledby="cfReactionUsersTitle" tabindex="-1" hidden>
-    <section class="cf-reactions-panel">
-        <header class="cf-reactions-header">
-            <div>
-                <p class="cf-community-cards-kicker">Post activity</p>
-                <h2 id="cfReactionUsersTitle">Reactions</h2>
-            </div>
-            <button type="button" class="cf-community-cards-close" id="cfReactionUsersClose"
-                    aria-label="Close reactions">×</button>
-        </header>
-        <div class="cf-reactions-filters" id="cfReactionUsersFilters" role="group" aria-label="Filter reactions"></div>
-        <p class="cf-reactions-status" id="cfReactionUsersStatus" role="status" aria-live="polite"></p>
-        <ul class="cf-reactions-list" id="cfReactionUsersList" aria-label="People who reacted"></ul>
-        <div class="cf-reactions-footer">
-            <button type="button" class="cf-reactions-retry" id="cfReactionUsersRetry" hidden>Retry</button>
-            <button type="button" class="cf-reactions-more" id="cfReactionUsersMore" hidden>Load more</button>
-        </div>
-    </section>
-</div>
-
-{# ── Earn destinations sheet (separate from Community Cards) ───────────────── #}
-<div class="cf-sheet-overlay" id="cfSheetOverlay" onclick="GMCommunity.closeSheet()"></div>
-
-<div class="cf-sheet" id="cfSheetEarn" role="dialog" aria-label="More ways to earn G$">
-    <div class="cf-sheet-handle"></div>
-    <div class="cf-sheet-title">💰 More Ways To Earn G$</div>
-    <div class="cf-sheet-grid">
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/minigames', 'Opening Play &amp; Earn…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#f59e0b,#e11d48);color:#fff;">🎮</span>
-            <span class="cf-sheet-name">Play &amp; Earn</span>
-        </button>
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/learn-earn?from=community', 'Opening Learn &amp; Earn…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;">📚</span>
-            <span class="cf-sheet-name">Learn &amp; Earn</span>
-        </button>
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/savings', 'Opening Savings…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#0e7490,#155e75);color:#fff;">🏦</span>
-            <span class="cf-sheet-name">Savings</span>
-        </button>
-        {% if community_feed_visible %}
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/community', 'Opening Community Feed…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;">📸</span>
-            <span class="cf-sheet-name">Community Feed</span>
-        </button>
-        {% endif %}
-        {% if chatroom_visible %}
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/chatroom', 'Opening Community Chat…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#22c55e,#166534);color:#fff;">💬</span>
-            <span class="cf-sheet-name">Community Chat</span>
-        </button>
-        {% endif %}
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/farming', 'Opening Chicken Farming…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#facc15,#f97316);color:#241300;">🐔</span>
-            <span class="cf-sheet-name">Farming</span>
-        </button>
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/trustpilot-task', 'Opening Trustpilot Review…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#00b67a,#005128);color:#fff;">⭐</span>
-            <span class="cf-sheet-name">Trustpilot Review</span>
-        </button>
-    </div>
-</div>
-
-{# ── Buy Airtime modal ──────────────────────────────────────────────────────
-   The Reloadly store (`/reloadly/?embed=1#topup`) rendered INSIDE the feed
-   instead of navigating away, the same way the wallet's G$ Raffle and Daily
-   Task open in place. The store page hides its own back-to-wallet chrome when
-   `embed=1`, so this dialog supplies the title and the close control.
-
-   The iframe's src is NOT set here: `openAirtime()` copies `data-src` on first
-   open, so the store's catalog scripts never load for a member who never taps
-   the button. `scale: 0.8` shrinks the store's own desktop-width layout to fit
-   the dialog so the whole catalogue is visible without horizontal scrolling. #}
-<div class="cf-airtime-modal" id="cfAirtimeModal" hidden role="dialog" aria-modal="true"
-     aria-labelledby="cfAirtimeTitle">
-    <div class="cf-airtime-overlay" onclick="GMCommunity.closeAirtime()"></div>
-    <div class="cf-airtime-card">
-        <div class="cf-airtime-head">
-            <div>
-                <div class="cf-airtime-kicker">Mobile Top-Up</div>
-                <h3 id="cfAirtimeTitle">📱 Buy Airtime</h3>
-            </div>
-            <div class="cf-airtime-actions">
-                {# Keep Reloadly's provider-specific signing code, including its
-                   existing Privy path, untouched; this modal stays in Community. #}
-                <button type="button" class="cf-airtime-close" aria-label="Close Buy Airtime"
-                        onclick="GMCommunity.closeAirtime()">×</button>
-            </div>
-        </div>
-        <div class="cf-airtime-body">
-            <iframe id="cfAirtimeFrame" title="Buy Airtime — KwentoFi Store"
-                    data-src="/reloadly/?embed=1#topup"
-                    loading="lazy" referrerpolicy="no-referrer"></iframe>
+    <!-- Close-farm success (congrats) modal -->
+    <div class="modal-overlay" id="closeSuccessModal" role="dialog" aria-modal="true" aria-labelledby="closeSuccessTitle">
+        <div class="modal-card">
+            <div class="big-emoji">🎉</div>
+            <h3 id="closeSuccessTitle">Congratulations!</h3>
+            <p class="congrats">Your farm is now closed and your G$ has already been sent to your wallet.</p>
+            <div class="paid" id="closeSuccessAmount">0 G$</div>
+            <p class="congrats">Principal + egg rewards have been paid out on-chain.</p>
+            <div class="tx-line">Transaction: <a id="closeSuccessTx" href="#" target="_blank" rel="noopener">view on Celoscan ↗</a></div>
+            <button class="btn primary" type="button" id="closeSuccessClose">Great, thanks!</button>
         </div>
     </div>
-</div>
 
-{# ── Community-owned Claim Free G$ modal ────────────────────────────────────
-   The shared claim partial is rendered in this page's DOM. Its controller is
-   the same wallet-main claim implementation, loaded in claim-only mode below;
-   there is no iframe and no wallet-page chrome in the Community flow. #}
-{% include "_claim_modal.html" %}
-{% include "_claim_support_modals.html" %}
+    <div class="farm-toast" id="farmToast" role="status" aria-live="polite"></div>
 
-{% if not is_guest and messages_enabled %}
-<div class="cf-push-optin" id="cfMessagePushPrompt" hidden>
-    <div class="cf-push-optin-backdrop"></div>
-    <section class="cf-push-optin-card" role="dialog" aria-modal="true"
-             aria-labelledby="cfMessagePushTitle" aria-describedby="cfMessagePushCopy">
-        <span class="cf-push-optin-icon" aria-hidden="true">🔔</span>
-        <h2 id="cfMessagePushTitle">Get message notifications?</h2>
-        <p id="cfMessagePushCopy">Enable notifications on this device so you’ll know when someone sends you a Community message. You can change this later.</p>
-        <p class="cf-push-optin-status" id="cfMessagePushStatus" role="status" aria-live="polite" hidden></p>
-        <div class="cf-push-optin-actions">
-            <button type="button" class="cf-push-optin-enable" id="cfMessagePushEnable"
-                    onclick="GMCommunity.enableMessageNotifications()" disabled>Checking…</button>
-            <button type="button" class="cf-push-optin-later" id="cfMessagePushLater"
-                    onclick="GMCommunity.declineMessageNotifications()">Not now</button>
-        </div>
-    </section>
-</div>
-{% endif %}
-
-{# Read-only lightbox for media. #}
-<div class="cf-lightbox" id="cfLightbox" hidden role="dialog" aria-modal="true"
-     aria-label="Media viewer" onclick="GMCommunity.closeLightbox()">
-    <button type="button" class="cf-lightbox-close" aria-label="Close"
-            onclick="GMCommunity.closeLightbox()">×</button>
-    <div class="cf-lightbox-body" id="cfLightboxBody"></div>
-</div>
-
-{# Caption edit modal. #}
-<div class="cf-modal" id="cfEditModal" hidden role="dialog" aria-modal="true"
-     aria-labelledby="cfEditTitle">
-    <div class="cf-modal-card">
-        <h3 id="cfEditTitle">Edit caption</h3>
-        <label class="cf-sr-only" for="cfEditCaption">Caption</label>
-        <textarea id="cfEditCaption" class="cf-caption-input" rows="3"
-                  maxlength="{{ max_caption }}"></textarea>
-        <div class="cf-modal-foot">
-            <button type="button" class="cf-btn-ghost" onclick="GMCommunity.closeEdit()">Cancel</button>
-            <button type="button" class="cf-post-btn" id="cfEditSaveBtn"
-                    onclick="GMCommunity.saveEdit()">Save</button>
-        </div>
-    </div>
-</div>
-
-{# Profile picture modal. Shared with the public profile page (one
-   implementation). The picture is uploaded straight to R2 with a presigned PUT,
-   exactly like post media, then referenced through POST /community/api/avatar. #}
-{% with avatar_url=avatar_url, username=username, max_avatar_mb=max_avatar_mb %}
-    {% include "_community_avatar_modal.html" %}
-{% endwith %}
-
-<div class="cf-toast" id="cfToast" role="status" aria-live="polite" hidden></div>
-
-{# ── Boot config ────────────────────────────────────────────────────────────
-   MUST come BEFORE the bundle: the script snapshots this object at parse time
-   (the documented GM_*_BOOT ordering landmine). #}
-<script>
-window.GM_COMMUNITY_BOOT = {
-    isGuest: {{ 'true' if is_guest else 'false' }},
-    messagesEnabled: {{ 'true' if messages_enabled else 'false' }},
-    postSupport: {{ post_support_config|default({'enabled': false}, true)|tojson }},
-    wallet: {{ (wallet or '')|tojson }},
-    username: {{ (username or '')|tojson }},
-    avatarUrl: {{ (avatar_url or '')|tojson }},
-    usernameRequired: {{ 'true' if username_required else 'false' }},
-    loginMethod: {{ (login_method or '')|tojson }},
-    walletConnectProjectId: {{ (walletconnect_project_id or '')|tojson }},
-    claimOnly: true,
-    gdTokenAddress: '',
-    raffleContractAddress: '',
-    identityContractAddress: '',
-    embed: false,
-    assetVersion: {{ ASSET_VERSION|tojson }},
-    maxCaption: {{ max_caption }},
-    maxMedia: {{ max_media }},
-    maxImageMb: {{ max_image_mb }},
-    maxVideoMb: {{ max_video_mb }},
-    maxAvatarMb: {{ max_avatar_mb }},
-    storageReady: {{ 'true' if storage_ready else 'false' }},
-    focusPostId: {{ (focus_post_id or '')|tojson }},
-    focusPost: {{ (focus_post or none)|tojson }},
-    // Destination list for the Community mobile action tray and desktop rail.
-    // The Community Cards item is mobile-only; CSS preserves the desktop rail.
-    // `guestOk` marks a destination a signed-out visitor may reach (reading is
-    // public); a `!guestOk` tap raises the shared connect card instead.
-    //
-    // There is deliberately NO "Feed" tab: this page IS the feed, so a tab
-    // pointing back at /community was a dead tap. Its slot now carries the
-    // Messages inbox so profile conversations are reachable from every feed
-    // screen.
-    //
-    // Claim Free G$ is rendered directly in this page by the shared claim
-    // partial/controller. The href stays the real wallet page so middle-click
-    // and no-JS still work, but the normal member path never loads an iframe.
-    nav: [
-        { id: 'claim',  icon: '🪙', label: 'Claim Free G$', href: '/wallet?claim=1', action: 'claim', gold: true, guestOk: false },
-        { id: 'search', icon: '🔍', label: 'Search',      action: 'search',    guestOk: true },
-        { id: 'messages', icon: '💬', label: 'Messages',    href: '/messages', action: 'messages', guestOk: false },
-        { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
-        { id: 'community-cards', icon: '🗂️', label: 'Community Cards', action: 'community-cards', guestOk: true },
-        { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet',     guestOk: false }
-    ],
-    reactions: {
-        like: '👍', love: '❤️', haha: '😂',
-        wow: '😮', sad: '😢', angry: '😡'
-    }
-};
-</script>
-
-{% if is_guest %}
-{# The connect modal needs the WC bridge + in-app wallet, exactly like the
-   homepage, so the guest can actually create/log in from here.
-
-   ethers MUST load first: `GMLocalWallet.create()` / `unlockWithKeystore()`
-   call `_assertEthers()` and throw "ethers.js is not loaded on this page."
-   without it, and `showLocalWalletPanel()` bails out early — so "Create
-   GoodMarket Wallet" and "Log in with email + PIN" were both dead ends for
-   guests. The member branch also loads ethers because the shared claim-only
-   controller must support local-wallet PIN unlock and claim signing. #}
-<script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
-<script>window.GMEthersLoader.load().catch(function () {});</script>
-<script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
+            integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
+    <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+    <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/get-started.js', v=ASSET_VERSION) }}"></script>
-{# The feed bundle loads for guests too: reading is public, and the bundle is
-   what renders the cards and raises the connect card on a gated write. It
-   signs nothing, so it needs no ethers of its own. #}
-<script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/community-support.js', v=ASSET_VERSION) }}"></script>
-{% set get_started_boot = {'return_to': '/community'} %}
-{% include "_get_started_modal.html" %}
-{% else %}
-<script>
-// wallet-main.js is shared with /wallet; keep this payload identical in shape
-// so its live Identity/UBI availability and signing paths work in Community.
-window.GM_WALLET_BOOT = {
-    wallet: {{ wallet|tojson }},
-    loginMethod: {{ login_method|default('', true)|tojson }},
-    gdTokenAddress: {{ gd_token_address|default('', true)|tojson }},
-    raffleContractAddress: {{ raffle_contract_address|default('', true)|tojson }},
-    walletConnectProjectId: {{ walletconnect_project_id|default('', true)|tojson }},
-    assetVersion: {{ ASSET_VERSION|default('', true)|tojson }},
-    bridgeContract: {{ bridge_contract|default('', true)|tojson }},
-    celoGdTokenContract: {{ celo_gd_token_contract|default('', true)|tojson }},
-    xdcGdTokenContract: {{ xdc_gd_token_contract|default('', true)|tojson }},
-    xdcChainId: {{ xdc_chain_id|default(50, true)|tojson }},
-    celoChainId: {{ celo_chain_id|default(42220, true)|tojson }},
-    identityContractAddress: {{ identity_contract_address|default('', true)|tojson }},
-    ethereumRpc: {{ ethereum_rpc|default('', true)|tojson }},
-    ethereumRpcFallbacks: {{ ethereum_rpc_fallbacks|default('', true)|tojson }},
-    fvReturnTo: {{ fv_return_to|default('/community', true)|tojson }},
-    returnTo: '/community',
-    claimOnly: true,
-    embed: false
-};
-</script>
-<script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
-<script>window.GMEthersLoader.load().catch(function () {});</script>
-<script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
-<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"
-        integrity="sha384-0d+Gr7vM4Drod8E3hXKgciWJSWbjD/opKLLygI9ktiWbuvlDwQLzU46wJ9s5gsp7"
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="{{ url_for('static', filename='js/wallet-main.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/minipay-fee-currency.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/p2p/p2p-wallet.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/community-push.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
-<script src="{{ url_for('static', filename='js/community-support.js', v=ASSET_VERSION) }}"></script>
-{% endif %}
+    <script src="{{ url_for('static', filename='js/farming-history.js', v=ASSET_VERSION) }}"></script>
+    <script>
+        window.WALLET_ADDRESS = "{{ wallet }}";
+        window.GM_FARM_BOOT = {
+            wallet: "{{ wallet }}",
+            loginMethod: "{{ login_method }}",
+            farmingContract: "{{ farming_contract }}",
+            gdContract: "{{ gd_contract }}",
+            chainId: {{ chain_id }},
+            celoRpc: "{{ celo_rpc }}",
+            celoRpcFallbacks: {{ celo_rpc_fallbacks | tojson }},
+            walletconnectProjectId: "{{ walletconnect_project_id }}",
+            assetVersion: "{{ ASSET_VERSION }}",
+            config: {{ farming_config | tojson }}
+        };
+    </script>
+    <script src="{{ url_for('static', filename='js/farming.js', v=ASSET_VERSION) }}"></script>
 
-<script src="{{ url_for('static', filename='js/community-daily.js', v=ASSET_VERSION) }}"></script>
-
+    {% if is_guest %}
+    <!-- Guest: reuse the homepage "Get Started" connect flow. The guest
+         connect card in the play-panel slot is the entry point (it calls
+         openGoodMarketGetStarted()). After a successful connect the user is
+         returned to this exact page, where the server renders the real farm. -->
+    {% set get_started_boot = {'return_to': request.full_path if request else ''} %}
+    {% include "_get_started_modal.html" %}
+    {% endif %}
 </body>
 </html>
