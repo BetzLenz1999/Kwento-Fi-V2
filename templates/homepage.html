@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GoodMarket — Community Wallet for the G$ Token (GoodDollar Protocol)</title>
-    <meta name="description" content="GoodMarket is a community-built wallet for the G$ token on the GoodDollar protocol (Celo) — quizzes, daily tasks, minigames, savings & swap, gas-free. Not an official GoodDollar product.">
+    <title>GoodMarket — G$ Community &amp; Wallet on Celo</title>
+    <meta name="description" content="GoodMarket is an independent community for G$ users on Celo. Share posts, support members with G$, explore eligible rewards, and discover community tools.">
     <!-- Open Graph / link-sharing previews (Telegram, Facebook, X) -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="GoodMarket">
-    <meta property="og:title" content="GoodMarket — Community Wallet for the G$ Token">
-    <meta property="og:description" content="Quizzes, daily tasks, minigames & more — earn real G$ and manage it in one wallet. Gas-free, community-built on Celo.">
+    <meta property="og:title" content="GoodMarket — G$ Community &amp; Wallet">
+    <meta property="og:description" content="Join conversations, support community posts with G$ on Celo, explore eligible rewards, and discover supported G$ utilities.">
     <meta property="og:image" content="{{ request.url_root }}static/icons/goodmarket-only-512.png">
     <meta property="og:url" content="{{ request.url_root }}">
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="GoodMarket — Community Wallet for the G$ Token">
-    <meta name="twitter:description" content="Quizzes, daily tasks, minigames & more — earn real G$ and manage it in one wallet. Gas-free, community-built on Celo.">
+    <meta name="twitter:title" content="GoodMarket — G$ Community &amp; Wallet">
+    <meta name="twitter:description" content="Join conversations, support community posts with G$ on Celo, explore eligible rewards, and discover supported G$ utilities.">
     <meta name="twitter:image" content="{{ request.url_root }}static/icons/goodmarket-only-512.png">
     <!-- Telegram Mini App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -1954,39 +1954,38 @@
         }
 
         /* ═══════════════════════════════════════════════════════════════
-           GoodMarket homepage design system — "Deep Indigo" (2026-10)
+           GoodMarket homepage design system — "Community / Ink & Indigo" (2026-10)
 
            Appended at the END of the original stylesheet so equal-specificity
            rules here win by cascade order. No rule above was edited, so this
            whole restyle is one reviewable/revertable block.
 
-           Principles (this is what fixes the "nakakalito" feel):
-             • ONE action colour — G$ gold (--action). Reserved for real money
-               actions (Get Started, Create wallet, connect when detected).
-             • Violet (--primary) is structure only: links, eyebrows, borders.
-             • Green/amber/red are SEMANTIC only, never decoration.
-             • Decorative background layers are capped (no stacked glows).
-             • All text on the indigo canvas meets WCAG AA (>= 4.5:1).
+           Principles:
+             • Ink navy + slate surfaces form a calm, professional canvas.
+             • Indigo (--primary) is for navigation and primary community actions.
+             • G$ gold (--action) is reserved for token values and money context.
+             • Teal is reserved for utility status; semantic colors stay meaningful.
+             • Decorative background layers are restrained; text remains high-contrast.
            ═══════════════════════════════════════════════════════════════ */
         :root {
             /* Canvas */
-            --bg:        #0B0F2A;
-            --bg-2:      #130D35;
-            --bg-3:      #1A103D;
-            --surface:   rgba(255, 255, 255, 0.045);
-            --surface-2: rgba(255, 255, 255, 0.08);
-            --border:    rgba(255, 255, 255, 0.10);
+            --bg:        #0A1220;
+            --bg-2:      #101B2B;
+            --bg-3:      #15243A;
+            --surface:   rgba(255, 255, 255, 0.05);
+            --surface-2: rgba(255, 255, 255, 0.085);
+            --border:    rgba(148, 163, 184, 0.18);
 
             /* Brand — structure, links, eyebrows */
-            --primary:      #7c3aed;
-            --primary-2:    #6d28d9;
-            --primary-soft: rgba(124, 58, 237, 0.14);
-            --primary-text: #c4b5fd;   /* AA-safe violet text on indigo */
+            --primary:      #4f46e5;
+            --primary-2:    #4338ca;
+            --primary-soft: rgba(99, 102, 241, 0.15);
+            --primary-text: #c7d2fe;
 
             /* THE action colour — G$ gold. Money actions only. */
-            --action:      #fbbf24;
-            --action-2:    #f59e0b;
-            --action-text: #1f1300;    /* dark text on gold — meets AA */
+            --action:      #f4c65e;
+            --action-2:    #dcae3d;
+            --action-text: #172033;
 
             /* Semantic only */
             --success: #34d399;
@@ -1994,9 +1993,9 @@
             --danger:  #f87171;
 
             /* Text */
-            --text:       #e2e8f0;
-            --text-dim:   rgba(226, 232, 240, 0.72);
-            --text-muted: rgba(226, 232, 240, 0.52);
+            --text:       #edf2f8;
+            --text-dim:   rgba(226, 232, 240, 0.78);
+            --text-muted: rgba(203, 213, 225, 0.64);
 
             /* Light modal sheet (kept, matches the wallet's light theme) */
             --sheet:        #ffffff;
@@ -2024,38 +2023,37 @@
         }
         body::before {
             background: radial-gradient(ellipse at 50% 34%,
-                rgba(124, 58, 237, 0.12) 0%, transparent 68%);
+                rgba(79, 70, 229, 0.11) 0%, transparent 68%);
         }
         .hero-section::before {
             background: radial-gradient(58% 66% at 14% 32%,
-                rgba(124, 58, 237, 0.18) 0%, transparent 62%);
+                rgba(79, 70, 229, 0.16) 0%, transparent 62%);
         }
         .hero-section::after { opacity: 0.7; }
 
         .gm-welcome-loader {
             background:
-                radial-gradient(circle at 50% 38%, rgba(124, 58, 237, 0.28), transparent 55%),
+                radial-gradient(circle at 50% 38%, rgba(79, 70, 229, 0.22), transparent 55%),
                 linear-gradient(160deg, #070b1f 0%, #0d1032 100%);
         }
         .gm-loader-orb::before {
             background:
                 radial-gradient(circle at 32% 28%, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0) 44%),
-                conic-gradient(from 180deg, var(--action), var(--action-2), var(--primary), var(--action));
-            box-shadow: 0 0 40px rgba(251, 191, 36, 0.4), 0 12px 30px rgba(2,6,23,0.45);
+                conic-gradient(from 180deg, var(--primary), #818cf8, #2dd4bf, var(--primary));
+            box-shadow: 0 0 36px rgba(79, 70, 229, 0.3), 0 12px 30px rgba(2,6,23,0.45);
         }
         .gm-loader-chip {
             background: var(--surface);
             border: 1px solid var(--border);
             color: var(--text-dim);
         }
-        /* Loader text was the last blue hold-out (#2563eb title, #60a5fa dots,
-           blue-tinted subtitle) on an otherwise gold/indigo screen. */
+        /* Keep the loader restrained and aligned with the indigo action color. */
         .gm-loader-title {
-            color: var(--action);
-            text-shadow: 0 0 26px rgba(251, 191, 36, 0.35), 0 8px 28px rgba(120, 53, 15, 0.45);
+            color: var(--text);
+            text-shadow: 0 0 24px rgba(99, 102, 241, 0.28);
         }
         .gm-loader-subtitle { color: var(--text-dim); }
-        .gm-loader-dots span { background: var(--action); }
+        .gm-loader-dots span { background: var(--primary-text); }
 
         /* ── Certificate carousel: green accents → brand gold ── */
         .cert-carousel-title span { color: var(--action); }
@@ -2069,73 +2067,73 @@
             background: linear-gradient(160deg, var(--primary) 0%, var(--primary-2) 100%);
         }
         .fs-book-b3 {
-            background: linear-gradient(160deg, var(--action) 0%, var(--action-2) 100%);
+            background: linear-gradient(160deg, #c7d2fe 0%, #818cf8 70%, var(--primary) 100%);
         }
-        .fs-module-pill .dot { background: var(--action); box-shadow: 0 0 8px rgba(251,191,36,0.8); }
+        .fs-module-pill .dot { background: var(--primary-text); box-shadow: 0 0 8px rgba(129,140,248,0.55); }
 
         /* ── Header ── */
         .header {
-            background: rgba(11, 15, 42, 0.86);
+            background: rgba(10, 18, 32, 0.92);
             border-bottom: 1px solid var(--border);
         }
-        .logo { color: var(--action); }
+        .logo { color: var(--text); }
         .nav-links a { color: var(--text-dim); }
-        .nav-links a:hover, .nav-links a.active { color: var(--action); }
+        .nav-links a:hover, .nav-links a.active { color: var(--primary-text); }
         .connect-wallet-btn {
-            background: var(--action);
-            color: var(--action-text);
+            background: var(--primary);
+            color: #ffffff;
             border-color: transparent;
         }
-        .connect-wallet-btn:hover { background: var(--action-2); }
+        .connect-wallet-btn:hover { background: var(--primary-2); }
 
         /* ── Hero ── */
         .hero-eyebrow {
             background: var(--surface);
             border: 1px solid var(--border);
-            color: var(--action);
+            color: var(--primary-text);
         }
         .hero-eyebrow .pulse-dot {
-            background: var(--action);
-            box-shadow: 0 0 8px 1px rgba(251, 191, 36, 0.55);
+            background: var(--primary);
+            box-shadow: 0 0 8px 1px rgba(99, 102, 241, 0.5);
         }
         .hero-title { color: #ffffff; }
         .hero-title .highlight {
-            background: linear-gradient(120deg, var(--action) 0%, var(--action-2) 100%);
+            background: linear-gradient(120deg, var(--primary-text) 0%, #ffffff 100%);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-            text-shadow: 0 0 34px rgba(251, 191, 36, 0.22);
+            text-shadow: 0 0 28px rgba(99, 102, 241, 0.22);
         }
         .hero-description { color: var(--text-dim); }
         .hero-community-note {
             background: var(--primary-soft);
-            border: 1px solid rgba(124, 58, 237, 0.34);
+            border: 1px solid rgba(99, 102, 241, 0.34);
             color: var(--primary-text);
         }
         .hero-community-note strong { color: var(--text); }
 
         .btn-primary {
-            background: var(--action);
-            color: var(--action-text);
-            box-shadow: 0 12px 30px rgba(251, 191, 36, 0.28);
+            background: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 10px 26px rgba(79, 70, 229, 0.28);
         }
-        .btn-primary:hover { background: var(--action-2); box-shadow: 0 16px 34px rgba(251, 191, 36, 0.36); }
+        .btn-primary:hover { background: var(--primary-2); box-shadow: 0 14px 30px rgba(79, 70, 229, 0.34); }
         .btn-secondary {
             background: var(--surface);
             border: 1px solid var(--border);
             color: var(--text);
         }
         .btn-secondary:hover {
-            border-color: rgba(167, 139, 250, 0.5);
+            border-color: rgba(129, 140, 248, 0.55);
             color: var(--primary-text);
             background: var(--primary-soft);
         }
         .hero-checks { color: var(--text-dim); }
         .hero-check::before {
-            background: rgba(251, 191, 36, 0.16);
-            color: var(--action);
+            background: var(--primary-soft);
+            color: var(--primary-text);
         }
-        .hero-tagline-tl { color: var(--text-muted); }
+        .hero-tagline { color: var(--text-muted); }
 
         .hero-orb::before {
             background: radial-gradient(circle at 35% 35%,
@@ -2155,14 +2153,14 @@
            (Was cyan / green / gold — three unrelated hues.) */
         .hero-stat-card.stat-disbursed .stat-value { color: var(--action); }
         .hero-stat-card.stat-disbursed .stat-foot  { color: var(--action); }
-        .hero-stat-card.stat-earners { border-color: rgba(124,58,237,0.34); }
+        .hero-stat-card.stat-earners { border-color: rgba(99,102,241,0.34); }
         .hero-stat-card.stat-earners .stat-value   { color: var(--primary-text); }
         .hero-stat-card.stat-tasks .stat-value     { color: #ffffff; }
 
         /* ── Feature showcase ── */
         .feature-showcase-head .fs-eyebrow {
             color: var(--primary-text);
-            border: 1px solid rgba(167, 139, 250, 0.34);
+            border: 1px solid rgba(129, 140, 248, 0.34);
             background: var(--primary-soft);
         }
         .feature-showcase-head h2 { color: #ffffff; }
@@ -2173,17 +2171,17 @@
             box-shadow: var(--card-shadow);
         }
         .feature-card-ui:hover {
-            border-color: rgba(167, 139, 250, 0.45);
-            box-shadow: 0 26px 56px rgba(124, 58, 237, 0.24);
+            border-color: rgba(129, 140, 248, 0.45);
+            box-shadow: 0 24px 52px rgba(79, 70, 229, 0.20);
         }
         .feature-card-ui::before {
-            background: radial-gradient(120% 100% at 50% 0%, rgba(124, 58, 237, 0.14), transparent 70%);
+            background: radial-gradient(120% 100% at 50% 0%, rgba(79, 70, 229, 0.12), transparent 70%);
         }
         .fs-card-label { color: var(--text-muted); }
         /* Tags share one violet family (was blue / violet / green). */
         .fs-tag-blue, .fs-tag-violet, .fs-tag-green {
             background: var(--primary-soft);
-            border: 1px solid rgba(167, 139, 250, 0.36);
+            border: 1px solid rgba(129, 140, 248, 0.34);
             color: var(--primary-text);
         }
         .fs-card-title { color: #f8fafc; }
@@ -2191,12 +2189,12 @@
         .fs-cta {
             color: var(--primary-text);
             background: var(--primary-soft);
-            border: 1px solid rgba(167, 139, 250, 0.34);
+            border: 1px solid rgba(129, 140, 248, 0.34);
         }
         .fs-cta:hover {
-            background: rgba(124, 58, 237, 0.26);
-            color: #ddd6fe;
-            border-color: rgba(167, 139, 250, 0.6);
+            background: rgba(79, 70, 229, 0.24);
+            color: #e0e7ff;
+            border-color: rgba(129, 140, 248, 0.58);
         }
         .btn-utility {
             display: inline-flex;
@@ -2230,16 +2228,16 @@
             gap: 1.5rem;
             align-items: center;
             padding: clamp(1.4rem, 4vw, 2.25rem);
-            border: 1px solid rgba(96, 165, 250, 0.3);
+            border: 1px solid rgba(99, 102, 241, 0.32);
             border-radius: 24px;
-            background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(124, 58, 237, 0.14));
+            background: linear-gradient(135deg, rgba(79, 70, 229, 0.16), rgba(15, 118, 110, 0.09));
             box-shadow: var(--card-shadow);
             overflow: hidden;
         }
         .section-kicker {
             display: inline-block;
             margin-bottom: 0.65rem;
-            color: var(--action);
+            color: var(--primary-text);
             font-size: 0.7rem;
             font-weight: 900;
             letter-spacing: 0.15em;
@@ -2261,19 +2259,19 @@
             line-height: 1.6;
         }
         .fs-cta-primary {
-            background: var(--action);
+            background: var(--primary);
             border-color: transparent;
-            color: var(--action-text);
+            color: #ffffff;
         }
         .fs-cta-primary:hover {
-            background: var(--action-2);
-            color: var(--action-text);
+            background: var(--primary-2);
+            color: #ffffff;
             border-color: transparent;
         }
         .community-entry-visual {
             position: relative;
             min-height: 190px;
-            border: 1px solid rgba(196, 181, 253, 0.22);
+            border: 1px solid rgba(129, 140, 248, 0.22);
             border-radius: 20px;
             background: rgba(8, 13, 35, 0.35);
             overflow: hidden;
@@ -2314,14 +2312,15 @@
             width: 72px;
             height: 72px;
             margin: 0 0 1rem;
-            border: 1px solid rgba(196, 181, 253, 0.28);
+            border: 1px solid rgba(129, 140, 248, 0.26);
             border-radius: 22px;
             background: var(--primary-soft);
-            color: var(--action);
+            color: var(--primary-text);
             font-size: 2.15rem;
             font-weight: 900;
         }
-        .social-card-community .social-card-icon { color: #93c5fd; background: rgba(59, 130, 246, 0.16); }
+        .social-card-community .social-card-icon { color: var(--primary-text); background: var(--primary-soft); }
+        .social-card-rewards .social-card-icon { color: var(--action); }
         .social-card-games .social-card-icon { color: var(--primary-text); }
         .social-card-utility .social-card-icon { color: #a7f3d0; background: rgba(16, 185, 129, 0.12); }
         .social-feature-card .fs-card-title { max-width: 18rem; font-size: clamp(1.05rem, 2vw, 1.3rem); line-height: 1.2; }
@@ -2359,13 +2358,13 @@
             .hero-buttons { align-items: stretch; flex-direction: column; }
             .btn-primary, .btn-secondary, .btn-utility { justify-content: center; width: 100%; }
         }
-        /* Book stack: one violet family (was blue / violet / green). */
-        .fs-book-b1 { background: linear-gradient(160deg, #a78bfa 0%, #7c3aed 70%, #6d28d9 100%); }
-        .fs-book-b2 { background: linear-gradient(160deg, #c4b5fd 0%, #8b5cf6 70%, #7c3aed 100%); }
-        .fs-book-b3 { background: linear-gradient(160deg, #ddd6fe 0%, #a78bfa 70%, #8b5cf6 100%); }
-        .fs-game-pad { background: linear-gradient(150deg, rgba(124,58,237,0.92), rgba(76,29,149,0.92)); }
+        /* Illustrations stay within the same restrained indigo family. */
+        .fs-book-b1 { background: linear-gradient(160deg, #6366f1 0%, var(--primary) 70%, #312e81 100%); }
+        .fs-book-b2 { background: linear-gradient(160deg, #a5b4fc 0%, #6366f1 70%, var(--primary) 100%); }
+        .fs-book-b3 { background: linear-gradient(160deg, #c7d2fe 0%, #818cf8 70%, #4f46e5 100%); }
+        .fs-game-pad { background: linear-gradient(150deg, rgba(79,70,229,0.92), rgba(49,46,129,0.92)); }
         .fs-phone-screen {
-            background: radial-gradient(80% 60% at 50% 12%, rgba(124,58,237,0.3), transparent 60%),
+            background: radial-gradient(80% 60% at 50% 12%, rgba(79,70,229,0.22), transparent 60%),
                         linear-gradient(180deg, rgba(30,27,75,0.55), rgba(15,23,42,0.5));
         }
         .fs-data-track::after { background: linear-gradient(90deg, var(--primary), var(--primary-text)); }
@@ -2377,7 +2376,7 @@
         }
         .hiw-step-num {
             background: var(--primary-soft);
-            border: 1px solid rgba(167, 139, 250, 0.4);
+            border: 1px solid rgba(129, 140, 248, 0.4);
             color: var(--primary-text);
         }
         .hiw-step-title { color: #f1f5f9; }
@@ -2389,10 +2388,10 @@
             border: 1px solid var(--border);
             color: var(--text-dim);
         }
-        .section-tab:hover { color: var(--primary-text); border-color: rgba(167,139,250,0.4); }
+        .section-tab:hover { color: var(--primary-text); border-color: rgba(129,140,248,0.4); }
         .section-tab.active, .submenu-nav .section-tab.active {
             background: var(--primary-soft);
-            border-color: rgba(167, 139, 250, 0.5);
+            border-color: rgba(129, 140, 248, 0.5);
             color: var(--primary-text);
         }
         .panel-title { color: #ffffff; }
@@ -2403,9 +2402,9 @@
             box-shadow: var(--card-shadow);
         }
         .earn-card:hover {
-            border-color: rgba(167, 139, 250, 0.34);
+            border-color: rgba(129, 140, 248, 0.34);
             background: var(--surface-2);
-            box-shadow: 0 8px 32px rgba(124, 58, 237, 0.2);
+            box-shadow: 0 8px 32px rgba(79, 70, 229, 0.18);
         }
         .earn-card-title { color: #ffffff; }
         .earn-card-desc  { color: var(--text-dim); }
@@ -2420,8 +2419,8 @@
             box-shadow: var(--card-shadow);
         }
         .feature-card:hover {
-            border-color: rgba(167, 139, 250, 0.34);
-            box-shadow: 0 8px 24px rgba(124, 58, 237, 0.18);
+            border-color: rgba(129, 140, 248, 0.34);
+            box-shadow: 0 8px 24px rgba(79, 70, 229, 0.16);
         }
         .feature-title { color: #ffffff; }
         .feature-description { color: var(--text-dim); }
@@ -2431,7 +2430,7 @@
             background: var(--surface);
             border: 1px solid var(--border);
         }
-        .dev-card:hover { border-color: rgba(167, 139, 250, 0.34); }
+        .dev-card:hover { border-color: rgba(129, 140, 248, 0.34); }
         .dev-name { color: #ffffff; }
         .dev-role { color: var(--text-dim); }
         .community-bar { background: linear-gradient(135deg, var(--primary), var(--primary-2)); }
@@ -2601,13 +2600,13 @@
                 <span class="hero-eyebrow"><span class="pulse-dot"></span>GoodMarket Community · Built for G$ users</span>
                 <h1 class="hero-title">
                     <span class="line">Share. Connect.</span>
-                    <span class="line">Earn <span class="highlight">together.</span></span>
+                    <span class="line">Support <span class="highlight">one another.</span></span>
                 </h1>
                 <p class="hero-description">
-                    Join community conversations, discover eligible G$ rewards, play skill games, and use on-chain G$ for everyday utilities.
+                    Join conversations, follow community members, and support posts with G$ on Celo. Explore eligible rewards, skill games, and supported G$ utilities.
                 </p>
-                <p class="hero-tagline-tl">
-                    🇵🇭 Sumali sa community, makipag-ugnayan, at tuklasin kung paano gumagana ang G$.
+                <p class="hero-tagline">
+                    A community to share what matters and discover how G$ works.
                 </p>
                 <div class="hero-buttons">
                     {% if community_feed_visible %}
@@ -2669,7 +2668,7 @@
             <div class="community-entry-copy">
                 <span class="section-kicker">The GoodMarket Community</span>
                 <h2 id="community-entry-title">Your next G$ journey starts with people.</h2>
-                <p>Share an update, react thoughtfully, follow members, and discover conversations from the community.</p>
+                <p>Post updates, react, follow members, and support a post’s author with G$. Verified support is acknowledged in the Community Feed.</p>
                 {% if community_feed_visible %}
                 <a class="fs-cta fs-cta-primary" href="/community">Open Community Feed <span class="arrow">→</span></a>
                 {% else %}
@@ -2696,8 +2695,8 @@
             <article class="feature-card-ui social-feature-card social-card-community">
                 <div class="fs-card-label">01 · Community <span class="fs-tag fs-tag-blue">Connect</span></div>
                 <div class="social-card-icon" aria-hidden="true">◎</div>
-                <div class="fs-card-title">Post something that matters.</div>
-                <p class="fs-card-sub">Share updates, join conversations, follow members, and discover community stories.</p>
+                <div class="fs-card-title">Share what matters. Support one another.</div>
+                <p class="fs-card-sub">Post updates, join conversations, follow members, and support a post’s author with G$.</p>
                 {% if community_feed_visible %}
                 <a class="fs-cta" href="/community">Open Community <span class="arrow">→</span></a>
                 {% else %}
