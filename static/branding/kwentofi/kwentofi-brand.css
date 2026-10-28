@@ -1,0 +1,31 @@
+:root {
+  --kwentofi-ink: #0A1220;
+  --kwentofi-surface: #111C2E;
+  --kwentofi-indigo: #4F46E5;
+  --kwentofi-gold: #F3C75B;
+  --kwentofi-white: #F7F8FC;
+}
+
+.kwentofi-symbol {
+  width: 48px;
+  height: 48px;
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.kwentofi-logo-on-dark,
+.kwentofi-logo-on-light {
+  width: min(100%, 420px);
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kwentofi-symbol,
+  .kwentofi-logo-on-dark,
+  .kwentofi-logo-on-light {
+    transition: none;
+  }
+}
