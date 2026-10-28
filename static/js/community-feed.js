@@ -1550,6 +1550,19 @@
             toggleComments(post, body);
         };
         actions.appendChild(commentBtn);
+        var postType = String(post.post_type || post.type || '').toLowerCase();
+        var eligibleForSupport = !post.is_mine && !post.is_deleted && !post.deleted_at
+            && !post.is_hidden && post.hidden !== true && !post.is_system && !post.system
+            && postType !== 'system' && postType !== 'system_vault_donation'
+            && postType !== 'system_post_support';
+        if (eligibleForSupport) {
+            var supportBtn = el('button', 'cf-action-btn cf-support-action');
+            supportBtn.type = 'button'; supportBtn.appendChild(el('span', 'cf-act-icon', '🪙'));
+            supportBtn.appendChild(el('span', null, 'Support'));
+            supportBtn.setAttribute('aria-label', 'Support @' + (post.username || 'creator') + ' with G$');
+            supportBtn.onclick = function () { if (!WALLET) { requiresLogin(); return; } openSupportReview(post); };
+            actions.appendChild(supportBtn);
+        }
 
         var shareBtn = el('button', 'cf-action-btn');
         shareBtn.type = 'button';
@@ -1574,6 +1587,86 @@
         return actions;
     }
 
+    var _supportBusy = false, _supportPost = null, _pendingSupportConfirm = null;
+    function openSupportReview(post) {
+        if (!WALLET) { requiresLogin(); return; }
+        _supportPost=post; var modal=$('cfSupportModal'), amount=$('cfSupportAmount'), min=Number(BOOT.supportMinimumAmountGd)||25;
+        var author=$('cfSupportAuthor'); if(author)author.textContent='@'+(post.username||'creator');
+        if(amount){amount.min=String(min);amount.value=String(min);}
+        var label=$('cfSupportMinimum');if(label)label.textContent=min+' G$ minimum';var status=$('cfSupportStatus');if(status)status.textContent='';if(modal)modal.hidden=false;if(amount)amount.focus();
+    }
+    function closeSupportReview(){if(_pendingSupportConfirm){var status=$('cfSupportStatus');if(status)status.textContent='Support transaction is already sent and awaiting verification. Do not send again; keep this dialog open and use Check status.';return;}var modal=$('cfSupportModal');if(modal)modal.hidden=true;_supportPost=null;}
+    function resolveSupportProvider(){
+        var method=String(BOOT.loginMethod||'').toLowerCase();
+        if(method==='local'){if(!window.GMLocalWallet||typeof GMLocalWallet.getProvider!=='function')throw new Error('In-app wallet unavailable.');if(!GMLocalWallet.isUnlocked()){if(typeof window._lwOpenUnlockModal==='function')return Promise.resolve(window._lwOpenUnlockModal()).then(function(){if(!GMLocalWallet.isUnlocked())throw new Error('Unlock your in-app wallet before supporting.');return GMLocalWallet.getProvider();});throw new Error('Unlock your in-app wallet before supporting.');}return Promise.resolve(GMLocalWallet.getProvider());}
+        if(method==='walletconnect'||method==='manual'||method==='manual_address'){if(!window.GMWalletConnect||typeof GMWalletConnect.getProvider!=='function')throw new Error('WalletConnect session unavailable.');return Promise.resolve(GMWalletConnect.getProvider());}
+        var list=[],eth=window.ethereum;if(eth){if(Array.isArray(eth.providers))list=list.concat(eth.providers);list.push(eth);}var providers=list.filter(function(p,i){return p&&typeof p.request==='function'&&list.indexOf(p)===i;}),wanted=String(WALLET).toLowerCase();
+        return providers.reduce(function(prev,p){return prev.then(function(found){if(found)return found;return p.request({method:'eth_accounts'}).then(function(a){return(a||[]).some(function(x){return String(x).toLowerCase()===wanted;})?p:null;}).catch(function(){return null;});});},Promise.resolve(null)).then(function(p){if(!p)throw new Error('Connect your signed-in wallet or use WalletConnect.');return p;});
+    }
+    function _waitSupportReceipt(provider, hash, tries){
+        return provider.request({method:'eth_getTransactionReceipt',params:[hash]}).then(function(receipt){
+            if(receipt){if(receipt.status==='0x0'||receipt.status===0)throw new Error('Approval transaction reverted; no support was sent.');return receipt;}
+            if(tries<=0)throw new Error('Approval is still pending. Wait for it to confirm before trying again.');
+            return new Promise(function(resolve){setTimeout(resolve,2500);}).then(function(){return _waitSupportReceipt(provider,hash,tries-1);});
+        });
+    }
+    function _confirmSupport(pending, tries){
+        return api('/community/api/posts/support/'+encodeURIComponent(pending.supportId)+'/confirm',{method:'POST',body:JSON.stringify({tx_hash:pending.txHash})}).then(function(c){
+            var d=c.data||{};
+            if(c.ok&&d.success===true){_pendingSupportConfirm=null;closeSupportReview();toast('Support confirmed.'+(d.bonus_gd!=null?' '+d.bonus_gd+' G$ reward credited.':''),'success');refresh();loadRewards();return true;}
+            if((d.retryable||c.status===202||d.status==='pending'||d.status==='rpc_unavailable'||d.status==='settlement_pending')&&tries>0){
+                if($('cfSupportStatus'))$('cfSupportStatus').textContent='Support transaction sent. Waiting for confirmation… Do not send again.';
+                return new Promise(function(resolve){setTimeout(resolve,3000);}).then(function(){return _confirmSupport(pending,tries-1);});
+            }
+            if(d.retryable||c.status===202||d.status==='pending'||d.status==='rpc_unavailable'||d.status==='settlement_pending'){
+                _pendingSupportConfirm=pending;var b=$('cfSupportSubmit');if(b){b.disabled=false;b.textContent='Check status';}
+                if($('cfSupportStatus'))$('cfSupportStatus').textContent='Transaction sent; confirmation is still pending. Do not send again. Tap “Check status” to retry verification.';
+                return false;
+            }
+            if(d.status==='reverted'){
+                _pendingSupportConfirm=null;var revertedButton=$('cfSupportSubmit');if(revertedButton)revertedButton.textContent='Review & continue';
+                if($('cfSupportStatus'))$('cfSupportStatus').textContent=d.error||'The support transaction reverted. No G$ support or bonus was recorded.';
+                return false;
+            }
+            throw new Error(d.error||'Support could not be verified. No reward or system post was recorded.');
+        });
+    }
+    function submitSupport(){
+        if(_supportBusy)return;var status=$('cfSupportStatus'),submit=$('cfSupportSubmit');
+        _supportBusy=true;if(submit)submit.disabled=true;
+        if(_pendingSupportConfirm){_confirmSupport(_pendingSupportConfirm,20).catch(function(e){if(status)status.textContent=(e&&e.message)||'Could not check confirmation.';}).then(function(){_supportBusy=false;if(submit&&!_pendingSupportConfirm){submit.disabled=false;submit.textContent='Review & continue';}});return;}
+        if(!_supportPost){_supportBusy=false;if(submit)submit.disabled=false;return;}
+        var amount=Number($('cfSupportAmount')&&$('cfSupportAmount').value),min=Number(BOOT.supportMinimumAmountGd)||25;
+        if(!Number.isFinite(amount)||amount<min||amount>1000000000){if(status)status.textContent='Enter a valid amount of at least '+min+' G$.';_supportBusy=false;if(submit)submit.disabled=false;return;}
+        if(status)status.textContent='Preparing support…';var postId=_supportPost.id;
+        api('/community/api/posts/'+encodeURIComponent(postId)+'/support/prepare',{method:'POST',body:JSON.stringify({amount_gd:amount})}).then(function(r){
+            var p=r.data||{},approve=p.approval_transaction||{},tx=p.transaction||{};
+            if(!r.ok||p.success!==true||!p.support_id||!approve.to||!approve.data||!tx.to||!tx.data)throw new Error(p.error||'Support details are incomplete. No transaction was sent.');
+            return resolveSupportProvider().then(function(provider){
+                var local=String(BOOT.loginMethod||'').toLowerCase()==='local';
+                return provider.request({method:'eth_chainId'}).then(function(chain){if(parseInt(chain,16)!==42220)return provider.request({method:'wallet_switchEthereumChain',params:[{chainId:'0xa4ec'}]});}).then(function(){
+                    return local?Promise.resolve([WALLET]):provider.request({method:'eth_requestAccounts'});
+                }).then(function(accounts){
+                    var from=local?WALLET:(accounts||[]).find(function(a){return String(a).toLowerCase()===String(WALLET).toLowerCase();});
+                    if(!from)throw new Error('Connected account does not match your GoodMarket wallet.');
+                    if(status)status.textContent='Approve the exact G$ amount in your wallet; this approval pays gas.';
+                    return provider.request({method:'eth_sendTransaction',params:[{from:from,to:approve.to,data:approve.data,value:approve.value||'0x0',chainId:'0xa4ec'}]}).then(function(approvalHash){
+                        if(!approvalHash||!/^0x[0-9a-fA-F]{64}$/.test(approvalHash))throw new Error('No valid approval transaction hash.');
+                        if(status)status.textContent='Waiting for G$ approval confirmation…';
+                        return _waitSupportReceipt(provider,approvalHash,36).then(function(){
+                            if(status)status.textContent='Approval confirmed. Send the support transaction in your wallet; you pay its gas.';
+                            return provider.request({method:'eth_sendTransaction',params:[{from:from,to:tx.to,data:tx.data,value:tx.value||'0x0',chainId:'0xa4ec'}]});
+                        });
+                    });
+                }).then(function(hash){
+                    if(!hash||!/^0x[0-9a-fA-F]{64}$/.test(hash))throw new Error('No valid support transaction hash.');
+                    var pending={supportId:p.support_id,txHash:hash,bonusGd:p.bonus_gd};_pendingSupportConfirm=pending;
+                    if(status)status.textContent='Support sent. Waiting for Celo confirmation…';
+                    return _confirmSupport(pending,40);
+                });
+            });
+        }).catch(function(e){if(status)status.textContent=(e&&e.message)||'Support failed; no success was recorded.';}).then(function(){_supportBusy=false;if(submit&&!_pendingSupportConfirm){submit.disabled=false;submit.textContent='Review & continue';}});
+    }
     function buildDonationCard(post) {
         var card = el('article', 'cf-donation-card');
         card.setAttribute('data-post-id', post.id);
@@ -4730,6 +4823,8 @@
     window.GMCommunity = {
         init: init,
         refresh: refresh,
+        support: submitSupport,
+        closeSupport: closeSupportReview,
         loadRewards: loadRewards,
         syncTodayHub: syncTodayHub,
         loadMore: loadMore,
