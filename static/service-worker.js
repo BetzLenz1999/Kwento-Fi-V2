@@ -1,5 +1,5 @@
 /**
- * GoodMarket service worker.
+ * KwentoFi service worker.
  *
  * Strategy:
  * - Network-first for navigations and API calls (so users always see the
@@ -22,7 +22,7 @@
  */
 
 const BUILD_VERSION = '__BUILD_VERSION__';
-const CACHE_VERSION = 'goodmarket-__BUILD_VERSION__';
+const CACHE_VERSION = 'kwentofi-__BUILD_VERSION__';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 
 self.addEventListener('install', (event) => {
@@ -64,13 +64,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (_) {}
-  const title = String(data.title || 'GoodMarket message').slice(0, 120);
+  const title = String(data.title || 'KwentoFi message').slice(0, 120);
   const body = String(data.body || 'You have a new community message.').slice(0, 240);
   const target = String(data.url || '/messages');
   event.waitUntil(self.registration.showNotification(title, {
     body,
-    icon: '/static/icons/goodmarket-only-512.png',
-    badge: '/static/icons/goodmarket-only-192.png',
+    icon: '/static/icons/kwentofi-pwa-512.png',
+    badge: '/static/icons/kwentofi-pwa-192.png',
     tag: String(data.tag || 'community-message').slice(0, 120),
     renotify: true,
     data: { url: target.startsWith('/') ? target : '/messages' }
