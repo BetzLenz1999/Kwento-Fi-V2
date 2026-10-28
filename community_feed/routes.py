@@ -309,7 +309,7 @@ def community_feed_post(post_id: int):
     body = " ".join((post.get("body") or "").split())
     description = body[:180] + ("…" if len(body) > 180 else "")
     if not description:
-        description = "A post from the GoodMarket Community."
+        description = "A post from the KwentoFi Community."
     canonical_url = request.url_root.rstrip("/") + "/community/p/" + str(post_id)
     return render_template(
         "community.html",
@@ -336,8 +336,8 @@ def community_feed_post(post_id: int):
         focus_post=post,
         focus_post_id=post_id,
         canonical_url=canonical_url,
-        share_title=("Community Vault donation · Sytem" if post.get("post_type") == "system_vault_donation"
-                     else f"@{username} on GoodMarket Community"),
+        share_title=("Community Vault donation · KwentoFi" if post.get("post_type") == "system_vault_donation"
+                     else f"@{username} on KwentoFi Community"),
         share_description=description,
         share_image=share_image,
     )
@@ -1480,7 +1480,7 @@ def api_prepare_post_support(post_id: int):
         return _disabled_response()
     wallet = _session_wallet()
     if not wallet:
-        return _private_withdrawal_json({"success": False, "error": "Sign in with your GoodMarket wallet to support a post."}, 401)
+        return _private_withdrawal_json({"success": False, "error": "Sign in with your KwentoFi wallet to support a post."}, 401)
     if not _withdrawal_origin_ok():
         return _private_withdrawal_json({"success": False, "error": "This request could not be verified."}, 403)
     wait = _throttle("post-support-prepare:" + wallet.lower(), 60, allow=5)
@@ -1499,7 +1499,7 @@ def api_confirm_post_support(post_id: int):
         return _disabled_response()
     wallet = _session_wallet()
     if not wallet:
-        return _private_withdrawal_json({"success": False, "error": "Sign in with your GoodMarket wallet to confirm support."}, 401)
+        return _private_withdrawal_json({"success": False, "error": "Sign in with your KwentoFi wallet to confirm support."}, 401)
     if not _withdrawal_origin_ok():
         return _private_withdrawal_json({"success": False, "error": "This request could not be verified."}, 403)
     wait = _throttle("post-support-confirm:" + wallet.lower(), 60, allow=30)
