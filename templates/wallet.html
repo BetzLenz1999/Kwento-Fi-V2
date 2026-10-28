@@ -1,13 +1,15 @@
+{% set brand_display_name = 'KwentoFi' %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>window.GM_DISPLAY_BRAND = {{ brand_display_name|tojson }};</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GoodMarket</title>
+    <title>KwentoFi</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <meta name="theme-color" content="#f7f1e8">
+    <meta name="theme-color" content="#4f46e5">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
@@ -2279,8 +2281,8 @@
         <div style="display:flex;align-items:center;gap:0.55rem;min-width:0;">
             <img class="top-bar-brand-mark" src="/static/branding/goodmarket/goodmarket-mark.svg?v={{ ASSET_VERSION }}" alt="" width="34" height="34">
             <div class="top-bar-brand-copy">
-                <div class="top-bar-title">GoodMarket</div>
-                <div class="top-bar-subtitle">Powered by the GoodMarket Community</div>
+                <div class="top-bar-title">KwentoFi</div>
+                <div class="top-bar-subtitle">Powered by the KwentoFi Community</div>
             </div>
         </div>
         <div style="display:flex;gap:0.3rem;align-items:center;">
@@ -2291,10 +2293,10 @@
     {% include "_security_banner.html" %}
     {% include "_claim_celebration.html" %}
     <div id="walletReminderBanner" class="wallet-reminder-banner hidden">
-        ✅ GoodMarket now checks Celo and XDC availability and recommends the next compatible unclaimed network. The in-app GoodMarket wallet supports Celo & XDC; MiniPay remains Celo-only.
+        ✅ KwentoFi now checks Celo and XDC availability and recommends the next compatible unclaimed network. The in-app KwentoFi wallet supports Celo &amp; XDC; MiniPay remains Celo-only.
     </div>
     <div id="walletDashboardFVMsg" class="alert alert-info" style="display:none;margin:0.9rem 1rem 0;padding:0.75rem 0.9rem;text-align:center;border-radius:12px;">
-        Please click <strong>Claim Free G$</strong> button to start your face verification to start G$ daily claiming and using GoodMarket full features.
+        Please click <strong>Claim Free G$</strong> button to start your face verification to start G$ daily claiming and using KwentoFi features.
     </div>
     <div id="fvExpiryBanner" style="display:none;margin:0.9rem 1rem 0;padding:0.8rem 0.95rem;border-radius:12px;font-size:0.88rem;line-height:1.5;">
         <span id="fvExpiryBannerIcon" style="margin-right:0.4rem;">⏳</span><span id="fvExpiryBannerText"></span>
@@ -2306,10 +2308,10 @@
          wallet-bottomnav.js and never again (localStorage flag written the
          first time it paints). Starts display:none so it cannot flash before
          the flag is checked. -->
-    <div id="joinCommunityBanner" class="join-community-banner" role="region" aria-label="Join the GoodMarket community">
-        <div class="jcb-title">🤝 Join the GoodMarket Community</div>
+    <div id="joinCommunityBanner" class="join-community-banner" role="region" aria-label="Join the KwentoFi community">
+        <div class="jcb-title">🤝 Join the KwentoFi Community</div>
         <div class="jcb-copy">Connect with fellow G$ earners in our Telegram discussion group — community updates, tips, and support.</div>
-        <button type="button" id="joinCommunityJoinBtn" class="jcb-btn" onclick="joinGoodMarketCommunity()">✈️ Join GoodMarket Community</button>
+        <button type="button" id="joinCommunityJoinBtn" class="jcb-btn" onclick="joinGoodMarketCommunity()">✈️ Join KwentoFi Community</button>
     </div>
 
     {% if pwa_installable and (login_method or '')|lower == 'local' %}
@@ -2323,11 +2325,11 @@
          when the app is already installed (standalone). -->
     <div id="pwaInstallBanner" class="gm-pwa-banner" data-gm-pwa-banner
          data-gm-pwa-mode="once" data-gm-pwa-key="wallet"
-         role="region" aria-label="Install the GoodMarket app">
+         role="region" aria-label="Install the KwentoFi app">
         <div class="gm-pwa-icon" aria-hidden="true">📲</div>
         <div class="gm-pwa-body">
-            <div class="gm-pwa-title">Install the GoodMarket app</div>
-            <div class="gm-pwa-copy">Add GoodMarket to your home screen for one-tap access — faster than reopening the browser every time.</div>
+            <div class="gm-pwa-title">Install the KwentoFi app</div>
+            <div class="gm-pwa-copy">Add KwentoFi to your home screen for one-tap access — faster than reopening the browser every time.</div>
         </div>
         <div class="gm-pwa-actions">
             <button type="button" class="gm-pwa-install-btn" data-gm-pwa-install>⬇️ Install app</button>
@@ -2383,14 +2385,14 @@
                 <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap;">
                     <span style="font-size:1.8rem;">🎁</span>
                     <div>
-                        <div style="font-size:0.65rem;color:rgba(0,0,0,0.55);font-weight:700;text-transform:uppercase;letter-spacing:1px;">GoodMarket Daily Reward</div>
+                        <div style="font-size:0.65rem;color:rgba(0,0,0,0.55);font-weight:700;text-transform:uppercase;letter-spacing:1px;">KwentoFi Daily Reward</div>
                         <div style="font-size:1.05rem;font-weight:800;color:#1a0a00;line-height:1.3;">Voucher Available Now!</div>
                     </div>
                     <span style="margin-left:auto;background:rgba(0,0,0,0.12);border-radius:20px;padding:0.2rem 0.65rem;font-size:0.7rem;font-weight:700;color:#7c2d12;">Available Now!</span>
                 </div>
 
                 <p style="font-size:0.85rem;color:rgba(0,0,0,0.72);line-height:1.55;margin-bottom:1rem;">
-                    Hi! Please click below to claim the payment link voucher. This voucher is exclusive for human-verified GoodMarket users — once someone claims it, it will no longer be available.
+                    Hi! Please click below to claim the payment link voucher. This voucher is exclusive for human-verified KwentoFi users — once someone claims it, it will no longer be available.
                     Come back next time for a new voucher! 🎁
                 </p>
 
@@ -2410,7 +2412,7 @@
                     box-shadow: 0 4px 14px rgba(0,0,0,0.3);
                     letter-spacing: 0.2px;
                 " onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(0,0,0,0.4)'" onmouseout="this.style.transform='';this.style.boxShadow='0 4px 14px rgba(0,0,0,0.3)'">
-                    🎟️ Claim GoodMarket Voucher
+                    🎟️ Claim KwentoFi Voucher
                 </button>
             </div>
         </div>
@@ -2524,8 +2526,8 @@
     <div class="balance-card" role="group" aria-label="GoodDollar portfolio card">
         <div class="pc-top">
             <div>
-                <div class="pc-brand-name">GoodMarket</div>
-                <div class="pc-brand-sub">GoodMarket Portfolio</div>
+                <div class="pc-brand-name">KwentoFi</div>
+                <div class="pc-brand-sub">KwentoFi Portfolio</div>
             </div>
             <div class="pc-gd-badge" aria-hidden="true">G$</div>
         </div>
@@ -2562,7 +2564,7 @@
     </div>
 
     <div class="raffle-modal-overlay" id="raffleModal" aria-hidden="true" onclick="closeGdRafflePanel(event)">
-    <section class="raffle-card" aria-label="GoodMarket G$ Raffle" onclick="event.stopPropagation()">
+    <section class="raffle-card" aria-label="KwentoFi G$ Raffle" onclick="event.stopPropagation()">
         <div class="raffle-card-header">
             <div>
                 <div class="raffle-kicker">10-wallet community pool</div>
@@ -2937,7 +2939,7 @@
             <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--card-border);">
                 <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">🔑 Private Key</div>
                 <div class="pk-warning" style="margin-bottom:0.75rem;">
-                    <strong>Never share your private key.</strong> Anyone who sees it can take <strong>all</strong> the funds in this wallet. GoodMarket support will <strong>never</strong> ask you for it.
+                    <strong>Never share your private key.</strong> Anyone who sees it can take <strong>all</strong> the funds in this wallet. KwentoFi support will <strong>never</strong> ask you for it.
                 </div>
                 <button type="button" class="btn-secondary" style="width:100%;" onclick="openPkModal()">Reveal private key</button>
             </div>
@@ -2980,7 +2982,7 @@
                     Anyone who sees it — a friend, "support", an admin, or anyone who messages you — can <strong>take all the
                     G$ and other funds</strong> in this wallet, and it <strong>cannot be reversed</strong>.
                     <br><br>
-                    <strong>Never share it with anyone.</strong> GoodMarket support will never ask for your private key or your
+                    <strong>Never share it with anyone.</strong> KwentoFi support will never ask for your private key or your
                     recovery words. Do not screenshot it, do not send it in chat or email, and do not paste it into any website.
                 </div>
                 <label style="display:flex;gap:0.6rem;align-items:flex-start;font-size:0.85rem;line-height:1.5;color:var(--text-dim);margin:0.25rem 0 1rem;">
@@ -3021,7 +3023,7 @@
             <div class="fv-intro-card">
                 <div class="fv-intro-card-title">You will stop receiving daily G$</div>
                 <div class="fv-intro-card-copy">
-                    Daily G$, the daily voucher, and GoodMarket's earning features are for
+                    Daily G$, the daily voucher, and KwentoFi's earning features are for
                     verified humans only. Once de-verified, <strong>this wallet cannot claim
                     them</strong> until you verify again.
                 </div>
@@ -3390,7 +3392,7 @@
                 <div class="dapp-hint">
                     Open the dApp you want to use, choose <strong>WalletConnect</strong>, then
                     <strong>copy its link</strong> (a <code>wc:</code> URL) and paste it below.
-                    Your GoodMarket wallet stays in control — you approve every action individually.
+                    Your KwentoFi wallet stays in control — you approve every action individually.
                 </div>
 
                 <label class="dapp-label" for="dappUriInput">WalletConnect link</label>
@@ -3663,9 +3665,9 @@
         </div>
     </div>
 
-    <div class="bn-sheet" id="bnSheetWallet" role="dialog" aria-label="GoodMarket Wallet">
+    <div class="bn-sheet" id="bnSheetWallet" role="dialog" aria-label="KwentoFi Wallet">
         <div class="bn-sheet-handle"></div>
-        <div class="bn-sheet-title">👛 GoodMarket Wallet</div>
+        <div class="bn-sheet-title">👛 KwentoFi Wallet</div>
         <div class="bn-sheet-grid">
             <div class="bn-sheet-item" onclick="bnGo(function(){ openModal('sendModal'); })">
                 <div class="bn-sheet-circle">↑</div>
@@ -3713,9 +3715,9 @@
 
     <!-- One centered launcher keeps the primary wallet navigation tidy while
          preserving every existing destination as a tap-friendly submenu item. -->
-    <div class="bn-sheet" id="bnSheetMenu" role="dialog" aria-label="GoodMarket menu" aria-modal="true">
+    <div class="bn-sheet" id="bnSheetMenu" role="dialog" aria-label="KwentoFi menu" aria-modal="true">
         <div class="bn-sheet-handle"></div>
-        <div class="bn-sheet-title">✨ GoodMarket Menu</div>
+        <div class="bn-sheet-title">✨ KwentoFi Menu</div>
         <div class="bn-sheet-grid">
             <button type="button" class="bn-sheet-item" onclick="bnGo(function(){ openBottomSheet('bnSheetEarn'); })">
                 <span class="bn-sheet-circle" style="background:linear-gradient(135deg,#f59e0b,#e11d48);color:#fff;">💰</span>
