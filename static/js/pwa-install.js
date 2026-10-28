@@ -33,6 +33,7 @@
  */
 (function () {
     'use strict';
+    var APP_DISPLAY_BRAND = String(window.GM_DISPLAY_BRAND || 'GoodMarket');
 
     var SW_URL = '/static/service-worker.js';
     var SW_SCOPE = '/';
@@ -53,11 +54,11 @@
     var _homepageInstallCompleted = false;
     var _homepageProgressStageIndex = -1;
     var HOMEPAGE_PROGRESS_STAGES = [
-        { percent: 10, message: 'Preparing GoodMarket…' },
+        { percent: 10, message: 'Preparing ' + APP_DISPLAY_BRAND + '…' },
         { percent: 20, message: 'Preparing app resources…' },
         { percent: 30, message: 'Setting up the app shell…' },
-        { percent: 40, message: 'Registering GoodMarket for your device…' },
-        { percent: 50, message: 'Still installing GoodMarket…' },
+        { percent: 40, message: 'Registering ' + APP_DISPLAY_BRAND + ' for your device…' },
+        { percent: 50, message: 'Still installing ' + APP_DISPLAY_BRAND + '…' },
         { percent: 60, message: 'Checking the app setup…' },
         { percent: 70, message: 'Finalizing the installation…' },
         { percent: 80, message: 'Almost ready…' },
@@ -267,7 +268,7 @@
         if (progress) {
             progress.value = percent;
             progress.setAttribute('aria-valuenow', String(percent));
-            progress.setAttribute('aria-valuetext', (message || 'Installing GoodMarket')
+            progress.setAttribute('aria-valuetext', (message || ('Installing ' + APP_DISPLAY_BRAND))
                 + ' Approximately ' + String(percent) + ' percent.');
             progress.hidden = false;
         }
@@ -314,7 +315,7 @@
         _stopHomepageProgress();
         _homepageProgressStageIndex = HOMEPAGE_PROGRESS_STAGES.length - 1;
         _markInstalled();
-        var message = 'GoodMarket is installed. Open it from your home screen or app launcher to continue.';
+        var message = '' + APP_DISPLAY_BRAND + ' is installed. Open it from your home screen or app launcher to continue.';
         _setHomepageState('installed-awaiting-launch', message);
         _setHomepageProgress(100, message);
     }
@@ -344,7 +345,7 @@
 
     function _requireHomepageInstall() {
         if (_homepageGateReleased) return;
-        _setHomepageState('required', 'Install GoodMarket, then open it from your home screen or app launcher.');
+        _setHomepageState('required', 'Install ' + APP_DISPLAY_BRAND + ', then open it from your home screen or app launcher.');
         var root = document.documentElement;
         var gate = _homepageGate();
         if (root && root.classList) {
@@ -460,7 +461,7 @@
         };
 
         if (isStandalone()) {
-            setStatus('GoodMarket is already installed on this device.');
+            setStatus('' + APP_DISPLAY_BRAND + ' is already installed on this device.');
             return Promise.resolve({ outcome: 'already-installed' });
         }
 
@@ -475,7 +476,7 @@
                 if (homepage) {
                     _startHomepageProgress();
                 } else {
-                    setStatus('Installing GoodMarket…');
+                    setStatus('Installing ' + APP_DISPLAY_BRAND + '…');
                 }
                 return res;
             }
@@ -487,7 +488,7 @@
             // No native prompt was offered. Do not imply that the tap installed
             // anything; show manual, platform-aware steps instead.
             _recordInstallBaselineIntent(false);
-            var manualStatus = 'This browser did not open an install prompt, so GoodMarket has not been installed. Follow the steps below.';
+            var manualStatus = 'This browser did not open an install prompt, so ' + APP_DISPLAY_BRAND + ' has not been installed. Follow the steps below.';
             if (homepage) _setHomepageState('manual', manualStatus);
             setStatus(homepage ? manualStatus : manualInstallHint());
             return res;
@@ -501,12 +502,12 @@
         if (isAndroid()) {
             return 'On Android, open this browser’s menu (⋮ or ☰) or Share menu and look for “Install app” or “Add to Home screen”. Choose “Install app” when available; “Create shortcut” may only add a web shortcut and may not open in standalone app mode. Names and availability vary by browser and version. If this browser has no install option, copy this page link and open it in a browser that offers PWA installation, such as Chrome or Edge.';
         }
-        return 'Open your browser menu and look for “Install GoodMarket”, “Install app”, or “Add to Home screen”. If no option appears, copy this page link and open it in a browser that offers PWA installation.';
+        return 'Open your browser menu and look for “Install ' + APP_DISPLAY_BRAND + '”, “Install app”, or “Add to Home screen”. If no option appears, copy this page link and open it in a browser that offers PWA installation.';
     }
 
     function _copyHomepageLink() {
         var copyStatus = document.querySelector('[data-gm-pwa-copy-status]');
-        var fallbackMessage = 'If copying is unavailable, copy the GoodMarket address from your browser’s address bar.';
+        var fallbackMessage = 'If copying is unavailable, copy the ' + APP_DISPLAY_BRAND + ' address from your browser’s address bar.';
         try {
             if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
                 if (copyStatus) copyStatus.textContent = fallbackMessage;
@@ -514,7 +515,7 @@
             }
             return navigator.clipboard.writeText(window.location.origin + '/')
                 .then(function () {
-                    if (copyStatus) copyStatus.textContent = 'GoodMarket link copied. Open it in a browser with PWA install support.';
+                    if (copyStatus) copyStatus.textContent = '' + APP_DISPLAY_BRAND + ' link copied. Open it in a browser with PWA install support.';
                     return true;
                 })
                 .catch(function () {
@@ -610,7 +611,7 @@
             toast.setAttribute('aria-live', 'polite');
 
             var text = document.createElement('span');
-            text.textContent = 'A new version of GoodMarket is available.';
+            text.textContent = 'A new version of ' + APP_DISPLAY_BRAND + ' is available.';
             toast.appendChild(text);
 
             var btn = document.createElement('button');
@@ -698,7 +699,7 @@
             e.preventDefault();
             _deferredPrompt = e;
             if (_homepageGate() && _homepageInstallState === 'manual') {
-                _setHomepageState('required', 'Your browser can now offer installation. Tap Install GoodMarket to continue.');
+                _setHomepageState('required', 'Your browser can now offer installation. Tap Install ' + APP_DISPLAY_BRAND + ' to continue.');
             }
             _emit('gm-pwa-installable', {});
             // Re-evaluate banners so a button that was previously in "manual"
