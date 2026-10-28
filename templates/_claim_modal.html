@@ -23,7 +23,7 @@
         <div class="claim-network-list" id="claimNetworkList" aria-live="polite">
             <div class="claim-network-card"><div class="claim-network-main"><div class="claim-network-icon">⏳</div><div><div class="claim-network-name">Checking networks…</div><div class="claim-network-hint">Looking for any network you have not claimed yet.</div></div></div><div class="claim-network-status">Loading</div></div>
         </div>
-        <div class="claim-wallet-note" id="claimWalletNote">GoodMarket recommends Celo first, but you can claim on any network that is available to you.</div>
+        <div class="claim-wallet-note" id="claimWalletNote">{{ brand_display_name|default('GoodMarket', true) }} recommends Celo first, but you can claim on any network that is available to you.</div>
         <button id="ubiClaimBtn" onclick="doUbiClaim()" class="btn-primary" disabled><span id="ubiClaimIcon">⏳</span><span id="ubiClaimLabel">Checking…</span></button>
         <div id="celoBalanceWarning" role="status" aria-live="polite" class="gm-claim-warning" style="display:none"><strong>⚠️ Keep your CELO in this wallet.</strong> Your CELO is used as gas for claims — transferring it may cause errors on your next claim.</div>
         <div class="claim-status" id="ubiClaimStatus" role="status" aria-live="polite"></div>
