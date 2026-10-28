@@ -127,6 +127,11 @@
         return iosDevice || iPadOs;
     }
 
+    function isAndroid() {
+        var ua = (window.navigator && window.navigator.userAgent) || '';
+        return /Android/i.test(ua);
+    }
+
     // The homepage gate is bypassed for wallet/DApp browsers. Check the
     // injected EIP-1193 provider synchronously first, then wait briefly for
     // late provider injection and EIP-6963 announcements before blocking.
@@ -226,6 +231,12 @@
         gate.setAttribute('data-state', state);
         var status = _homepageGateStatus();
         if (status && message) status.textContent = message;
+        var manualHelp = gate.querySelector('[data-gm-pwa-manual-help]');
+        if (manualHelp) manualHelp.hidden = state !== 'manual';
+        if (state === 'manual') {
+            var manualInstructions = gate.querySelector('[data-gm-pwa-manual-instructions]');
+            if (manualInstructions) manualInstructions.textContent = manualInstallHint();
+        }
         var progressWrap = gate.querySelector('[data-gm-pwa-progress-wrap]');
         if (progressWrap && state !== 'prompting' && state !== 'installing'
                 && state !== 'installed-awaiting-launch') {
@@ -236,7 +247,7 @@
             var busy = state === 'prompting' || state === 'installing'
                 || state === 'installed-awaiting-launch';
             button.disabled = busy;
-            button.hidden = state === 'installed-awaiting-launch';
+            button.hidden = state === 'installed-awaiting-launch' || state === 'manual';
             button.setAttribute('aria-busy', busy ? 'true' : 'false');
         }
     }
@@ -461,20 +472,47 @@
                 setStatus('Install cancelled — you can try again anytime.');
                 return res;
             }
-            // No native prompt available (Firefox/Safari, or before the
-            // engagement threshold) — guide the user to the manual path.
+            // No native prompt was offered. Do not imply that the tap installed
+            // anything; show manual, platform-aware steps instead.
             _recordInstallBaselineIntent(false);
-            if (homepage) _setHomepageState('manual', manualInstallHint());
-            setStatus(manualInstallHint());
+            var manualStatus = 'This browser did not open an install prompt, so GoodMarket has not been installed. Follow the steps below.';
+            if (homepage) _setHomepageState('manual', manualStatus);
+            setStatus(homepage ? manualStatus : manualInstallHint());
             return res;
         });
     }
 
     function manualInstallHint() {
         if (isIos()) {
-            return 'To install: tap the Share button (⬆️), then choose “Add to Home Screen”.';
+            return 'On iPhone or iPad, tap Share and choose “Add to Home Screen”. If that option is missing in this browser, copy the page link and open it in Safari to add it there.';
         }
-        return 'To install: open your browser menu (⋮) and choose “Install app” or “Add to Home screen”.';
+        if (isAndroid()) {
+            return 'On Android, open this browser’s menu (⋮ or ☰) or Share menu and look for “Install app” or “Add to Home screen”. Choose “Install app” when available; “Create shortcut” may only add a web shortcut and may not open in standalone app mode. Names and availability vary by browser and version. If this browser has no install option, copy this page link and open it in a browser that offers PWA installation, such as Chrome or Edge.';
+        }
+        return 'Open your browser menu and look for “Install GoodMarket”, “Install app”, or “Add to Home screen”. If no option appears, copy this page link and open it in a browser that offers PWA installation.';
+    }
+
+    function _copyHomepageLink() {
+        var copyStatus = document.querySelector('[data-gm-pwa-copy-status]');
+        var fallbackMessage = 'If copying is unavailable, copy the GoodMarket address from your browser’s address bar.';
+        try {
+            if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+                if (copyStatus) copyStatus.textContent = fallbackMessage;
+                return Promise.resolve(false);
+            }
+            return navigator.clipboard.writeText(window.location.origin + '/')
+                .then(function () {
+                    if (copyStatus) copyStatus.textContent = 'GoodMarket link copied. Open it in a browser with PWA install support.';
+                    return true;
+                })
+                .catch(function () {
+                    if (copyStatus) copyStatus.textContent = fallbackMessage;
+                    return false;
+                });
+        } catch (_) {
+            if (copyStatus) copyStatus.textContent = fallbackMessage;
+            return Promise.resolve(false);
+        }
     }
 
     // ── service worker (root scope so it controls start_url "/") ────────
@@ -647,6 +685,9 @@
         window.addEventListener('beforeinstallprompt', function (e) {
             e.preventDefault();
             _deferredPrompt = e;
+            if (_homepageGate() && _homepageInstallState === 'manual') {
+                _setHomepageState('required', 'Your browser can now offer installation. Tap Install GoodMarket to continue.');
+            }
             _emit('gm-pwa-installable', {});
             // Re-evaluate banners so a button that was previously in "manual"
             // mode now offers the real native sheet.
@@ -686,6 +727,13 @@
             var target = event.target;
             if (!target || !target.closest) return;
 
+            var copyLinkBtn = target.closest('[data-gm-pwa-copy-link]');
+            if (copyLinkBtn) {
+                event.preventDefault();
+                _copyHomepageLink();
+                return;
+            }
+
             var dismissBtn = target.closest('[data-gm-pwa-dismiss]');
             if (dismissBtn) {
                 event.preventDefault();
@@ -723,6 +771,7 @@
         init: init,
         isStandalone: isStandalone,
         isIos: isIos,
+        isAndroid: isAndroid,
         isInstalled: isInstalled,
         canPrompt: canPrompt,
         shouldOfferInstall: shouldOfferInstall,
