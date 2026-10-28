@@ -1,14 +1,17 @@
+{% set brand_display_name = 'KwentoFi' %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>window.GM_DISPLAY_BRAND = {{ brand_display_name|tojson }};</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Swap &amp; Bridge - GoodMarket</title>
-    <meta name="theme-color" content="#f97316">
+    <title>Swap &amp; Bridge - KwentoFi</title>
+    <meta name="theme-color" content="#4f46e5">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="GoodMarket">
+    <meta name="apple-mobile-web-app-title" content="KwentoFi">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/svg+xml" href="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}">
     <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
     <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}">
 
@@ -1210,7 +1213,7 @@
                 loginMethod: "{{ login_method }}",
                 projectId: "{{ walletconnect_project_id|default('', true) }}",
                 sidecarEnabled: false,
-                dappName: "GoodMarket — Swap",
+                dappName: "KwentoFi — Swap",
                 dappDescription: "Swap tokens on Celo",
                 assetVersion: "{{ ASSET_VERSION }}",
             });
@@ -1280,7 +1283,7 @@
                swap-card slot (server-side gate, not a CSS hide). #}
             {% with connect_card_kicker='Connect to swap',
                     connect_card_title='Swap on Celo',
-                    connect_card_body='Connect or create a free GoodMarket wallet to swap G$, CELO, cUSD and USDT on Uniswap V3. Email + PIN — no app to install.' %}
+                    connect_card_body='Connect or create a free KwentoFi wallet to swap G$, CELO, cUSD and USDT on Uniswap V3. Email + PIN — no app to install.' %}
             {% include "_swap_connect_card.html" %}
             {% endwith %}
             {% else %}
@@ -1425,7 +1428,7 @@
                 {% if is_guest %}
                 {% with connect_card_kicker='Connect to swap',
                         connect_card_title='Buy or sell G$',
-                        connect_card_body='Connect or create a free GoodMarket wallet to buy and sell G$ directly with the GoodDollar Reserve. Email + PIN — no app to install.' %}
+                        connect_card_body='Connect or create a free KwentoFi wallet to buy and sell G$ directly with the GoodDollar Reserve. Email + PIN — no app to install.' %}
                 {% include "_swap_connect_card.html" %}
                 {% endwith %}
                 {% else %}
@@ -1581,7 +1584,7 @@
                 {% if is_guest %}
                 {% with connect_card_kicker='Connect to bridge',
                         connect_card_title='Bridge G$ to XDC',
-                        connect_card_body='Connect or create a free GoodMarket wallet to bridge G$ from Celo to XDC. Email + PIN — no app to install.' %}
+                        connect_card_body='Connect or create a free KwentoFi wallet to bridge G$ from Celo to XDC. Email + PIN — no app to install.' %}
                 {% include "_swap_connect_card.html" %}
                 {% endwith %}
                 {% else %}
@@ -1703,7 +1706,7 @@
                 {% if is_guest %}
                 {% with connect_card_kicker='Connect to bridge',
                         connect_card_title='Bridge G$ back to Celo',
-                        connect_card_body='Connect or create a free GoodMarket wallet to bridge G$ from XDC back to Celo. Email + PIN — no app to install.' %}
+                        connect_card_body='Connect or create a free KwentoFi wallet to bridge G$ from XDC back to Celo. Email + PIN — no app to install.' %}
                 {% include "_swap_connect_card.html" %}
                 {% endwith %}
                 {% else %}
@@ -1824,7 +1827,7 @@
                 {% if is_guest %}
                 {% with connect_card_kicker='Connect to bridge',
                         connect_card_title='Bridge Celo → Base ETH',
-                        connect_card_body='Connect or create a free GoodMarket wallet to bridge CELO or a stablecoin to native ETH on Base. Email + PIN — no app to install.' %}
+                        connect_card_body='Connect or create a free KwentoFi wallet to bridge CELO or a stablecoin to native ETH on Base. Email + PIN — no app to install.' %}
                 {% include "_swap_connect_card.html" %}
                 {% endwith %}
                 {% else %}
