@@ -1723,7 +1723,7 @@ function _wcGetClient() {
                 name: _getStartedDisplayBrand(),
                 description: 'Learn & Earn G$ with ' + _getStartedDisplayBrand() + ' on Celo',
                 url: window.location.origin,
-                icons: [window.location.origin + '/static/icons/icon-192x192.png?v=' + (GM_BOOT.assetVersion || '') + '']
+                icons: [window.location.origin + '/static/icons/kwentofi-pwa-192.png?v=' + (GM_BOOT.assetVersion || '') + '']
             }
         }).then(function(client) {
             window._wcSignClient = client;
