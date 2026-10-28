@@ -1255,7 +1255,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                     name: WALLET_DISPLAY_BRAND + ' — Wallet',
                     description: 'Claim and send GoodDollar on Celo',
                     url: window.location.origin,
-                    icons: [window.location.origin + '/static/icons/icon-192x192.png']
+                    icons: [window.location.origin + '/static/icons/kwentofi-pwa-192.png']
                 }
             });
         }).then(function(client) {
@@ -8164,7 +8164,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 address: GD_TOKEN_ADDRESS || '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A',
                 symbol: 'G$',
                 decimals: 18,
-                image: (typeof window !== 'undefined' && window.location ? window.location.origin : '') + '/static/icons/goodmarket-icon.png'
+                image: (typeof window !== 'undefined' && window.location ? window.location.origin : '') + '/static/icons/kwentofi-pwa-192.png'
             }
         });
 
