@@ -2308,6 +2308,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             CUSD:    { label: 'cUSD',    network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
             USDT:    { label: 'USDT',    network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
             USDC:    { label: 'USDC',    network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
+            PHPM:    { label: 'PHPm',    network: 'celo', chainId: 42220, explorer: 'https://celoscan.io/tx/' },
             CELO:    { label: 'CELO',    network: 'celo', chainId: 42220, explorer: 'https://explorer.celo.org/mainnet/tx/' },
             XDC_GD:  { label: 'XDC G$',  network: 'xdc',  chainId: 50,    explorer: 'https://xdcscan.io/tx/' },
             XDC:     { label: 'XDC',     network: 'xdc',  chainId: 50,    explorer: 'https://xdcscan.io/tx/' },
@@ -3125,6 +3126,10 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             document.getElementById('sendAmount').value = '';
             setTimeout(() => {
                 if (isXdcToken) loadXdcBalances();
+                else if (window.GM_WALLET_BOOT && window.GM_WALLET_BOOT.communityWallet
+                        && window.GMCommunity && typeof window.GMCommunity.refreshWalletBalances === 'function') {
+                    window.GMCommunity.refreshWalletBalances();
+                }
                 else loadBalances(true);
             }, 3000);
 
@@ -8683,6 +8688,21 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         } catch (err) {
             // keep the wallet-shortform fallback rendered from Jinja
         }
+    }
+
+    // Community reuses only the established Celo signing flow. Keep a strict
+    // allowlist here so XDC/Fuse assets can never be selected from its UI.
+    if (window.GM_WALLET_BOOT && window.GM_WALLET_BOOT.communityWallet) {
+        window.GMWalletCommunitySend = {
+            selectToken: function (token, button) {
+                const allowed = new Set(['CELO', 'GD', 'CUSD', 'USDT', 'USDC', 'PHPM']);
+                token = String(token || '').toUpperCase();
+                if (!allowed.has(token) || !button) return false;
+                selectToken(token, button);
+                return true;
+            },
+            submit: function () { return doSend(); }
+        };
     }
 
     // ── Init ──────────────────────────────────────────────────
