@@ -971,7 +971,17 @@ def api_onchain_withdrawal_range_history():
         except (TypeError, ValueError):
             configured_chunk = 4000
         chunk = max(500, min(configured_chunk, 4000))
-        max_scan_blocks = min(200_000, chunk * 50)
+        # Seven UTC days on Celo can span well over 600k blocks. Keep an
+        # explicit upper bound for request safety, but make it large enough for
+        # the advertised seven-day report window. Queries remain chunked below;
+        # any RPC failure aborts the entire response rather than returning a
+        # partial count or total.
+        try:
+            configured_scan_budget = int(os.environ.get(
+                "COMMUNITY_VAULT_RANGE_MAX_SCAN_BLOCKS", "800000"))
+        except (TypeError, ValueError):
+            configured_scan_budget = 800000
+        max_scan_blocks = max(200_000, min(1_000_000, configured_scan_budget))
         block_count = last_block - first_block + 1
         if block_count > max_scan_blocks:
             return history_json({
@@ -1926,6 +1936,60 @@ def api_feed():
         result["pinned_posts"] = pinned.get("posts", []) if pinned.get("success") else []
         result["pinned_next_cursor"] = pinned.get("next_cursor") if pinned.get("success") else None
     return jsonify(result)
+
+
+@community_feed_bp.route("/api/feed/discover", methods=["GET"])
+def api_feed_discover():
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({
+            "success": False, "error": "Sign in to discover unseen posts."
+        }, 401)
+    if svc.is_banned(wallet):
+        return _private_withdrawal_json({
+            "success": False, "error": "This account cannot use Discover."
+        }, 403)
+    before_id = request.args.get("before_id", type=int)
+    if request.args.get("before_id") and (before_id is None or before_id < 1):
+        return _private_withdrawal_json({"success": False, "error": "Invalid Discover cursor."}, 400)
+    wait = _throttle("feed-discover:" + wallet.lower(), 60, allow=30)
+    if wait:
+        response, status = _private_withdrawal_json({
+            "success": False, "error": "Please wait before loading more Discover posts."
+        }, 429)
+        response.headers["Retry-After"] = str(wait)
+        return response, status
+    result = svc.get_discover_feed(wallet, before_id=before_id,
+                                   limit=request.args.get("limit", type=int))
+    return _private_withdrawal_json(result, 200 if result.get("success") else 503)
+
+
+@community_feed_bp.route("/api/feed/impressions", methods=["POST"])
+def api_feed_impressions():
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Not authenticated."}, 401)
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "This request could not be verified."}, 403)
+    if svc.is_banned(wallet):
+        return _private_withdrawal_json({"success": False, "error": "This account cannot record views."}, 403)
+    wait = _throttle("feed-impressions:" + wallet.lower(), 60, allow=60)
+    if wait:
+        response, status = _private_withdrawal_json({"success": False, "error": "Please wait before recording more views."}, 429)
+        response.headers["Retry-After"] = str(wait)
+        return response, status
+    raw_ids = _json_body().get("post_ids")
+    if not isinstance(raw_ids, list) or not 1 <= len(raw_ids) <= 50:
+        return _private_withdrawal_json({"success": False, "error": "Provide between 1 and 50 post IDs."}, 400)
+    if any(isinstance(value, bool) or not isinstance(value, int) or value < 1 for value in raw_ids):
+        return _private_withdrawal_json({"success": False, "error": "Post IDs must be positive integers."}, 400)
+    result = svc.record_post_views(wallet, raw_ids)
+    status = 200 if result.get("success") else (400 if result.get("code") == "limit" else 503)
+    return _private_withdrawal_json(result, status)
 
 
 @community_feed_bp.route("/api/posts/<int:post_id>/support/prepare", methods=["POST"])
