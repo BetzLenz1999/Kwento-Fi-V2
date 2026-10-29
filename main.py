@@ -83,7 +83,30 @@ def _start_serverless_background_job(name, initializer, *args):
 
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
-app.secret_key = os.environ.get('SESSION_SECRET') or os.environ.get('SECRET_KEY', 'your-secret-key-here')
+
+# Session signing key. Flask signs session cookies with this, so a known value
+# lets anyone mint a cookie that the app accepts as a logged-in session —
+# which makes logout (and login) meaningless. The old fallback was a hardcoded
+# literal, so a deploy that forgot the env var silently signed every session
+# with a PUBLIC key. Fail loudly in production instead; stay permissive in
+# development so local runs and the test sandbox keep working.
+_DEFAULT_SECRET = 'your-secret-key-here'
+app.secret_key = os.environ.get('SESSION_SECRET') or os.environ.get('SECRET_KEY') or _DEFAULT_SECRET
+_IS_PRODUCTION = (
+    os.environ.get('FLASK_ENV', '').lower() == 'production'
+    or os.environ.get('VERCEL_ENV', '').lower() == 'production'
+    or bool(os.environ.get('VERCEL'))
+)
+if app.secret_key == _DEFAULT_SECRET:
+    if _IS_PRODUCTION:
+        raise RuntimeError(
+            "SESSION_SECRET is not set (or is the placeholder). Refusing to start in "
+            "production: session cookies would be signed with a publicly known key, so "
+            "anyone could forge a logged-in session. Set SESSION_SECRET to a long random "
+            "value (e.g. `python -c \"import secrets;print(secrets.token_urlsafe(48))\"`)."
+        )
+    print("⚠️  SESSION_SECRET not set — using an insecure development key. "
+          "Set SESSION_SECRET before deploying.")
 
 # Enable gzip compression
 compress = Compress()
@@ -1389,10 +1412,11 @@ def get_balance_by_wallet(wallet_address):
             'balance_formatted': 'Error loading'
         }), 500
 
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/")
+# NOTE: /logout is defined ONCE, in routes.py (the `routes` blueprint). A second
+# @app.route("/logout") used to live here. Flask resolves duplicate rules by
+# registration order and the blueprint is registered earlier (see
+# register_blueprint above), so that copy NEVER executed — it was dead code that
+# looked live in review. Do not reintroduce it: edit routes.logout instead.
 
 @app.route('/api/twitter-task/transaction-history')
 def get_twitter_task_transaction_history():
