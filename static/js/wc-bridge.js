@@ -231,6 +231,33 @@
         return true;
     }
 
+    // True when the PERSISTED session belongs to a different wallet than the one
+    // this page was rendered for. Logout does not always get to clear the stored
+    // keys (blocked storage, a crash mid-logout, an older cached bundle), so the
+    // restore path re-checks ownership before re-hydrating. Extracted as a pure
+    // predicate so the behaviour is unit-testable rather than only greppable.
+    //
+    // Returns false when either side is unknown: a guest render has no session
+    // wallet, and wiping a valid session there would log the user out of a page
+    // they are allowed to browse.
+    function _storedSessionBelongsToAnotherWallet(sessionWallet) {
+        try {
+            var stored = String(localStorage.getItem("wc_session_address") || "").toLowerCase();
+            var mine = String(sessionWallet || "").toLowerCase();
+            if (!stored || !mine) return false;
+            return stored !== mine;
+        } catch (_) { return false; }
+    }
+
+    // Drop the persisted session when it is not ours, and report whether it was
+    // dropped. Used by the restore path so a mismatched session can never be
+    // re-hydrated for the wrong account.
+    function _dropForeignStoredSession(sessionWallet) {
+        if (!_storedSessionBelongsToAnotherWallet(sessionWallet)) return false;
+        _clearStoredSession();
+        return true;
+    }
+
     function configure(opts) {
         if (!opts) return;
         for (var k in opts) {
@@ -447,6 +474,19 @@
                 var MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
                 var sessionAge = storedTimestamp ? (Date.now() - storedTimestamp) : Infinity;
                 var sessionTooOld = sessionAge > MAX_SESSION_AGE_MS;
+
+                // Ownership check. The stored session belongs to whichever wallet
+                // approved it. Without this, logging out and logging back in as a
+                // DIFFERENT account re-hydrated the previous account's session —
+                // and the dApp could then ask the new account to sign for it.
+                // `_config.walletAddress` is the session wallet this page was
+                // rendered for, so a mismatch means the stored session is not ours.
+                // Only enforced when both sides are known: a page with no session
+                // wallet (guest render) must not be able to wipe a valid session.
+                if (_dropForeignStoredSession(_config && _config.walletAddress)) {
+                    try { _config.log("[wc-bridge] stored WC session belongs to another wallet — dropping it"); } catch (_) {}
+                    storedTopic = storedAddress = storedSessionData = null;
+                }
 
                 if (storedTopic && storedAddress && !sessionTooOld && storedSessionData) {
                     try {
@@ -1534,6 +1574,9 @@
         hasStoredSession: _hasStoredWcSessionFor,
         clearStoredSession: _clearStoredSession,
         clearStoredSessionFor: _clearStoredSessionFor,
+        // Exposed for tests: the ownership predicate and the drop it drives.
+        storedSessionBelongsToAnotherWallet: _storedSessionBelongsToAnotherWallet,
+        dropForeignStoredSession: _dropForeignStoredSession,
         connect: connect,
         bridgeRequest: bridgeRequest,
         getProvider: getProvider,
