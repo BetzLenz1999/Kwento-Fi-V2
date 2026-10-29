@@ -1292,6 +1292,119 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
     }
 
 
+def get_discover_feed(viewer: str | None, before_id: int | None = None,
+                      limit: int | None = None) -> dict:
+    """Return older, public member posts this signed-in viewer has not seen.
+
+    The ordinary feed remains chronological and unchanged. Candidate windows
+    use a descending ID keyset and query the viewer's impression rows in batches;
+    this avoids random ordering, OFFSET drift, and an unbounded seen-ID payload.
+    """
+    if not viewer:
+        return {"success": False, "error": "Sign in to discover unseen posts.",
+                "code": "auth", "posts": []}
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "posts": []}
+    try:
+        size = max(1, min(MAX_PAGE_SIZE, int(limit or DEFAULT_PAGE_SIZE)))
+    except (TypeError, ValueError):
+        size = DEFAULT_PAGE_SIZE
+
+    rows = []
+    scan_cursor = int(before_id) if before_id else None
+    next_cursor = None
+    has_more = False
+    wallet = str(viewer).strip().lower()
+    try:
+        # Bound work even for a highly active account that has viewed nearly all
+        # old posts. Each round examines at most 10x the requested page size.
+        for _ in range(10):
+            query = (supabase.table("community_feed_posts").select("*")
+                     .eq("post_type", "user").eq("visibility", "public")
+                     .eq("is_deleted", False).eq("is_hidden", False))
+            if scan_cursor:
+                query = query.lt("id", scan_cursor)
+            candidates = _rows(query.order("id", desc=True)
+                               .limit(min(100, size * 3 + 1)).execute())
+            if not candidates:
+                break
+            candidate_ids = [int(row["id"]) for row in candidates if row.get("id") is not None]
+            seen_rows = _rows(supabase.table("community_feed_post_views")
+                              .select("post_id").ilike("wallet_address", wallet)
+                              .in_("post_id", candidate_ids).execute())
+            seen = {int(row["post_id"]) for row in seen_rows
+                    if row.get("post_id") is not None}
+            unseen = [row for row in candidates if int(row["id"]) not in seen]
+            rows.extend(unseen)
+            if len(rows) > size:
+                has_more = True
+                rows = rows[:size]
+                break
+            scan_cursor = int(candidates[-1]["id"])
+            if len(candidates) < min(100, size * 3 + 1):
+                break
+        page_rows = rows[:size]
+        post_ids = [row.get("id") for row in page_rows if row.get("id") is not None]
+        media = _media_for_posts(supabase, post_ids)
+        reactions = _reactions_for_posts(supabase, post_ids, viewer)
+        followed = _follow_states(supabase,
+                                  [row.get("wallet_address") for row in page_rows], viewer)
+        avatars = _avatars_for_wallets(supabase,
+                                       [row.get("wallet_address") for row in page_rows])
+        breakdowns = _reaction_breakdowns_for_posts(supabase, post_ids)
+        from . import badges as community_badges
+        badges_by_wallet = community_badges.public_badges_for_wallets(
+            [row.get("wallet_address") for row in page_rows], client=supabase)
+        supports = _support_rows_for_posts(supabase, post_ids)
+        posts = [_public_post(
+            row, media.get(row.get("id"), []), viewer, reactions.get(row.get("id")),
+            is_following=(row.get("wallet_address") or "").lower() in followed,
+            avatar_url=avatars.get((row.get("wallet_address") or "").lower()),
+            reactions=breakdowns.get(row.get("id")),
+            earned_badges=badges_by_wallet.get((row.get("wallet_address") or "").lower(), []),
+            support=supports.get(row.get("id")),
+        ) for row in page_rows]
+        return {"success": True, "posts": posts,
+                "next_cursor": posts[-1]["id"] if posts and has_more else None,
+                "has_more": has_more}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: discover query failed: %s", exc)
+        return {"success": False, "error": "Could not load Discover posts.", "posts": []}
+
+
+def record_post_views(viewer: str | None, post_ids: list[int]) -> dict:
+    """Idempotently record only currently visible public user posts."""
+    if not viewer:
+        return {"success": False, "error": "Not authenticated", "code": "auth"}
+    if not post_ids or len(post_ids) > 50:
+        return {"success": False, "error": "Choose between 1 and 50 posts.",
+                "code": "limit"}
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "code": "db"}
+    try:
+        ids = list(dict.fromkeys(int(value) for value in post_ids))
+        if any(value < 1 for value in ids):
+            raise ValueError("post ids must be positive")
+        rows = _rows(supabase.table("community_feed_posts").select("id")
+                     .in_("id", ids).eq("post_type", "user")
+                     .eq("visibility", "public").eq("is_deleted", False)
+                     .eq("is_hidden", False).execute())
+        visible_ids = {int(row["id"]) for row in rows if row.get("id") is not None}
+        if visible_ids:
+            payload = [{"wallet_address": str(viewer).strip().lower(),
+                        "post_id": post_id} for post_id in sorted(visible_ids)]
+            supabase.table("community_feed_post_views").upsert(
+                payload, on_conflict="wallet_address,post_id",
+                ignore_duplicates=True).execute()
+        return {"success": True, "recorded": len(visible_ids)}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: view impression write failed: %s", exc)
+        return {"success": False, "error": "Could not record post views.",
+                "code": "db"}
+
+
 def get_post(post_id: int, viewer: str | None = None) -> dict:
     supabase = _get_supabase()
     if not supabase:
