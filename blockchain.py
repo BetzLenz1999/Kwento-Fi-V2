@@ -1654,6 +1654,49 @@ def get_phpm_balance(wallet_address: str) -> dict:
         return {"success": False, "error": str(e), "balance": 0, "balance_formatted": "Error"}
 
 
+def prepare_phpm_transfer_data(to_address: str, amount_phpm) -> dict:
+    """Build unsigned PHPm transfer calldata using the token's live decimals."""
+    try:
+        from decimal import Decimal
+        from web3 import Web3
+        from eth_abi import encode as abi_encode
+
+        if int(CELO_CHAIN_ID) != 42220:
+            raise ValueError("PHPm transfers are available on Celo Mainnet only")
+        amount = Decimal(str(amount_phpm))
+        if not amount.is_finite() or amount <= 0:
+            raise ValueError("Amount must be a positive finite number")
+
+        token_addr = Web3.to_checksum_address(PHPM_CONTRACT)
+        to_checksum = Web3.to_checksum_address(to_address)
+        contract = _get_w3().eth.contract(address=token_addr, abi=_PHPM_ERC20_ABI)
+        decimals = int(contract.functions.decimals().call())
+        if decimals < 0 or decimals > 36:
+            raise ValueError(f"Unsupported PHPm decimals: {decimals}")
+        raw_amount = amount * Decimal(10 ** decimals)
+        if raw_amount != raw_amount.to_integral_value():
+            raise ValueError(f"PHPm supports up to {decimals} decimal places")
+        amount_raw = int(raw_amount)
+
+        selector = Web3.keccak(text="transfer(address,uint256)")[:4]
+        encoded_args = abi_encode(["address", "uint256"], [to_checksum, amount_raw])
+        return {
+            "success": True,
+            "to": token_addr,
+            "data": "0x" + (selector + encoded_args).hex(),
+            "value": "0x0",
+            "chain_id": int(CELO_CHAIN_ID),
+            "token": "PHPm",
+            "recipient": to_checksum,
+            "amount": format(amount, "f"),
+            "amount_raw": str(amount_raw),
+            "decimals": decimals,
+        }
+    except Exception as e:
+        logger.error(f"prepare_phpm_transfer_data error: {e}")
+        return {"success": False, "error": str(e)}
+
+
 def prepare_usdt_transfer_data(to_address: str, amount_usdt: float) -> dict:
     """
     Return the ABI-encoded calldata for a USDT ERC-20 transfer(address,uint256) call.
