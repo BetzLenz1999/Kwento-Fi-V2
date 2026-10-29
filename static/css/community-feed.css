@@ -1935,16 +1935,10 @@ body.cf-modal-open { overflow: hidden; }
         border-color: #c4b5fd;
         color: #5b21b6;
     }
-    .cf-community-mobile-actions .cf-nav-item[data-nav="wallet"] {
-        display: none;
-        background: #1e3a8a;
-        border-color: #1e3a8a;
-        color: #fff;
-    }
-    .cf-community-mobile-actions .cf-nav-item[data-nav="community-cards"] {
-        background: #ffe4e6;
-        border-color: #fda4af;
-        color: #9f1239;
+    .cf-community-mobile-actions .cf-nav-item[data-nav="menu"] {
+        background: #e0e7ff;
+        border-color: #a5b4fc;
+        color: #3730a3;
     }
     .cf-community-mobile-actions .cf-nav-item:hover { filter: brightness(0.97); }
     .cf-community-mobile-actions .cf-nav-item.cf-nav-gold:hover { background: #f2ab31; }
@@ -1961,11 +1955,8 @@ body.cf-modal-open { overflow: hidden; }
     }
 }
 
-/* The Wallet shortcut remains in the desktop rail; the masthead already has
-   its own Wallet link, so the new Community Cards control is phone-only. */
-@media (min-width: 900px) {
-    .cf-community-mobile-actions .cf-nav-item[data-nav="community-cards"] { display: none; }
-}
+/* The Menu remains reachable in the desktop rail; Community Cards stay inline
+   there and open as a modal only in the phone layout. */
 
 /* ── Reduced motion ───────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -2797,4 +2788,201 @@ body.cf-push-optin-open { overflow: hidden; }
     .cf-guest .gm-guest-connect-icon { flex-basis: 42px; width: 42px; height: 42px; }
     .cf-guest .gm-guest-connect-title { font-size: 1.25rem; }
     .cf-guest .gm-guest-connect-highlights { grid-template-columns: minmax(0, 1fr); }
+}
+
+
+/* ── Community Menu and nested Earn More actions ──────────────────────────── */
+.cf-menu-list { display: grid; gap: 0.55rem; }
+.cf-menu-row {
+    width: 100%; min-width: 0; display: grid;
+    grid-template-columns: 2.65rem minmax(0, 1fr) auto;
+    align-items: center; gap: 0.7rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--cf-border); border-radius: 15px;
+    background: #fff; color: var(--cf-ink); text-align: left;
+    font-family: inherit; cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.15s ease;
+}
+.cf-menu-row:hover { border-color: #a5b4fc; background: #f8faff; }
+.cf-menu-row:active, .cf-menu-subitem:active { transform: scale(0.99); }
+.cf-menu-row:focus-visible, .cf-menu-subitem:focus-visible {
+    outline: 2px solid var(--cf-accent-2); outline-offset: 2px;
+}
+.cf-menu-row-icon {
+    width: 2.5rem; height: 2.5rem; display: grid; place-items: center;
+    border-radius: 13px; background: #eef2ff; font-size: 1.15rem;
+}
+.cf-menu-row-copy { min-width: 0; display: grid; gap: 0.15rem; }
+.cf-menu-row-copy strong { font-size: 0.86rem; line-height: 1.2; }
+.cf-menu-row-copy small { color: var(--cf-dim); font-size: 0.7rem; line-height: 1.35; }
+.cf-menu-row-arrow { color: #6366f1; font-size: 1.35rem; font-weight: 800; line-height: 1; }
+.cf-menu-submenu { display: grid; gap: 0.45rem; padding: 0.1rem 0 0 1rem; }
+.cf-menu-submenu[hidden] { display: none !important; }
+.cf-menu-subitem {
+    min-height: 46px; display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    align-items: center; gap: 0.55rem;
+    padding: 0.55rem 0.75rem; border: 1px solid #e6e8f0;
+    border-radius: 13px; background: #f8f9fc; color: var(--cf-ink);
+    text-align: left; font-family: inherit; font-size: 0.82rem;
+    font-weight: 800; cursor: pointer;
+}
+.cf-menu-subitem:hover { border-color: #c7d2fe; background: #eef2ff; }
+.cf-menu-subitem > span:first-child { font-size: 1.15rem; text-align: center; }
+
+/* ── Farming/Savings iframe modal (same-origin, lazy-mounted on first open) ── */
+.cf-earn-page-modal {
+    position: fixed; inset: 0; z-index: 1400;
+    display: grid; place-items: center; padding: 0.75rem;
+}
+.cf-earn-page-modal[hidden] { display: none; }
+.cf-earn-page-overlay {
+    position: absolute; inset: 0; background: rgba(13, 18, 38, 0.66);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.cf-earn-page-card {
+    position: relative; z-index: 1410; display: flex; flex-direction: column;
+    width: min(100%, 1080px); height: min(94dvh, 1040px);
+    min-height: 0; overflow: hidden; border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 18px; background: #0b1020;
+    box-shadow: 0 20px 64px rgba(0,0,0,0.42);
+}
+.cf-earn-page-head {
+    flex: 0 0 auto; min-height: 52px; display: flex;
+    align-items: center; justify-content: space-between; gap: 0.75rem;
+    padding: 0.55rem 0.8rem 0.55rem 1rem;
+    background: linear-gradient(135deg, #1a1d2e, #252840); color: #fff;
+}
+.cf-earn-page-head h2 { margin: 0; color: #fff; font-size: 0.95rem; font-weight: 800; }
+.cf-earn-page-close {
+    width: 36px; height: 36px; flex: 0 0 auto; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.36); background: rgba(255,255,255,0.16);
+    color: #fff; font-size: 1.25rem; font-weight: 900; line-height: 1; cursor: pointer;
+}
+.cf-earn-page-close:hover { background: rgba(255,255,255,0.28); }
+.cf-earn-page-close:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 2px; }
+.cf-earn-page-card iframe {
+    display: block; flex: 1 1 auto; width: 100%; height: 100%; min-height: 0;
+    border: 0; background: #0b1020;
+}
+@media (max-width: 640px) {
+    .cf-earn-page-modal { padding: 0; }
+    .cf-earn-page-card {
+        width: 100%; height: 100dvh; max-height: 100dvh;
+        border: 0; border-radius: 0;
+    }
+}
+
+.cf-menu-close {
+    position: absolute; top: 0.55rem; right: 0.75rem;
+    width: 34px; height: 34px; display: grid; place-items: center;
+    border: 1px solid #e2e5ee; border-radius: 50%;
+    background: #f8f9fc; color: #4b5563; font-family: inherit;
+    font-size: 1.2rem; font-weight: 800; line-height: 1; cursor: pointer;
+}
+.cf-menu-close:hover { border-color: #a5b4fc; background: #eef2ff; color: #3730a3; }
+.cf-menu-close:focus-visible { outline: 2px solid var(--cf-accent-2); outline-offset: 2px; }
+
+
+/* ── Read-only Celo Wallet modal ─────────────────────────────────────────── */
+.cf-wallet-modal {
+    position: fixed; inset: 0; z-index: 1450;
+    display: grid; place-items: center; padding: 1rem;
+}
+.cf-wallet-modal[hidden] { display: none !important; }
+.cf-wallet-overlay {
+    position: absolute; inset: 0; background: rgba(13, 18, 38, 0.68);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.cf-wallet-card {
+    position: relative; z-index: 1460; width: min(100%, 620px);
+    max-height: min(92dvh, 820px); overflow: auto;
+    border: 1px solid rgba(255,255,255,0.3); border-radius: 22px;
+    background: #fff; color: #18213b;
+    box-shadow: 0 24px 72px rgba(6, 10, 28, 0.36);
+}
+.cf-wallet-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 1.1rem 1.2rem; color: #fff;
+    background: linear-gradient(120deg, #171b35, #3730a3 72%, #4f46e5);
+}
+.cf-wallet-kicker { margin-bottom: 0.2rem; color: #c7d2fe; font-size: 0.65rem; font-weight: 900; letter-spacing: 0.12em; }
+.cf-wallet-head h2 { margin: 0; color: #fff; font-size: 1.3rem; font-weight: 850; }
+.cf-wallet-actions { display: flex; align-items: center; gap: 0.5rem; }
+.cf-wallet-refresh, .cf-wallet-close {
+    min-height: 40px; border: 1px solid rgba(255,255,255,0.36);
+    border-radius: 12px; background: rgba(255,255,255,0.13);
+    color: #fff; font: inherit; font-weight: 800; cursor: pointer;
+}
+.cf-wallet-refresh { padding: 0.5rem 0.8rem; }
+.cf-wallet-refresh:hover, .cf-wallet-close:hover { background: rgba(255,255,255,0.24); }
+.cf-wallet-refresh:disabled { opacity: 0.65; cursor: wait; }
+.cf-wallet-close { width: 40px; padding: 0; font-size: 1.35rem; line-height: 1; }
+.cf-wallet-refresh:focus-visible, .cf-wallet-close:focus-visible {
+    outline: 2px solid #facc15; outline-offset: 2px;
+}
+.cf-wallet-network {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    margin: 1rem 1.1rem 0; padding: 0.8rem 0.9rem;
+    border: 1px solid #e2e7f2; border-radius: 15px; background: #f8faff;
+}
+.cf-wallet-network > div { display: grid; gap: 0.2rem; }
+.cf-wallet-network strong { color: #202949; font-size: 0.85rem; }
+.cf-wallet-network span { color: #667085; font-size: 0.7rem; }
+.cf-wallet-network code {
+    max-width: 45%; overflow: hidden; color: #4f46e5; font-size: 0.73rem;
+    text-overflow: ellipsis; white-space: nowrap;
+}
+.cf-wallet-status {
+    min-height: 1.2rem; margin: 0.75rem 1.2rem; color: #667085;
+    font-size: 0.76rem; line-height: 1.45;
+}
+.cf-wallet-status[data-state="error"] { color: #b42318; }
+.cf-wallet-status[data-state="loaded"] { color: #344054; }
+.cf-wallet-token-list { display: grid; gap: 0.55rem; padding: 0 1.1rem; }
+.cf-wallet-token {
+    min-width: 0; min-height: 60px; display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr) minmax(0, auto);
+    align-items: center; gap: 0.75rem; padding: 0.65rem 0.75rem;
+    border: 1px solid #e9ecf3; border-radius: 15px; background: #fff;
+}
+.cf-wallet-token-badge {
+    width: 2.4rem; height: 2.4rem; display: grid; place-items: center;
+    border-radius: 13px; background: #eef2ff; color: #3730a3;
+    font-size: 0.8rem; font-weight: 900;
+}
+.cf-wallet-token-badge-celo { background: #e8f7f0; color: #087443; }
+.cf-wallet-token-badge-gd { background: #fff5dc; color: #9a6700; }
+.cf-wallet-token-badge-cusd { background: #eaf2ff; color: #175cd3; }
+.cf-wallet-token-badge-usdt { background: #e9f7f0; color: #067647; }
+.cf-wallet-token-badge-usdc { background: #edf2ff; color: #3538cd; }
+.cf-wallet-token-badge-phpm { background: #fff0ec; color: #b42318; }
+.cf-wallet-token-name { min-width: 0; display: grid; gap: 0.18rem; }
+.cf-wallet-token-name strong { color: #202949; font-size: 0.84rem; }
+.cf-wallet-token-name small { overflow: hidden; color: #667085; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
+.cf-wallet-token-value {
+    max-width: 100%; overflow-wrap: anywhere; color: #171b35;
+    font-size: 0.88rem; font-variant-numeric: tabular-nums; text-align: right;
+}
+.cf-wallet-note { margin: 0.9rem 1.2rem 1.1rem; color: #667085; font-size: 0.7rem; line-height: 1.45; }
+@media (max-width: 640px) {
+    .cf-wallet-modal { padding: 0; }
+    .cf-wallet-card {
+        width: 100%; height: 100dvh; max-height: 100dvh;
+        border: 0; border-radius: 0;
+    }
+    .cf-wallet-head { padding: max(1rem, env(safe-area-inset-top)) 1rem 1rem; }
+    .cf-wallet-network { margin-right: 0.85rem; margin-left: 0.85rem; }
+    .cf-wallet-token-list { padding-right: 0.85rem; padding-left: 0.85rem; }
+    .cf-wallet-note { margin-right: 1rem; margin-left: 1rem; padding-bottom: env(safe-area-inset-bottom); }
+}
+@media (max-width: 360px) {
+    .cf-wallet-head { gap: 0.5rem; padding-right: 0.7rem; padding-left: 0.85rem; }
+    .cf-wallet-head h2 { font-size: 1.15rem; }
+    .cf-wallet-refresh { padding-right: 0.55rem; padding-left: 0.55rem; font-size: 0.78rem; }
+    .cf-wallet-network { align-items: flex-start; flex-direction: column; }
+    .cf-wallet-network code { max-width: 100%; }
+    .cf-wallet-token { grid-template-columns: 2.2rem minmax(0, 1fr) minmax(0, auto); gap: 0.55rem; padding-right: 0.55rem; padding-left: 0.55rem; }
+    .cf-wallet-token-badge { width: 2.1rem; height: 2.1rem; }
+    .cf-wallet-token-value { font-size: 0.78rem; }
 }
