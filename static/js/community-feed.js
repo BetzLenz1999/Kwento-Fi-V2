@@ -1214,7 +1214,8 @@
         container.textContent = '';
         section.hidden = !_pinnedDonations.length;
         _pinnedDonations.forEach(function (post) {
-            container.appendChild(buildDonationCard(post));
+            container.appendChild(post.post_type === 'system_support'
+                ? buildSupportCard(post) : buildDonationCard(post));
         });
         var more = $('cfPinnedDonationMore');
         if (more) more.hidden = !_pinnedDonationCursor;
@@ -1653,6 +1654,7 @@
         author.appendChild(el('span', 'cf-donation-system-mark', 'G$'));
         author.appendChild(el('strong', null, DISPLAY_BRAND));
         head.appendChild(author);
+        if (post.is_pinned) head.appendChild(el('span', 'cf-donation-pin-label', 'Pinned'));
         card.appendChild(head);
         var body = el('div', 'cf-card-body');
         var copy = el('p', 'cf-donation-card-copy');
@@ -3347,7 +3349,8 @@
             var rows = result.data.posts || [];
             if (reset && FOCUS_POST && FOCUS_POST.post_type !== 'system_vault_donation'
                     && FOCUS_POST.id != null
-                    && !rows.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })) {
+                    && !rows.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })
+                    && !_pinnedDonations.some(function (post) { return String(post.id) === String(FOCUS_POST.id); })) {
                 rows = [FOCUS_POST].concat(rows);
             }
             _feed = reset ? rows : _feed.concat(rows);
@@ -3387,16 +3390,16 @@
         return api('/community/api/feed/pinned-donations?limit=10&cursor='
             + encodeURIComponent(_pinnedDonationCursor)).then(function (result) {
             if (!result.data || !result.data.success) {
-                throw new Error((result.data && result.data.error) || 'Could not load pinned donations.');
+                throw new Error((result.data && result.data.error) || 'Could not load pinned donor acknowledgments.');
             }
             _pinnedDonations = _pinnedDonations.concat(result.data.posts || []);
             _pinnedDonationCursor = result.data.next_cursor || null;
             renderPinnedDonations();
         }).catch(function (error) {
-            toast((error && error.message) || 'Could not load pinned donations.', 'error');
+            toast((error && error.message) || 'Could not load pinned donor acknowledgments.', 'error');
         }).then(function () {
             _pinnedDonationLoading = false;
-            if (button) { button.disabled = false; button.textContent = 'Load more pinned donations'; }
+            if (button) { button.disabled = false; button.textContent = 'Load more acknowledgments'; }
         });
     }
 
@@ -3432,8 +3435,7 @@
     var _communityCardsBodyWasLocked = false;
 
     function buildNavItem(item) {
-        var isDisabled = !!item.disabled;
-        var isLink = !!item.href && !isDisabled;
+        var isLink = !!item.href;
         var node = document.createElement(isLink ? 'a' : 'button');
         // `active` is data-driven: this bar only renders on /community, and
         // /community IS the feed, so no tab claims to be the current page any
@@ -3451,20 +3453,11 @@
         }
         if (isLink) node.href = item.href;
         else node.type = 'button';
-        if (isDisabled) {
-            node.disabled = true;
-            node.setAttribute('aria-disabled', 'true');
-            node.title = item.disabledTitle || ((item.label || 'This action') + ' is unavailable from Community');
-        }
         var icon = el('span', 'cf-nav-icon', item.icon || '');
         icon.setAttribute('aria-hidden', 'true');
         node.appendChild(icon);
         node.appendChild(el('span', 'cf-nav-label', item.label || ''));
         node.onclick = function (event) {
-            if (isDisabled) {
-                if (event && event.preventDefault) event.preventDefault();
-                return;
-            }
             if (item.action === 'community-cards') {
                 if (event && event.preventDefault) event.preventDefault();
                 openCommunityCards(node);
