@@ -1706,7 +1706,12 @@ function _wcLoadSdk() {
     return window._wcSdkLoading;
 }
 
-const _wcSidecarEnabled = !!(window.GM_GET_STARTED_BOOT || {}).wcSidecarEnabled;
+// The relay host the shipped sign-client@2.17.0 bundle actually dials. Keep
+// this in sync with `SIGN_CLIENT_DEFAULT.relayUrl` in static/js/wc-bundle.js
+// (currently wss://relay.walletconnect.org) — the copy and the diagnostics log
+// used to name relay.walletconnect.com, a host the SDK never contacts, which
+// sent users (and support) chasing the wrong endpoint.
+const WC_RELAY_HOST = 'relay.walletconnect.org';
 
 // Pre-QR stage budgets (ms) for the in-browser SignClient fallback. On a slow
 // mobile connection the SDK bundle download plus the relay WebSocket
@@ -1719,8 +1724,22 @@ const _wcSidecarEnabled = !!(window.GM_GET_STARTED_BOOT || {}).wcSidecarEnabled;
 // values so the message can never drift from the real budget.
 const WC_FALLBACK_TIMEOUT_MS = Object.freeze({
     sdk_init: 60000,
-    connect: 45000
+    // Best-effort relay WebSocket handshake. SignClient.init() opens the
+    // transport only when it already has cached subscriptions, so on a cold
+    // start the handshake cost landed INSIDE the connect budget — competing
+    // with the SDK's own budgets and producing a false timeout. Warming it
+    // here (never rejecting) takes that cost off the connect budget.
+    relay_open: 15000,
+    // MUST stay above the SDK's OWN internal budgets. In the shipped
+    // sign-client@2.17.0 bundle subscribeTimeout and publishTimeout are both
+    // ONE_MINUTE (60s), and publishing the session proposal retries until
+    // publishTimeout elapses. An app budget below those aborts a session the
+    // SDK would still have completed — the reported "WalletConnect session
+    // could not be generated within 45 seconds".
+    connect: 90000
 });
+
+const _wcSidecarEnabled = !!(window.GM_GET_STARTED_BOOT || {}).wcSidecarEnabled;
 
 // Wake the user's wallet app to the foreground after a WalletConnect
 // request has been initiated. WalletConnect v2 expects the dApp to
@@ -1774,6 +1793,41 @@ function _wcGetClient() {
             return client;
         });
     });
+}
+
+// Warm the relay WebSocket before the session round-trip. SignClient.init()
+// only opens the transport when it already has cached subscriptions, so on a
+// cold start (a first visit, or cleared storage) the handshake runs INSIDE
+// the connect budget and can eat it on a slow link. This is BEST EFFORT: it
+// never rejects and never blocks the flow — a warm-up that fails simply
+// leaves the connect stage to open the transport itself, exactly as before.
+function _wcWarmRelayer(client, timeoutMs) {
+    try {
+        const relayer = client && client.core && client.core.relayer;
+        if (!relayer || typeof relayer.transportOpen !== 'function') return Promise.resolve(null);
+        if (relayer.connected) return Promise.resolve(relayer);
+        let open;
+        try { open = relayer.transportOpen(); } catch (e) { return Promise.resolve(null); }
+        if (!open || typeof open.then !== 'function') return Promise.resolve(relayer);
+        const cap = new Promise(function (resolve) {
+            setTimeout(function () { resolve('timeout'); }, timeoutMs || WC_FALLBACK_TIMEOUT_MS.relay_open);
+        });
+        return Promise.race([open.then(function () { return relayer; }), cap])
+            .then(function (r) {
+                // `null` on the cap winning: the caller ignores the value, but
+                // reporting "not open" keeps this honest for any future reader.
+                if (r === 'timeout') return null;
+                return r;
+            }, function (e) {
+                _logWalletConnectFrontend('relay_warmup_failed', {
+                    stage: 'relay_open',
+                    message: (e && e.message) ? e.message : String(e || '')
+                });
+                return null;
+            });
+    } catch (e) {
+        return Promise.resolve(null);
+    }
 }
 
 // The "Processing barcode and URI code…" state replaces the QR area
@@ -1983,7 +2037,7 @@ async function connectWalletConnect() {
 
     // In-browser SignClient fallback. Before this fix this path
     // could silently hang forever if the relay WebSocket
-    // (wss://relay.walletconnect.com) was unreachable, or if
+    // (wss://relay.walletconnect.org) was unreachable, or if
     // SignClient.connect() took too long to return a URI: the
     // yellow "relay unavailable / trying fallback" message would
     // just sit on screen with no progress, no QR, and no error.
@@ -2008,6 +2062,10 @@ async function connectWalletConnect() {
         showWalletStatus('walletConnectStatus', '⏳ Processing barcode and URI code…', 'info');
         const client = await _wcWithTimeout(_wcGetClient(), WC_FALLBACK_TIMEOUT_MS.sdk_init, 'sdk_init');
         showWalletStatus('walletConnectStatus', '⏳ Processing barcode and URI code…', 'info');
+        // Take the cold-start WebSocket handshake off the connect budget.
+        // Best effort — never rejects, so a slow/dead relay still surfaces
+        // through the connect stage's own error path below.
+        await _wcWarmRelayer(client, WC_FALLBACK_TIMEOUT_MS.relay_open);
         // Request both Celo (42220) and XDC (50) in optionalNamespaces so
         // the session supports cross-chain signing on the XDC wallet page.
         // Without eip155:50 here, client.request({ chainId:"eip155:50" })
@@ -2137,9 +2195,12 @@ async function connectWalletConnect() {
         });
         let friendly;
         if (err && err._wcStage === 'sdk_init') {
-            friendly = '❌ WalletConnect relay did not respond within ' + Math.round(WC_FALLBACK_TIMEOUT_MS.sdk_init / 1000) + 's. Your network may be blocking relay.walletconnect.com (WebSocket / wss:// traffic). Try a different network (mobile data vs. Wi-Fi).';
+            friendly = '❌ WalletConnect relay did not respond within ' + Math.round(WC_FALLBACK_TIMEOUT_MS.sdk_init / 1000) + 's. Your network may be blocking ' + WC_RELAY_HOST + ' (WebSocket / wss:// traffic). Try a different network (mobile data vs. Wi-Fi).';
         } else if (err && err._wcStage === 'connect') {
-            friendly = '❌ WalletConnect session could not be generated within ' + Math.round(WC_FALLBACK_TIMEOUT_MS.connect / 1000) + 's. Please try again.';
+            // The SDK's OWN publish/subscribe budgets are 60s each, so this
+            // stage only fires when the relay truly cannot be reached — it is
+            // a connectivity problem, not a "try again quickly" one.
+            friendly = '❌ Could not reach the WalletConnect relay within ' + Math.round(WC_FALLBACK_TIMEOUT_MS.connect / 1000) + 's, so no QR code was created. Your network may be blocking ' + WC_RELAY_HOST + ' (WebSocket / wss:// traffic). Try a different network (mobile data vs. Wi-Fi), or connect with your wallet\'s built-in browser instead.';
         } else if (rejected) {
             friendly = '❌ Request rejected by wallet. ' + emsg;
         } else {
@@ -2198,7 +2259,7 @@ async function _logWalletConnectFrontend(event, details = {}) {
                 ...details,
                 user_agent: navigator.userAgent || '',
                 href: window.location.href || '',
-                relay_host: 'relay.walletconnect.com'
+                relay_host: WC_RELAY_HOST
             })
         });
     } catch (_) {}
