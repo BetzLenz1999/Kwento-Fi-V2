@@ -8162,6 +8162,7 @@ def _claim_boot_context(wallet: str, login_method: str = "", *, claim_only: bool
     }
 
 
+@routes.route("/wallet/")
 @routes.route("/wallet")
 def wallet_page():
     """Retire the standalone wallet page and keep the Community claim deep link."""
@@ -8297,122 +8298,11 @@ def lifi_bridge_diagnostics():
 # which the browser never sends to the server.
 
 
+@routes.route("/swap/")
 @routes.route("/swap")
 def swap_page():
-    """Swap page: DEX (Uniswap V3 on Celo) and GoodReserve (Mento) tabs.
-
-    Guests (no session wallet) are allowed to view the page instead of being
-    bounced to the homepage: the shared "Get Started" connect modal renders so
-    a shared swap link still converts. Signing stays impossible without a
-    connect, so nothing is exposed by allowing the view.
-    """
-    wallet = session.get("wallet")
-    is_guest = not (wallet and session.get("verified"))
-    if is_guest:
-        wallet = ""
-
-    # NOTE: /swap is intentionally NOT behind the human (face) verification
-    # gate — unverified users are allowed to swap G$ (goodswap + bridge).
-    # Other earning/spending pages (dashboard, learn & earn, play & earn,
-    # reloadly) still bounce unverified wallets to /wallet?fv_required=1.
-
-    reserve_visible = False
-    try:
-        supabase = get_supabase_client()
-        if supabase:
-            result = safe_supabase_operation(
-                lambda: supabase.table('maintenance_settings')
-                    .select('feature_name,is_maintenance')
-                    .in_('feature_name', ['swap_feature', 'reserve_swap_feature'])
-                    .execute(),
-                operation_name="check swap feature visibility"
-            )
-            if result and result.data:
-                for row in result.data:
-                    if row.get('feature_name') == 'swap_feature' and row.get('is_maintenance', False):
-                        return render_template("feature_unavailable.html", feature_name="Swap", wallet=wallet)
-                    if row.get('feature_name') == 'reserve_swap_feature' and not row.get('is_maintenance', False):
-                        reserve_visible = True
-    except Exception:
-        pass
-    # MiniPay users now have full access to BOTH the Uniswap V3 and GoodReserve
-    # swap modes (the Uniswap path uses CIP-64 fee abstraction so MiniPay can
-    # pay gas in cUSD/USDT/USDC). We still ensure the reserve pane renders so
-    # MiniPay always has at least the no-slippage reserve fallback available.
-    ua = (request.headers.get("User-Agent") or "").lower()
-    is_minipay = "minipay" in ua
-    if is_minipay:
-        reserve_visible = True
-
-    # GoodDollar MessagePassingBridge — same address on every supported chain
-    # per https://docs.gooddollar.org/user-guides/bridge-gooddollars
-    bridge_contract = os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5")
-    celo_gd_token_contract = os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A")
-    # XDC G$ contract is needed by the unified Bridge pane so the XDC → Celo
-    # sub-tab can read the user's G$-on-XDC balance + allowance directly,
-    # without bouncing the user to /xdc-wallet first.
-    xdc_gd_token_contract = os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c")
-    xdc_chain_id = get_env_int("XDC_MAINNET_CHAIN_ID", 50)
-    celo_chain_id = get_env_int("CELO_MAINNET_CHAIN_ID", 42220)
-    fuse_chain_id = get_env_int("FUSE_CHAIN_ID", 122)
-    fuse_rpc_url = os.getenv("FUSE_RPC_URL", "https://rpc.fuse.io")
-    fuse_gd_token_contract = os.getenv("FUSE_GD_TOKEN", "0x495d133B938596C9984d462F007B676bDc57eCEC")
-    fuse_gd_decimals = get_env_int("FUSE_GD_DECIMALS", 2)
-    fuse_wfuse_contract = os.getenv("FUSE_WFUSE_TOKEN", "0x0BE9e53fd7EDaC9F859882AfdDa116645287C629")
-    voltage_router_contract = os.getenv("VOLTAGE_ROUTER", "0xE3F85aAd0c8DD7337427B9dF5d0fB741d65EEEB5")
-
-    # Resolve the initial tab from the deep link SERVER-SIDE so a ?tab=bridge
-    # URL never paints GoodSwap first (the client-side autoSelectSwapTab() then
-    # only matters for hash links, which the server cannot see).
-    lifi_enabled = _lifi_bridge_enabled()
-    swap_tab = resolve_swap_tab_state(request.args)
-    # Fall back when the requested pane isn't rendered for this request:
-    # GoodReserve may be hidden by feature flag, and Celo→Base only ships when
-    # LI.FI is enabled. Mirror setGoodSwapSubTab()/setBridgeSubTab() fallbacks.
-    if swap_tab["goodswap_pane"] == "reserve" and not reserve_visible:
-        swap_tab["goodswap_pane"] = "dex"
-    if swap_tab["bridge_dir"] == "celo_to_base" and not lifi_enabled:
-        swap_tab["bridge_dir"] = "celo_to_xdc"
-
-    return render_template(
-        "swap.html",
-        wallet=wallet,
-        login_method=session.get("login_method", ""),
-        walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
-        walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
-        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
-        privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
-        reserve_swap_visible=reserve_visible,
-        is_minipay=is_minipay,
-        bridge_contract=bridge_contract,
-        celo_gd_token_contract=celo_gd_token_contract,
-        xdc_gd_token_contract=xdc_gd_token_contract,
-        xdc_chain_id=xdc_chain_id,
-        celo_chain_id=celo_chain_id,
-        fuse_chain_id=fuse_chain_id,
-        fuse_rpc_url=fuse_rpc_url,
-        fuse_gd_token_contract=fuse_gd_token_contract,
-        fuse_gd_decimals=fuse_gd_decimals,
-        fuse_wfuse_contract=fuse_wfuse_contract,
-        voltage_router_contract=voltage_router_contract,
-        # LI.FI (Jumper) bridge — Celo → Base. The pane ships dark unless the
-        # operator flips LIFI_BRIDGE_ENABLED; the client only ever calls our
-        # own /api/bridge/lifi/* proxy (no integrator key in the browser).
-        lifi_bridge_enabled=lifi_enabled,
-        lifi_base_chain_id=get_env_int("BASE_CHAIN_ID", 8453),
-        lifi_celo_erc20=os.getenv("CELO_ERC20_TOKEN", "0x471EcE3750Da237f93B8E339c536989b8978a438"),
-        lifi_source_tokens=_lifi_source_tokens(),
-        # Server-resolved initial tab state (see _resolve_swap_tab_state).
-        swap_tab=swap_tab["tab"],
-        swap_goodswap_pane=swap_tab["goodswap_pane"],
-        swap_bridge_dir=swap_tab["bridge_dir"],
-        swap_focused=swap_tab["focused"],
-        # Guest visitors get the shared "Get Started" connect modal instead of a
-        # redirect; signed-in users see the normal swap UI. The modal's Privy
-        # option is left OFF here because swap.html already ships its own Privy
-        # module — loading a second one would double the SDK cost for guests.
-        is_guest=is_guest,
-    )
+    """Redirect standalone Swap visits into the Community app."""
+    return redirect("/community")
 
 
 def _lifi_source_tokens():
@@ -9079,6 +8969,10 @@ def wallet_prepare_send():
             from blockchain import prepare_usdc_transfer_data
             result = prepare_usdc_transfer_data(to_address, amount)
             return jsonify(result)
+        elif token == "PHPM":
+            from blockchain import prepare_phpm_transfer_data
+            result = prepare_phpm_transfer_data(to_address, amount_str)
+            return jsonify(result)
         elif token == "CELO":
             w3 = Web3(Web3.HTTPProvider(CELO_RPC))
             to_checksum = Web3.to_checksum_address(to_address)
@@ -9108,24 +9002,13 @@ def wallet_prepare_send():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@routes.route("/bridge/")
+@routes.route("/bridge")
+@routes.route("/xdc-wallet/")
 @routes.route("/xdc-wallet")
 def xdc_wallet_page():
-    """XDC Network wallet page"""
-    wallet = session.get("wallet")
-    if not wallet or not session.get("verified"):
-        return redirect(url_for("routes.index"))
-    login_method = session.get("login_method", "")
-    use_server_signing = False
-    xdc_bridge_contract = os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5")
-    xdc_gd_token_contract = os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c")
-    celo_chain_id = get_env_int("CELO_MAINNET_CHAIN_ID", 42220)
-    return render_template("xdc_wallet.html", wallet=wallet,
-                           login_method=login_method, use_server_signing=use_server_signing,
-                           xdc_bridge_contract=xdc_bridge_contract,
-                           xdc_gd_token_contract=xdc_gd_token_contract,
-                           celo_chain_id=celo_chain_id,
-                           walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
-                           walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled())
+    """Redirect standalone Bridge-page visits into the Community app."""
+    return redirect("/community")
 
 
 @routes.route("/api/xdc/balances", methods=["GET"])
