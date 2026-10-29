@@ -8,7 +8,8 @@
    - the three-hop upload: presign -> PUT straight to R2 with the SIGNED headers,
    - the client-side media type allow-list,
    - the guest guard (a guest can never post or queue an upload),
-   - buildCard: caption as TEXT (no HTML injection) and a hidden reaction picker.
+   - buildCard: caption as TEXT (no HTML injection) and a hidden reaction picker,
+   - the Community Menu Wallet modal's Celo-only read/refresh and guest guard.
 
    Run: node scripts/smoke_community_feed.cjs
 */
@@ -144,7 +145,14 @@ function run(opts) {
    'cfCommunityCardsModal', 'cfCommunityCardsClose', 'cfCommunityCardsContent',
    'cfReactionUsersModal', 'cfReactionUsersClose', 'cfReactionUsersFilters',
    'cfReactionUsersStatus', 'cfReactionUsersList', 'cfReactionUsersRetry', 'cfReactionUsersMore',
-   'cfSheetEarn', 'cfSheetOverlay', 'cfAirtimeModal', 'cfAirtimeFrame',
+   'cfSheetEarn', 'cfSheetOverlay', 'cfMenuCommunityCards',
+   'cfMenuEarnMoreToggle', 'cfMenuEarnMore', 'cfMenuWallet',
+   'cfAirtimeModal', 'cfAirtimeFrame',
+   'cfEarnPageModal', 'cfEarnPageFrame', 'cfEarnPageTitle', 'cfEarnPageClose',
+   'cfCommunityWalletModal', 'cfCommunityWalletAddress', 'cfCommunityWalletStatus',
+   'cfCommunityWalletRefresh', 'cfCommunityWalletClose',
+   'cfWalletBalanceCelo', 'cfWalletBalanceGd', 'cfWalletBalanceCusd',
+   'cfWalletBalanceUsdt', 'cfWalletBalanceUsdc', 'cfWalletBalancePhpm',
    'cfMessagePushPrompt', 'cfMessagePushStatus', 'cfMessagePushCopy',
    'cfMessagePushEnable', 'cfMessagePushLater',
    'claimModal',
@@ -173,12 +181,19 @@ function run(opts) {
   // The Buy Airtime iframe ships with the modal: `hidden` until opened, and
   // its src parked on data-src so the store never loads until a tap.
   registry.cfAirtimeModal.hidden = true;
+  registry.cfEarnPageModal.hidden = true;
+  registry.cfCommunityWalletModal.hidden = true;
   registry.cfCommunityCardsModal.hidden = true;
+  registry.cfMenuEarnMore.hidden = true;
+  registry.cfSheetEarn.setAttribute('aria-hidden', 'true');
+  registry.cfSheetEarn.setAttribute('inert', '');
   registry.cfReactionUsersModal.hidden = true;
   registry.cfReactionUsersRetry.hidden = true;
   registry.cfReactionUsersMore.hidden = true;
   registry.cfMessagePushPrompt.hidden = true;
   registry.cfAirtimeFrame.setAttribute('data-src', '/reloadly/?embed=1#topup');
+  registry.cfEarnPageFrame.setAttribute('data-farming-src', '/farming/?embed=1');
+  registry.cfEarnPageFrame.setAttribute('data-savings-src', '/savings/?embed=1');
   // The shared claim dialog is rendered directly and starts closed.
   registry.claimModal.className = '';
   registry.claimModal.setAttribute('aria-hidden', 'true');
@@ -259,15 +274,14 @@ const MEMBER = {
   loginMethod: 'local', maxCaption: 2200, maxMedia: 4,
   maxImageMb: 10, maxVideoMb: 100, storageReady: true,
   // The same destination list the template emits (GM_COMMUNITY_BOOT.nav).
-  // Community Cards is public and opens in a mobile-only dialog; Your Wallet
-  // remains in the desktop rail while CSS hides that duplicate tile on phones.
+  // Wallet balances are accessed from inside Menu; no /wallet destination is
+  // exposed in the Community navigation.
   nav: [
     { id: 'claim', icon: '🪙', label: 'Claim Free G$', href: '/wallet?claim=1', action: 'claim', gold: true, guestOk: false },
     { id: 'search', icon: '🔍', label: 'Search', action: 'search', guestOk: true },
     { id: 'messages', icon: '💬', label: 'Messages', href: '/messages', action: 'messages', guestOk: false },
     { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
-    { id: 'community-cards', icon: '🗂️', label: 'Community Cards', action: 'community-cards', guestOk: true },
-    { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet', guestOk: false },
+    { id: 'menu', icon: '☰', label: 'Menu', action: 'menu', guestOk: true },
   ],
   reactions: { like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢', angry: '😡' },
 };
@@ -1213,14 +1227,33 @@ function feedFetch(handler, feedRows) {
 
   // ── 13. Bottom nav: destinations, guest gate, active item ─────────────────
   {
-    const { api, store, sandbox } = run({ boot: MEMBER });
+    const balanceRequests = [];
+    const walletPayload = {
+      success: true,
+      celo: { success: true, balance_formatted: '2.000000 CELO' },
+      gd: { success: true, balance_formatted: '12.500000 G$' },
+      cusd: { success: true, balance_formatted: '3.000000 cUSD' },
+      usdt: { success: true, balance_formatted: '4.000000 USDT' },
+      usdc: { success: true, balance_formatted: '5.000000 USDC' },
+      phpm: { success: true, balance_formatted: '42.000000 PHPm' },
+    };
+    const { api, store, sandbox } = run({
+      boot: MEMBER,
+      fetchImpl: feedFetch(function (url) {
+        if (String(url).indexOf('/api/wallet/balances') === 0) {
+          balanceRequests.push(String(url));
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(walletPayload) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }) });
+      }),
+    });
     const items = store.cfBottomNav.children;
-    ok('the bottom nav renders every destination', items.length === 6,
+    ok('the bottom nav renders every Community destination', items.length === 5,
        JSON.stringify(items.length));
     const labels = items.map(n => n.querySelector('.cf-nav-label').textContent);
-    ok('the nav carries Claim Free G$, Search, Messages, Buy Airtime, Community Cards and Your Wallet',
+    ok('the nav carries Claim Free G$, Search, Messages, Buy Airtime and Menu',
        JSON.stringify(labels) ===
-       JSON.stringify(['Claim Free G$', 'Search', 'Messages', 'Buy Airtime', 'Community Cards', 'Your Wallet']),
+       JSON.stringify(['Claim Free G$', 'Search', 'Messages', 'Buy Airtime', 'Menu']),
        JSON.stringify(labels));
     // The Feed tab is gone: this page IS the feed, so a tab pointing back at
     // /community was a dead tap. Nothing claims to be the active tab now.
@@ -1242,29 +1275,64 @@ function feedFetch(handler, feedRows) {
     const airtime = items.filter(n => /Buy Airtime/.test(n.textContent))[0];
     ok('Buy Airtime links to the embedded Reloadly top-up tab',
        airtime.href === '/reloadly/?embed=1#topup', airtime.href);
-    // Your Wallet links to the wallet page.
-    const wallet = items.filter(n => /Your Wallet/.test(n.textContent))[0];
-    ok('Your Wallet links to /wallet', wallet.href === '/wallet', wallet.href);
-    const communityCards = items.filter(n => /Community Cards/.test(n.textContent))[0];
-    ok('Community Cards is an accessible dialog button',
-       communityCards.tagName === 'BUTTON'
-         && communityCards.getAttribute('aria-haspopup') === 'dialog'
-         && communityCards.getAttribute('aria-controls') === 'cfCommunityCardsModal');
-
-    // The earning destinations sheet remains separate from Community Cards…
-    api.closeSheet();
-    api.openSheet();
-    ok('the earning destinations sheet still opens', store.cfSheetEarn.className.includes('open'));
-    ok('opening the sheet also shows the overlay',
+    const menu = items.filter(n => /Menu/.test(n.textContent))[0];
+    ok('Menu is an accessible dialog button',
+       menu.tagName === 'BUTTON'
+         && menu.getAttribute('aria-haspopup') === 'dialog'
+         && menu.getAttribute('aria-controls') === 'cfSheetEarn');
+    menu.onclick({ preventDefault() {} });
+    ok('Menu opens the community menu sheet', store.cfSheetEarn.className.includes('open'));
+    ok('the menu marks its trigger expanded', menu.getAttribute('aria-expanded') === 'true');
+    ok('opening the menu also shows the overlay',
        store.cfSheetOverlay.className.includes('open'));
-    // The sheet also locks the page scroll behind it.
-    ok('opening the sheet locks the page scroll',
+    ok('opening the menu locks the page scroll',
        sandbox.document.body.classList.contains('cf-modal-open'));
+    api.toggleMenuEarnMore(store.cfMenuEarnMoreToggle);
+    ok('Earn More expands its submenu',
+       store.cfMenuEarnMore.hidden === false
+         && store.cfMenuEarnMoreToggle.getAttribute('aria-expanded') === 'true');
+    api.openEarnPage('farming');
+    ok('Farming opens in the in-community modal',
+       store.cfEarnPageModal.hidden === false
+         && store.cfEarnPageFrame.src === '/farming/?embed=1'
+         && store.cfEarnPageTitle.textContent === 'Farming');
+    ok('opening Farming stays on the Community page', !sandbox.location.href);
+    api.closeEarnPage();
+    ok('closing the Farming modal releases the page scroll',
+       store.cfEarnPageModal.hidden === true
+         && !sandbox.document.body.classList.contains('cf-modal-open'));
+    api.openEarnPage('savings');
+    ok('Savings also opens in the in-community modal',
+       store.cfEarnPageModal.hidden === false
+         && store.cfEarnPageFrame.src === '/savings/?embed=1'
+         && store.cfEarnPageTitle.textContent === 'Savings');
+    api.closeEarnPage();
     api.closeSheet();
-    ok('closing the sheet hides it again',
+    ok('closing the menu sheet hides it again',
        !store.cfSheetEarn.className.includes('open'));
-    ok('closing the sheet unlocks the page scroll',
+    ok('closing the menu sheet unlocks the page scroll',
        !sandbox.document.body.classList.contains('cf-modal-open'));
+
+    menu.onclick({ preventDefault() {} });
+    ok('Wallet is offered inside the Community Menu', !!store.cfMenuWallet);
+    api.openWalletModal(store.cfMenuWallet);
+    ok('Wallet opens a read-only modal without leaving Community',
+       store.cfCommunityWalletModal.hidden === false && !sandbox.location.href);
+    await tick();
+    ok('the Wallet modal renders the Celo-native balance',
+       store.cfWalletBalanceCelo.textContent === '2.000000 CELO');
+    ok('the Wallet modal renders the PHPm balance',
+       store.cfWalletBalancePhpm.textContent === '42.000000 PHPm');
+    ok('opening Wallet reads the authenticated Celo balance endpoint',
+       balanceRequests.length === 1 && balanceRequests[0] === '/api/wallet/balances');
+    api.refreshWalletBalances();
+    await tick();
+    ok('manual refresh requests a fresh Celo balance read',
+       balanceRequests[1] === '/api/wallet/balances?force=1');
+    api.closeWalletModal();
+    ok('closing the Wallet modal restores page scrolling',
+       store.cfCommunityWalletModal.hidden === true
+         && !sandbox.document.body.classList.contains('cf-modal-open'));
 
     // …and Search opens the read-only member search for a member too.
     store.cfSearchBar.hidden = true;
@@ -1289,29 +1357,37 @@ function feedFetch(handler, feedRows) {
     await tick();
 
     ok('a guest still gets the whole nav (reading is public)',
-       store.cfBottomNav.children.length === 6);
+       store.cfBottomNav.children.length === 5);
 
     const items = store.cfBottomNav.children;
     const airtime = items.filter(n => /Buy Airtime/.test(n.textContent))[0];
     const search = items.filter(n => /Search/.test(n.textContent))[0];
     const claim = items.filter(n => /Claim Free G\$/.test(n.textContent))[0];
     const messages = items.filter(n => /Messages/.test(n.textContent))[0];
-    const communityCards = items.filter(n => /Community Cards/.test(n.textContent))[0];
-    const wallet = items.filter(n => /Your Wallet/.test(n.textContent))[0];
+    const menu = items.filter(n => /Menu/.test(n.textContent))[0];
 
     messages.onclick({ preventDefault() {} });
     ok('a guest tapping Messages opens the connect card', connectCalls === 1,
        String(connectCalls));
 
-    communityCards.onclick({ preventDefault() {} });
-    ok('a guest may open Community Cards without a login gate',
+    menu.onclick({ preventDefault() {} });
+    ok('a guest may open the Menu without a login gate',
+       store.cfSheetEarn.className.includes('open') && connectCalls === 1);
+    api.menuOpenCommunityCards();
+    ok('a guest may open Community Cards from the Menu without a login gate',
        store.cfCommunityCardsModal.hidden === false && connectCalls === 1);
-    ok('opening Community Cards locks page scroll',
+    ok('opening Community Cards from Menu locks page scroll',
        sandbox.document.body.classList.contains('cf-modal-open'));
     api.closeCommunityCards();
     ok('closing Community Cards restores the page and modal state',
        store.cfCommunityCardsModal.hidden === true
          && !sandbox.document.body.classList.contains('cf-modal-open'));
+
+    api.openWalletModal(store.cfMenuWallet);
+    ok('a guest opening Wallet gets the connect card',
+       connectCalls === 2, String(connectCalls));
+    ok('a guest cannot fetch private wallet balances',
+       store.cfCommunityWalletModal.hidden === true);
 
     // Buy Airtime is also signed-in only: the tap is swallowed and the card
     // shows, so the guest is never dropped on a page they cannot use — and the
@@ -1320,7 +1396,7 @@ function feedFetch(handler, feedRows) {
     api.closeAirtime();
     airtime.onclick({ preventDefault() { airtimeNavigated = true; } });
     ok('a guest tapping Buy Airtime opens the connect card',
-       connectCalls === 2, String(connectCalls));
+       connectCalls === 3, String(connectCalls));
     ok('a guest tapping Buy Airtime is not navigated away', airtimeNavigated);
     ok('a guest tapping Buy Airtime never opens the store modal',
        store.cfAirtimeModal.hidden === true);
@@ -1332,19 +1408,12 @@ function feedFetch(handler, feedRows) {
     let claimNavigated = false;
     claim.onclick({ preventDefault() { claimNavigated = true; } });
     ok('a guest tapping Claim Free G$ opens the connect card',
-       connectCalls === 3, String(connectCalls));
+       connectCalls === 4, String(connectCalls));
     ok('a guest tapping Claim Free G$ is not navigated away', claimNavigated);
     ok('a guest tapping Claim Free G$ never opens the claim modal',
        !store.claimModal.className.includes('open'));
     ok('a guest tapping Claim Free G$ never opens the shared claim modal',
        !store.claimModal.className.includes('open'), String(store.claimModal.className));
-
-    // Your Wallet is signed-in only as well.
-    let walletNavigated = false;
-    wallet.onclick({ preventDefault() { walletNavigated = true; } });
-    ok('a guest tapping Your Wallet opens the connect card',
-       connectCalls === 4, String(connectCalls));
-    ok('a guest tapping Your Wallet is not navigated away', walletNavigated);
 
     // Reading stays public: Search is NOT gated for a guest.
     api.closeSearch();
