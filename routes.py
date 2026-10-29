@@ -8164,143 +8164,11 @@ def _claim_boot_context(wallet: str, login_method: str = "", *, claim_only: bool
 
 @routes.route("/wallet")
 def wallet_page():
-    """Wallet page for sending/receiving G$ and CELO"""
-    wallet = session.get("wallet")
-    if not wallet or not session.get("verified"):
-        return redirect(url_for("routes.index"))
-
-    # ── FV-CALLBACK ATTRIBUTION ──────────────────────────────────────────
-    # GoodDollar redirects back here (via the rdu param) after face
-    # verification with src=goodmarket.  Record the attribution NOW while
-    # the on-chain lastAuthenticated is still within the strict timing
-    # window, so verified_after_goodmarket is set immediately instead of
-    # relying on a later claim or re-login to pick it up.
-    #
-    # IMPORTANT: these query params are just a URL — they are NOT proof the
-    # face verification succeeded. Writing `face_verified = True` from them
-    # unconditionally let a failed/cancelled verification (or a hand-typed
-    # URL) mark a wallet as verified, and referral payout used to trust that
-    # flag. We now require the wallet to actually be whitelisted on-chain
-    # before stamping anything; `verified_after_goodmarket` remains the
-    # on-chain-gated attribution (the strict attribution helper reads
-    # `face_verified_at`, so we only set it once the chain confirms).
-    fv_pending = request.args.get("fv_pending") == "1"
-    fv_src_goodmarket = request.args.get("src", "") == "goodmarket"
-    fv_return_path = _safe_fv_return_path(request.args.get("return_to"))
-    if fv_pending and fv_src_goodmarket and wallet:
-        try:
-            from blockchain import is_identity_verified
-            # A successful FV may have landed seconds ago. Bypass the normal
-            # negative identity cache so this callback does not incorrectly
-            # remain on Wallet while waiting for its TTL to expire.
-            fv_onchain = is_identity_verified(wallet, force=True) or {}
-            fv_confirmed = bool(fv_onchain.get("verified", False)) and not fv_onchain.get("error")
-        except Exception as fv_check_err:
-            logger.warning(f"[wallet-fv-attr] on-chain FV check failed for {wallet[:8]}…: {fv_check_err}")
-            fv_confirmed = False
-
-        if fv_confirmed:
-            try:
-                analytics.track_verification_attempt(wallet, True, face_verified=True)
-            except Exception as fv_attr_err:
-                logger.warning(f"[wallet-fv-attr] track_verification_attempt error: {fv_attr_err}")
-            try:
-                from goodmarket_attribution_backfill import mark_verified_via_goodmarket
-                mark_verified_via_goodmarket(
-                    wallet,
-                    source="wallet_fv_redirect:goodmarket",
-                    require_on_chain_check=False,
-                    background=True,
-                )
-            except Exception as fv_attr_err:
-                logger.warning(f"[wallet-fv-attr] mark_verified_via_goodmarket error: {fv_attr_err}")
-            # Mirror the on-chain FV onto the local-wallet account (no-op for
-            # non-local wallets) so admins can count/trace verified users.
-            try:
-                mark_local_wallet_verified(wallet)
-            except Exception as fv_lw_err:
-                logger.warning(f"[wallet-fv-attr] mark_local_wallet_verified error: {fv_lw_err}")
-            if fv_return_path == "/community":
-                # Wallet is the trusted callback bridge. Only after the fresh
-                # on-chain check above may we return to Community.
-                return redirect("/community?claim=1&fv_complete=1")
-        else:
-            logger.info(
-                f"ℹ️ [wallet-fv-attr] fv_pending redirect for {wallet[:8]}… but the wallet is "
-                f"not whitelisted on-chain yet — attribution NOT stamped "
-                f"(face_verified left untouched)"
-            )
-
-    buy_eth_visible = True
-    dapp_connect_visible = False
-    try:
-        supabase = get_supabase_client()
-        if supabase:
-            result = safe_supabase_operation(
-                lambda: supabase.table('maintenance_settings')
-                    .select('feature_name,is_maintenance')
-                    .in_('feature_name', ['wallet_feature', 'wallet_buy_eth', 'dapp_connect_feature'])
-                    .execute(),
-                operation_name="check wallet feature visibility"
-            )
-            if result and result.data:
-                for row in result.data:
-                    fn = row.get('feature_name')
-                    if fn == 'wallet_feature' and row.get('is_maintenance', False):
-                        return render_template("feature_unavailable.html", feature_name="Wallet", wallet=wallet)
-
-                    if fn == 'wallet_buy_eth' and row.get('is_maintenance', False):
-                        buy_eth_visible = False
-
-                    if fn == 'dapp_connect_feature':
-                        dapp_connect_visible = not row.get('is_maintenance', False)
-    except Exception:
-        pass
-
-    # Celo protocol-update maintenance (admin-toggled via the dashboard).
-    # When active, the wallet page stays readable but the on-chain actions
-    # (send, claim, GCash, raffle, stream, voucher) are blocked with the
-    # custom admin message until the Celo protocol update is complete.
-
-    wallet_maintenance_mode = False
-    wallet_maintenance_message = ""
-    try:
-        from maintenance_service import maintenance_service
-        maint = maintenance_service.get_maintenance_status('wallet_protocol_update')
-        wallet_maintenance_mode = bool(maint.get('is_maintenance', False))
-        wallet_maintenance_message = (maint.get('message') or '').strip()
-    except Exception as maint_err:
-        logger.warning(f"⚠️ Could not resolve wallet maintenance status: {maint_err}")
-
-    # `?embed=claim` renders the page for the community feed's Claim Free G$
-    # dialog: the claim sheet is the ONE implementation and the feed frames it,
-    # so the wallet's own chrome (top bar, hero, balances, bottom nav, sheets)
-    # is hidden by CSS and only the modal overlays remain visible. The claim
-    # deep link (`?claim=1`) is what actually opens the sheet. See
-    # docs/COMMUNITY_CLAIM_MODAL_INLINE_PROPOSAL.md.
-    embed_claim = (request.args.get("embed") or "").strip().lower() == "claim"
-
-    claim_boot = _claim_boot_context(
-        wallet,
-        session.get("login_method", ""),
-        claim_only=embed_claim,
-        embed_claim=embed_claim,
-    )
-    return render_template(
-        "wallet.html",
-        **claim_boot,
-        privy_wallet_client_type=session.get("privy_wallet_client_type", ""),
-        walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
-        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
-        privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
-        buy_eth_visible=buy_eth_visible,
-        dapp_connect_visible=dapp_connect_visible,
-        wallet_maintenance_mode=wallet_maintenance_mode,
-        wallet_maintenance_message=wallet_maintenance_message,
-        # "Install app" (PWA) one-time banner — shown to local (email + PIN)
-        # wallet users only; see the template gate.
-        pwa_installable=_is_pwa_install_enabled(),
-    )
+    """Retire the standalone wallet page and keep the Community claim deep link."""
+    target = "/community"
+    if request.args.get("claim") == "1":
+        target += "?claim=1"
+    return redirect(target)
 
 
 # ── LI.FI (Jumper) bridge — Celo → Base ────────────────────────────────────
@@ -9067,7 +8935,7 @@ def ubi_pool_balance():
 @routes.route("/api/wallet/balances", methods=["GET"])
 @auth_required
 def wallet_balances():
-    """Get G$, CELO, cUSD, USDT, and USDC balances for the current user.
+    """Get G$, CELO, cUSD, USDT, USDC, and PHPm balances for the current user.
 
     Fetches all balances, the configured GD/USD price, and live non-G$ market
     prices in parallel via a ThreadPoolExecutor to keep the critical path
@@ -9085,6 +8953,7 @@ def wallet_balances():
             get_cusd_balance,
             get_usdt_balance,
             get_usdc_balance,
+            get_phpm_balance,
             _get_gd_usd_price,
             _get_market_usd_prices,
             enrich_gd_balance_with_price,
@@ -9097,12 +8966,13 @@ def wallet_balances():
         if force_refresh:
             invalidate_balance_cache(wallet)
 
-        with ThreadPoolExecutor(max_workers=6) as executor:
+        with ThreadPoolExecutor(max_workers=8) as executor:
             gd_future = executor.submit(get_gooddollar_balance, wallet, False)
             celo_future = executor.submit(get_celo_balance, wallet)
             cusd_future = executor.submit(get_cusd_balance, wallet)
             usdt_future = executor.submit(get_usdt_balance, wallet)
             usdc_future = executor.submit(get_usdc_balance, wallet)
+            phpm_future = executor.submit(get_phpm_balance, wallet)
             gd_price_future = executor.submit(_get_gd_usd_price)
             market_prices_future = executor.submit(_get_market_usd_prices)
             gd = gd_future.result()
@@ -9110,6 +8980,7 @@ def wallet_balances():
             cusd = cusd_future.result()
             usdt = usdt_future.result()
             usdc = usdc_future.result()
+            phpm = phpm_future.result()
             gd_price = gd_price_future.result()
             market_prices = market_prices_future.result()
 
@@ -9125,6 +8996,7 @@ def wallet_balances():
             "cusd": cusd,
             "usdt": usdt,
             "usdc": usdc,
+            "phpm": phpm,
             "prices": {"gd": gd_price, **market_prices},
         })
     except Exception as e:
