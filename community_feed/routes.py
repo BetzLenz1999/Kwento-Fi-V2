@@ -47,6 +47,7 @@ _THROTTLE_LOCK = threading.Lock()
 _HITS: dict[str, deque] = defaultdict(deque)
 _DAY_BLOCK_RANGE_LOCK = threading.Lock()
 _DAY_BLOCK_RANGE_CACHE: dict[tuple[str, int, int], tuple[int, int]] = {}
+_RANGE_BLOCK_RANGE_CACHE: dict[tuple[str, int, int, int], tuple[int, int]] = {}
 
 
 def _throttle(key: str, window_seconds: int, allow: int = 1) -> int:
@@ -834,6 +835,226 @@ def api_onchain_withdrawal_history():
         return history_json({
             "success": False,
             "error": "Community Vault withdrawal history is temporarily unavailable. Please retry.",
+        }, 503)
+
+
+@community_feed_bp.route(
+    "/api/rewards/withdrawals/onchain-history/range", methods=["GET"]
+)
+def api_onchain_withdrawal_range_history():
+    """Return every successful vault payout and exact totals for an inclusive UTC range."""
+    def history_json(payload, status=200, *, cache=False):
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = (
+            "public, max-age=30" if cache else "no-store, max-age=0"
+        )
+        return response, status
+
+    if not svc.is_enabled():
+        return _disabled_response()
+
+    remote = (request.remote_addr or "anonymous").strip().lower()
+    retry = _throttle("vault-overview-range-history:" + remote, 60, allow=5)
+    if retry:
+        response, status = history_json(
+            {"success": False, "error": "Too many range-report requests. Please wait and retry."}, 429
+        )
+        response.headers["Retry-After"] = str(retry)
+        return response, status
+
+    start_text = (request.args.get("start_date") or "").strip()
+    end_text = (request.args.get("end_date") or "").strip()
+    if (not re.fullmatch(r"\d{4}-\d{2}-\d{2}", start_text)
+            or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", end_text)):
+        return history_json({
+            "success": False, "error": "Choose valid start and end dates in YYYY-MM-DD format."
+        }, 400)
+    try:
+        start_day = datetime.strptime(start_text, "%Y-%m-%d").date()
+        end_day = datetime.strptime(end_text, "%Y-%m-%d").date()
+    except ValueError:
+        return history_json({"success": False, "error": "Choose valid UTC calendar dates."}, 400)
+    if end_day < start_day:
+        return history_json({
+            "success": False, "error": "End date must be on or after the start date."
+        }, 400)
+    if end_day > datetime.now(timezone.utc).date():
+        return history_json({"success": False, "error": "Future dates are not available."}, 400)
+    range_days = (end_day - start_day).days + 1
+    if range_days > 7:
+        return history_json({
+            "success": False, "error": "Choose a range of up to 7 UTC calendar days."
+        }, 400)
+
+    start_timestamp = int(datetime.combine(
+        start_day, datetime.min.time(), tzinfo=timezone.utc
+    ).timestamp())
+    end_timestamp = int(datetime.combine(
+        end_day + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc
+    ).timestamp())
+    start_utc_day = start_timestamp // 86400
+    end_utc_day = (end_timestamp // 86400) - 1
+
+    def empty_report():
+        return {
+            "success": True,
+            "start_date": start_day.isoformat(),
+            "end_date": end_day.isoformat(),
+            "total_count": 0,
+            "total_gd": "0",
+            "total_gd_formatted": "0.00 G$",
+            "items": [],
+        }
+
+    try:
+        from web3 import Web3
+
+        runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
+        deployment_block = withdrawal_vault.deployment_block_for_runtime(runtime)
+        vault_address = Web3.to_checksum_address(runtime.vault_address)
+        latest = int(runtime.web3.eth.block_number)
+        if deployment_block > latest:
+            return history_json({
+                "success": False,
+                "error": "Withdrawal history start block is newer than the Celo chain tip.",
+            }, 503)
+
+        timestamp_cache = {}
+
+        def block_timestamp(block_number):
+            block_number = int(block_number)
+            if block_number not in timestamp_cache:
+                timestamp_cache[block_number] = int(
+                    runtime.web3.eth.get_block(block_number)["timestamp"]
+                )
+            return timestamp_cache[block_number]
+
+        latest_timestamp = block_timestamp(latest)
+        if latest_timestamp < start_timestamp:
+            return history_json(empty_report(), cache=True)
+
+        cache_key = (
+            vault_address.lower(), deployment_block, start_timestamp, end_timestamp
+        )
+        with _DAY_BLOCK_RANGE_LOCK:
+            cached_range = (
+                _RANGE_BLOCK_RANGE_CACHE.get(cache_key)
+                if end_timestamp <= latest_timestamp else None
+            )
+        if cached_range:
+            first_block, last_block = cached_range
+        else:
+            def first_block_at_or_after(target_timestamp):
+                low, high = deployment_block, latest + 1
+                while low < high:
+                    middle = (low + high) // 2
+                    if block_timestamp(middle) >= target_timestamp:
+                        high = middle
+                    else:
+                        low = middle + 1
+                return low
+
+            first_block = first_block_at_or_after(start_timestamp)
+            end_exclusive = first_block_at_or_after(end_timestamp)
+            last_block = min(latest, end_exclusive - 1)
+            if end_timestamp <= latest_timestamp:
+                with _DAY_BLOCK_RANGE_LOCK:
+                    if len(_RANGE_BLOCK_RANGE_CACHE) >= 256:
+                        _RANGE_BLOCK_RANGE_CACHE.pop(next(iter(_RANGE_BLOCK_RANGE_CACHE)))
+                    _RANGE_BLOCK_RANGE_CACHE[cache_key] = (first_block, last_block)
+
+        if first_block > latest or last_block < first_block:
+            return history_json(empty_report(), cache=True)
+
+        try:
+            configured_chunk = int(os.environ.get("GETLOGS_MAX_CHUNK", "4000"))
+        except (TypeError, ValueError):
+            configured_chunk = 4000
+        chunk = max(500, min(configured_chunk, 4000))
+        max_scan_blocks = min(200_000, chunk * 50)
+        block_count = last_block - first_block + 1
+        if block_count > max_scan_blocks:
+            return history_json({
+                "success": False,
+                "error": "This date range exceeds the complete Celo scan limit. Choose a shorter range; no partial total was returned.",
+            }, 413)
+
+        topic0 = Web3.to_hex(Web3.keccak(
+            text="WithdrawalPaid(address,uint256,bytes32,uint256,uint256)"
+        )).lower()
+        items = []
+        total_base_units = 0
+        for chunk_start in range(first_block, last_block + 1, chunk):
+            chunk_end = min(last_block, chunk_start + chunk - 1)
+            logs = runtime.web3.eth.get_logs({
+                "address": vault_address,
+                "fromBlock": chunk_start,
+                "toBlock": chunk_end,
+                "topics": [topic0],
+            })
+            for log in logs:
+                try:
+                    if Web3.to_checksum_address(log.get("address") or "") != vault_address:
+                        continue
+                    raw_topics = log.get("topics") or []
+                    raw_data = log.get("data", b"")
+                    topics = [
+                        Web3.to_bytes(hexstr=item) if isinstance(item, str) else bytes(item)
+                        for item in raw_topics
+                    ]
+                    data = Web3.to_bytes(hexstr=raw_data) if isinstance(raw_data, str) else bytes(raw_data)
+                except Exception:
+                    continue
+                if (len(topics) != 3 or any(len(item) != 32 for item in topics)
+                        or len(data) != 96 or Web3.to_hex(topics[0]).lower() != topic0):
+                    continue
+
+                utc_day = int.from_bytes(data[64:96], "big")
+                if not start_utc_day <= utc_day <= end_utc_day:
+                    continue
+                block_number = int(log["blockNumber"])
+                log_index = int(log["logIndex"])
+                recipient = Web3.to_checksum_address("0x" + topics[1][-20:].hex())
+                amount = int.from_bytes(data[0:32], "big")
+                total_base_units += amount
+                confirmations = max(0, latest - block_number + 1)
+                try:
+                    timestamp = datetime.fromtimestamp(
+                        block_timestamp(block_number), timezone.utc
+                    ).isoformat().replace("+00:00", "Z")
+                except Exception:
+                    timestamp = None
+                items.append({
+                    "tx_hash": Web3.to_hex(log["transactionHash"]).lower(),
+                    "recipient_short": f"{recipient[:6]}…{recipient[-4:]}",
+                    "amount_gd": str(withdrawal_vault.base_units_to_gd(amount, runtime.decimals)),
+                    "block_number": block_number,
+                    "log_index": log_index,
+                    "timestamp_utc": timestamp,
+                    "confirmations": confirmations,
+                    "status": "confirmed" if confirmations >= runtime.confirmations else "confirming",
+                })
+
+        items.sort(key=lambda item: (item["block_number"], item["log_index"]), reverse=True)
+        total_gd = withdrawal_vault.base_units_to_gd(total_base_units, runtime.decimals)
+        return history_json({
+            "success": True,
+            "start_date": start_day.isoformat(),
+            "end_date": end_day.isoformat(),
+            "total_count": len(items),
+            "total_gd": str(total_gd),
+            "total_gd_formatted": f"{total_gd:,.2f} G$",
+            "items": items,
+        }, cache=True)
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        logger.warning("community vault range history runtime unavailable: %s",
+                       withdrawal_vault.operator_detail(exc))
+        return history_json({"success": False, "error": withdrawal_vault.MEMBER_CONFIG_ERROR}, 503)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community vault range history RPC failed: %s", exc)
+        return history_json({
+            "success": False,
+            "error": "Community Vault range history is temporarily unavailable. Please retry.",
         }, 503)
 
 
