@@ -1,0 +1,40 @@
+{# Private-key reveal for the in-app wallet. The key is decrypted locally
+   and shown only after an explicit warning acknowledgement + PIN re-entry;
+   it is never sent to the server. Only meaningful for a `local` login, so
+   the CALLER wraps the include in the login-method check. DOM-ordered
+   AFTER settingsModal (all overlays share z-index 200 and stack by DOM
+   order) so it paints on top of it. #}
+<div class="modal-overlay" id="pkModal">
+    <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title">🔑 Private Key</div>
+
+        <div id="pkStepWarn">
+            <div class="pk-warning">
+                <strong>Read this before revealing.</strong> This private key is <strong>full control</strong> of your wallet.
+                Anyone who sees it — a friend, "support", an admin, or anyone who messages you — can <strong>take all the
+                G$ and other funds</strong> in this wallet, and it <strong>cannot be reversed</strong>.
+                <br><br>
+                <strong>Never share it with anyone.</strong> KwentoFi support will never ask for your private key or your
+                recovery words. Do not screenshot it, do not send it in chat or email, and do not paste it into any website.
+            </div>
+            <label style="display:flex;gap:0.6rem;align-items:flex-start;font-size:0.85rem;line-height:1.5;color:var(--text-dim);margin:0.25rem 0 1rem;">
+                <input type="checkbox" id="pkAck" style="margin-top:0.2rem;flex:0 0 auto;" onchange="document.getElementById('pkContinueBtn').disabled = !this.checked">
+                <span>I understand that my private key must be <strong>shared with no one</strong>, and that if it is shared, all my funds can be taken with no way to get them back.</span>
+            </label>
+            <button id="pkContinueBtn" type="button" class="btn-primary" style="width:100%;" disabled onclick="pkContinue()">Continue</button>
+            <button type="button" class="btn-secondary" style="width:100%;margin-top:0.5rem;" onclick="closeModal('pkModal')">Cancel</button>
+        </div>
+
+        <div id="pkStepKey" style="display:none;">
+            <div class="pk-warning" style="margin-bottom:0.75rem;">
+                <strong>Do not share this.</strong> Copy-paste it only into your own backup — never into chat, email, or any website.
+            </div>
+            <div class="pk-box" id="pkValue"></div>
+            <button type="button" class="btn-secondary" style="width:100%;" onclick="copyPrivateKey()">Copy private key</button>
+            <div id="pkStatus" style="display:none;font-size:0.8rem;text-align:center;margin-top:0.6rem;"></div>
+            <button type="button" class="btn-secondary" style="width:100%;margin-top:0.5rem;" onclick="closePkModal()">Close</button>
+        </div>
+    </div>
+</div>
+
