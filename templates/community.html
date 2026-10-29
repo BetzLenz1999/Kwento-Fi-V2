@@ -668,6 +668,10 @@
             <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openEarnPage('savings')">
                 <span aria-hidden="true">🏦</span><span>Savings</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
             </button>
+            <button type="button" class="cf-menu-subitem" id="cfMenuDailyTask"
+                    onclick="GMCommunity.openDailyTask()">
+                <span aria-hidden="true">✓</span><span>Daily Task</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+            </button>
         </div>
     </div>
 </div>
@@ -734,52 +738,116 @@
                 <h2 id="cfCommunityWalletTitle">My Wallet</h2>
             </div>
             <div class="cf-wallet-actions">
+                <button type="button" class="cf-wallet-send-open" id="cfCommunityWalletSendOpen"
+                        onclick="GMCommunity.openWalletSend()">Send</button>
                 <button type="button" class="cf-wallet-refresh" id="cfCommunityWalletRefresh"
                         onclick="GMCommunity.refreshWalletBalances()">Refresh</button>
                 <button type="button" class="cf-wallet-close" id="cfCommunityWalletClose"
                         aria-label="Close wallet" onclick="GMCommunity.closeWalletModal()">×</button>
             </div>
         </header>
-        <div class="cf-wallet-network">
-            <div><strong>Celo Mainnet</strong><span>Chain ID 42220 · Read-only balances</span></div>
-            <code id="cfCommunityWalletAddress">Connected wallet</code>
+        <div class="cf-wallet-panel" id="cfWalletOverview">
+            <div class="cf-wallet-network">
+                <div><strong>Celo Mainnet</strong><span>Chain ID 42220 · Live on-chain balances</span></div>
+                <code id="cfCommunityWalletAddress">Connected wallet</code>
+            </div>
+            <p class="cf-wallet-status" id="cfCommunityWalletStatus" role="status" aria-live="polite">
+                Open Wallet to load balances from Celo.
+            </p>
+            <div class="cf-wallet-token-list">
+                <div class="cf-wallet-token" data-wallet-balance="celo">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-celo" aria-hidden="true">C</span>
+                    <span class="cf-wallet-token-name"><strong>CELO</strong><small>Native gas token</small></span>
+                    <strong class="cf-wallet-token-value" id="cfWalletBalanceCelo">—</strong>
+                </div>
+                <div class="cf-wallet-token" data-wallet-balance="gd">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-gd" aria-hidden="true">G$</span>
+                    <span class="cf-wallet-token-name"><strong>G$</strong><small>GoodDollar</small></span>
+                    <strong class="cf-wallet-token-value" id="cfWalletBalanceGd">—</strong>
+                </div>
+                <div class="cf-wallet-token" data-wallet-balance="cusd">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-cusd" aria-hidden="true">$</span>
+                    <span class="cf-wallet-token-name"><strong>cUSD</strong><small>Celo stablecoin</small></span>
+                    <strong class="cf-wallet-token-value" id="cfWalletBalanceCusd">—</strong>
+                </div>
+                <div class="cf-wallet-token" data-wallet-balance="usdt">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-usdt" aria-hidden="true">₮</span>
+                    <span class="cf-wallet-token-name"><strong>USDT</strong><small>Tether on Celo</small></span>
+                    <strong class="cf-wallet-token-value" id="cfWalletBalanceUsdt">—</strong>
+                </div>
+                <div class="cf-wallet-token" data-wallet-balance="usdc">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-usdc" aria-hidden="true">$</span>
+                    <span class="cf-wallet-token-name"><strong>USDC</strong><small>USD Coin on Celo</small></span>
+                    <strong class="cf-wallet-token-value" id="cfWalletBalanceUsdc">—</strong>
+                </div>
+                <div class="cf-wallet-token" data-wallet-balance="phpm">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-phpm" aria-hidden="true">₱</span>
+                    <span class="cf-wallet-token-name"><strong>PHPm</strong><small>Mento Philippine Peso</small></span>
+                    <strong class="cf-wallet-token-value" id="cfWalletBalancePhpm">—</strong>
+                </div>
+            </div>
+            <p class="cf-wallet-note">Balances are read directly from Celo. Sending a token requires your connected wallet to review and sign the transaction.</p>
         </div>
-        <p class="cf-wallet-status" id="cfCommunityWalletStatus" role="status" aria-live="polite">
-            Open Wallet to load balances from Celo.
-        </p>
-        <div class="cf-wallet-token-list">
-            <div class="cf-wallet-token" data-wallet-balance="celo">
-                <span class="cf-wallet-token-badge cf-wallet-token-badge-celo" aria-hidden="true">C</span>
-                <span class="cf-wallet-token-name"><strong>CELO</strong><small>Native gas token</small></span>
-                <strong class="cf-wallet-token-value" id="cfWalletBalanceCelo">—</strong>
+
+        <section class="cf-wallet-panel cf-wallet-send-section" id="cfWalletSendTokenPicker" hidden aria-labelledby="cfWalletSendPickTitle">
+            <h3 class="cf-wallet-send-title" id="cfWalletSendPickTitle">Send on Celo</h3>
+            <p class="cf-wallet-send-hint">Choose which Celo asset to send. XDC and other networks are not included.</p>
+            <div class="cf-wallet-send-token-list">
+                <button type="button" class="cf-wallet-send-token token-chip" data-token="CELO" aria-pressed="false" onclick="GMCommunity.selectWalletSendToken('CELO', this)">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-celo" aria-hidden="true">C</span><span class="cf-wallet-send-token-name"><strong>CELO</strong><small>Native gas token</small></span><span class="cf-wallet-send-balance" id="cfWalletSendBalanceCelo">—</span>
+                </button>
+                <button type="button" class="cf-wallet-send-token token-chip" data-token="GD" aria-pressed="false" onclick="GMCommunity.selectWalletSendToken('GD', this)">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-gd" aria-hidden="true">G$</span><span class="cf-wallet-send-token-name"><strong>G$</strong><small>GoodDollar</small></span><span class="cf-wallet-send-balance" id="cfWalletSendBalanceGd">—</span>
+                </button>
+                <button type="button" class="cf-wallet-send-token token-chip" data-token="CUSD" aria-pressed="false" onclick="GMCommunity.selectWalletSendToken('CUSD', this)">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-cusd" aria-hidden="true">$</span><span class="cf-wallet-send-token-name"><strong>cUSD</strong><small>Celo stablecoin</small></span><span class="cf-wallet-send-balance" id="cfWalletSendBalanceCusd">—</span>
+                </button>
+                <button type="button" class="cf-wallet-send-token token-chip" data-token="USDT" aria-pressed="false" onclick="GMCommunity.selectWalletSendToken('USDT', this)">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-usdt" aria-hidden="true">₮</span><span class="cf-wallet-send-token-name"><strong>USDT</strong><small>Tether on Celo</small></span><span class="cf-wallet-send-balance" id="cfWalletSendBalanceUsdt">—</span>
+                </button>
+                <button type="button" class="cf-wallet-send-token token-chip" data-token="USDC" aria-pressed="false" onclick="GMCommunity.selectWalletSendToken('USDC', this)">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-usdc" aria-hidden="true">$</span><span class="cf-wallet-send-token-name"><strong>USDC</strong><small>USD Coin on Celo</small></span><span class="cf-wallet-send-balance" id="cfWalletSendBalanceUsdc">—</span>
+                </button>
+                <button type="button" class="cf-wallet-send-token token-chip" data-token="PHPM" aria-pressed="false" onclick="GMCommunity.selectWalletSendToken('PHPM', this)">
+                    <span class="cf-wallet-token-badge cf-wallet-token-badge-phpm" aria-hidden="true">₱</span><span class="cf-wallet-send-token-name"><strong>PHPm</strong><small>Mento Philippine Peso</small></span><span class="cf-wallet-send-balance" id="cfWalletSendBalancePhpm">—</span>
+                </button>
             </div>
-            <div class="cf-wallet-token" data-wallet-balance="gd">
-                <span class="cf-wallet-token-badge cf-wallet-token-badge-gd" aria-hidden="true">G$</span>
-                <span class="cf-wallet-token-name"><strong>G$</strong><small>GoodDollar</small></span>
-                <strong class="cf-wallet-token-value" id="cfWalletBalanceGd">—</strong>
+            <button type="button" class="cf-wallet-send-back" onclick="GMCommunity.backToWalletOverview()">Back to wallet</button>
+        </section>
+
+        <section class="cf-wallet-panel cf-wallet-send-section" id="cfWalletSendForm" hidden aria-labelledby="cfWalletSendFormTitle">
+            <h3 class="cf-wallet-send-title" id="cfWalletSendFormTitle">Send <span id="sendTokenLabel">token</span></h3>
+            <p class="cf-wallet-send-hint">Enter the recipient and amount. Your wallet will ask you to approve the transaction.</p>
+            <label class="cf-wallet-send-field" for="sendTo">Recipient address
+                <input id="sendTo" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="0x…" maxlength="42">
+            </label>
+            <label class="cf-wallet-send-field" for="sendAmount">Amount
+                <input id="sendAmount" type="number" inputmode="decimal" min="0" step="any" placeholder="0.00">
+            </label>
+            <div id="networkSendNote" class="cf-wallet-send-hint" style="display:none;"></div>
+            <p class="cf-wallet-send-error" id="cfWalletSendError" role="alert" aria-live="polite"></p>
+            <div class="cf-wallet-send-actions">
+                <button type="button" class="cf-wallet-send-back" onclick="GMCommunity.backToWalletTokenPicker()">Back</button>
+                <button type="button" class="cf-wallet-send-review-btn" onclick="GMCommunity.reviewWalletSend()">Review transfer</button>
             </div>
-            <div class="cf-wallet-token" data-wallet-balance="cusd">
-                <span class="cf-wallet-token-badge cf-wallet-token-badge-cusd" aria-hidden="true">$</span>
-                <span class="cf-wallet-token-name"><strong>cUSD</strong><small>Celo stablecoin</small></span>
-                <strong class="cf-wallet-token-value" id="cfWalletBalanceCusd">—</strong>
+        </section>
+
+        <section class="cf-wallet-panel cf-wallet-send-section" id="cfWalletSendReview" hidden aria-labelledby="cfWalletSendReviewTitle">
+            <h3 class="cf-wallet-send-title" id="cfWalletSendReviewTitle">Review transfer</h3>
+            <p class="cf-wallet-send-hint">Confirm the details before your connected wallet opens for signing.</p>
+            <div class="cf-wallet-send-review-card">
+                <div class="cf-wallet-send-review-row"><span>Network</span><strong>Celo Mainnet</strong></div>
+                <div class="cf-wallet-send-review-row"><span>Asset</span><strong id="cfWalletReviewToken">—</strong></div>
+                <div class="cf-wallet-send-review-row"><span>Amount</span><strong id="cfWalletReviewAmount">—</strong></div>
+                <div class="cf-wallet-send-review-row"><span>Recipient</span><strong id="cfWalletReviewRecipient">—</strong></div>
             </div>
-            <div class="cf-wallet-token" data-wallet-balance="usdt">
-                <span class="cf-wallet-token-badge cf-wallet-token-badge-usdt" aria-hidden="true">₮</span>
-                <span class="cf-wallet-token-name"><strong>USDT</strong><small>Tether on Celo</small></span>
-                <strong class="cf-wallet-token-value" id="cfWalletBalanceUsdt">—</strong>
+            <p class="cf-wallet-send-hint">Network fees may apply. Verify the recipient and transaction details in your wallet before signing.</p>
+            <div id="sendAlert" class="cf-wallet-send-alert" role="status" aria-live="polite"></div>
+            <div class="cf-wallet-send-actions">
+                <button type="button" class="cf-wallet-send-back" onclick="GMCommunity.backToWalletSendForm()">Back</button>
+                <button type="button" id="sendBtn" class="cf-wallet-send-confirm" onclick="GMCommunity.confirmWalletSend()">Confirm send</button>
             </div>
-            <div class="cf-wallet-token" data-wallet-balance="usdc">
-                <span class="cf-wallet-token-badge cf-wallet-token-badge-usdc" aria-hidden="true">$</span>
-                <span class="cf-wallet-token-name"><strong>USDC</strong><small>USD Coin on Celo</small></span>
-                <strong class="cf-wallet-token-value" id="cfWalletBalanceUsdc">—</strong>
-            </div>
-            <div class="cf-wallet-token" data-wallet-balance="phpm">
-                <span class="cf-wallet-token-badge cf-wallet-token-badge-phpm" aria-hidden="true">₱</span>
-                <span class="cf-wallet-token-name"><strong>PHPm</strong><small>Mento Philippine Peso</small></span>
-                <strong class="cf-wallet-token-value" id="cfWalletBalancePhpm">—</strong>
-            </div>
-        </div>
-        <p class="cf-wallet-note">Balances are read from Celo. No transactions are signed or sent from this panel.</p>
+        </section>
     </section>
 </div>
 
@@ -787,6 +855,9 @@
    The shared claim partial is rendered in this page's DOM. Its controller is
    the same wallet-main claim implementation, loaded in claim-only mode below;
    there is no iframe and no wallet-page chrome in the Community flow. #}
+{% if not is_guest %}
+{% include "_daily_task_modal.html" %}
+{% endif %}
 {% include "_claim_modal.html" %}
 {% include "_claim_support_modals.html" %}
 
@@ -857,6 +928,7 @@ window.GM_COMMUNITY_BOOT = {
     loginMethod: {{ (login_method or '')|tojson }},
     walletConnectProjectId: {{ (walletconnect_project_id or '')|tojson }},
     claimOnly: true,
+    communityWallet: true,
     gdTokenAddress: '',
     raffleContractAddress: '',
     identityContractAddress: '',
@@ -943,6 +1015,7 @@ window.GM_WALLET_BOOT = {
     fvReturnTo: {{ fv_return_to|default('/community', true)|tojson }},
     returnTo: '/community',
     claimOnly: true,
+    communityWallet: true,
     embed: false
 };
 </script>
