@@ -21,6 +21,7 @@ GOODDOLLAR_CONTRACTS = {
 CUSD_CONTRACT = os.getenv("CUSD_CONTRACT", "0x765DE816845861e75A25fCA122bb6898B8B1282a")
 USDT_CONTRACT = os.getenv("USDT_CONTRACT", "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e")
 USDC_CONTRACT = os.getenv("USDC_CONTRACT", "0xcebA9300f2b948710d2653dD7B07f33A8B32118C")
+PHPM_CONTRACT = (os.getenv("PHPM_CONTRACT_ADDRESS") or "0x105d4A9306D2E55a71d2Eb95B81553AE1dC20d7B").strip()
 
 IDENTITY_ABI = [
     {
@@ -871,6 +872,11 @@ _GD_ERC20_ABI = [
      "name": "balanceOf", "outputs": [{"name": "balance", "type": "uint256"}], "type": "function"},
 ]
 
+_PHPM_ERC20_ABI = _GD_ERC20_ABI + [
+    {"constant": True, "inputs": [], "name": "decimals",
+     "outputs": [{"name": "", "type": "uint8"}], "type": "function"},
+]
+
 
 def get_gooddollar_balance(wallet_address: str, include_price: bool = True) -> dict:
     """Fetch on-chain G$ balance for a wallet, with optional USD price enrichment.
@@ -1602,6 +1608,49 @@ def get_usdc_balance(wallet_address: str) -> dict:
         return result
     except Exception as e:
         logger.error(f"USDC balance error for {wallet_address}: {e}")
+        return {"success": False, "error": str(e), "balance": 0, "balance_formatted": "Error"}
+
+
+def get_phpm_balance(wallet_address: str) -> dict:
+    """Read the PHPm ERC-20 balance on Celo, using the contract's decimals()."""
+    import time
+    from decimal import Decimal
+
+    if int(CELO_CHAIN_ID) != 42220:
+        return {"success": False, "error": "PHPm is available on Celo Mainnet only", "balance": 0, "balance_formatted": "Unavailable"}
+    key = wallet_address.lower()
+    with _balance_cache_lock:
+        entry = _balance_cache.get(key)
+        if entry and entry.get("phpm") and entry["expires_at"] > time.time():
+            return entry["phpm"]
+    try:
+        from web3 import Web3
+        w3 = _get_w3()
+        contract = w3.eth.contract(
+            address=Web3.to_checksum_address(PHPM_CONTRACT),
+            abi=_PHPM_ERC20_ABI
+        )
+        wallet_checksum = Web3.to_checksum_address(wallet_address)
+        decimals = int(contract.functions.decimals().call())
+        if decimals < 0 or decimals > 36:
+            raise ValueError(f"Unsupported PHPm decimals: {decimals}")
+        balance_raw = int(contract.functions.balanceOf(wallet_checksum).call())
+        amount = Decimal(balance_raw) / Decimal(10 ** decimals)
+        result = {
+            "success": True,
+            "balance": float(amount),
+            "balance_raw": str(balance_raw),
+            "decimals": decimals,
+            "balance_formatted": f"{amount:,.6f} PHPm",
+            "wallet": wallet_address,
+            "contract": PHPM_CONTRACT,
+        }
+        with _balance_cache_lock:
+            existing = _balance_cache.get(key, {})
+            _balance_cache[key] = {**existing, "phpm": result, "expires_at": time.time() + BALANCE_CACHE_TTL}
+        return result
+    except Exception as e:
+        logger.error(f"PHPm balance error for {wallet_address[:8]}...: {e}")
         return {"success": False, "error": str(e), "balance": 0, "balance_formatted": "Error"}
 
 
