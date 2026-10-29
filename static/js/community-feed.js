@@ -30,6 +30,12 @@
     var STORAGE_READY = !!BOOT.storageReady;
     var FOCUS_POST_ID = String(BOOT.focusPostId || '');
     var FOCUS_POST = BOOT.focusPost || null;
+    var _discoverCursor = null;
+    var _discoverLoading = false;
+    var _discoverObserver = null;
+    var _discoverPendingViews = new Set();
+    var _discoverSeenSent = new Set();
+    var _discoverStarted = false;
 
     var LONG_EDGE = 2048;      // downscale target for images
     var JPEG_QUALITY = 0.85;
@@ -1250,6 +1256,7 @@
         }
 
         _feed.forEach(function (post) { container.appendChild(buildCard(post)); });
+        observeVisiblePostCards(container);
         updateLoadMore();
     }
 
@@ -3331,6 +3338,92 @@
         return _earnPromise;
     }
 
+    function flushDiscoverViews() {
+        if (!WALLET || !_discoverPendingViews.size) return Promise.resolve();
+        var ids = Array.from(_discoverPendingViews).slice(0, 50);
+        ids.forEach(function (id) { _discoverPendingViews.delete(id); });
+        return api('/community/api/feed/impressions', {
+            method: 'POST', body: JSON.stringify({ post_ids: ids })
+        }).then(function (result) {
+            if (result.ok && result.data && result.data.success) {
+                ids.forEach(function (id) { _discoverSeenSent.add(String(id)); });
+            }
+        }).catch(function () { /* view tracking must never interrupt reading */ });
+    }
+
+    function queueDiscoverView(card) {
+        if (!WALLET || !card || card._discoverImpressionQueued) return;
+        var id = String(card.getAttribute('data-post-id') || '');
+        if (!/^\d+$/.test(id) || _discoverSeenSent.has(id)) return;
+        card._discoverImpressionQueued = true;
+        _discoverPendingViews.add(Number(id));
+        if (_discoverPendingViews.size >= 20) flushDiscoverViews();
+        else window.setTimeout(flushDiscoverViews, 500);
+    }
+
+    function observeVisiblePostCards(container) {
+        if (!container || !WALLET) return;
+        if (typeof window.IntersectionObserver !== 'function') {
+            Array.prototype.forEach.call(container.querySelectorAll('[data-post-id]'), function (card) {
+                if (typeof card.getBoundingClientRect !== 'function') return;
+                var rect = card.getBoundingClientRect();
+                if (rect.bottom > 0 && rect.top < window.innerHeight
+                        && rect.right > 0 && rect.left < window.innerWidth) {
+                    queueDiscoverView(card);
+                }
+            });
+            flushDiscoverViews();
+            return;
+        }
+        if (!_discoverObserver) {
+            _discoverObserver = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    if (!entry.isIntersecting || entry.intersectionRatio < 0.25) return;
+                    queueDiscoverView(entry.target);
+                    _discoverObserver.unobserve(entry.target);
+                });
+            }, { threshold: [0.25] });
+        }
+        Array.prototype.forEach.call(container.querySelectorAll('[data-post-id]'), function (card) {
+            if (!card._discoverImpressionQueued) _discoverObserver.observe(card);
+        });
+    }
+
+    function loadDiscover(reset) {
+        var container = $('cfDiscoverFeed');
+        var more = $('cfDiscoverMore');
+        var status = $('cfDiscoverStatus');
+        if (!container || !WALLET || _discoverLoading) return Promise.resolve();
+        if (!reset && !_discoverCursor) return Promise.resolve();
+        _discoverLoading = true;
+        var oldest = _feed.reduce(function (min, post) {
+            var id = Number(post && post.id);
+            return Number.isFinite(id) && id > 0 ? Math.min(min, id) : min;
+        }, Infinity);
+        var before = reset ? (Number.isFinite(oldest) ? oldest : null) : _discoverCursor;
+        var url = '/community/api/feed/discover?limit=10';
+        if (before) url += '&before_id=' + encodeURIComponent(before);
+        if (status && reset) status.textContent = 'Finding posts you have not seen…';
+        return api(url).then(function (result) {
+            if (!result.ok || !result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Discover is temporarily unavailable.');
+            }
+            var posts = Array.isArray(result.data.posts) ? result.data.posts : [];
+            if (reset) container.textContent = '';
+            posts.forEach(function (post) { container.appendChild(buildCard(post)); });
+            _discoverCursor = result.data.next_cursor || null;
+            _discoverStarted = true;
+            if (more) more.hidden = !_discoverCursor;
+            if (status) status.textContent = posts.length
+                ? 'Showing posts you have not seen yet.'
+                : 'You are all caught up on older posts. Check back later.';
+            observeVisiblePostCards(container);
+        }).catch(function (error) {
+            if (status) status.textContent = (error && error.message) || 'Discover is temporarily unavailable.';
+            if (more) more.hidden = true;
+        }).then(function () { _discoverLoading = false; });
+    }
+
     function loadFeed(reset) {
         if (_loading) return Promise.resolve();
         _loading = true;
@@ -5302,6 +5395,23 @@
         // The composer is absent from a guest's DOM, so bind()'s null-checks
         // make that half a no-op; the feed wiring is what matters here.
         setupCommunityCardsLayout();
+        var discoverLoad = $('cfDiscoverLoad');
+        var discoverMore = $('cfDiscoverMore');
+        if (discoverLoad && !discoverLoad._discoverBound) {
+            discoverLoad._discoverBound = true;
+            discoverLoad.addEventListener('click', function () {
+                discoverLoad.disabled = true;
+                discoverLoad.textContent = 'Loading…';
+                loadDiscover(true).then(function () {
+                    discoverLoad.disabled = false;
+                    discoverLoad.textContent = _discoverStarted ? 'Refresh Discover' : 'Find posts';
+                });
+            });
+        }
+        if (discoverMore && !discoverMore._discoverBound) {
+            discoverMore._discoverBound = true;
+            discoverMore.addEventListener('click', function () { loadDiscover(false); });
+        }
         setupCommunityWalletActions();
         setupCommunityWalletModal();
         bindReactionUsersModal();
@@ -5360,6 +5470,7 @@
         loadRewards: loadRewards,
         syncTodayHub: syncTodayHub,
         loadMore: loadMore,
+        loadDiscover: loadDiscover,
         loadMorePinnedDonations: loadMorePinnedDonations,
         openVaultDonation: openVaultDonation,
         retryVaultDonationConfig: retryVaultDonationConfig,
