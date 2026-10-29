@@ -1014,6 +1014,30 @@ def get_recent_daily_tasks():
         error_response.headers['Content-Type'] = 'application/json'
         return error_response, 500
 
+@routes.route("/community-vault/withdrawals", methods=["GET"])
+def community_vault_withdrawals_report():
+    """Public shareable on-chain Community Vault withdrawal range report."""
+    today = datetime.now(timezone.utc).date()
+    start_text = (request.args.get("start_date") or today.isoformat()).strip()
+    end_text = (request.args.get("end_date") or start_text).strip()
+    if (not re.fullmatch(r"\d{4}-\d{2}-\d{2}", start_text)
+            or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", end_text)):
+        return redirect("/community-vault/withdrawals")
+    try:
+        start_day = datetime.strptime(start_text, "%Y-%m-%d").date()
+        end_day = datetime.strptime(end_text, "%Y-%m-%d").date()
+    except ValueError:
+        return redirect("/community-vault/withdrawals")
+    if end_day < start_day or end_day > today:
+        return redirect("/community-vault/withdrawals")
+
+    return render_template(
+        "community_vault_withdrawals_report.html",
+        report_start_date=start_day.isoformat(),
+        report_end_date=end_day.isoformat(),
+    )
+
+
 @routes.route("/api/learn-earn-participants", methods=["GET"])
 def get_learn_earn_participants():
     """Get Learn & Earn participants for a specific date or date range"""
