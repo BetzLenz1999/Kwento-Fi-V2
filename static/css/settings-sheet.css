@@ -1,0 +1,342 @@
+/* ── Shared Settings sheet ─────────────────────────────────────────────────
+   The Settings modal and its two satellite sheets (private key, de-verify)
+   are shared partials included by BOTH templates/wallet.html and
+   templates/community.html. Their markup is intentionally class-based and
+   colourless: every visual decision lives HERE, driven by the --set-* tokens
+   below, which each page fills from its OWN palette.
+
+   Why the indirection: this markup used to carry inline dark-theme styles
+   (`background: rgba(255,255,255,0.05)`). On the wallet's light sheet that
+   wash is a NO-OP — 5% white over white is white — so the Face Verification
+   card and the wallet-address box had no visible surface at all. Both pages
+   render the sheet on white, so the defect showed on both. A token-driven
+   sheet cannot regress that way: it can only use a colour the page defines.
+
+   Every token is declared twice on purpose:
+     1. a light-theme default in :root, so the sheet is correct even if a page
+        forgets to define anything (defensive — never white-on-white), and
+     2. an explicit mapping per page below, so each page gets its own palette.
+
+   Do NOT reintroduce an inline colour in the partials. If a value is missing,
+   add a token here — a bare literal in the markup cannot be themed and is how
+   the original bug happened. */
+
+:root {
+    --set-surface: #ffffff;
+    --set-card: #f7f7f7;
+    --set-border: #e2e7f2;
+    --set-ink: #202949;
+    --set-ink-dim: #475467;
+    --set-ink-muted: #667085;
+    --set-accent: #4f46e5;
+    --set-accent-ink: #ffffff;
+    --set-danger: #b42318;
+    --set-danger-surface: #fef3f2;
+    --set-danger-border: #fda29b;
+    --set-warn: #b54708;
+    --set-warn-surface: #fffaeb;
+    --set-ok: #067647;
+    --set-ok-surface: #ecfdf3;
+    --set-gold: #fbbf24;
+    --set-gold-2: #f59e0b;
+    --set-gold-ink: #1f1300;
+    --set-overlay: rgba(13, 18, 38, 0.48);
+}
+
+/* Wallet page palette. Kept in sync with wallet.html's :root — these are the
+   names the rest of the wallet already uses. */
+body:not(.cf-page) {
+    --set-surface: #ffffff;
+    --set-card: #faf7f2;
+    --set-border: #eadfcb;
+    --set-ink: #2b241a;
+    --set-ink-dim: #6b5d48;
+    --set-ink-muted: #a0907a;
+    --set-accent: #7c3aed;
+    --set-danger: #b91c1c;
+    --set-danger-surface: #fef2f2;
+    --set-danger-border: #fca5a5;
+    --set-warn: #92400e;
+    --set-warn-surface: #fffbeb;
+    --set-ok: #15803d;
+    --set-ok-surface: #f0fdf4;
+}
+
+/* Community feed palette. `.cf-page` is the feed's body class, so this wins
+   over the wallet block above on /community without touching wallet.html. */
+body.cf-page {
+    --set-surface: #ffffff;
+    --set-card: #f7f7f7;
+    --set-border: #e2e7f2;
+    --set-ink: #202949;
+    --set-ink-dim: #475467;
+    --set-ink-muted: #667085;
+    --set-accent: #0369a1;
+    --set-danger: #b42318;
+    --set-danger-surface: #fef3f2;
+    --set-danger-border: #fda29b;
+    --set-warn: #b54708;
+    --set-warn-surface: #fffaeb;
+    --set-ok: #067647;
+    --set-ok-surface: #ecfdf3;
+}
+
+/* ── Overlay + sheet ─────────────────────────────────────────────────────── */
+
+#settingsModal.modal-overlay,
+#pkModal.modal-overlay,
+#fvDeVerifyModal.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+    background: var(--set-overlay);
+    backdrop-filter: blur(3px);
+}
+#settingsModal.modal-overlay.open,
+#pkModal.modal-overlay.open,
+#fvDeVerifyModal.modal-overlay.open { display: flex; }
+
+#settingsModal .modal-sheet,
+#pkModal .modal-sheet,
+#fvDeVerifyModal .modal-sheet {
+    width: min(100%, 480px);
+    max-height: min(92dvh, 860px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 1.5rem 1.5rem 2rem;
+    border: 1px solid var(--set-border);
+    border-radius: 24px 24px 18px 18px;
+    background: var(--set-surface);
+    color: var(--set-ink);
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.28);
+    animation: setSheetUp 0.28s ease;
+}
+#settingsModal .modal-handle,
+#pkModal .modal-handle,
+#fvDeVerifyModal .modal-handle {
+    width: 2.8rem; height: 0.25rem; margin: 0 auto 0.75rem;
+    border-radius: 999px; background: var(--set-border);
+}
+#settingsModal .modal-title,
+#pkModal .modal-title,
+#fvDeVerifyModal .modal-title {
+    margin-bottom: 0.85rem;
+    font-size: 1.15rem;
+    font-weight: 800;
+    text-align: center;
+    color: var(--set-ink);
+}
+#settingsModal .modal-sheet-footer,
+#pkModal .modal-sheet-footer,
+#fvDeVerifyModal .modal-sheet-footer {
+    display: grid; gap: 0.5rem;
+    margin-top: 1rem; padding-top: 0.8rem;
+    border-top: 1px solid var(--set-border);
+}
+
+/* ── Settings sections ───────────────────────────────────────────────────── */
+
+.set-section { margin-bottom: 1.25rem; }
+.set-section + .set-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--set-border); }
+.set-label {
+    margin-bottom: 0.4rem;
+    font-size: 0.82rem; font-weight: 600;
+    color: var(--set-ink-dim);
+    text-transform: uppercase; letter-spacing: 0.05em;
+}
+.set-value { font-size: 0.88rem; color: var(--set-ink); }
+.set-mono {
+    padding: 0.75rem;
+    border: 1px solid var(--set-border);
+    border-radius: 10px;
+    background: var(--set-card);
+    color: var(--set-ink);
+    font-family: monospace; font-size: 0.8rem; line-height: 1.6;
+    word-break: break-all;
+}
+
+/* The Face Verification status card. The state class is set by
+   renderFvStatus() in wallet-main.js — the colour must NOT come back as an
+   inline style, or the two pages cannot theme it and the AA guarantees below
+   stop being testable. */
+.set-card {
+    padding: 0.85rem 0.95rem;
+    border: 1px solid var(--set-border);
+    border-radius: 10px;
+    background: var(--set-card);
+    font-size: 0.85rem; line-height: 1.6;
+}
+.set-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.5rem; margin-bottom: 0.35rem;
+}
+.set-row:last-of-type { margin-bottom: 0; }
+.set-row-label { color: var(--set-ink-dim); }
+.set-row-value { color: var(--set-ink); }
+.set-pill {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.22rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem; font-weight: 600;
+    background: var(--set-card);
+    color: var(--set-ink-dim);
+}
+.set-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; }
+.set-hint { margin-top: 0.6rem; font-size: 0.78rem; color: var(--set-ink-dim); line-height: 1.5; }
+
+/* ── Face Verification states ──────────────────────────────────────────────
+   Measured AA targets on the page's own sheet background (4.5:1 minimum).
+   Every state sets BOTH the pill colour and a matching tint, so the pill is
+   legible whether the sheet is white (both pages today) or tinted later.
+
+   The previous implementation hardcoded #94a3b8 for the error state, which is
+   only 2.56:1 on white — the exact moment (RPC unavailable) a user needs to
+   read it. These values are pinned by a test that recomputes the ratio, so a
+   future re-skin that drops below AA fails CI rather than shipping. */
+.set-card.is-unverified { --set-state: var(--set-ink-dim); --set-state-bg: var(--set-card); }
+.set-card.is-error      { --set-state: var(--set-danger);  --set-state-bg: var(--set-danger-surface); }
+.set-card.is-expired    { --set-state: var(--set-danger);  --set-state-bg: var(--set-danger-surface); }
+.set-card.is-warning    { --set-state: var(--set-warn);    --set-state-bg: var(--set-warn-surface); }
+.set-card.is-renewal    { --set-state: var(--set-warn);    --set-state-bg: var(--set-warn-surface); }
+.set-card.is-verified   { --set-state: var(--set-ok);      --set-state-bg: var(--set-ok-surface); }
+
+.set-card.is-error .set-pill,
+.set-card.is-expired .set-pill,
+.set-card.is-warning .set-pill,
+.set-card.is-renewal .set-pill,
+.set-card.is-verified .set-pill { color: var(--set-state); background: var(--set-state-bg); }
+.set-card.is-error .set-dot,
+.set-card.is-expired .set-dot,
+.set-card.is-warning .set-dot,
+.set-card.is-renewal .set-dot,
+.set-card.is-verified .set-dot { background: var(--set-state); }
+.set-card.is-error .set-row-value,
+.set-card.is-expired .set-row-value,
+.set-card.is-warning .set-row-value,
+.set-card.is-renewal .set-row-value { color: var(--set-state); }
+
+/* ── Buttons ───────────────────────────────────────────────────────────────
+   One button language. Gold carries the money action with DARK ink (white on
+   gold fails AA); the accent button is the neutral primary. */
+.set-actions { display: flex; gap: 0.75rem; margin-top: 1rem; }
+.set-btn {
+    display: block; width: 100%;
+    padding: 0.75rem;
+    border-radius: 14px;
+    border: 1px solid var(--set-border);
+    background: var(--set-surface);
+    color: var(--set-ink);
+    font-family: inherit; font-size: 0.9rem; font-weight: 600;
+    text-align: center; text-decoration: none;
+    cursor: pointer;
+}
+.set-btn:hover { background: var(--set-card); }
+.set-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.set-btn + .set-btn { margin-top: 0.5rem; }
+.set-btn.is-primary {
+    border-color: var(--set-accent);
+    background: var(--set-accent);
+    color: var(--set-accent-ink);
+    font-weight: 700;
+}
+.set-btn.is-gold {
+    border-color: var(--set-gold-2);
+    background: linear-gradient(135deg, var(--set-gold), var(--set-gold-2));
+    color: var(--set-gold-ink);
+    font-weight: 800;
+}
+.set-btn.is-danger {
+    border-color: var(--set-danger-border);
+    background: var(--set-danger-surface);
+    color: var(--set-danger);
+    font-weight: 700;
+}
+.set-btn.is-danger:hover { background: var(--set-danger-surface); filter: brightness(0.97); }
+
+/* ── Private key ─────────────────────────────────────────────────────────── */
+
+#pkModal .pk-warning, #settingsModal .pk-warning {
+    margin-bottom: 1rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--set-danger-border);
+    border-radius: 12px;
+    background: var(--set-danger-surface);
+    color: var(--set-danger);
+    font-size: 0.82rem; line-height: 1.5;
+}
+#pkModal .pk-warning strong, #settingsModal .pk-warning strong { color: var(--set-danger); }
+.pk-copy { font-size: 0.82rem; color: var(--set-ink-dim); line-height: 1.5; margin-bottom: 0.7rem; }
+.pk-copy-head { font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+.pk-ack {
+    display: flex; gap: 0.6rem; align-items: flex-start;
+    font-size: 0.85rem; line-height: 1.5; color: var(--set-ink-dim);
+    margin: 0.25rem 0 1rem;
+}
+.pk-ack input { margin-top: 0.2rem; flex: 0 0 auto; }
+/* The base rule is `display: none` on the wallet page (it was a legacy toggle
+   target) and absent on /community, so the revealed key must be shown
+   explicitly or it renders invisibly with no error. */
+#pkModal .modal-sheet .pk-box {
+    display: block;
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--set-border);
+    border-radius: 12px;
+    background: var(--set-card);
+    color: var(--set-ink);
+    font-family: monospace; font-size: 0.78rem; line-height: 1.6;
+    word-break: break-all;
+}
+
+/* ── De-verify ───────────────────────────────────────────────────────────── */
+
+#fvDeVerifyModal .fv-intro-lead { margin-bottom: 1rem; font-size: 0.85rem; line-height: 1.6; color: var(--set-ink-dim); }
+#fvDeVerifyModal .fv-intro-card {
+    margin-bottom: 0.65rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--set-border);
+    border-radius: 12px;
+    background: var(--set-card);
+}
+#fvDeVerifyModal .fv-intro-card-title { margin-bottom: 0.3rem; font-size: 0.84rem; font-weight: 700; color: var(--set-accent); }
+#fvDeVerifyModal .fv-intro-card-copy { font-size: 0.8rem; line-height: 1.55; color: var(--set-ink-dim); }
+#settingsModal .fv-deverify-note {
+    margin-top: 0.6rem; padding: 0.6rem 0.75rem;
+    border: 1px solid var(--set-ok);
+    border-radius: 10px;
+    background: var(--set-ok-surface);
+    color: var(--set-ok);
+    font-size: 0.78rem; line-height: 1.5;
+}
+
+/* ── Focus + motion ──────────────────────────────────────────────────────── */
+
+#settingsModal button:focus-visible,
+#settingsModal a:focus-visible,
+#pkModal button:focus-visible,
+#pkModal input:focus-visible,
+#fvDeVerifyModal button:focus-visible {
+    outline: 2px solid var(--set-accent);
+    outline-offset: 2px;
+}
+
+/* transform/opacity only — a box-shadow or layout keyframe repaints every
+   frame. Disabled entirely under reduced motion. */
+@keyframes setSheetUp {
+    from { transform: translateY(14px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+@media (max-width: 640px) {
+    #settingsModal .modal-sheet,
+    #pkModal .modal-sheet,
+    #fvDeVerifyModal .modal-sheet { max-height: calc(100dvh - 76px); border-radius: 24px 24px 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #settingsModal .modal-sheet,
+    #pkModal .modal-sheet,
+    #fvDeVerifyModal .modal-sheet { animation: none; }
+}
