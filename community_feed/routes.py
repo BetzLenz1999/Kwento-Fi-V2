@@ -45,6 +45,8 @@ community_feed_bp = Blueprint("community_feed", __name__, url_prefix="/community
 # blunt an abusive burst without a shared store — same approach as the chatroom.
 _THROTTLE_LOCK = threading.Lock()
 _HITS: dict[str, deque] = defaultdict(deque)
+_DAY_BLOCK_RANGE_LOCK = threading.Lock()
+_DAY_BLOCK_RANGE_CACHE: dict[tuple[str, int, int], tuple[int, int]] = {}
 
 
 def _throttle(key: str, window_seconds: int, allow: int = 1) -> int:
@@ -602,6 +604,237 @@ def api_withdrawal_history():
     except Exception as exc:  # noqa: BLE001
         logger.warning("community withdrawal history RPC failed: %s", exc)
         return history_json({"success": False, "error": "Withdrawal history could not be loaded. Please retry."}, 503)
+
+
+@community_feed_bp.route("/api/rewards/withdrawals/onchain-history", methods=["GET"])
+def api_onchain_withdrawal_history():
+    """Read all successful vault WithdrawalPaid events for one UTC calendar day."""
+    def history_json(payload, status=200, *, cache=False):
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = (
+            "public, max-age=15" if cache else "no-store, max-age=0"
+        )
+        return response, status
+
+    if not svc.is_enabled():
+        return _disabled_response()
+
+    remote = (request.remote_addr or "anonymous").strip().lower()
+    retry = _throttle("vault-overview-history:" + remote, 30, allow=10)
+    if retry:
+        response, status = history_json(
+            {"success": False, "error": "Too many history requests. Please wait and retry."}, 429
+        )
+        response.headers["Retry-After"] = str(retry)
+        return response, status
+
+    date_text = (request.args.get("date") or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_text):
+        return history_json({"success": False, "error": "Select a valid UTC date."}, 400)
+    try:
+        selected_date = datetime.strptime(date_text, "%Y-%m-%d").date()
+    except ValueError:
+        return history_json({"success": False, "error": "Select a valid UTC date."}, 400)
+    if selected_date > datetime.now(timezone.utc).date():
+        return history_json({"success": False, "error": "Future dates are not available."}, 400)
+
+    def integer_arg(name, default=None):
+        raw = request.args.get(name)
+        if raw is None:
+            return default
+        if not re.fullmatch(r"\d+", raw):
+            raise ValueError(name)
+        return int(raw)
+
+    try:
+        limit = integer_arg("limit", 20)
+        before_block = integer_arg("before_block")
+        before_log_index = integer_arg("before_log_index")
+        if not 1 <= limit <= 50:
+            raise ValueError("limit")
+        if (before_block is None) != (before_log_index is None):
+            raise ValueError("cursor")
+    except ValueError:
+        return history_json({"success": False, "error": "Invalid limit or pagination cursor."}, 400)
+
+    try:
+        from web3 import Web3
+
+        runtime = withdrawal_vault.build_runtime(require_enabled=False, require_signer_key=False)
+        deployment_block = withdrawal_vault.deployment_block_for_runtime(runtime)
+        vault_address = Web3.to_checksum_address(runtime.vault_address)
+        latest = int(runtime.web3.eth.block_number)
+        if deployment_block > latest:
+            return history_json({
+                "success": False,
+                "error": "Withdrawal history start block is newer than the Celo chain tip.",
+            }, 503)
+
+        day_start = int(datetime.combine(
+            selected_date, datetime.min.time(), tzinfo=timezone.utc
+        ).timestamp())
+        day_end = day_start + 86400
+        timestamp_cache = {}
+
+        def block_timestamp(block_number):
+            block_number = int(block_number)
+            if block_number not in timestamp_cache:
+                timestamp_cache[block_number] = int(
+                    runtime.web3.eth.get_block(block_number)["timestamp"]
+                )
+            return timestamp_cache[block_number]
+
+        latest_timestamp = block_timestamp(latest)
+        if latest_timestamp < day_start:
+            return history_json({
+                "success": True, "date": date_text, "items": [],
+                "has_more": False, "next_cursor": None,
+            }, cache=True)
+
+        range_cache_key = (vault_address.lower(), deployment_block, day_start)
+        with _DAY_BLOCK_RANGE_LOCK:
+            cached_range = _DAY_BLOCK_RANGE_CACHE.get(range_cache_key) if day_end <= latest_timestamp else None
+        if cached_range:
+            first_block, last_block = cached_range
+        else:
+            def first_block_at_or_after(target_timestamp):
+                low, high = deployment_block, latest + 1
+                while low < high:
+                    middle = (low + high) // 2
+                    if block_timestamp(middle) >= target_timestamp:
+                        high = middle
+                    else:
+                        low = middle + 1
+                return low
+
+            first_block = first_block_at_or_after(day_start)
+            end_exclusive = first_block_at_or_after(day_end)
+            last_block = min(latest, end_exclusive - 1)
+            if day_end <= latest_timestamp:
+                with _DAY_BLOCK_RANGE_LOCK:
+                    if len(_DAY_BLOCK_RANGE_CACHE) >= 256:
+                        _DAY_BLOCK_RANGE_CACHE.pop(next(iter(_DAY_BLOCK_RANGE_CACHE)))
+                    _DAY_BLOCK_RANGE_CACHE[range_cache_key] = (first_block, last_block)
+        if first_block > latest or last_block < first_block:
+            return history_json({
+                "success": True, "date": date_text, "items": [],
+                "has_more": False, "next_cursor": None,
+            }, cache=True)
+
+        cursor_tuple = None
+        if before_block is not None:
+            if before_block < first_block or before_block > last_block:
+                return history_json({
+                    "success": False, "error": "Pagination cursor is outside the selected UTC date."}, 400)
+            cursor_tuple = (before_block, before_log_index)
+            last_block = min(last_block, before_block)
+
+        try:
+            configured_chunk = int(os.environ.get("GETLOGS_MAX_CHUNK", "4000"))
+        except (TypeError, ValueError):
+            configured_chunk = 4000
+        chunk = max(500, min(configured_chunk, 4000))
+        max_scan_blocks = min(100000, chunk * 50)
+        topic0 = Web3.to_hex(Web3.keccak(
+            text="WithdrawalPaid(address,uint256,bytes32,uint256,uint256)"
+        )).lower()
+        target_utc_day = day_start // 86400
+        collected = []
+        scanned_blocks = 0
+        end_block = last_block
+
+        while (end_block >= first_block and len(collected) <= limit
+               and scanned_blocks < max_scan_blocks):
+            start_block = max(
+                first_block,
+                end_block - chunk + 1,
+                end_block - (max_scan_blocks - scanned_blocks) + 1,
+            )
+            logs = runtime.web3.eth.get_logs({
+                "address": vault_address,
+                "fromBlock": start_block,
+                "toBlock": end_block,
+                "topics": [topic0],
+            })
+            logs = sorted(
+                logs,
+                key=lambda item: (int(item["blockNumber"]), int(item["logIndex"])),
+                reverse=True,
+            )
+            for log in logs:
+                block_number, log_index = int(log["blockNumber"]), int(log["logIndex"])
+                if cursor_tuple and (block_number, log_index) >= cursor_tuple:
+                    continue
+                try:
+                    if Web3.to_checksum_address(log.get("address") or "") != vault_address:
+                        continue
+                    raw_topics = log.get("topics") or []
+                    raw_data = log.get("data", b"")
+                    topics = [
+                        Web3.to_bytes(hexstr=item) if isinstance(item, str) else bytes(item)
+                        for item in raw_topics
+                    ]
+                    data = Web3.to_bytes(hexstr=raw_data) if isinstance(raw_data, str) else bytes(raw_data)
+                except Exception:
+                    continue
+                if (len(topics) != 3 or any(len(item) != 32 for item in topics)
+                        or len(data) != 96 or Web3.to_hex(topics[0]).lower() != topic0):
+                    continue
+
+                recipient = Web3.to_checksum_address("0x" + topics[1][-20:].hex())
+                amount = int.from_bytes(data[0:32], "big")
+                utc_day = int.from_bytes(data[64:96], "big")
+                if utc_day != target_utc_day:
+                    continue
+                confirmations = max(0, latest - block_number + 1)
+                try:
+                    timestamp = datetime.fromtimestamp(
+                        block_timestamp(block_number), timezone.utc
+                    ).isoformat().replace("+00:00", "Z")
+                except Exception:
+                    timestamp = None
+                collected.append({
+                    "tx_hash": Web3.to_hex(log["transactionHash"]).lower(),
+                    "recipient_short": f"{recipient[:6]}…{recipient[-4:]}",
+                    "amount_gd": str(withdrawal_vault.base_units_to_gd(amount, runtime.decimals)),
+                    "block_number": block_number,
+                    "log_index": log_index,
+                    "timestamp_utc": timestamp,
+                    "confirmations": confirmations,
+                    "status": "confirmed" if confirmations >= runtime.confirmations else "confirming",
+                })
+                if len(collected) > limit:
+                    break
+
+            scanned_blocks += end_block - start_block + 1
+            if len(collected) > limit:
+                break
+            end_block = start_block - 1
+
+        reached_start = end_block < first_block
+        collected.sort(key=lambda item: (item["block_number"], item["log_index"]), reverse=True)
+        has_more = len(collected) > limit or (not reached_start and scanned_blocks >= max_scan_blocks)
+        page_items = collected[:limit]
+        next_cursor = None
+        if len(collected) > limit:
+            last = page_items[-1]
+            next_cursor = {"block_number": last["block_number"], "log_index": last["log_index"]}
+        elif has_more:
+            next_cursor = {"block_number": end_block + 1, "log_index": 0}
+        return history_json({
+            "success": True, "date": date_text, "items": page_items,
+            "has_more": has_more, "next_cursor": next_cursor,
+        }, cache=True)
+    except withdrawal_vault.WithdrawalConfigError as exc:
+        logger.warning("community vault overview history runtime unavailable: %s",
+                       withdrawal_vault.operator_detail(exc))
+        return history_json({"success": False, "error": withdrawal_vault.MEMBER_CONFIG_ERROR}, 503)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community vault overview history RPC failed: %s", exc)
+        return history_json({
+            "success": False,
+            "error": "Community Vault withdrawal history is temporarily unavailable. Please retry.",
+        }, 503)
 
 
 @community_feed_bp.route("/api/rewards/withdrawals/reconciliation", methods=["GET"])
