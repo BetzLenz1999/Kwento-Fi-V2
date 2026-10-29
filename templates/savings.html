@@ -1,14 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if community_embed %} class="community-embedded"{% endif %}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Savings – GoodMarket</title>
+    <title>KwentoFi Savings</title>
     <meta name="theme-color" content="#f97316">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
-    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
           integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0"
           crossorigin="anonymous" referrerpolicy="no-referrer"/>
@@ -28,7 +29,14 @@
                 width: 142.857%;
                 margin-left: -21.4285%;
             }
+            html.community-embedded body {
+                transform: none;
+                transform-origin: initial;
+                width: auto;
+                margin-left: 0;
+            }
         }
+        html.community-embedded { zoom: 1; }
 
         body { font-family:'Inter',sans-serif; background:linear-gradient(135deg,#0B0F2A 0%,#130D35 50%,#1A103D 100%); color:#e2e8f0; min-height:100vh; }
 
@@ -47,6 +55,8 @@
         .logout-btn { background:rgba(239,68,68,.1)!important; border:1px solid rgba(239,68,68,.25)!important; color:#f87171!important; padding:.28rem .85rem!important; border-radius:20px!important; font-size:.85rem!important; white-space:nowrap!important; flex-shrink:0; }
         .logout-btn:hover { background:rgba(239,68,68,.2)!important; }
         @media(max-width:768px){ .navbar{padding:0 .75rem;} .nav-links{flex-wrap:wrap;gap:.15rem;justify-content:flex-end;overflow:visible;} .nav-links a{font-size:.78rem;padding:.28rem .5rem;} }
+        body.community-embedded .back-wallet-btn { display:none; }
+        body.community-embedded:not(.community-guest) .navbar { display:none; }
 
         /* ── Layout ── */
         .container { max-width:920px; margin:0 auto; padding:1rem 1.25rem 1.5rem; }
@@ -446,12 +456,12 @@
     <!-- Shared Get Started modal styles (guest connect flow). -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
 </head>
-<body>
+<body class="{% if community_embed %}community-embedded{% endif %}{% if is_guest %} community-guest{% endif %}">
 
 <!-- Navbar -->
     <nav class="navbar">
         <div class="nav-container">
-            <a href="/wallet" class="back-wallet-btn">← Back to Wallet</a>
+            {% if not community_embed %}<a href="/wallet" class="back-wallet-btn">← Back to Wallet</a>{% endif %}
             {% if is_guest %}
             <!-- Persistent connect entry point so closing the modal doesn't
                  strand a guest — same flow as the homepage. -->
@@ -3227,7 +3237,7 @@ window._wcGetClient = function() {
                 name: 'GoodMarket Savings',
                 description: 'Lock G$ and earn with GoodMarket',
                 url: window.location.origin,
-                icons: [window.location.origin + '/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}']
+                icons: [window.location.origin + '/static/icons/kwentofi-pwa-192.png?v={{ ASSET_VERSION }}']
             }
         }).then(function(client) {
             window._wcSignClient = client;
