@@ -44,6 +44,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/community-feed.css', v=ASSET_VERSION) }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/claim-modal.css', v=ASSET_VERSION) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/settings-sheet.css', v=ASSET_VERSION) }}">
 
     {# Page-level layout only. The feed's look lives in community-feed.css; this
        block carries the two things that depend on the device/viewport rather
@@ -1034,6 +1035,7 @@ window.GM_COMMUNITY_BOOT = {
 <script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
 <script>window.GMEthersLoader.load().catch(function () {});</script>
 <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/logout.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/get-started.js', v=ASSET_VERSION) }}"></script>
