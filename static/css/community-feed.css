@@ -2228,6 +2228,16 @@ body.cf-modal-open { overflow: hidden; }
     font-weight: 850;
     line-height: 1.3;
 }
+.cf-discover { display: grid; gap: 0.65rem; padding: 0.8rem; border: 1px solid var(--cf-border); border-radius: 14px; background: var(--cf-soft); }
+.cf-discover[hidden],
+.cf-discover[hidden] * { display: none !important; }
+.cf-discover-head { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; }
+.cf-discover-head p { margin: 0.25rem 0 0; color: var(--cf-dim); font-size: 0.82rem; }
+.cf-discover-feed { display: grid; gap: 0.65rem; }
+.cf-discover-status { min-height: 1.2em; margin: 0; color: var(--cf-dim); font-size: 0.82rem; }
+.cf-discover-load { min-height: 40px; padding: 0.5rem 0.75rem; border: 1px solid var(--cf-accent-border); border-radius: 9px; background: var(--cf-accent-soft); color: var(--cf-accent-ink); font: inherit; font-size: 0.82rem; font-weight: 850; cursor: pointer; white-space: nowrap; }
+.cf-discover-load:disabled { opacity: 0.6; cursor: wait; }
+.cf-discover .cf-load-more { justify-self: center; }
 .cf-composer-entry-row {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
