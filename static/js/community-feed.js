@@ -4168,6 +4168,10 @@
         if (submenu) submenu.hidden = true;
         var toggle = $('cfMenuEarnMoreToggle');
         if (toggle) toggle.setAttribute('aria-expanded', 'false');
+        var settingsSubmenu = $('cfMenuSettings');
+        if (settingsSubmenu) settingsSubmenu.hidden = true;
+        var settingsToggle = $('cfMenuSettingsToggle');
+        if (settingsToggle) settingsToggle.setAttribute('aria-expanded', 'false');
         var trigger = _sheetReturnFocus;
         if (trigger && trigger.setAttribute) trigger.setAttribute('aria-expanded', 'false');
         _sheetReturnFocus = null;
@@ -4183,6 +4187,38 @@
             button.setAttribute('aria-expanded', submenu.hidden ? 'false' : 'true');
         }
         return !submenu.hidden;
+    }
+
+    function toggleMenuSettings(button) {
+        var submenu = $('cfMenuSettings');
+        if (!submenu) return false;
+        submenu.hidden = !submenu.hidden;
+        if (button && button.setAttribute) {
+            button.setAttribute('aria-expanded', submenu.hidden ? 'false' : 'true');
+        }
+        return !submenu.hidden;
+    }
+
+    // Opens the SHARED wallet Settings sheet (templates/_settings_modal.html).
+    // `openModal` is defined in wallet-main.js, which is a different bundle, so
+    // the call is typeof-guarded: a blocked or stale bundle must not throw here.
+    // We deliberately go through openModal rather than adding the class
+    // directly — its settingsModal branch refreshes the Face Verification card
+    // (loadFvStatus) and the passkey section, so opening it any other way shows
+    // stale data. `section` is reserved for deep-linking a specific block.
+    function openSettings(section) {
+        closeSheet(false);
+        if (typeof window.openModal === 'function') {
+            window.openModal('settingsModal');
+            return true;
+        }
+        // Fallback for a cached bundle that predates the shared partial.
+        var modal = $('settingsModal');
+        if (modal) {
+            modal.classList.add('open');
+            return true;
+        }
+        return false;
     }
 
     function menuOpenCommunityCards() {
@@ -5522,6 +5558,8 @@
         sheetGo: sheetGo,
         menuOpenCommunityCards: menuOpenCommunityCards,
         toggleMenuEarnMore: toggleMenuEarnMore,
+        toggleMenuSettings: toggleMenuSettings,
+        openSettings: openSettings,
         openEarnPage: openEarnPage,
         closeEarnPage: closeEarnPage,
         openWalletModal: openWalletModal,
