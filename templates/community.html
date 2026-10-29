@@ -65,7 +65,7 @@
             .cf-nav { gap: 0.4rem; padding-left: 0.7rem; padding-right: 0.7rem; }
             .cf-nav-right { flex-shrink: 0; }
             /* The row has to carry the two-line brand AND Notifications / Refresh
-               / Your Wallet (or Get Started). The brand itself is tightened in
+               (or Get Started). The brand itself is tightened in
                community-feed.css where the rest of the lockup lives; the date
                chip is dropped here because it is the most expendable item and
                this block is the overflow guard. Measured in a browser. */
@@ -77,7 +77,7 @@
 
 <div class="cf-sticky-stack">
 <header class="cf-nav">
-    <a class="cf-brand" href="/wallet">
+    <a class="cf-brand" href="/community">
         <img class="cf-brand-mark kwentofi-symbol" src="{{ url_for('static', filename='branding/kwentofi/kwentofi-symbol-64.png', v=ASSET_VERSION) }}" alt="" width="32" height="32">
         <span class="cf-brand-text">
             <span class="cf-brand-org">KwentoFi</span>
@@ -88,8 +88,8 @@
     </a>
     <div class="cf-nav-right">
         {# The feed is a daily surface: Daily Learn resets at 00:00 UTC, so the
-           day boundary is real and worth showing. Hidden below 480px, where the
-           row also has to carry Refresh + Your Wallet. #}
+           day boundary is real and worth showing. Hidden below 480px to keep
+           the member controls from crowding the brand. #}
         <span class="cf-today" id="cfToday" title="Today (UTC)">{{ today_label }}</span>
         {% if is_guest %}
         <!-- Persistent connect entry point so closing the modal doesn't
@@ -107,7 +107,6 @@
         </button>
         <button type="button" class="cf-nav-btn" id="cfRefreshBtn" aria-label="Refresh Community Feed"
                 onclick="GMCommunity.refresh()"><span aria-hidden="true">↻</span><span class="cf-nav-refresh-label"> Refresh</span></button>
-        <a class="cf-nav-btn" href="/wallet">Your Wallet</a>
         {% endif %}
     </div>
 
@@ -633,45 +632,43 @@
     </section>
 </div>
 
-{# ── Earn destinations sheet (separate from Community Cards) ───────────────── #}
+{# ── Community Menu: the old Community Cards shortcut now opens this menu. ──── #}
 <div class="cf-sheet-overlay" id="cfSheetOverlay" onclick="GMCommunity.closeSheet()"></div>
 
-<div class="cf-sheet" id="cfSheetEarn" role="dialog" aria-label="More ways to earn G$">
-    <div class="cf-sheet-handle"></div>
-    <div class="cf-sheet-title">💰 More Ways To Earn G$</div>
-    <div class="cf-sheet-grid">
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/minigames', 'Opening Play &amp; Earn…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#f59e0b,#e11d48);color:#fff;">🎮</span>
-            <span class="cf-sheet-name">Play &amp; Earn</span>
+<div class="cf-sheet" id="cfSheetEarn" role="dialog" aria-modal="true"
+     aria-labelledby="cfCommunityMenuTitle" aria-hidden="true" tabindex="-1" inert>
+    <div class="cf-sheet-handle" aria-hidden="true"></div>
+    <button type="button" class="cf-menu-close" id="cfMenuClose"
+            aria-label="Close community menu" onclick="GMCommunity.closeSheet()">×</button>
+    <div class="cf-sheet-title" id="cfCommunityMenuTitle">Community Menu</div>
+    <div class="cf-menu-list">
+        <button type="button" class="cf-menu-row" id="cfMenuCommunityCards"
+                onclick="GMCommunity.menuOpenCommunityCards()">
+            <span class="cf-menu-row-icon" aria-hidden="true">🗂️</span>
+            <span class="cf-menu-row-copy"><strong>Community Cards</strong><small>Open community rewards, vault support, and recent posters.</small></span>
+            <span class="cf-menu-row-arrow" aria-hidden="true">›</span>
         </button>
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/learn-earn?from=community', 'Opening Learn &amp; Earn…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;">📚</span>
-            <span class="cf-sheet-name">Learn &amp; Earn</span>
+        <button type="button" class="cf-menu-row" id="cfMenuWallet"
+                onclick="GMCommunity.openWalletModal(this)">
+            <span class="cf-menu-row-icon" aria-hidden="true">◈</span>
+            <span class="cf-menu-row-copy"><strong>Wallet</strong><small>View your live Celo token balances.</small></span>
+            <span class="cf-menu-row-arrow" aria-hidden="true">›</span>
         </button>
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/savings', 'Opening Savings…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#0e7490,#155e75);color:#fff;">🏦</span>
-            <span class="cf-sheet-name">Savings</span>
+        <button type="button" class="cf-menu-row" id="cfMenuEarnMoreToggle"
+                aria-expanded="false" aria-controls="cfMenuEarnMore"
+                onclick="GMCommunity.toggleMenuEarnMore(this)">
+            <span class="cf-menu-row-icon" aria-hidden="true">✨</span>
+            <span class="cf-menu-row-copy"><strong>Earn More</strong><small>Explore Farming and Savings inside Community.</small></span>
+            <span class="cf-menu-row-arrow" aria-hidden="true">⌄</span>
         </button>
-        {% if community_feed_visible %}
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/community', 'Opening Community Feed…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;">📸</span>
-            <span class="cf-sheet-name">Community Feed</span>
-        </button>
-        {% endif %}
-        {% if chatroom_visible %}
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/chatroom', 'Opening Community Chat…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#22c55e,#166534);color:#fff;">💬</span>
-            <span class="cf-sheet-name">Community Chat</span>
-        </button>
-        {% endif %}
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/farming', 'Opening Chicken Farming…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#facc15,#f97316);color:#241300;">🐔</span>
-            <span class="cf-sheet-name">Farming</span>
-        </button>
-        <button type="button" class="cf-sheet-item" onclick="GMCommunity.sheetGo('/trustpilot-task', 'Opening Trustpilot Review…')">
-            <span class="cf-sheet-circle" style="background:linear-gradient(135deg,#00b67a,#005128);color:#fff;">⭐</span>
-            <span class="cf-sheet-name">Trustpilot Review</span>
-        </button>
+        <div class="cf-menu-submenu" id="cfMenuEarnMore" hidden>
+            <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openEarnPage('farming')">
+                <span aria-hidden="true">🐔</span><span>Farming</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+            </button>
+            <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openEarnPage('savings')">
+                <span aria-hidden="true">🏦</span><span>Savings</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+            </button>
+        </div>
     </div>
 </div>
 
@@ -707,6 +704,83 @@
                     loading="lazy" referrerpolicy="no-referrer"></iframe>
         </div>
     </div>
+</div>
+
+{# ── Farming and Savings stay inside /community, using same-origin lazy iframes. #}
+<div class="cf-earn-page-modal" id="cfEarnPageModal" hidden role="dialog" aria-modal="true"
+     aria-labelledby="cfEarnPageTitle" aria-hidden="true">
+    <div class="cf-earn-page-overlay" onclick="GMCommunity.closeEarnPage()"></div>
+    <section class="cf-earn-page-card">
+        <header class="cf-earn-page-head">
+            <h2 id="cfEarnPageTitle">Earn More</h2>
+            <button type="button" class="cf-earn-page-close" id="cfEarnPageClose"
+                    aria-label="Close earning page" onclick="GMCommunity.closeEarnPage()">×</button>
+        </header>
+        <iframe id="cfEarnPageFrame" title="KwentoFi earning page" loading="lazy"
+                data-farming-src="/farming/?embed=1"
+                data-savings-src="/savings/?embed=1"
+                referrerpolicy="same-origin"></iframe>
+    </section>
+</div>
+
+{# ── Read-only Celo wallet view; balances come from the authenticated RPC API. #}
+<div class="cf-wallet-modal" id="cfCommunityWalletModal" hidden role="dialog" aria-modal="true"
+     aria-labelledby="cfCommunityWalletTitle" aria-hidden="true">
+    <div class="cf-wallet-overlay" onclick="GMCommunity.closeWalletModal()"></div>
+    <section class="cf-wallet-card" tabindex="-1">
+        <header class="cf-wallet-head">
+            <div>
+                <div class="cf-wallet-kicker">KWENTOFI WALLET</div>
+                <h2 id="cfCommunityWalletTitle">My Wallet</h2>
+            </div>
+            <div class="cf-wallet-actions">
+                <button type="button" class="cf-wallet-refresh" id="cfCommunityWalletRefresh"
+                        onclick="GMCommunity.refreshWalletBalances()">Refresh</button>
+                <button type="button" class="cf-wallet-close" id="cfCommunityWalletClose"
+                        aria-label="Close wallet" onclick="GMCommunity.closeWalletModal()">×</button>
+            </div>
+        </header>
+        <div class="cf-wallet-network">
+            <div><strong>Celo Mainnet</strong><span>Chain ID 42220 · Read-only balances</span></div>
+            <code id="cfCommunityWalletAddress">Connected wallet</code>
+        </div>
+        <p class="cf-wallet-status" id="cfCommunityWalletStatus" role="status" aria-live="polite">
+            Open Wallet to load balances from Celo.
+        </p>
+        <div class="cf-wallet-token-list">
+            <div class="cf-wallet-token" data-wallet-balance="celo">
+                <span class="cf-wallet-token-badge cf-wallet-token-badge-celo" aria-hidden="true">C</span>
+                <span class="cf-wallet-token-name"><strong>CELO</strong><small>Native gas token</small></span>
+                <strong class="cf-wallet-token-value" id="cfWalletBalanceCelo">—</strong>
+            </div>
+            <div class="cf-wallet-token" data-wallet-balance="gd">
+                <span class="cf-wallet-token-badge cf-wallet-token-badge-gd" aria-hidden="true">G$</span>
+                <span class="cf-wallet-token-name"><strong>G$</strong><small>GoodDollar</small></span>
+                <strong class="cf-wallet-token-value" id="cfWalletBalanceGd">—</strong>
+            </div>
+            <div class="cf-wallet-token" data-wallet-balance="cusd">
+                <span class="cf-wallet-token-badge cf-wallet-token-badge-cusd" aria-hidden="true">$</span>
+                <span class="cf-wallet-token-name"><strong>cUSD</strong><small>Celo stablecoin</small></span>
+                <strong class="cf-wallet-token-value" id="cfWalletBalanceCusd">—</strong>
+            </div>
+            <div class="cf-wallet-token" data-wallet-balance="usdt">
+                <span class="cf-wallet-token-badge cf-wallet-token-badge-usdt" aria-hidden="true">₮</span>
+                <span class="cf-wallet-token-name"><strong>USDT</strong><small>Tether on Celo</small></span>
+                <strong class="cf-wallet-token-value" id="cfWalletBalanceUsdt">—</strong>
+            </div>
+            <div class="cf-wallet-token" data-wallet-balance="usdc">
+                <span class="cf-wallet-token-badge cf-wallet-token-badge-usdc" aria-hidden="true">$</span>
+                <span class="cf-wallet-token-name"><strong>USDC</strong><small>USD Coin on Celo</small></span>
+                <strong class="cf-wallet-token-value" id="cfWalletBalanceUsdc">—</strong>
+            </div>
+            <div class="cf-wallet-token" data-wallet-balance="phpm">
+                <span class="cf-wallet-token-badge cf-wallet-token-badge-phpm" aria-hidden="true">₱</span>
+                <span class="cf-wallet-token-name"><strong>PHPm</strong><small>Mento Philippine Peso</small></span>
+                <strong class="cf-wallet-token-value" id="cfWalletBalancePhpm">—</strong>
+            </div>
+        </div>
+        <p class="cf-wallet-note">Balances are read from Celo. No transactions are signed or sent from this panel.</p>
+    </section>
 </div>
 
 {# ── Community-owned Claim Free G$ modal ────────────────────────────────────
@@ -797,7 +871,7 @@ window.GM_COMMUNITY_BOOT = {
     focusPostId: {{ (focus_post_id or '')|tojson }},
     focusPost: {{ (focus_post or none)|tojson }},
     // Destination list for the Community mobile action tray and desktop rail.
-    // The Community Cards item is mobile-only; CSS preserves the desktop rail.
+    // Menu replaces the old Community Cards shortcut and opens its submenus.
     // `guestOk` marks a destination a signed-out visitor may reach (reading is
     // public); a `!guestOk` tap raises the shared connect card instead.
     //
@@ -807,15 +881,14 @@ window.GM_COMMUNITY_BOOT = {
     // screen.
     //
     // Claim Free G$ is rendered directly in this page by the shared claim
-    // partial/controller. The href stays the real wallet page so middle-click
-    // and no-JS still work, but the normal member path never loads an iframe.
+    // partial/controller. Its fallback URL remains the existing claim route;
+    // the normal member path never leaves Community or loads an iframe.
     nav: [
         { id: 'claim',  icon: '🪙', label: 'Claim Free G$', href: '/wallet?claim=1', action: 'claim', gold: true, guestOk: false },
         { id: 'search', icon: '🔍', label: 'Search',      action: 'search',    guestOk: true },
         { id: 'messages', icon: '💬', label: 'Messages',    href: '/messages', action: 'messages', guestOk: false },
         { id: 'airtime', icon: '📱', label: 'Buy Airtime', href: '/reloadly/?embed=1#topup', action: 'airtime', guestOk: false },
-        { id: 'community-cards', icon: '🗂️', label: 'Community Cards', action: 'community-cards', guestOk: true },
-        { id: 'wallet', icon: '👛', label: 'Your Wallet', href: '/wallet',     guestOk: false }
+        { id: 'menu', icon: '☰', label: 'Menu', action: 'menu', guestOk: true }
     ],
     reactions: {
         like: '👍', love: '❤️', haha: '😂',
