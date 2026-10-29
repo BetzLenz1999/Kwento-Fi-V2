@@ -2823,10 +2823,11 @@ body.cf-push-optin-open { overflow: hidden; }
     grid-template-columns: 2rem minmax(0, 1fr) auto;
     align-items: center; gap: 0.55rem;
     padding: 0.55rem 0.75rem; border: 1px solid #e6e8f0;
-    border-radius: 13px; background: #f8f9fc; color: var(--cf-ink);
+    border-radius: 13px; background: #f8f9fc; color: #0369a1;
     text-align: left; font-family: inherit; font-size: 0.82rem;
     font-weight: 800; cursor: pointer;
 }
+.cf-menu-subitem > span:nth-child(2) { color: #2563eb; font-weight: 850; }
 .cf-menu-subitem:hover { border-color: #c7d2fe; background: #eef2ff; }
 .cf-menu-subitem > span:first-child { font-size: 1.15rem; text-align: center; }
 
@@ -2842,7 +2843,7 @@ body.cf-push-optin-open { overflow: hidden; }
 }
 .cf-earn-page-card {
     position: relative; z-index: 1410; display: flex; flex-direction: column;
-    width: min(100%, 1080px); height: min(94dvh, 1040px);
+    width: 75vw; height: 75dvh; max-width: 1400px; max-height: 900px;
     min-height: 0; overflow: hidden; border: 1px solid rgba(255,255,255,0.2);
     border-radius: 18px; background: #0b1020;
     box-shadow: 0 20px 64px rgba(0,0,0,0.42);
@@ -2866,10 +2867,10 @@ body.cf-push-optin-open { overflow: hidden; }
     border: 0; background: #0b1020;
 }
 @media (max-width: 640px) {
-    .cf-earn-page-modal { padding: 0; }
+    .cf-earn-page-modal { padding: 0.75rem; }
     .cf-earn-page-card {
-        width: 100%; height: 100dvh; max-height: 100dvh;
-        border: 0; border-radius: 0;
+        width: 85vw; height: 85dvh; max-width: 85vw; max-height: 85dvh;
+        border-radius: 18px;
     }
 }
 
@@ -2909,16 +2910,18 @@ body.cf-push-optin-open { overflow: hidden; }
 .cf-wallet-kicker { margin-bottom: 0.2rem; color: #c7d2fe; font-size: 0.65rem; font-weight: 900; letter-spacing: 0.12em; }
 .cf-wallet-head h2 { margin: 0; color: #fff; font-size: 1.3rem; font-weight: 850; }
 .cf-wallet-actions { display: flex; align-items: center; gap: 0.5rem; }
-.cf-wallet-refresh, .cf-wallet-close {
+.cf-wallet-refresh, .cf-wallet-close, .cf-wallet-send-open {
     min-height: 40px; border: 1px solid rgba(255,255,255,0.36);
     border-radius: 12px; background: rgba(255,255,255,0.13);
     color: #fff; font: inherit; font-weight: 800; cursor: pointer;
 }
 .cf-wallet-refresh { padding: 0.5rem 0.8rem; }
+.cf-wallet-send-open { padding: 0.5rem 0.9rem; background: #facc15; border-color: #facc15; color: #202949; }
+.cf-wallet-send-open:hover { background: #fde047; }
 .cf-wallet-refresh:hover, .cf-wallet-close:hover { background: rgba(255,255,255,0.24); }
 .cf-wallet-refresh:disabled { opacity: 0.65; cursor: wait; }
 .cf-wallet-close { width: 40px; padding: 0; font-size: 1.35rem; line-height: 1; }
-.cf-wallet-refresh:focus-visible, .cf-wallet-close:focus-visible {
+.cf-wallet-refresh:focus-visible, .cf-wallet-close:focus-visible, .cf-wallet-send-open:focus-visible {
     outline: 2px solid #facc15; outline-offset: 2px;
 }
 .cf-wallet-network {
@@ -2965,6 +2968,63 @@ body.cf-push-optin-open { overflow: hidden; }
     font-size: 0.88rem; font-variant-numeric: tabular-nums; text-align: right;
 }
 .cf-wallet-note { margin: 0.9rem 1.2rem 1.1rem; color: #667085; font-size: 0.7rem; line-height: 1.45; }
+.cf-wallet-panel[hidden] { display: none !important; }
+.cf-wallet-send-section { padding: 1rem 1.1rem 1.1rem; }
+.cf-wallet-send-title { margin: 0 0 0.35rem; color: #202949; font-size: 1rem; font-weight: 850; }
+.cf-wallet-send-hint { margin: 0 0 0.9rem; color: #667085; font-size: 0.76rem; line-height: 1.5; }
+.cf-wallet-send-token-list { display: grid; gap: 0.5rem; }
+.cf-wallet-send-token {
+    width: 100%; min-height: 58px; display: grid; grid-template-columns: 2.35rem minmax(0, 1fr) auto;
+    align-items: center; gap: 0.65rem; padding: 0.6rem 0.7rem; border: 1px solid #e4e7ec;
+    border-radius: 14px; background: #fff; color: #202949; text-align: left; font: inherit; cursor: pointer;
+}
+.cf-wallet-send-token:hover, .cf-wallet-send-token.active { border-color: #6366f1; background: #f5f6ff; }
+.cf-wallet-send-token:focus-visible, .cf-wallet-send-back:focus-visible, .cf-wallet-send-review-btn:focus-visible,
+.cf-wallet-send-confirm:focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; }
+.cf-wallet-send-token-name { display: grid; gap: 0.15rem; }
+.cf-wallet-send-token-name strong { font-size: 0.84rem; }
+.cf-wallet-send-token-name small { color: #667085; font-size: 0.68rem; }
+.cf-wallet-send-balance { min-width: 6.25rem; max-width: 44%; overflow: hidden; color: #344054; font-size: 0.75rem; font-variant-numeric: tabular-nums; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.cf-wallet-send-field { display: grid; gap: 0.35rem; margin: 0 0 0.85rem; color: #344054; font-size: 0.76rem; font-weight: 750; }
+.cf-wallet-send-field input {
+    width: 100%; min-height: 46px; box-sizing: border-box; padding: 0.65rem 0.75rem;
+    border: 1px solid #d0d5dd; border-radius: 12px; background: #fff; color: #18213b; font: inherit;
+}
+.cf-wallet-send-field input:focus { border-color: #6366f1; outline: 2px solid rgba(99,102,241,0.18); }
+.cf-wallet-send-error { min-height: 1.2rem; margin: 0.4rem 0 0; color: #b42318; font-size: 0.76rem; }
+.cf-wallet-send-review-card { display: grid; gap: 0.55rem; margin: 0.8rem 0; padding: 0.85rem; border: 1px solid #e2e7f2; border-radius: 14px; background: #f8faff; }
+.cf-wallet-send-review-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; font-size: 0.78rem; }
+.cf-wallet-send-review-row span { color: #667085; }
+.cf-wallet-send-review-row strong { max-width: 70%; overflow-wrap: anywhere; color: #202949; text-align: right; }
+.cf-wallet-send-actions { display: flex; gap: 0.6rem; margin-top: 0.85rem; }
+.cf-wallet-send-back, .cf-wallet-send-review-btn, .cf-wallet-send-confirm {
+    min-height: 44px; flex: 1; padding: 0.65rem 0.8rem; border: 1px solid #d0d5dd; border-radius: 12px;
+    background: #fff; color: #344054; font: inherit; font-size: 0.82rem; font-weight: 800; cursor: pointer;
+}
+.cf-wallet-send-review-btn, .cf-wallet-send-confirm { border-color: #3730a3; background: #3730a3; color: #fff; }
+.cf-wallet-send-confirm:disabled { opacity: 0.65; cursor: wait; }
+.cf-wallet-send-alert { min-height: 1.2rem; margin: 0.75rem 0 0; color: #344054; font-size: 0.78rem; line-height: 1.45; }
+.cf-wallet-send-alert.alert-success { color: #067647; }
+.cf-wallet-send-alert.alert-error { color: #b42318; }
+
+/* The shared Daily Task controller uses the wallet modal IDs/classes. These
+   overrides provide its compact accessible appearance inside Community. */
+.cf-community-daily-task-modal {
+    position: fixed; inset: 0; z-index: 1600; display: none; place-items: center;
+    padding: 1rem; background: rgba(13, 18, 38, 0.7); backdrop-filter: blur(3px);
+}
+.cf-community-daily-task-modal.open { display: grid; }
+.cf-community-daily-task-sheet {
+    width: min(100%, 560px); max-height: min(92dvh, 820px); overflow: auto;
+    box-sizing: border-box; padding: 1.15rem; border: 1px solid #e4e7ec; border-radius: 20px;
+    background: #fff; color: #202949; box-shadow: 0 24px 72px rgba(6,10,28,0.36);
+    --card-soft: #f8faff; --card-border: #e2e7f2; --text: #202949;
+    --text-dim: #475467; --text-muted: #667085;
+}
+.cf-community-daily-task-sheet .modal-title { margin: 0 0 1rem; color: #202949; font-size: 1.15rem; font-weight: 850; }
+.cf-community-daily-task-sheet .modal-sheet-footer { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px solid #e4e7ec; }
+.cf-community-daily-task-sheet input { box-sizing: border-box; max-width: 100%; }
+.cf-community-daily-task-sheet button:focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; }
 @media (max-width: 640px) {
     .cf-wallet-modal { padding: 0; }
     .cf-wallet-card {
@@ -2975,6 +3035,7 @@ body.cf-push-optin-open { overflow: hidden; }
     .cf-wallet-network { margin-right: 0.85rem; margin-left: 0.85rem; }
     .cf-wallet-token-list { padding-right: 0.85rem; padding-left: 0.85rem; }
     .cf-wallet-note { margin-right: 1rem; margin-left: 1rem; padding-bottom: env(safe-area-inset-bottom); }
+    .cf-wallet-send-section { padding: 0.9rem 0.85rem calc(1rem + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 360px) {
     .cf-wallet-head { gap: 0.5rem; padding-right: 0.7rem; padding-left: 0.85rem; }
@@ -2985,4 +3046,7 @@ body.cf-push-optin-open { overflow: hidden; }
     .cf-wallet-token { grid-template-columns: 2.2rem minmax(0, 1fr) minmax(0, auto); gap: 0.55rem; padding-right: 0.55rem; padding-left: 0.55rem; }
     .cf-wallet-token-badge { width: 2.1rem; height: 2.1rem; }
     .cf-wallet-token-value { font-size: 0.78rem; }
+    .cf-wallet-actions { gap: 0.35rem; }
+    .cf-wallet-send-open { padding: 0.45rem 0.6rem; font-size: 0.78rem; }
+    .cf-wallet-send-balance { max-width: 40%; font-size: 0.68rem; }
 }
