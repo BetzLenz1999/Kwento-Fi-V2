@@ -11,8 +11,33 @@
 {% set _gs_brand = brand_display_name|default('GoodMarket', true) %}
 
     <!-- Wallet Modal -->
-    <div class="wallet-modal" id="walletModal">
+    <div class="wallet-modal" id="walletModal" data-homepage-intro="{{ 'true' if _gs_boot.homepage_intro|default(false) else 'false' }}">
         <div class="wallet-modal-content">
+            {% if _gs_boot.homepage_intro|default(false) %}
+            <section class="gs-home-intro" id="gsHomepageIntro" aria-labelledby="gsHomepageIntroTitle" hidden>
+                <div class="gs-home-intro-top">
+                    <span class="gs-home-brand-mark" aria-hidden="true">K</span>
+                    <span class="gs-home-brand-name">KwentoFi</span>
+                    <button class="close-modal gs-home-intro-close" type="button" onclick="closeWalletModal()" aria-label="Close Get Started">×</button>
+                </div>
+                <div class="gs-home-intro-main">
+                    <span class="gs-home-eyebrow">YOUR STORIES. YOUR COMMUNITY.</span>
+                    <h1 id="gsHomepageIntroTitle">Welcome to <span>KwentoFi</span></h1>
+                    <p class="gs-home-lead">Share stories, find your people, and keep your wallet close at hand.</p>
+                    <div class="gs-home-feature-grid">
+                        <article class="gs-home-feature"><span aria-hidden="true">✦</span><div><strong>Share & connect</strong><p>Post, react, and connect.</p></div></article>
+                        <article class="gs-home-feature"><span aria-hidden="true">◈</span><div><strong>Your wallet, in the app</strong><p>Wallet access, built into KwentoFi.</p></div></article>
+                        <article class="gs-home-feature"><span aria-hidden="true">↗</span><div><strong>More to explore</strong><p>Learn, engage, and explore.</p></div></article>
+                    </div>
+                    <aside class="gs-home-recovery" role="note">
+                        <span class="gs-home-recovery-icon" aria-hidden="true">🔐</span>
+                        <div><strong>Keep your 12 recovery words safe</strong><p>Write down the 12 words shown during wallet creation and keep them private. If you forget your PIN, import the phrase into a compatible wallet to recover access. Anyone with the words can access it—KwentoFi will never ask you to share them.</p></div>
+                    </aside>
+                    <button class="gs-home-continue" type="button" onclick="continueHomepageIntro()">Continue <span aria-hidden="true">→</span></button>
+                    <p class="gs-home-footnote">You’ll choose how to continue on the next screen.</p>
+                </div>
+            </section>
+            {% endif %}
             <div class="modal-header">
                 <div class="modal-header-inner">
                     <h2 class="modal-title">Log in or create your {{ _gs_brand }} account</h2>
@@ -112,6 +137,7 @@
                      only; the create logic itself is unchanged. -->
                 <div id="lwPreflightStep" style="display:none">
                     <div class="lw-preflight-panel">
+                        <div id="lwPreflightDetectedNotice" class="lw-preflight-detected" role="status" aria-live="polite" hidden></div>
                         <div class="lw-preflight-title">
                             <span aria-hidden="true">⚠️</span> Before you create a new wallet
                         </div>
