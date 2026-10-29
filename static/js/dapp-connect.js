@@ -1116,6 +1116,12 @@
     function _wireLogout() {
         if (!global.document || !global.document.addEventListener) return;
         global.document.addEventListener("click", function (ev) {
+            // If the shared logout bundle is present it owns the click: it
+            // disconnects these same sessions AND clears the server session.
+            // Two capture-phase handlers both calling preventDefault and then
+            // navigating would race. Checked at CLICK time, not wire time, so
+            // this does not depend on which bundle loaded first.
+            if (global.GMLogout) return;
             var node = ev.target;
             while (node && node.tagName !== "A") node = node.parentNode;
             if (!node || !node.getAttribute) return;
