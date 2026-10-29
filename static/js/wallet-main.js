@@ -4,6 +4,8 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     var LOGIN_METHOD = window.GM_WALLET_BOOT.loginMethod;
     const CLAIM_ONLY = !!window.GM_WALLET_BOOT.claimOnly;
     const IS_PRIVY_LOGIN = (LOGIN_METHOD || '').toLowerCase() === 'privy';
+    // Shared by /wallet and /community; keep this defined before bridge setup.
+    const WALLET_DISPLAY_BRAND = 'KwentoFi';
 
     // Every claim/FV/signing path waits on the same idempotent loader. This
     // avoids a race where openClaimOrVerify exists while ethers is still
