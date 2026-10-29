@@ -668,6 +668,24 @@
             <span class="cf-menu-row-copy"><strong>Wallet</strong><small>View your live Celo token balances.</small></span>
             <span class="cf-menu-row-arrow" aria-hidden="true">›</span>
         </button>
+        <button type="button" class="cf-menu-row" id="cfMenuSettingsToggle"
+                aria-expanded="false" aria-controls="cfMenuSettings"
+                onclick="GMCommunity.toggleMenuSettings(this)">
+            <span class="cf-menu-row-icon" aria-hidden="true">⚙️</span>
+            <span class="cf-menu-row-copy"><strong>Settings</strong><small>Face verification, security, and your account.</small></span>
+            <span class="cf-menu-row-arrow" aria-hidden="true">⌄</span>
+        </button>
+        <div class="cf-menu-submenu" id="cfMenuSettings" hidden>
+            <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openSettings('account')">
+                <span aria-hidden="true">👤</span><span>Account</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+            </button>
+            <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openSettings('verification')">
+                <span aria-hidden="true">🪪</span><span>Face Verification</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+            </button>
+            <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openSettings('security')">
+                <span aria-hidden="true">🔑</span><span>Security</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+            </button>
+        </div>
         <button type="button" class="cf-menu-row" id="cfMenuEarnMoreToggle"
                 aria-expanded="false" aria-controls="cfMenuEarnMore"
                 onclick="GMCommunity.toggleMenuEarnMore(this)">
@@ -873,6 +891,27 @@
 {% endif %}
 {% include "_claim_modal.html" %}
 {% include "_claim_support_modals.html" %}
+
+{# ── Settings sheet (shared with wallet.html) ───────────────────────────────
+   The wallet's Settings modal is reachable here via the Community Menu, so
+   members can manage face verification, the private key and passkey without
+   leaving the feed. The markup lives in a partial so both pages use ONE
+   implementation; the controller is wallet-main.js (already loaded below in
+   the member branch) — openModal('settingsModal') refreshes the FV card and
+   the passkey section.
+
+   DOM ORDER IS LOAD-BEARING: settingsModal must come BEFORE pkModal and
+   fvDeVerifyModal, because all overlays share a z-index and stack by DOM
+   order. Reversed, the satellite sheets open invisibly behind Settings.
+   Members only — a guest has no wallet to show a private key or FV status
+   for, and wallet-main.js reads an empty GM_WALLET_BOOT.wallet for them. #}
+{% if not is_guest %}
+{% include "_settings_modal.html" %}
+{% if (login_method or '')|lower == 'local' %}
+{% include "_pk_modal.html" %}
+{% endif %}
+{% include "_fv_deverify_modal.html" %}
+{% endif %}
 
 {% if not is_guest and messages_enabled %}
 <div class="cf-push-optin" id="cfMessagePushPrompt" hidden>
