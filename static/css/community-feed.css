@@ -113,8 +113,9 @@ body {
 /* Instagram's top bar: flat white, a hairline underneath, no shadow. The
    wordmark carries the brand serif so the bar reads as a masthead rather than
    a toolbar. */
+.cf-sticky-stack { position: sticky; top: 0; z-index: 1100; }
 .cf-nav {
-    position: sticky; top: 0; z-index: 100;
+    position: relative; top: auto; z-index: auto;
     display: flex; flex-wrap: wrap; align-items: center;
     justify-content: space-between; gap: 0.75rem;
     padding: 0.7rem 1rem;
@@ -171,8 +172,6 @@ body {
     padding: 0.42rem 0.85rem; text-decoration: none; cursor: pointer;
 }
 .cf-nav-btn:hover { background: var(--cf-field); color: var(--cf-ink); }
-.cf-nav-btn:disabled { cursor: not-allowed; opacity: 0.55; }
-.cf-nav-btn:disabled:hover { background: transparent; color: var(--cf-ink-2); }
 .cf-notification-button {
     position: relative; flex: 0 0 40px; width: 40px; height: 40px;
     display: grid; place-items: center; padding: 0;
@@ -1490,9 +1489,6 @@ body {
 }
 .cf-nav-item:active { transform: scale(0.96); }
 .cf-nav-item:hover { background: var(--cf-field); }
-.cf-nav-item:disabled { cursor: not-allowed; opacity: 0.55; }
-.cf-nav-item:disabled:hover { background: transparent; }
-.cf-nav-item:disabled:active { transform: none; }
 /* Instagram's active tab is INK, not a brand colour — the current tab is
    distinguished by weight and the filled icon disc, not by hue. */
 .cf-nav-item.is-active { color: var(--cf-ink); }
@@ -1874,8 +1870,8 @@ body.cf-modal-open { overflow: hidden; }
     .cf-sheet { max-width: 560px; }
 }
 
-/* Phone-only Community action tray. The navigation mount sits before the feed
-   in the template; these rules raise it into normal flow under the masthead.
+/* Phone-only Community action tray. It sits beneath the masthead inside the
+   shared sticky stack, so the full set of nav buttons stays visible on scroll.
    Everything in this block stops at 899px so the desktop rail is unchanged. */
 @media (max-width: 899px) {
     .cf-bottom-nav.cf-community-mobile-actions {
