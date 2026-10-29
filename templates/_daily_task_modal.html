@@ -15,10 +15,10 @@
                 Choose ONE platform to post and earn <strong style="color:#34d399;">100 G$</strong> today:
             </div>
             <div style="display:flex;gap:0.6rem;flex-direction:column;">
-                <button onclick="selectDailyTaskPlatform('twitter')" class="platform-btn" style="padding:0.9rem;background:linear-gradient(135deg,#1da1f2,#0d8bd9);border:none;color:#fff;border-radius:14px;cursor:pointer;font-weight:700;font-size:0.95rem;display:flex;align-items:center;justify-content:center;gap:0.5rem;">
+                <button type="button" class="platform-btn" data-daily-task-platform="twitter" style="padding:0.9rem;background:linear-gradient(135deg,#1da1f2,#0d8bd9);border:none;color:#fff;border-radius:14px;cursor:pointer;font-weight:700;font-size:0.95rem;display:flex;align-items:center;justify-content:center;gap:0.5rem;">
                     Twitter/X
                 </button>
-                <button onclick="selectDailyTaskPlatform('telegram')" class="platform-btn" style="padding:0.9rem;background:linear-gradient(135deg,#0088cc,#006699);border:none;color:#fff;border-radius:14px;cursor:pointer;font-weight:700;font-size:0.95rem;display:flex;align-items:center;justify-content:center;gap:0.5rem;">
+                <button type="button" class="platform-btn" data-daily-task-platform="telegram" style="padding:0.9rem;background:linear-gradient(135deg,#0088cc,#006699);border:none;color:#fff;border-radius:14px;cursor:pointer;font-weight:700;font-size:0.95rem;display:flex;align-items:center;justify-content:center;gap:0.5rem;">
                     Telegram
                 </button>
             </div>
@@ -33,7 +33,7 @@
             <div id="wlTaskMessageDisplay" style="background:var(--card-soft);border:1px solid var(--card-border);padding:0.9rem;border-radius:12px;margin-bottom:0.75rem;position:relative;cursor:text;user-select:text;font-size:0.85rem;color:var(--text);white-space:pre-wrap;line-height:1.6;">
                 <div class="spinner" style="width:22px;height:22px;"></div>
             </div>
-            <button onclick="copyDailyTaskMessage()" class="btn-secondary" style="margin-bottom:0.75rem;width:100%;padding:0.7rem;">Copy Message</button>
+            <button type="button" class="btn-secondary" data-daily-task-action="copy" style="margin-bottom:0.75rem;width:100%;padding:0.7rem;">Copy Message</button>
 
             <div style="margin-bottom:0.75rem;">
                 <label style="display:block;margin-bottom:0.4rem;color:var(--text);font-size:0.85rem;"><span id="wlPlatformUrlLabel"></span> Post URL:</label>
@@ -41,8 +41,8 @@
             </div>
 
             <div style="display:flex;gap:0.6rem;flex-direction:column;">
-                <button onclick="goBackToDailyTaskPlatformSelection()" class="btn-secondary" style="padding:0.7rem;font-size:0.9rem;">Back to Platform Selection</button>
-                <button id="wlSubmitDailyTaskBtn" onclick="submitWalletDailyTask(event)" class="btn-primary" style="padding:0.9rem;font-size:0.95rem;cursor:pointer;touch-action:manipulation;">Submit &amp; Claim 100 G$</button>
+                <button type="button" class="btn-secondary" data-daily-task-action="back" style="padding:0.7rem;font-size:0.9rem;">Back to Platform Selection</button>
+                <button type="button" id="wlSubmitDailyTaskBtn" class="btn-primary" data-daily-task-action="submit" style="padding:0.9rem;font-size:0.95rem;cursor:pointer;touch-action:manipulation;">Submit &amp; Claim 100 G$</button>
             </div>
         </div>
 
@@ -56,7 +56,7 @@
         </div>
 
         <div class="modal-sheet-footer">
-            <button class="btn-secondary" type="button" onclick="window.GMCommunity ? GMCommunity.closeDailyTask() : closeModal('dailyTaskModal')">Close</button>
+            <button class="btn-secondary" type="button" data-daily-task-action="close">Close</button>
         </div>
     </div>
 </div>
