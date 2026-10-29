@@ -3061,3 +3061,204 @@ body.cf-push-optin-open { overflow: hidden; }
     .cf-wallet-send-open { padding: 0.45rem 0.6rem; font-size: 0.78rem; }
     .cf-wallet-send-balance { max-width: 40%; font-size: 0.68rem; }
 }
+
+/* ── Settings sheet inside Community ───────────────────────────────────────
+   The Settings modal and its two satellite sheets (private key, de-verify)
+   are shared partials included by BOTH wallet.html and community.html. Their
+   base rules live in wallet.html's <style> block, which /community never
+   receives — so without this block the shared markup renders unstyled here.
+
+   Every rule is scoped under one of the three sheet IDs. That matters: the
+   claim sheet and the Daily Task sheet reuse `.modal-sheet` / `.modal-title`
+   on this page, and an unscoped rule would restyle them too.
+
+   Tokens: every value comes from the feed's own palette (`--cf-*`). The
+   wallet-page names this markup is authored against (`--text`, `--text-dim`,
+   `--card-border`, `--accent-secondary`, `--red`) are NOT defined here, so a
+   direct copy of wallet.html's rules would resolve to nothing on this page.
+   Do not reintroduce a bare wallet token in this block. */
+#settingsModal.modal-overlay,
+#pkModal.modal-overlay,
+#fvDeVerifyModal.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem;
+    background: rgba(41, 37, 36, 0.48);
+    backdrop-filter: blur(3px);
+}
+#settingsModal.modal-overlay.open,
+#pkModal.modal-overlay.open,
+#fvDeVerifyModal.modal-overlay.open { display: flex; }
+
+#settingsModal .modal-sheet,
+#pkModal .modal-sheet,
+#fvDeVerifyModal .modal-sheet {
+    width: min(100%, 480px);
+    max-height: min(92dvh, 860px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 1.5rem 1.5rem 2rem;
+    border: 1px solid var(--cf-border);
+    border-radius: 24px 24px 18px 18px;
+    background: var(--cf-card);
+    color: var(--cf-ink);
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.28);
+    animation: cfSettingsSheetUp 0.28s ease;
+}
+#settingsModal .modal-handle,
+#pkModal .modal-handle,
+#fvDeVerifyModal .modal-handle {
+    width: 2.8rem; height: 0.25rem; margin: 0 auto 0.75rem;
+    border-radius: 999px; background: rgba(100, 116, 139, 0.28);
+}
+#settingsModal .modal-title,
+#pkModal .modal-title,
+#fvDeVerifyModal .modal-title {
+    margin-bottom: 0.75rem;
+    font-size: 1.15rem;
+    font-weight: 800;
+    text-align: center;
+    color: var(--cf-ink);
+}
+#settingsModal .modal-sheet-footer,
+#pkModal .modal-sheet-footer,
+#fvDeVerifyModal .modal-sheet-footer {
+    display: grid; gap: 0.5rem;
+    margin-top: 1rem; padding-top: 0.8rem;
+    border-top: 1px solid var(--cf-border);
+}
+
+/* Buttons. `.btn-primary` carries the money-action gold, per the app rule
+   that gold means "this moves funds" — with DARK ink, because white on gold
+   fails AA. */
+#settingsModal .btn-primary,
+#pkModal .btn-primary,
+#fvDeVerifyModal .btn-primary {
+    padding: 0.75rem;
+    border: 1px solid rgba(245, 166, 35, 0.55);
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--cf-gold), var(--cf-gold-deep));
+    color: var(--cf-gold-ink);
+    font-family: inherit; font-size: 0.95rem; font-weight: 800;
+    cursor: pointer;
+}
+#settingsModal .btn-primary:disabled,
+#pkModal .btn-primary:disabled,
+#fvDeVerifyModal .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+#settingsModal .btn-secondary,
+#pkModal .btn-secondary,
+#fvDeVerifyModal .btn-secondary {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid var(--cf-border);
+    border-radius: 14px;
+    background: #fff;
+    color: var(--cf-ink);
+    font-family: inherit; font-size: 0.9rem; font-weight: 600;
+    cursor: pointer;
+}
+#settingsModal .btn-secondary:hover,
+#pkModal .btn-secondary:hover,
+#fvDeVerifyModal .btn-secondary:hover { background: var(--cf-field); }
+#settingsModal .btn-danger,
+#pkModal .btn-danger,
+#fvDeVerifyModal .btn-danger {
+    border: 1px solid rgba(220, 38, 38, 0.25);
+    background: rgba(220, 38, 38, 0.06);
+    color: var(--cf-danger);
+}
+
+/* Private-key warning + the revealed key box. The base `.pk-box` rule in
+   wallet.html is `display: none` (it was a legacy toggle target) and this
+   page has no such base rule at all, so the reveal must be shown explicitly
+   or the key renders invisibly with no error. */
+#pkModal .pk-warning {
+    margin-bottom: 1rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid rgba(220, 38, 38, 0.22);
+    border-radius: 12px;
+    background: rgba(220, 38, 38, 0.06);
+    color: #b91c1c;
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+#pkModal .pk-warning strong { color: #b91c1c; }
+#pkModal .pk-copy { font-size: 0.82rem; color: var(--cf-dim); line-height: 1.5; margin-bottom: 0.7rem; }
+#pkModal .pk-copy-head { font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+#pkModal .pk-box {
+    display: block;
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--cf-border);
+    border-radius: 12px;
+    background: var(--cf-field);
+    color: var(--cf-dim);
+    font-family: monospace;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    word-break: break-all;
+}
+
+/* Face Verification de-verify card. `--accent-secondary` is a wallet token;
+   the feed's sky-blue accent is the equivalent here. */
+#fvDeVerifyModal .fv-intro-lead {
+    margin-bottom: 1rem;
+    font-size: 0.85rem; line-height: 1.6;
+    color: var(--cf-dim);
+}
+#fvDeVerifyModal .fv-intro-card {
+    margin-bottom: 0.65rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--cf-border);
+    border-radius: 12px;
+    background: var(--cf-field);
+}
+#fvDeVerifyModal .fv-intro-card-title {
+    margin-bottom: 0.3rem;
+    font-size: 0.84rem; font-weight: 700;
+    color: var(--cf-accent);
+}
+#fvDeVerifyModal .fv-intro-card-copy { font-size: 0.8rem; line-height: 1.55; color: var(--cf-dim); }
+#fvDeVerifyModal .fv-deverify-btn,
+#settingsModal .fv-deverify-btn {
+    display: block; width: 100%;
+    margin-top: 0.5rem; padding: 0.55rem 0.8rem;
+    border: 1px solid rgba(220, 38, 38, 0.42);
+    border-radius: 10px;
+    background: rgba(220, 38, 38, 0.06);
+    color: #b91c1c;
+    font-family: inherit; font-size: 0.82rem; font-weight: 700;
+    cursor: pointer;
+}
+#fvDeVerifyModal .fv-deverify-btn:hover,
+#settingsModal .fv-deverify-btn:hover { background: rgba(220, 38, 38, 0.12); }
+#fvDeVerifyModal .fv-deverify-note,
+#settingsModal .fv-deverify-note {
+    margin-top: 0.6rem; padding: 0.6rem 0.75rem;
+    border: 1px solid rgba(22, 163, 74, 0.34);
+    border-radius: 10px;
+    background: rgba(22, 163, 74, 0.08);
+    color: #15803d;
+    font-size: 0.78rem; line-height: 1.5;
+}
+
+/* transform/opacity only — a box-shadow or layout keyframe repaints every
+   frame. Disabled entirely under reduced motion. */
+@keyframes cfSettingsSheetUp {
+    from { transform: translateY(14px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+@media (max-width: 640px) {
+    #settingsModal .modal-sheet,
+    #pkModal .modal-sheet,
+    #fvDeVerifyModal .modal-sheet { max-height: calc(100dvh - 76px); border-radius: 24px 24px 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #settingsModal .modal-sheet,
+    #pkModal .modal-sheet,
+    #fvDeVerifyModal .modal-sheet { animation: none; }
+}
