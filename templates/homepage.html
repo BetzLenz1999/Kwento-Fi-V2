@@ -3229,7 +3229,7 @@
     <!-- Shared "Get Started" connect modal (create / log in / WalletConnect).
          return_to keeps a logged-out visitor on the homepage flow; it defaults
          to /wallet after a successful connect. -->
-    {% set get_started_boot = {'return_to': ''} %}
+    {% set get_started_boot = {'return_to': '', 'homepage_intro': true} %}
     {% include "_get_started_modal.html" %}
 
 
