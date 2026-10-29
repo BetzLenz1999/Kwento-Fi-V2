@@ -1,0 +1,55 @@
+{# De-verify Face Verification confirmation. DOM-ordered AFTER
+   settingsModal because all overlays share z-index 200 and stack by DOM
+   order — an earlier position would open it invisibly behind Settings
+   ("dead button"). #}
+<!-- De-verify Face Verification confirmation.
+     DOM-ordered AFTER settingsModal because all overlays share z-index
+     200 and stack by DOM order — an earlier position would open it
+     invisibly behind Settings ("dead button"). -->
+<div class="modal-overlay" id="fvDeVerifyModal">
+    <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title">🪪 De-verify my account</div>
+
+        <div class="fv-intro-lead">
+            This removes your face-verification status from this wallet on the
+            GoodDollar Identity contract. It cannot be undone from here, but you can
+            verify again later with this same wallet.
+        </div>
+
+        <div class="fv-intro-card">
+            <div class="fv-intro-card-title">You will stop receiving daily G$</div>
+            <div class="fv-intro-card-copy">
+                Daily G$, the daily voucher, and KwentoFi's earning features are for
+                verified humans only. Once de-verified, <strong>this wallet cannot claim
+                them</strong> until you verify again.
+            </div>
+        </div>
+
+        <div class="fv-intro-card">
+            <div class="fv-intro-card-title">Your facial record is kept</div>
+            <div class="fv-intro-card-copy">
+                This only removes the verification status on-chain. Your <strong>anonymized
+                facial record stays with the GoodDollar identity service</strong> and is
+                deleted automatically after the verification period (currently
+                <strong>180 days</strong>). This action does not delete it.
+            </div>
+        </div>
+
+        <div class="fv-intro-card">
+            <div class="fv-intro-card-title">Useful before selling or giving away a wallet</div>
+            <div class="fv-intro-card-copy">
+                De-verifying first stops an unused wallet from holding a verification slot
+                that belongs to your face. Verifying again with your face is always possible
+                on this wallet.
+            </div>
+        </div>
+
+        <div class="modal-sheet-footer">
+            <button type="button" id="fvDeVerifyConfirmBtn" onclick="confirmFvDeVerify()" class="btn-danger" style="width:100%;padding:0.8rem;border-radius:14px;font-weight:600;">
+                Yes, de-verify
+            </button>
+            <button type="button" class="btn-secondary" onclick="closeModal('fvDeVerifyModal')">Cancel</button>
+        </div>
+    </div>
+</div>
