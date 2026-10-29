@@ -2191,22 +2191,6 @@
            The 0.6 border alpha is not cosmetic: at 0.3 the boundary measured
            1.60:1 against the dark canvas, below the 3:1 WCAG 1.4.11 floor for
            identifying a control. The 0.08 fill stays subtle. */
-        .fv-deverify-btn {
-            display: block;
-            width: 100%;
-            margin-top: 0.5rem;
-            padding: 0.55rem 0.8rem;
-            border-radius: 10px;
-            border: 1px solid rgba(248,113,113,0.6);
-            background: rgba(248,113,113,0.08);
-            color: #fca5a5;
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-        }
-        .fv-deverify-btn:hover { background: rgba(248,113,113,0.16); }
-        .fv-deverify-btn:focus-visible { outline: 2px solid #fca5a5; outline-offset: 2px; }
-        .fv-deverify-btn[disabled] { opacity: 0.6; cursor: default; }
         /* Success note shown in the Settings card after a completed renounce. */
         .fv-deverify-note {
             margin-top: 0.6rem;
@@ -2230,9 +2214,6 @@
             .wallet-side-nav .bn-item { color: var(--text-dim); }
             .wallet-side-nav .bn-item:hover, .wallet-side-nav .bn-item:focus-visible, .wallet-side-nav .bn-item.active { color: var(--text); background: rgba(var(--accent-rgb),0.10); border-color: rgba(var(--accent-rgb),0.30); }
         }
-        .fv-deverify-btn { background: rgba(220,38,38,0.06); border-color: rgba(220,38,38,0.42); color: #b91c1c; }
-        .fv-deverify-btn:hover { background: rgba(220,38,38,0.12); }
-        .fv-deverify-btn:focus-visible { outline-color: #b91c1c; }
         .fv-deverify-note { background: rgba(22,163,74,0.08); border-color: rgba(22,163,74,0.34); color: #15803d; }
 
 
@@ -3204,12 +3185,14 @@
             integrity="sha384-0d+Gr7vM4Drod8E3hXKgciWJSWbjD/opKLLygI9ktiWbuvlDwQLzU46wJ9s5gsp7"
             crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/claim-modal.css', v=ASSET_VERSION) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/settings-sheet.css', v=ASSET_VERSION) }}">
     <!-- Shared transaction-error formatter so user-facing alerts don't leak ethers/RPC JSON. -->
     <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
     <script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
     <script>window.GMEthersLoader.load().catch(function () {});</script>
     <!-- Shared WalletConnect bridge (claim / send / FV signing fallback for WC users). -->
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/logout.js', v=ASSET_VERSION) }}"></script>
     <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
     {% if dapp_connect_visible %}
