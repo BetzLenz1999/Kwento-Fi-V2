@@ -53,6 +53,7 @@ def farming_home():
     is_guest = not (wallet and verified)
     if is_guest:
         wallet = ""
+    community_embed = request.args.get("embed") == "1"
 
     return render_template(
         "farming.html",
@@ -66,6 +67,7 @@ def farming_home():
         celo_rpc=CELO_RPC_URL,
         celo_rpc_fallbacks=CELO_RPC_FALLBACKS,
         farming_config=FARMING_CONFIG,
+        community_embed=community_embed,
     )
 
 
