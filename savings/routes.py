@@ -29,6 +29,7 @@ def savings_home():
     is_guest = not (wallet and verified)
     if is_guest:
         wallet = ""
+    community_embed = request.args.get("embed") == "1"
 
     # NOTE: /savings is intentionally NOT behind the human (face)
     # verification gate — unverified users are allowed to save G$.
@@ -55,8 +56,9 @@ def savings_home():
         chain_id=CHAIN_ID,
         walletconnect_project_id=wc_pid,
         walletconnect_sidecar_enabled=wc_sidecar,
-        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
-        privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
+        privy_app_id=os.environ.get('PRIVY_APP_ID', ''),
+        privy_client_id=os.environ.get('PRIVY_CLIENT_ID', ''),
+        community_embed=community_embed,
         # Guests have no session, so there is no login_method. Defaulting to
         # "walletconnect" here made the page configure GMWalletConnect as a WC
         # session, which auto-starts wc-bridge.js's expiry guard: with no
