@@ -191,15 +191,19 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
 </head>
 <body>
+    {% if not community_embed or is_guest %}
     <div class="top">
+        {% if not community_embed %}
         <a class="back" href="/wallet">← Wallet</a>
         <div class="kicker">KwentoFi Farming</div>
+        {% endif %}
         {% if is_guest %}
         <!-- Persistent connect entry point so closing the modal doesn't
              strand a guest — same flow as the homepage. -->
         <button type="button" class="gs-nav-cta" onclick="openGoodMarketGetStarted()">Get Started</button>
         {% endif %}
     </div>
+    {% endif %}
 
     <section class="hero">
         <div class="egg-rain" aria-hidden="true"><span>🥚</span><span>🥚</span><span>🐣</span><span>🥚</span></div>
