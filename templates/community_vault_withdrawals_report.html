@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="View confirmed Community Vault withdrawal events and total G$ for a selected UTC date range on Celo.">
+    <title>Community Vault Withdrawals | KwentoFi</title>
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #f8fafc;
+            background: radial-gradient(circle at top, #25205f 0%, #10172a 48%, #080d18 100%);
+        }
+        .wrap { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 56px; }
+        .top { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .top a { color: #d7c57a; font-weight: 750; text-decoration: none; }
+        .top a:hover { text-decoration: underline; }
+        .hero, .summary, .withdrawal {
+            border: 1px solid rgba(255,255,255,.12);
+            background: rgba(15,23,42,.78);
+            box-shadow: 0 18px 60px rgba(0,0,0,.24);
+        }
+        .hero { border-radius: 24px; padding: clamp(20px, 4vw, 32px); margin-bottom: 18px; }
+        h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 5vw, 2.7rem); letter-spacing: -.035em; }
+        .muted { margin: 0; color: rgba(248,250,252,.7); line-height: 1.55; }
+        .picker { display: flex; gap: .8rem; align-items: end; flex-wrap: wrap; margin-top: 22px; }
+        label { display: grid; gap: .4rem; color: #e8dd9e; font-weight: 700; font-size: .9rem; }
+        input, button { min-height: 44px; border-radius: 10px; padding: .65rem .8rem; font: inherit; }
+        input { border: 1px solid rgba(215,197,122,.5); background: #111827; color: #fff; }
+        button { cursor: pointer; border: 0; background: linear-gradient(135deg, #4f46e5, #3730a3); color: #fff; font-weight: 800; }
+        button:hover { filter: brightness(1.1); }
+        .note { margin: 12px 0 0; color: rgba(248,250,252,.56); font-size: .86rem; line-height: 1.5; }
+        .share { margin: 16px 0; color: rgba(248,250,252,.62); font-size: .88rem; word-break: break-all; }
+        .share code { color: #e8dd9e; }
+        .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+        .summary { border-radius: 16px; padding: 18px; }
+        .summary span { display: block; color: rgba(248,250,252,.65); font-size: .9rem; font-weight: 700; }
+        .summary strong { display: block; margin-top: 6px; color: #e8dd9e; font-size: clamp(1.35rem, 4vw, 1.8rem); overflow-wrap: anywhere; }
+        .status { min-height: 48px; display: flex; align-items: center; margin: 0 0 12px; color: rgba(248,250,252,.75); line-height: 1.5; }
+        .status.error { color: #fca5a5; }
+        #withdrawals { display: grid; gap: 10px; }
+        .withdrawal { border-radius: 14px; padding: 15px; }
+        .row-top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 8px; }
+        .recipient { color: rgba(248,250,252,.84); font-weight: 700; overflow-wrap: anywhere; }
+        .amount { color: #e8dd9e; font-weight: 850; white-space: nowrap; }
+        .details { display: flex; flex-wrap: wrap; gap: .45rem 1rem; color: rgba(248,250,252,.62); font-size: .86rem; overflow-wrap: anywhere; }
+        .details a { color: #a5b4fc; }
+        .badge { border-radius: 999px; padding: .18rem .55rem; font-size: .75rem; font-weight: 800; }
+        .badge.confirmed { color: #bbf7d0; background: rgba(22,163,74,.2); }
+        .badge.confirming { color: #fde68a; background: rgba(217,119,6,.2); }
+        .empty { text-align: center; padding: 42px 18px; border: 1px dashed rgba(255,255,255,.18); border-radius: 18px; color: rgba(248,250,252,.7); }
+        @media (max-width: 560px) {
+            .summary-grid { grid-template-columns: 1fr; }
+            .picker { align-items: stretch; flex-direction: column; }
+            .picker label, .picker input, .picker button { width: 100%; }
+            .row-top { align-items: flex-start; flex-direction: column; gap: .4rem; }
+        }
+    </style>
+</head>
+<body>
+    <main class="wrap">
+        <nav class="top" aria-label="Report navigation">
+            <a href="/">← KwentoFi</a>
+            <a href="/overview">Overview</a>
+        </nav>
+        <section class="hero">
+            <h1>Community Vault Withdrawals</h1>
+            <p class="muted">Review successful Community Vault payouts from Celo and see the exact G$ total for an inclusive date range.</p>
+            <div class="picker">
+                <label for="report-start-date">Start date (UTC)
+                    <input id="report-start-date" type="date" value="{{ report_start_date }}">
+                </label>
+                <label for="report-end-date">End date (UTC)
+                    <input id="report-end-date" type="date" value="{{ report_end_date }}">
+                </label>
+                <button type="button" id="open-report">Search date range</button>
+            </div>
+            <p class="note">Choose up to 7 UTC calendar days. The total is calculated across every matching on-chain event; if the complete scan exceeds the safe RPC limit, no partial total is shown.</p>
+        </section>
+        <div class="share">Shareable report URL: <code id="share-url"></code></div>
+        <section class="summary-grid" aria-label="Date-range summary">
+            <div class="summary"><span>Total withdrawals</span><strong id="withdrawal-count">—</strong></div>
+            <div class="summary"><span>Total G$ withdrawn</span><strong id="withdrawal-total">—</strong></div>
+        </section>
+        <p id="report-status" class="status" role="status" aria-live="polite">Loading on-chain withdrawal events…</p>
+        <section id="withdrawals" aria-label="Community Vault withdrawal events"></section>
+    </main>
+    <script>
+        const REPORT_START_DATE = {{ report_start_date|tojson }};
+        const REPORT_END_DATE = {{ report_end_date|tojson }};
+        const escapeHtml = value => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+        function openReport() {
+            const startDate = document.getElementById('report-start-date').value;
+            const endDate = document.getElementById('report-end-date').value;
+            const status = document.getElementById('report-status');
+            if (!startDate || !endDate) {
+                status.textContent = 'Choose both a start date and an end date.';
+                status.classList.add('error');
+                return;
+            }
+            if (endDate < startDate) {
+                status.textContent = 'End date must be on or after the start date.';
+                status.classList.add('error');
+                return;
+            }
+            const dayCount = (Date.parse(endDate + 'T00:00:00Z') - Date.parse(startDate + 'T00:00:00Z')) / 86400000 + 1;
+            if (dayCount > 7) {
+                status.textContent = 'Choose a range of up to 7 UTC calendar days.';
+                status.classList.add('error');
+                return;
+            }
+            const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+            window.location.assign('/community-vault/withdrawals?' + params.toString());
+        }
+
+        function addWithdrawal(item) {
+            const article = document.createElement('article');
+            article.className = 'withdrawal';
+            const top = document.createElement('div');
+            top.className = 'row-top';
+            const recipient = document.createElement('span');
+            recipient.className = 'recipient';
+            recipient.textContent = 'Recipient ' + String(item.recipient_short || 'wallet unavailable');
+            const amount = document.createElement('strong');
+            amount.className = 'amount';
+            amount.textContent = String(item.amount_gd || '0') + ' G$';
+            top.append(recipient, amount);
+
+            const details = document.createElement('div');
+            details.className = 'details';
+            const time = document.createElement('span');
+            const parsed = item.timestamp_utc ? new Date(item.timestamp_utc) : null;
+            time.textContent = parsed && !Number.isNaN(parsed.getTime())
+                ? parsed.toLocaleString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + ' UTC'
+                : 'UTC time unavailable';
+            const block = document.createElement('span');
+            block.textContent = 'Block ' + String(item.block_number || '—');
+            const badge = document.createElement('span');
+            badge.className = 'badge ' + (item.status === 'confirmed' ? 'confirmed' : 'confirming');
+            badge.textContent = item.status === 'confirmed' ? 'Confirmed' : 'Confirming';
+            details.append(time, block, badge);
+
+            const txHash = String(item.tx_hash || '');
+            if (/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+                const link = document.createElement('a');
+                link.href = 'https://celoscan.io/tx/' + encodeURIComponent(txHash);
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = 'View transaction';
+                details.append(link);
+            }
+            article.append(top, details);
+            document.getElementById('withdrawals').appendChild(article);
+        }
+
+        async function loadReport() {
+            const status = document.getElementById('report-status');
+            const list = document.getElementById('withdrawals');
+            document.getElementById('share-url').textContent = window.location.href;
+            try {
+                const params = new URLSearchParams({ start_date: REPORT_START_DATE, end_date: REPORT_END_DATE });
+                const response = await fetch('/community/api/rewards/withdrawals/onchain-history/range?' + params.toString(), {
+                    headers: { 'Accept': 'application/json' }
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.error || 'Could not load this report.');
+                document.getElementById('withdrawal-count').textContent = String(data.total_count || 0);
+                document.getElementById('withdrawal-total').textContent = data.total_gd_formatted || '0.00 G$';
+                const items = Array.isArray(data.items) ? data.items : [];
+                items.forEach(addWithdrawal);
+                status.classList.remove('error');
+                status.textContent = items.length
+                    ? 'Showing all ' + items.length + ' matching on-chain withdrawals from ' + REPORT_START_DATE + ' to ' + REPORT_END_DATE + ' (UTC).'
+                    : 'No Community Vault withdrawals found from ' + REPORT_START_DATE + ' to ' + REPORT_END_DATE + ' (UTC).';
+                if (!items.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'empty';
+                    empty.textContent = 'No matching withdrawals for this date range.';
+                    list.appendChild(empty);
+                }
+            } catch (error) {
+                document.getElementById('withdrawal-count').textContent = '—';
+                document.getElementById('withdrawal-total').textContent = '—';
+                status.classList.add('error');
+                status.textContent = error && error.message ? error.message : 'Community Vault history is temporarily unavailable. Please retry.';
+                list.replaceChildren();
+            }
+        }
+
+        document.getElementById('open-report').addEventListener('click', openReport);
+        loadReport();
+    </script>
+</body>
+</html>
