@@ -97,9 +97,9 @@ document.addEventListener('DOMContentLoaded', function() {
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="GoodMarket">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/svg+xml" href="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
-    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -570,6 +570,92 @@ document.addEventListener('DOMContentLoaded', function() {
             padding: 0.5rem 1rem 1rem;
             background: rgba(255, 255, 255, 0.02);
             border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .community-vault-controls {
+            display: flex;
+            align-items: end;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+            margin: 0.9rem 0;
+        }
+        .community-vault-controls label {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            color: rgba(255,255,255,0.68);
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+        .community-vault-controls input[type="date"] {
+            padding: 0.55rem 0.7rem;
+            border: 1px solid rgba(124,58,237,0.38);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.06);
+            color: #e2e8f0;
+            font: inherit;
+            min-height: 38px;
+        }
+        .community-vault-status {
+            color: rgba(255,255,255,0.62);
+            font-size: 0.82rem;
+            line-height: 1.5;
+            margin: 0.6rem 0;
+        }
+        .community-vault-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            max-height: 480px;
+            overflow-y: auto;
+        }
+        .community-vault-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.35rem 0.8rem;
+            align-items: center;
+            padding: 0.75rem 0.85rem;
+            border: 1px solid rgba(124,58,237,0.2);
+            border-radius: 10px;
+            background: rgba(124,58,237,0.06);
+        }
+        .community-vault-recipient,
+        .community-vault-amount {
+            font-size: 0.88rem;
+            font-weight: 700;
+        }
+        .community-vault-recipient { color: #c4b5fd; }
+        .community-vault-amount { color: #f5d77b; white-space: nowrap; }
+        .community-vault-meta {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            color: rgba(255,255,255,0.55);
+            font-size: 0.75rem;
+        }
+        .community-vault-meta a { color: #93c5fd; text-decoration: underline; }
+        .community-vault-badge {
+            border-radius: 999px;
+            padding: 0.15rem 0.5rem;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .community-vault-badge.confirmed {
+            background: rgba(34,197,94,0.13);
+            color: #86efac;
+        }
+        .community-vault-badge.confirming {
+            background: rgba(245,158,11,0.14);
+            color: #fcd34d;
+        }
+        @media (max-width: 480px) {
+            .community-vault-controls { align-items: stretch; }
+            .community-vault-controls label { flex: 1 1 150px; }
+            .community-vault-controls .action-btn { align-self: end; }
         }
 
         /* ── Responsive ── */
@@ -1047,6 +1133,38 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 </div>
 
+                <!-- Submenu: Community Vault Withdrawals (on-chain) -->
+                <div class="submenu-item">
+                    <div class="submenu-header" onclick="toggleCommunityVaultHistoryPanel()">
+                        <div class="submenu-title">
+                            <span>⛓️</span><span>Community Vault Withdrawals</span>
+                        </div>
+                        <svg class="submenu-chevron" id="chevron-community-vault-history" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+                    <div class="submenu-content" id="content-community-vault-history">
+                        <div class="submenu-body">
+                            <p style="margin:0;color:rgba(255,255,255,.65);font-size:.84rem;line-height:1.5;">
+                                Successful Community Vault payouts read directly from Celo. Select a UTC date to view on-chain withdrawal events.
+                            </p>
+                            <div class="community-vault-controls">
+                                <label for="communityVaultHistoryDate">UTC date
+                                    <input type="date" id="communityVaultHistoryDate">
+                                </label>
+                                <button type="button" class="action-btn" onclick="loadCommunityVaultHistory(true)">Search date</button>
+                            </div>
+                            <div id="communityVaultHistoryStatus" class="community-vault-status" role="status" aria-live="polite">
+                                Choose a UTC date to view Community Vault withdrawals.
+                            </div>
+                            <div id="communityVaultHistoryList" class="community-vault-list"></div>
+                            <button type="button" id="communityVaultHistoryLoadMore" class="action-btn" onclick="loadCommunityVaultHistory(false)" hidden style="margin-top:.75rem;">
+                                Load older withdrawals
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Submenu: Achievement Card History -->
                 <div class="submenu-item">
                     <div class="submenu-header" onclick="toggleSubmenu('achievement-history'); loadAchievementHistory();">
@@ -1491,6 +1609,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const dd    = String(today.getDate()).padStart(2, '0');
             document.getElementById('participantDate').value = `${yyyy}-${mm}-${dd}`;
             document.getElementById('minigameParticipantDate').value = `${yyyy}-${mm}-${dd}`;
+            document.getElementById('communityVaultHistoryDate').value = new Date().toISOString().slice(0, 10);
         });
 
         var achievementHistoryLoaded = false;
@@ -1581,6 +1700,130 @@ document.addEventListener('DOMContentLoaded', function() {
             const selectedDate = document.getElementById('minigameParticipantDate').value;
             if (!selectedDate) { alert('Please select a date'); return; }
             window.location.assign(`/minigames/participants/${encodeURIComponent(selectedDate)}`);
+        }
+
+        let communityVaultHistoryDate = '';
+        let communityVaultHistoryCursor = null;
+        let communityVaultHistoryLoading = false;
+        let communityVaultHistoryLoaded = false;
+
+        function toggleCommunityVaultHistoryPanel() {
+            toggleSubmenu('community-vault-history');
+            if (activeSubmenu !== 'community-vault-history') return;
+            const dateInput = document.getElementById('communityVaultHistoryDate');
+            if (dateInput && (!communityVaultHistoryLoaded || dateInput.value !== communityVaultHistoryDate)) {
+                loadCommunityVaultHistory(true);
+            }
+        }
+
+        function formatCommunityGdAmount(rawAmount) {
+            const raw = String(rawAmount == null ? '' : rawAmount).trim();
+            if (!/^\d+(?:\.\d+)?$/.test(raw)) return '—';
+            const parts = raw.split('.');
+            const whole = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            const fraction = (parts[1] || '').slice(0, 2).padEnd(2, '0');
+            return `${whole}.${fraction}`;
+        }
+
+        function appendCommunityVaultWithdrawal(item) {
+            const row = document.createElement('article');
+            row.className = 'community-vault-row';
+
+            const recipient = document.createElement('span');
+            recipient.className = 'community-vault-recipient';
+            recipient.textContent = `Recipient ${String(item.recipient_short || 'wallet unavailable')}`;
+
+            const amount = document.createElement('strong');
+            amount.className = 'community-vault-amount';
+            amount.textContent = `${formatCommunityGdAmount(item.amount_gd)} G$`;
+
+            const meta = document.createElement('div');
+            meta.className = 'community-vault-meta';
+
+            const timestamp = document.createElement('span');
+            const parsedTimestamp = item.timestamp_utc ? new Date(item.timestamp_utc) : null;
+            timestamp.textContent = parsedTimestamp && !Number.isNaN(parsedTimestamp.getTime())
+                ? `${parsedTimestamp.toLocaleString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })} UTC`
+                : 'UTC time unavailable';
+
+            const badge = document.createElement('span');
+            badge.className = `community-vault-badge ${item.status === 'confirmed' ? 'confirmed' : 'confirming'}`;
+            badge.textContent = item.status === 'confirmed' ? 'Confirmed' : 'Confirming';
+
+            const txHash = String(item.tx_hash || '');
+            const txLink = document.createElement('a');
+            if (/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+                txLink.href = `https://celoscan.io/tx/${txHash}`;
+                txLink.target = '_blank';
+                txLink.rel = 'noopener noreferrer';
+                txLink.textContent = `${txHash.slice(0, 10)}…${txHash.slice(-8)} ↗`;
+            } else {
+                txLink.textContent = 'Transaction link unavailable';
+            }
+
+            meta.append(timestamp, badge, txLink);
+            row.append(recipient, amount, meta);
+            document.getElementById('communityVaultHistoryList').appendChild(row);
+        }
+
+        async function loadCommunityVaultHistory(reset = true) {
+            const dateInput = document.getElementById('communityVaultHistoryDate');
+            const status = document.getElementById('communityVaultHistoryStatus');
+            const list = document.getElementById('communityVaultHistoryList');
+            const loadMore = document.getElementById('communityVaultHistoryLoadMore');
+            const selectedDate = dateInput ? dateInput.value : '';
+            if (!selectedDate) {
+                status.textContent = 'Please select a UTC date.';
+                return;
+            }
+            if (communityVaultHistoryLoading) return;
+            if (!reset && selectedDate !== communityVaultHistoryDate) reset = true;
+            if (!reset && !communityVaultHistoryCursor) return;
+
+            if (reset) {
+                communityVaultHistoryDate = selectedDate;
+                communityVaultHistoryCursor = null;
+                communityVaultHistoryLoaded = false;
+                list.replaceChildren();
+                loadMore.hidden = true;
+            }
+
+            communityVaultHistoryLoading = true;
+            loadMore.disabled = true;
+            status.textContent = reset ? 'Loading on-chain Celo withdrawal events…' : 'Loading older withdrawals…';
+            try {
+                const params = new URLSearchParams({ date: selectedDate, limit: '20' });
+                if (!reset && communityVaultHistoryCursor) {
+                    params.set('before_block', String(communityVaultHistoryCursor.block_number));
+                    params.set('before_log_index', String(communityVaultHistoryCursor.log_index));
+                }
+                const response = await fetch(`/community/api/rewards/withdrawals/onchain-history?${params.toString()}`);
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Could not load Community Vault history.');
+                }
+
+                const items = Array.isArray(data.items) ? data.items : [];
+                items.forEach(appendCommunityVaultWithdrawal);
+                communityVaultHistoryCursor = data.next_cursor || null;
+                communityVaultHistoryLoaded = true;
+                loadMore.hidden = !(data.has_more && communityVaultHistoryCursor);
+                const loadedCount = list.children.length;
+                status.textContent = loadedCount
+                    ? `Showing ${loadedCount} on-chain withdrawal${loadedCount === 1 ? '' : 's'} for ${selectedDate} (UTC).`
+                    : (data.has_more
+                        ? `No matching withdrawals in this scan segment for ${selectedDate} (UTC). Continue loading older blocks.`
+                        : `No Community Vault withdrawals found for ${selectedDate} (UTC).`);
+            } catch (error) {
+                console.error('Community Vault history load failed:', error);
+                status.textContent = error && error.message
+                    ? error.message
+                    : 'Community Vault history is temporarily unavailable. Please retry.';
+                if (reset) communityVaultHistoryLoaded = false;
+            } finally {
+                communityVaultHistoryLoading = false;
+                loadMore.disabled = false;
+            }
         }
     </script>
 
