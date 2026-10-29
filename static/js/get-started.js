@@ -51,11 +51,28 @@ function _setBodyScrollLock(locked) {
     document.body.style.overflow = on ? 'hidden' : '';
 }
 
+function _setHomepageIntroStep(showIntro) {
+    const intro = document.getElementById('gsHomepageIntro');
+    if (!intro) return;
+    intro.hidden = !showIntro;
+    const content = intro.parentElement;
+    if (!content) return;
+    Array.from(content.children).forEach((child) => {
+        if (child !== intro) child.hidden = !!showIntro;
+    });
+}
+
 function _showWalletModalNow() {
     showWalletOptions();
     hidePrivyRetry();
     window.restoreWalletModalAfterPrivy?.(false);
     const _wm = document.getElementById('walletModal');
+    const homepageIntro = _wm && _wm.getAttribute('data-homepage-intro') === 'true';
+    _lwHomepageCreateChosen = false;
+    _lwDetectedProvider = null;
+    _setHomepageIntroStep(homepageIntro);
+    const options = document.getElementById('walletOptions');
+    if (homepageIntro && options) options.style.display = 'none';
     if (_wm && !_wm.classList.contains('active')) _setBodyScrollLock(true);
     _wm.classList.add('active');
     // Re-apply any referral code captured from the URL / sessionStorage
@@ -65,11 +82,21 @@ function _showWalletModalNow() {
     // Surface the log-in path for a returning local-wallet user BEFORE they
     // read the option list, so "Create" is not the only obvious choice.
     if (typeof _lwDetectReturningUser === 'function') _lwDetectReturningUser();
-    if (window.GM_PRIVY_CONFIG && window.GM_PRIVY_CONFIG.enabled && window.GM_PRIVY_CONFIG.appId) {
+    if (homepageIntro) {
+        showWalletStatus('walletConnectStatus', 'Continue to choose how you want to join KwentoFi.', 'info');
+    } else if (window.GM_PRIVY_CONFIG && window.GM_PRIVY_CONFIG.enabled && window.GM_PRIVY_CONFIG.appId) {
         showWalletStatus('walletConnectStatus', '🔐 Tap Open Privy Login to continue.', 'info');
     } else {
         showWalletStatus('walletConnectStatus', '👛 Connect with MiniPay, Trust Wallet, MetaMask, or use WalletConnect QR / URI.', 'info');
     }
+}
+
+function continueHomepageIntro() {
+    const modal = document.getElementById('walletModal');
+    const intro = document.getElementById('gsHomepageIntro');
+    if (!modal || modal.getAttribute('data-homepage-intro') !== 'true' || !intro) return;
+    _setHomepageIntroStep(false);
+    showWalletOptions();
 }
 
 async function openWalletModal() {
@@ -143,6 +170,8 @@ function showWalletOptions() {
 let _lwMode = 'create';
 let _lwPendingSignup = null; // {address, keystore, mnemonic, message}
 let _lwRecoveryWords = '';   // current 12-word phrase, memory only
+let _lwHomepageCreateChosen = false;
+let _lwDetectedProvider = null;
 // The PIN is cleared from the DOM by _lwCompleteLogin, but the passkey offer
 // runs AFTER that — so hold it (plus the keystore) here, memory only, and drop
 // it the moment the offer is answered or skipped.
@@ -230,6 +259,7 @@ function showLocalWalletPanel(mode) {
 let _lwPreflightAcked = false;
 
 function openCreatePreflight() {
+    _lwHomepageCreateChosen = true;
     showLocalWalletPanel('create');
 }
 
@@ -287,6 +317,7 @@ function _lwDetectReturningUser() {
 function _lwShowPreflightStep() {
     document.getElementById('lwPreflightStep').style.display = 'block';
     document.getElementById('lwCreateStep').style.display = 'none';
+    _lwApplyDetectionNudge(_lwDetectedProvider);
     const ack = document.getElementById('lwPreflightAck');
     if (ack) ack.checked = false;
     const cont = document.getElementById('lwPreflightContinue');
@@ -320,17 +351,30 @@ function cancelCreatePreflight() {
 // (gold) treatment because it is the most common "already has a G$
 // wallet" case.
 function _lwApplyDetectionNudge(provider) {
+    _lwDetectedProvider = provider || null;
     const banner = document.getElementById('walletDetectBanner');
     const text = document.getElementById('walletDetectText');
-    if (!banner || !text) return;
-    if (!provider) { banner.classList.remove('show'); return; }
+    const modal = document.getElementById('walletModal');
+    const isHomepage = !!(modal && modal.getAttribute('data-homepage-intro') === 'true');
+    const deferReminder = isHomepage && !_lwHomepageCreateChosen;
+    const preflightNotice = document.getElementById('lwPreflightDetectedNotice');
+    if (!provider) {
+        if (banner) banner.classList.remove('show');
+        if (preflightNotice) preflightNotice.hidden = true;
+        return;
+    }
     const name = (typeof getInjectedProviderLabel === 'function')
         ? getInjectedProviderLabel(provider) : 'Wallet';
     const isMini = !!(provider && provider.isMiniPay);
-    text.innerHTML = isMini
-        ? "<strong>You're in MiniPay.</strong> You likely already have a G$ wallet here — connect it instead of creating a new one."
-        : "<strong>" + name + " detected.</strong> If you already use this wallet for G$, connect it instead of creating a new one.";
-    banner.classList.add('show');
+    const message = isMini
+        ? "You're in MiniPay. If you already use it for G$, connect that wallet instead of creating another one."
+        : name + ' detected. If you already use this wallet for G$, connect it instead of creating another one.';
+    if (text) text.textContent = message;
+    if (banner) banner.classList.toggle('show', !deferReminder);
+    if (preflightNotice) {
+        preflightNotice.textContent = message;
+        preflightNotice.hidden = !isHomepage || deferReminder;
+    }
     const injectedBtn = document.getElementById('injectedWalletBtn');
     if (injectedBtn) {
         if (banner.parentElement && injectedBtn.previousElementSibling !== banner) {
@@ -2188,6 +2232,7 @@ function _gmAfterLoginRedirect(delay) {
 
 // ── window exposure (onclick targets + cross-page API) ────────────────
 window.openWalletModal         = openWalletModal;
+window.continueHomepageIntro   = continueHomepageIntro;
 // Public entry point for guest-facing pages (/swap, /savings): opens the same
 // "Get Started" connect flow used on the homepage.
 window.openGoodMarketGetStarted= openWalletModal;
