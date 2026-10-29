@@ -71,6 +71,9 @@
     var _earnBusy = false;     // one in-flight rewards fetch at a time
     var _earnDirty = false;    // a refresh arrived while one was in flight
     var _earnPromise = null;   // callers can await the coalesced latest read
+    var _communityWalletRequestId = 0;
+    var _communityWalletReturnFocus = null;
+    var _communityWalletModalBound = false;
     // Reconciliation is deliberately page-memory-only: the cursor is a
     // bounded scan continuation, never a durable withdrawal authorization.
     var _reconciliation = {
@@ -3446,9 +3449,9 @@
             + (item.active ? ' is-active' : '')
             + (item.gold ? ' cf-nav-gold' : '');
         node.setAttribute('data-nav', item.id || '');
-        if (item.action === 'community-cards') {
+        if (item.action === 'menu') {
             node.setAttribute('aria-haspopup', 'dialog');
-            node.setAttribute('aria-controls', 'cfCommunityCardsModal');
+            node.setAttribute('aria-controls', 'cfSheetEarn');
             node.setAttribute('aria-expanded', 'false');
         }
         if (isLink) node.href = item.href;
@@ -3458,9 +3461,9 @@
         node.appendChild(icon);
         node.appendChild(el('span', 'cf-nav-label', item.label || ''));
         node.onclick = function (event) {
-            if (item.action === 'community-cards') {
+            if (item.action === 'menu') {
                 if (event && event.preventDefault) event.preventDefault();
-                openCommunityCards(node);
+                openSheet(node);
                 return;
             }
             if (item.action === 'search') {
@@ -4036,21 +4039,259 @@
         });
     }
 
-    function openSheet() {
+    var _sheetReturnFocus = null;
+    var _earnPageReturnFocus = null;
+
+    function openSheet(trigger) {
         var sheet = $('cfSheetEarn');
         if (!sheet) return;
+        _sheetReturnFocus = trigger || document.querySelector('[data-nav="menu"]')
+            || document.activeElement || null;
+        if (_sheetReturnFocus && _sheetReturnFocus.setAttribute) {
+            _sheetReturnFocus.setAttribute('aria-expanded', 'true');
+        }
+        sheet.setAttribute('aria-hidden', 'false');
+        sheet.removeAttribute('inert');
+        sheet.inert = false;
         var overlay = $('cfSheetOverlay');
         if (overlay) overlay.classList.add('open');
         sheet.classList.add('open');
         document.body.classList.add('cf-modal-open');
+        var first = $('cfMenuCommunityCards');
+        if (first && first.focus) first.focus();
     }
 
-    function closeSheet() {
+    function closeSheet(restoreFocus) {
         var sheet = $('cfSheetEarn');
-        if (sheet) sheet.classList.remove('open');
+        if (sheet) {
+            sheet.classList.remove('open');
+            sheet.setAttribute('aria-hidden', 'true');
+            sheet.setAttribute('inert', '');
+            sheet.inert = true;
+        }
         var overlay = $('cfSheetOverlay');
         if (overlay) overlay.classList.remove('open');
+        var submenu = $('cfMenuEarnMore');
+        if (submenu) submenu.hidden = true;
+        var toggle = $('cfMenuEarnMoreToggle');
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+        var trigger = _sheetReturnFocus;
+        if (trigger && trigger.setAttribute) trigger.setAttribute('aria-expanded', 'false');
+        _sheetReturnFocus = null;
         document.body.classList.remove('cf-modal-open');
+        if (restoreFocus !== false && trigger && trigger.focus) trigger.focus();
+    }
+
+    function toggleMenuEarnMore(button) {
+        var submenu = $('cfMenuEarnMore');
+        if (!submenu) return false;
+        submenu.hidden = !submenu.hidden;
+        if (button && button.setAttribute) {
+            button.setAttribute('aria-expanded', submenu.hidden ? 'false' : 'true');
+        }
+        return !submenu.hidden;
+    }
+
+    function menuOpenCommunityCards() {
+        var trigger = _sheetReturnFocus || document.querySelector('[data-nav="menu"]');
+        closeSheet(false);
+        if (openCommunityCards(trigger)) return true;
+        var target = $('cfEarn') || $('cfVaultDonationCard') || $('cfDailyLearn');
+        if (target && target.scrollIntoView) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return false;
+    }
+
+    function openEarnPage(page) {
+        var config = {
+            farming: { title: 'Farming', source: 'data-farming-src' },
+            savings: { title: 'Savings', source: 'data-savings-src' }
+        }[String(page || '').toLowerCase()];
+        if (!config) return false;
+        var trigger = _sheetReturnFocus || document.querySelector('[data-nav="menu"]');
+        closeSheet(false);
+        var modal = $('cfEarnPageModal');
+        var frame = $('cfEarnPageFrame');
+        var title = $('cfEarnPageTitle');
+        if (!modal || !frame) return false;
+        var source = frame.getAttribute(config.source);
+        if (!source) return false;
+        if (frame.getAttribute('data-loaded-page') !== String(page).toLowerCase()) {
+            frame.src = source;
+            frame.setAttribute('data-loaded-page', String(page).toLowerCase());
+        }
+        if (title) title.textContent = config.title;
+        _earnPageReturnFocus = trigger || null;
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cf-modal-open');
+        var closeButton = $('cfEarnPageClose');
+        if (closeButton && closeButton.focus) closeButton.focus();
+        return true;
+    }
+
+    function closeEarnPage() {
+        var modal = $('cfEarnPageModal');
+        if (!modal || modal.hidden) return;
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('cf-modal-open');
+        var trigger = _earnPageReturnFocus;
+        _earnPageReturnFocus = null;
+        if (trigger && trigger.focus) trigger.focus();
+    }
+
+    function setCommunityWalletValues(text) {
+        [
+            'cfWalletBalanceCelo', 'cfWalletBalanceGd', 'cfWalletBalanceCusd',
+            'cfWalletBalanceUsdt', 'cfWalletBalanceUsdc', 'cfWalletBalancePhpm'
+        ].forEach(function (id) {
+            var node = $(id);
+            if (node) node.textContent = text;
+        });
+    }
+
+    function renderCommunityWalletBalances(data) {
+        var assets = [
+            { key: 'celo', id: 'cfWalletBalanceCelo' },
+            { key: 'gd', id: 'cfWalletBalanceGd' },
+            { key: 'cusd', id: 'cfWalletBalanceCusd' },
+            { key: 'usdt', id: 'cfWalletBalanceUsdt' },
+            { key: 'usdc', id: 'cfWalletBalanceUsdc' },
+            { key: 'phpm', id: 'cfWalletBalancePhpm' }
+        ];
+        assets.forEach(function (asset) {
+            var node = $(asset.id);
+            var value = data && data[asset.key];
+            if (!node) return;
+            node.textContent = value && value.success === true
+                && typeof value.balance_formatted === 'string'
+                ? value.balance_formatted : 'Unavailable';
+        });
+    }
+
+    function loadCommunityWalletBalances(forceRefresh) {
+        var modal = $('cfCommunityWalletModal');
+        if (!modal || modal.hidden || !WALLET) return Promise.resolve(false);
+        var requestId = ++_communityWalletRequestId;
+        var status = $('cfCommunityWalletStatus');
+        var refreshButton = $('cfCommunityWalletRefresh');
+        var url = '/api/wallet/balances' + (forceRefresh ? '?force=1' : '');
+        setCommunityWalletValues('Loading…');
+        if (status) {
+            status.textContent = forceRefresh ? 'Refreshing balances from Celo…' : 'Reading balances from Celo…';
+            status.setAttribute('data-state', 'loading');
+        }
+        if (refreshButton) {
+            refreshButton.disabled = true;
+            refreshButton.setAttribute('aria-busy', 'true');
+            refreshButton.textContent = 'Refreshing…';
+        }
+        return api(url, { method: 'GET', cache: 'no-store', headers: { Accept: 'application/json' } })
+            .then(function (result) {
+                if (requestId !== _communityWalletRequestId || modal.hidden) return false;
+                if (result.status === 401) {
+                    closeWalletModal();
+                    requiresLogin();
+                    return false;
+                }
+                if (!result.ok || !result.data || result.data.success !== true) {
+                    throw new Error('Wallet balances are unavailable.');
+                }
+                renderCommunityWalletBalances(result.data);
+                var updated = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                if (status) {
+                    status.textContent = 'Balances updated from Celo at ' + updated + '.';
+                    status.setAttribute('data-state', 'loaded');
+                }
+                return true;
+            })
+            .catch(function () {
+                if (requestId !== _communityWalletRequestId || modal.hidden) return false;
+                setCommunityWalletValues('Unavailable');
+                if (status) {
+                    status.textContent = 'Could not load Celo balances. Check your connection and try again.';
+                    status.setAttribute('data-state', 'error');
+                }
+                return false;
+            })
+            .then(function (loaded) {
+                if (requestId === _communityWalletRequestId && refreshButton) {
+                    refreshButton.disabled = false;
+                    refreshButton.removeAttribute('aria-busy');
+                    refreshButton.textContent = 'Refresh';
+                }
+                return loaded;
+            });
+    }
+
+    function openWalletModal(trigger) {
+        if (!WALLET) {
+            closeSheet(false);
+            requiresLogin();
+            return false;
+        }
+        var modal = $('cfCommunityWalletModal');
+        if (!modal) return false;
+        var returnFocus = _sheetReturnFocus || document.querySelector('[data-nav="menu"]') || trigger;
+        closeSheet(false);
+        _communityWalletReturnFocus = returnFocus || null;
+        var address = $('cfCommunityWalletAddress');
+        if (address) {
+            var wallet = String(WALLET);
+            address.textContent = /^0x[0-9a-f]{40}$/i.test(wallet)
+                ? wallet.slice(0, 6) + '…' + wallet.slice(-4) : 'Connected wallet';
+        }
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cf-modal-open');
+        var closeButton = $('cfCommunityWalletClose');
+        if (closeButton && closeButton.focus) closeButton.focus();
+        loadCommunityWalletBalances(false);
+        return true;
+    }
+
+    function closeWalletModal() {
+        var modal = $('cfCommunityWalletModal');
+        if (!modal || modal.hidden) return;
+        _communityWalletRequestId += 1;
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('cf-modal-open');
+        var trigger = _communityWalletReturnFocus;
+        _communityWalletReturnFocus = null;
+        if (trigger && trigger.focus) trigger.focus();
+    }
+
+    function refreshWalletBalances() {
+        return loadCommunityWalletBalances(true);
+    }
+
+    function communityWalletModalKeydown(event) {
+        var modal = $('cfCommunityWalletModal');
+        if (!modal || modal.hidden || !event) return;
+        if (event.key === 'Escape') {
+            if (event.preventDefault) event.preventDefault();
+            closeWalletModal();
+            return;
+        }
+        if (event.key !== 'Tab') return;
+        var focusable = [ $('cfCommunityWalletRefresh'), $('cfCommunityWalletClose') ]
+            .filter(function (node) { return node && !node.hidden && !node.disabled; });
+        if (!focusable.length) return;
+        var first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first.focus();
+        }
+    }
+
+    function setupCommunityWalletModal() {
+        if (_communityWalletModalBound || !$('cfCommunityWalletModal')) return;
+        document.addEventListener('keydown', communityWalletModalKeydown);
+        _communityWalletModalBound = true;
     }
 
     function sheetGo(href, message) {
@@ -4247,6 +4488,7 @@
                 }
                 closeLightbox(); closeEdit(); closeSheet(); closeSearch();
                 closeAirtime();
+                closeEarnPage();
                 closeClaim();
                 if (window.GMCommunityAvatar) window.GMCommunityAvatar.close();
             }
@@ -4785,6 +5027,7 @@
         // The composer is absent from a guest's DOM, so bind()'s null-checks
         // make that half a no-op; the feed wiring is what matters here.
         setupCommunityCardsLayout();
+        setupCommunityWalletModal();
         bindReactionUsersModal();
         bind();
         renderNav();
@@ -4890,6 +5133,13 @@
         openSheet: openSheet,
         closeSheet: closeSheet,
         sheetGo: sheetGo,
+        menuOpenCommunityCards: menuOpenCommunityCards,
+        toggleMenuEarnMore: toggleMenuEarnMore,
+        openEarnPage: openEarnPage,
+        closeEarnPage: closeEarnPage,
+        openWalletModal: openWalletModal,
+        closeWalletModal: closeWalletModal,
+        refreshWalletBalances: refreshWalletBalances,
         openAirtime: openAirtime,
         closeAirtime: closeAirtime,
         openClaim: openClaim,
