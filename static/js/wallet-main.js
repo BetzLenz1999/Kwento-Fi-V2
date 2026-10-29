@@ -1881,8 +1881,6 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
 
     function renderFvStatus(d) {
         _fvStatusState = d || {};
-        const pill    = document.getElementById('fvStatusPill');
-        const dot     = document.getElementById('fvStatusDot');
         const label   = document.getElementById('fvStatusLabel');
         const lastEl  = document.getElementById('fvStatusLastVerified');
         const expEl   = document.getElementById('fvStatusExpiresAt');
@@ -1892,12 +1890,15 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         const banner  = document.getElementById('fvExpiryBanner');
         const bIcon   = document.getElementById('fvExpiryBannerIcon');
         const bText   = document.getElementById('fvExpiryBannerText');
-        if (!pill || !dot || !label) return;
+        if (!label) return;
 
         // Defaults
+        // Colours are NOT set here. The card gets a state class and
+        // static/css/settings-sheet.css owns the palette, so both pages theme
+        // it and the contrast is measurable. Previously #94a3b8 was hardcoded
+        // for 'error' — 2.56:1 on the white sheet, i.e. unreadable exactly when
+        // the RPC is down and the user most needs to read it.
         let state = 'unverified';  // unverified | verified | warning | expired | renewal | error
-        let color = '#888';
-        let bg = 'rgba(255,255,255,0.06)';
         let pillText = 'Unverified';
         let ctaText  = 'Verify Now';
         let showCta  = true;
@@ -1909,25 +1910,18 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
 
         if (!d || d.success === false) {
             state = 'error';
-            color = '#94a3b8';
             pillText = 'Unavailable';
             showCta = false;
         } else if (d.expired) {
             state = 'expired';
-            color = '#ef4444';
-            bg = 'rgba(239,68,68,0.12)';
             pillText = 'Expired';
             ctaText = 'Re-verify Now';
         } else if (d.verified && expiryKnown && d.days_remaining <= 14) {
             state = 'warning';
-            color = '#f59e0b';
-            bg = 'rgba(245,158,11,0.12)';
             pillText = 'Expires soon';
             ctaText = 'Re-verify Now';
         } else if (d.verified) {
             state = 'verified';
-            color = '#10b981';
-            bg = 'rgba(16,185,129,0.12)';
             pillText = 'Verified';
             showCta = false;
         } else if (d.ever_verified) {
@@ -1936,31 +1930,34 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             // GoodDollar identity (e.g. via connect-another-wallet) — the date persists
             // but the whitelist entry is removed.
             state = 'renewal';
-            color = '#f97316';
-            bg = 'rgba(249,115,22,0.12)';
             pillText = 'Verification needs renewal';
             ctaText = 'Re-verify Now';
         }
 
-        dot.style.background = color;
+        // One state class per render; CSS derives the dot, pill and value
+        // colours from it. Clear the previous state so a re-render cannot
+        // leave two states applied at once.
+        const card = document.getElementById('fvStatusCard');
+        if (card) {
+            ['is-verified', 'is-warning', 'is-expired', 'is-renewal', 'is-error', 'is-unverified']
+                .forEach(function (c) { card.classList.remove(c); });
+            card.classList.add('is-' + state);
+        }
         label.textContent = pillText;
-        pill.style.color = color;
-        pill.style.background = bg;
 
         lastEl.textContent = d && d.date_authenticated_iso ? fmtDateLocal(d.date_authenticated_iso) : '—';
         expEl.textContent  = d && d.expires_at_iso         ? fmtDateLocal(d.expires_at_iso)         : '—';
+        // The card's state class already colours .set-row-value for the
+        // alarming states, so no inline colour is needed here.
+        remEl.style.color = '';
         if (state === 'expired') {
             remEl.textContent = 'Expired';
-            remEl.style.color = '#ef4444';
         } else if (state === 'renewal') {
             remEl.textContent = 'Verification needs renewal';
-            remEl.style.color = '#f97316';
         } else if (d && d.seconds_remaining) {
             remEl.textContent = fmtRemaining(d.seconds_remaining);
-            remEl.style.color = state === 'warning' ? '#fcd34d' : 'var(--text)';
         } else {
             remEl.textContent = '—';
-            remEl.style.color = 'var(--text)';
         }
 
         if (showCta) {
@@ -6263,7 +6260,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 '<div style="font-weight:700;color:#fbbf24;margin-bottom:0.35rem;">⚠️ Trust Wallet detected</div>' +
                 '<div style="margin-bottom:0.65rem;">Trust Wallet\'s in-app browser does not reliably deliver Face ID signatures back to this page. To verify reliably, please log out and reconnect with <strong>WalletConnect</strong> — Trust will then handle the signature inside its main app instead of the dApp browser tab.</div>' +
                 '<div style="display:flex;flex-direction:column;gap:0.45rem;">' +
-                  '<a href="/logout" target="_top" style="display:block;text-align:center;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.55rem 1rem;border-radius:10px;font-size:0.9rem;">🔐 Log out & reconnect via WalletConnect</a>' +
+                  '<a href="/logout" target="_top" class="set-btn is-primary" style="display:block;">🔐 Log out & reconnect via WalletConnect</a>' +
                   '<button type="button" id="fvTrustForceTryBtn" style="background:transparent;border:1px solid rgba(251,191,36,0.45);color:#fcd34d;font-size:0.8rem;font-weight:500;padding:0.45rem 0.9rem;border-radius:10px;cursor:pointer;">Try in-app sign anyway (may hang)</button>' +
                 '</div>';
             // Set the status text BEFORE appending the card. setStatus()
@@ -6462,7 +6459,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                         '<div style="margin-bottom:0.6rem;">Trust Wallet\'s in-app browser can sign you in and let you claim daily G$, but its Face Verification flow is unreliable — the wallet often signs the request but never delivers the signature back to this page, leaving you stuck on <em>"Preparing verification…"</em>.</div>' +
                         '<div style="margin-bottom:0.6rem;"><strong>Never share or enter your wallet recovery phrase or raw signing credentials on ' + WALLET_DISPLAY_BRAND + '.</strong></div>' +
                         '<div style="margin-bottom:0.75rem;">Log out and reconnect here via <strong>WalletConnect</strong>. That routes the signature through Trust Wallet\'s main app (instead of the in-app browser), which also works reliably.</div>' +
-                        '<a href="/logout" target="_top" style="display:block;text-align:center;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.55rem 1rem;border-radius:10px;font-size:0.9rem;">🔐 Log out & reconnect via WalletConnect</a>';
+                        '<a href="/logout" target="_top" class="set-btn is-primary" style="display:block;">🔐 Log out & reconnect via WalletConnect</a>';
                     wrap.appendChild(notice);
                     return;
                 }
@@ -6473,7 +6470,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 esc.style.cssText = 'margin-top:0.7rem;padding:0.75rem 1rem;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.4);border-radius:10px;text-align:center;';
                 esc.innerHTML =
                     '<div style="font-size:0.82rem;color:#a78bfa;margin-bottom:0.45rem;">Stuck? Reconnect via WalletConnect for a more reliable signing flow.</div>' +
-                    '<a href="/logout" target="_top" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;text-decoration:none;font-weight:600;padding:0.5rem 1rem;border-radius:8px;font-size:0.85rem;">🔐 Log out & switch to WalletConnect</a>';
+                    '<a href="/logout" target="_top" class="set-btn is-primary" style="display:inline-block;width:auto;">🔐 Log out & switch to WalletConnect</a>';
                 wrap.appendChild(esc);
             }, _isTrustCtx ? 12000 : 25000);
 
