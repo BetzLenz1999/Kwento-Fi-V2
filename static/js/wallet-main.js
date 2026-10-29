@@ -2720,6 +2720,41 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         }
     }
 
+    function _wlBindDailyTaskModalActions() {
+        const modal = _wlDailyEl('dailyTaskModal');
+        if (!modal || modal._wlDailyTaskActionsBound || typeof modal.addEventListener !== 'function') return;
+        modal._wlDailyTaskActionsBound = true;
+        modal.addEventListener('click', function (event) {
+            const target = event.target && event.target.closest
+                ? event.target.closest('[data-daily-task-platform], [data-daily-task-action]') : null;
+            if (!target || !modal.contains(target)) return;
+            event.preventDefault();
+            const platform = target.getAttribute('data-daily-task-platform');
+            if (platform) {
+                selectDailyTaskPlatform(platform);
+                return;
+            }
+            switch (target.getAttribute('data-daily-task-action')) {
+                case 'copy':
+                    copyDailyTaskMessage();
+                    break;
+                case 'back':
+                    goBackToDailyTaskPlatformSelection();
+                    break;
+                case 'submit':
+                    submitWalletDailyTask(event);
+                    break;
+                case 'close':
+                    if (window.GMCommunity && typeof window.GMCommunity.closeDailyTask === 'function') {
+                        window.GMCommunity.closeDailyTask();
+                    } else {
+                        closeModal('dailyTaskModal');
+                    }
+                    break;
+            }
+        });
+    }
+
     // ── Discourse Task modal ──────────────────────────────────────────
     // Surfaced only from the "More Ways To Earn G$" sheet. Reuses the
     // existing /api/discourse-task endpoints the /dashboard card uses, but
@@ -8707,6 +8742,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
 
     // ── Init ──────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
+        _wlBindDailyTaskModalActions();
         // Community loads this bundle in claim-only mode. The claim IIFE above
         // still initializes availability and signing, but wallet balances,
         // portfolio, passkey nudges, and wallet-only RPC repair do not belong
