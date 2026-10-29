@@ -2570,31 +2570,104 @@ def ubi_tracker_page():
                          wallet=wallet,
                          contract_count=len(GOODDOLLAR_CONTRACTS))
 
-@routes.route("/logout")
-def logout():
-    wallet = session.get("wallet")
-    if wallet:
-        # Log logout to Supabase
-        supabase_logger.log_logout(wallet)
+# Client-side keys that hold a logged-in identity and must be dropped on
+# logout. The server owns this list so a future key is cleared by adding it in
+# ONE place instead of hunting every template that renders a logout control.
+#
+# DELIBERATELY EXCLUDED: `gm_local_keystore_v1`. That is the user's PIN-encrypted
+# in-app wallet — clearing it would destroy their wallet, not log them out. It is
+# address-bound and refuses to unlock for a different account
+# (local-wallet.js), which is the correct protection for it.
+LOGOUT_CLIENT_KEYS = (
+    # WalletConnect session (written by wc-bridge.js at login). Restoring this
+    # after a logout re-hydrates the PREVIOUS account's session, so it must go.
+    "wc_session_topic",
+    "wc_session_address",
+    "wc_session_data",
+    "wc_session_timestamp",
+    "wc_session_chains",
+    # Privy address, written by _get_started_modal.html. Never read today, but
+    # it is an account identifier left on a shared device.
+    "privy_wallet_address",
+    # Per-wallet UI state that would otherwise leak across accounts.
+    "gm_pending_buy",
+    "gdSelectedCurrency",
+    "dismissedBroadcasts",
+)
 
-    # Completely clear the session
-    session.clear()
+# Session keys the app sets anywhere. `session.clear()` already removes them;
+# this exists so a test can assert the logout contract covers every known key.
+LOGOUT_SESSION_KEYS = (
+    "wallet", "wallet_address", "verified", "ubi_verified", "login_method",
+    "username", "session_id", "verification_time", "telegram_user_id",
+    "privy_wallet_client_type",
+)
 
-    # Create response with redirect
-    response = redirect(url_for("routes.index"))
 
-    # Clear all session cookies
+def _apply_logout_response(response):
+    """Expire every cookie the app may have set and forbid caching.
+
+    Shared by the POST and GET forms so they cannot drift — the GET fallback
+    exists for bookmarks, the WalletConnect expiry banner and any cached bundle,
+    and it must behave identically to the POST.
+    """
     response.set_cookie('session', '', expires=0, path='/')
     response.set_cookie('wallet', '', expires=0, path='/')
     response.set_cookie('verified', '', expires=0, path='/')
     response.set_cookie('username', '', expires=0, path='/')
-
-    # Add cache control headers to prevent caching
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, private'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
-
     return response
+
+
+def _perform_logout():
+    """Clear the session and log the event. Returns the login method used.
+
+    The Supabase call cannot raise (log_activity wraps its body in try/except
+    and returns None), and it runs BEFORE session.clear() so a future change to
+    it cannot strand the user logged in.
+    """
+    wallet = session.get("wallet") or session.get("wallet_address")
+    login_method = (session.get("login_method") or "").lower()
+    if wallet:
+        try:
+            supabase_logger.log_logout(wallet)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"logout: activity log failed for {str(wallet)[:10]}…: {e}")
+        logger.info(f"logout: wallet={str(wallet)[:10]}… login_method={login_method or 'unknown'}")
+    session.clear()
+    return login_method
+
+
+@routes.route("/logout", methods=["POST"])
+def logout_post():
+    """Logout that also tells the browser which client keys to purge.
+
+    POST-only for the destructive path: a GET logout can be triggered by an
+    <img src="/logout"> or a link prefetcher, ending a session the user never
+    asked to end.
+    """
+    login_method = _perform_logout()
+    if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        response = jsonify({
+            "success": True,
+            "login_method": login_method,
+            "clear_keys": list(LOGOUT_CLIENT_KEYS),
+            "redirect": url_for("routes.index"),
+        })
+        return _apply_logout_response(response)
+
+    return _apply_logout_response(redirect(url_for("routes.index")))
+
+
+@routes.route("/logout")
+def logout():
+    """GET fallback — kept for bookmarks, the WC expiry banner and cached
+    bundles. Delegates to the same helpers as the POST so the two cannot
+    diverge."""
+    _perform_logout()
+    return _apply_logout_response(redirect(url_for("routes.index")))
 
 
 @routes.route("/news")
