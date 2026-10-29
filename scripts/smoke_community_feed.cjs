@@ -9,7 +9,9 @@
    - the client-side media type allow-list,
    - the guest guard (a guest can never post or queue an upload),
    - buildCard: caption as TEXT (no HTML injection) and a hidden reaction picker,
-   - the Community Menu Wallet modal's Celo-only read/refresh and guest guard.
+   - the Community Menu Wallet modal's Celo-only read/refresh, token picker,
+     review/confirmation, and guest guard;
+   - the authenticated Daily Task menu action opening the shared modal in place.
 
    Run: node scripts/smoke_community_feed.cjs
 */
@@ -150,7 +152,12 @@ function run(opts) {
    'cfAirtimeModal', 'cfAirtimeFrame',
    'cfEarnPageModal', 'cfEarnPageFrame', 'cfEarnPageTitle', 'cfEarnPageClose',
    'cfCommunityWalletModal', 'cfCommunityWalletAddress', 'cfCommunityWalletStatus',
-   'cfCommunityWalletRefresh', 'cfCommunityWalletClose',
+   'cfCommunityWalletRefresh', 'cfCommunityWalletClose', 'cfCommunityWalletSendOpen',
+   'cfWalletOverview', 'cfWalletSendTokenPicker', 'cfWalletSendForm', 'cfWalletSendReview',
+   'cfWalletSendError', 'cfWalletReviewToken', 'cfWalletReviewAmount', 'cfWalletReviewRecipient',
+   'cfWalletSendBalanceCelo', 'cfWalletSendBalanceGd', 'cfWalletSendBalanceCusd',
+   'cfWalletSendBalanceUsdt', 'cfWalletSendBalanceUsdc', 'cfWalletSendBalancePhpm',
+   'sendTo', 'sendAmount', 'sendTokenLabel', 'sendAlert', 'sendBtn', 'dailyTaskModal',
    'cfWalletBalanceCelo', 'cfWalletBalanceGd', 'cfWalletBalanceCusd',
    'cfWalletBalanceUsdt', 'cfWalletBalanceUsdc', 'cfWalletBalancePhpm',
    'cfMessagePushPrompt', 'cfMessagePushStatus', 'cfMessagePushCopy',
@@ -183,6 +190,10 @@ function run(opts) {
   registry.cfAirtimeModal.hidden = true;
   registry.cfEarnPageModal.hidden = true;
   registry.cfCommunityWalletModal.hidden = true;
+  registry.cfWalletSendTokenPicker.hidden = true;
+  registry.cfWalletSendForm.hidden = true;
+  registry.cfWalletSendReview.hidden = true;
+  registry.dailyTaskModal.className = '';
   registry.cfCommunityCardsModal.hidden = true;
   registry.cfMenuEarnMore.hidden = true;
   registry.cfSheetEarn.setAttribute('aria-hidden', 'true');
@@ -248,6 +259,29 @@ function run(opts) {
   sandbox.innerWidth = opts.innerWidth === undefined ? 1280 : opts.innerWidth;
   sandbox.globalThis = sandbox;
   sandbox.GM_COMMUNITY_BOOT = opts.boot || {};
+  sandbox.GMWalletCommunitySend = opts.communitySend || {
+    selected: null,
+    selectToken(token, button) {
+      this.selected = token;
+      if (button && button.classList) button.classList.add('active');
+      const labels = { CELO: 'CELO', GD: 'G$', CUSD: 'cUSD', USDT: 'USDT', USDC: 'USDC', PHPM: 'PHPm' };
+      registry.sendTokenLabel.textContent = labels[token] || token;
+      return true;
+    },
+    submit() { return Promise.resolve(true); },
+  };
+  sandbox.openModal = function (id) {
+    if (registry[id]) registry[id].classList.add('open');
+    dom.root.style.overflow = 'hidden';
+    dom.root.classList.add('gm-modal-open');
+  };
+  sandbox.openDailyTaskModal = function () { sandbox.openModal('dailyTaskModal'); };
+  sandbox.closeModal = function (id) {
+    if (registry[id]) registry[id].classList.remove('open');
+    dom.root.style.overflow = '';
+    dom.root.classList.remove('gm-modal-open');
+    dom.root.classList.remove('cf-modal-open');
+  };
   sandbox.prompt = () => '';
   sandbox.confirm = () => true;
   sandbox.location = { origin: 'https://goodmarketph.live', hash: '' };
@@ -1316,22 +1350,55 @@ function feedFetch(handler, feedRows) {
     menu.onclick({ preventDefault() {} });
     ok('Wallet is offered inside the Community Menu', !!store.cfMenuWallet);
     api.openWalletModal(store.cfMenuWallet);
-    ok('Wallet opens a read-only modal without leaving Community',
+    ok('Wallet opens a Celo wallet modal without leaving Community',
        store.cfCommunityWalletModal.hidden === false && !sandbox.location.href);
     await tick();
     ok('the Wallet modal renders the Celo-native balance',
        store.cfWalletBalanceCelo.textContent === '2.000000 CELO');
     ok('the Wallet modal renders the PHPm balance',
        store.cfWalletBalancePhpm.textContent === '42.000000 PHPm');
+    ok('the send token picker mirrors the live PHPm balance',
+       store.cfWalletSendBalancePhpm.textContent === '42.000000 PHPm');
     ok('opening Wallet reads the authenticated Celo balance endpoint',
        balanceRequests.length === 1 && balanceRequests[0] === '/api/wallet/balances');
     api.refreshWalletBalances();
     await tick();
     ok('manual refresh requests a fresh Celo balance read',
        balanceRequests[1] === '/api/wallet/balances?force=1');
+    api.openWalletSend();
+    ok('Send opens the token picker inside the wallet modal',
+       store.cfWalletSendTokenPicker.hidden === false && store.cfWalletOverview.hidden === true);
+    const phpButton = store.cfWalletSendTokenPicker.querySelector('.cf-wallet-send-token') || {
+      className: '', classList: { add(c) { this.owner.className += ' ' + c; }, owner: null },
+      setAttribute() {}, focus() {},
+    };
+    phpButton.classList.owner = phpButton;
+    ok('PHPm can be selected for a Community send', api.selectWalletSendToken('PHPM', phpButton));
+    ok('selecting a token opens the recipient and amount form',
+       store.cfWalletSendForm.hidden === false && store.cfWalletSendTokenPicker.hidden === true
+         && store.sendTokenLabel.textContent === 'PHPm');
+    store.sendTo.value = '0x1111111111111111111111111111111111111111';
+    store.sendAmount.value = '1.25';
+    ok('valid recipient and amount advance to transfer review', api.reviewWalletSend()
+       && store.cfWalletSendReview.hidden === false
+       && store.cfWalletReviewAmount.textContent === '1.25 PHPm'
+       && store.sendBtn.textContent === 'Confirm send');
+    await api.confirmWalletSend();
+    ok('the review confirmation invokes the established wallet signing bridge',
+       sandbox.GMWalletCommunitySend.selected === 'PHPM');
+    api.backToWalletOverview();
+    ok('Back to wallet returns to the balance overview', store.cfWalletOverview.hidden === false);
     api.closeWalletModal();
     ok('closing the Wallet modal restores page scrolling',
        store.cfCommunityWalletModal.hidden === true
+         && !sandbox.document.body.classList.contains('cf-modal-open'));
+    api.openDailyTask();
+    ok('Daily Task opens the shared modal inside Community for members',
+       store.dailyTaskModal.classList.contains('open')
+         && sandbox.document.body.classList.contains('cf-modal-open'));
+    api.closeDailyTask();
+    ok('closing Daily Task restores the Community page scroll',
+       !store.dailyTaskModal.classList.contains('open')
          && !sandbox.document.body.classList.contains('cf-modal-open'));
 
     // …and Search opens the read-only member search for a member too.
