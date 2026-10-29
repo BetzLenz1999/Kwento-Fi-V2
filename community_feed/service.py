@@ -1,4 +1,4 @@
-\"""GoodMarket Community Feed — business logic.
+"""GoodMarket Community Feed — business logic.
 
 A chronological, Facebook/Instagram-style feed of user posts: a caption plus
 optional images/video. Media bytes live in Cloudflare R2 (``storage/r2.py``);
