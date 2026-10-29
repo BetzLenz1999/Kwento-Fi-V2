@@ -567,6 +567,20 @@
             <div class="cf-feed-section-head">
                 <h2 id="cfPostsTitle" tabindex="-1">Recent posts</h2>
             </div>
+            {% if not is_guest %}
+            <section class="cf-discover" id="cfDiscover" aria-labelledby="cfDiscoverTitle">
+                <div class="cf-feed-section-head cf-discover-head">
+                    <div>
+                        <h2 id="cfDiscoverTitle">Discover older posts</h2>
+                        <p>Find posts you have not seen yet.</p>
+                    </div>
+                    <button type="button" class="cf-discover-load" id="cfDiscoverLoad">Find posts</button>
+                </div>
+                <div class="cf-discover-feed" id="cfDiscoverFeed" aria-live="polite"></div>
+                <button type="button" class="cf-load-more" id="cfDiscoverMore" hidden>More Discover posts</button>
+                <p class="cf-discover-status" id="cfDiscoverStatus" role="status" aria-live="polite"></p>
+            </section>
+            {% endif %}
 <!-- ── Feed ────────────────────────────────────────────────────────────
          Outside the is_guest branch on purpose: reading is PUBLIC. A guest
          gets the same cards a member does. Only writing is gated — the JS
