@@ -42,7 +42,7 @@ function makeDom() {
       placeholder: '', loading: '', referrerPolicy: '', controls: false,
       preload: '', playsInline: false, poster: '',
       scrollHeight: 400, clientHeight: 100,
-      attributes: {}, listeners: {}, parent: null,
+      attributes: {}, listeners: {}, parent: null, parentNode: null,
       // A real CSSStyleDeclaration has setProperty/getPropertyValue as well as
       // direct property assignment; the stub mirrors that so a bundle call to
       // either form works instead of throwing "not a function".
@@ -64,6 +64,7 @@ function makeDom() {
           this.children = this.childNodes.filter(n => n.nodeType !== 3);
         }
         c.parent = this;
+        c.parentNode = this;
         return c;
       },
       appendChild(c) { return this._attach(c); },
@@ -71,7 +72,19 @@ function makeDom() {
       removeChild(c) {
         this.childNodes = this.childNodes.filter(x => x !== c);
         this.children = this.children.filter(x => x !== c);
+        if (c && c.parent === this) { c.parent = null; c.parentNode = null; }
         return c;
+      },
+      replaceChild(next, old) {
+        const at = this.children.indexOf(old);
+        if (at !== -1) {
+          this.children.splice(at, 1, next);
+          this.childNodes = this.children.slice();
+        }
+        if (old) { old.parent = null; old.parentNode = null; }
+        next.parent = this;
+        next.parentNode = this;
+        return old;
       },
       remove() { if (this.parent) this.parent.removeChild(this); },
       addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
@@ -111,6 +124,7 @@ function makeDom() {
           host.childNodes = host.children.slice();
         }
         n.parent = host;
+        n.parentNode = host;
         return n;
       },
       get firstElementChild() { return this.children[0] || null; },
@@ -145,6 +159,7 @@ function run(opts) {
    'cfUsernameGate', 'cfUsernameInput', 'cfUsernameSave', 'cfUsernameHint',
    'cfBottomNav', 'cfSearchBar', 'cfSearchInput', 'cfSearchResults',
    'cfCommunityCardsModal', 'cfCommunityCardsClose', 'cfCommunityCardsContent',
+   'cfCommunityCardsDescription', 'cfVaultDonationCard',
    'cfReactionUsersModal', 'cfReactionUsersClose', 'cfReactionUsersFilters',
    'cfReactionUsersStatus', 'cfReactionUsersList', 'cfReactionUsersRetry', 'cfReactionUsersMore',
    'cfSheetEarn', 'cfSheetOverlay', 'cfMenuCommunityCards',
@@ -203,6 +218,15 @@ function run(opts) {
   registry.cfSuggested.hidden = true;
   registry.cfSuggestedStatus.hidden = true;
   registry.cfTodayHub.hidden = true;
+  // Mirror the markup's nesting so the Community Cards relocation has a real
+  // source parent to move from: the G$ card and the suggestions panel start in
+  // the side hub, and the vault card starts in the primary column.
+  registry.cfEarn.parent = registry.cfTodayHub;
+  registry.cfEarn.parentNode = registry.cfTodayHub;
+  registry.cfSuggested.parent = registry.cfTodayHub;
+  registry.cfSuggested.parentNode = registry.cfTodayHub;
+  registry.cfVaultDonationCard.parent = registry.cfComposer;
+  registry.cfVaultDonationCard.parentNode = registry.cfComposer;
   // The pinned donor section ships hidden (revealed only when there are pinned
   // posts) AND its body ships collapsed, so a "revealed" assertion cannot pass
   // on the stub's default `false`.
@@ -231,6 +255,10 @@ function run(opts) {
     body: dom.root,
     createElement: dom.mk,
     createTextNode: t => ({ nodeType: 3, textContent: String(t) }),
+    // The Community Cards relocation marks each card's original slot with a
+    // comment node so it can be restored exactly. A bare object is enough: the
+    // bundle only reads `.parentNode` and passes it to insertBefore/removeChild.
+    createComment: () => ({ nodeType: 8, parent: null }),
     getElementById: id => registry[id] || null,
     querySelector: sel => registry[String(sel).replace('#', '')] || dom.root.querySelector(sel),
     querySelectorAll: sel => dom.root.querySelectorAll(sel),
@@ -248,19 +276,19 @@ function run(opts) {
     dispatchWindowEvent: (name, event) => (windowListeners[name] || []).forEach(fn => fn(event)),
     setInterval: () => 1,
     clearInterval: () => {},
-    setTimeout: fn => {
+    // Honour the delay with a real timer. A "flush on the next microtask"
+    // stub would fire a long cleanup timer (e.g. the 900ms double-tap heart
+    // burst removal) before the assertion that observes it, hiding real
+    // behaviour. `tick()` (5ms) still flushes 0ms callbacks.
+    setTimeout: (fn, delay) => {
       const id = nextTimerId++;
-      timeoutCallbacks.set(id, fn);
-      Promise.resolve().then(() => {
-        const callback = timeoutCallbacks.get(id);
-        if (callback) {
-          timeoutCallbacks.delete(id);
-          callback();
-        }
-      });
+      const handle = setTimeout(() => { timeoutCallbacks.delete(id); fn(); }, delay || 0);
+      timeoutCallbacks.set(id, handle);
       return id;
     },
-    clearTimeout: id => { timeoutCallbacks.delete(id); },
+    clearTimeout: id => {
+      if (timeoutCallbacks.has(id)) { clearTimeout(timeoutCallbacks.get(id)); timeoutCallbacks.delete(id); }
+    },
     requestAnimationFrame: fn => fn(),
     fetch: opts.fetchImpl || (() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),
     navigator: { userAgent: 'node' },
@@ -1172,9 +1200,11 @@ function feedFetch(handler, feedRows) {
     // A pasted `@betz` is stripped from the FIELD (the row draws its own `@`).
     store.cfSearchInput.value = '@betz';
     api.searchInput();
-    await tick();
+    // The field is cleaned synchronously, but the search itself is debounced
+    // (220ms), so wait past the debounce before asserting the request.
     ok('a typed @ is stripped from the field', store.cfSearchInput.value === 'betz',
        store.cfSearchInput.value);
+    await new Promise(r => setTimeout(r, 260));
     ok('the request carries the bare username',
        seen.some(u => /users\/search\?q=betz(&|$)/.test(u)), JSON.stringify(seen));
 
@@ -1510,6 +1540,51 @@ function feedFetch(handler, feedRows) {
     ok('a guest may open the member search', store.cfSearchBar.hidden === false);
     ok('the read-only Search tap raised no connect card', connectCalls === 4,
        String(connectCalls));
+  }
+
+  // ── 13b-2. Desktop Menu -> Community Cards hosts the G$ card ──────────────
+  // On desktop the Community G$ card is RELOCATED into the dialog (reachable
+  // through Menu -> Community Cards) while "Suggested for you" stays in the
+  // side column. The relocation is a move, not a clone: one element per id.
+  {
+    const { api, store, document: doc } = run({
+      boot: MEMBER,
+      innerWidth: 1280,
+      fetchImpl: feedFetch(() => Promise.resolve({
+        ok: true, json: () => Promise.resolve({ success: true }) })),
+    });
+    await tick();
+
+    const content = store.cfCommunityCardsContent;
+    ok('desktop moves the G$ card into the Community Cards dialog',
+       store.cfEarn.parentNode === content);
+    ok('desktop keeps "Suggested for you" in the side column (not the dialog)',
+       store.cfSuggested.parentNode !== content);
+    ok('desktop does not move the vault card into the dialog',
+       !store.cfVaultDonationCard || store.cfVaultDonationCard.parentNode !== content);
+
+    // The dialog starts closed, so the relocated card is not on screen until the
+    // Menu entry opens it.
+    ok('the Community Cards dialog starts closed on desktop',
+       store.cfCommunityCardsModal.hidden === true);
+    api.menuOpenCommunityCards();
+    ok('desktop Menu -> Community Cards opens the dialog',
+       store.cfCommunityCardsModal.hidden === false);
+    ok('the opened dialog still holds the G$ card',
+       store.cfEarn.parentNode === content);
+    ok('opening the desktop dialog locks page scroll',
+       doc.body.classList.contains('cf-modal-open'));
+    ok('the desktop dialog describes the G$ card, not suggested members',
+       /Community G\$ balance/.test(store.cfCommunityCardsDescription.textContent)
+         && !/suggested members/.test(store.cfCommunityCardsDescription.textContent),
+       store.cfCommunityCardsDescription.textContent);
+    api.closeCommunityCards();
+    ok('closing the desktop dialog restores the page',
+       store.cfCommunityCardsModal.hidden === true
+         && !doc.body.classList.contains('cf-modal-open'));
+    // Closing the dialog on desktop must NOT return the card to the side column.
+    ok('the G$ card stays out of the side column after closing on desktop',
+       store.cfEarn.parentNode === content);
   }
 
   // ── 13c. Member search: min length, results, and text-not-markup ─────────
@@ -2094,7 +2169,9 @@ function feedFetch(handler, feedRows) {
     ok('a short press still toggles the heart reaction', quickPost.my_reaction === 'love');
 
     trigger.dispatch('pointerdown', { pointerType: 'touch', clientX: 20, clientY: 10 });
-    await Promise.resolve();
+    // The hold-to-open is a 400ms timer, so wait past it (a microtask tick is
+    // not enough once the harness honours real delays).
+    await new Promise(r => setTimeout(r, 450));
     ok('holding the heart opens the picker', !picker.hidden);
     trigger.dispatch('pointerup', {});
     trigger.onclick({ preventDefault() {} });
