@@ -1,3 +1,4 @@
+
 /* GoodMarket Community Feed — self-contained styles.
    Kept out of the template so community.html stays small and cacheable.
 
@@ -2262,6 +2263,16 @@ body.cf-modal-open { overflow: hidden; }
         margin-inline: auto;
         padding: 0.8rem 1rem 2.5rem 180px;
     }
+    /* A grid TRACK is defined by grid-template-columns, not by its content, so
+       hiding the side column's child (`display: none`) removes the element and
+       leaves the track reserved — a blank 300-340px gap on the right. When BOTH
+       side cards are hidden (no daily prompt/learn/earn and no suggestions), the
+       bundle adds this class so the grid collapses to ONE centred column and the
+       feed no longer sits beside empty space. */
+    .cf-wrap.cf-layout.is-single-column {
+        grid-template-columns: minmax(0, 680px);
+    }
+    .cf-wrap.cf-layout.is-single-column .cf-primary { grid-column: 1; }
     .cf-primary { grid-column: 1; grid-row: 1; }
     .cf-today-hub {
         grid-column: 2;
@@ -3350,4 +3361,107 @@ body.cf-push-optin-open { overflow: hidden; }
     .cf-garden-price-grid > div { padding: .7rem; }
     .cf-garden-price-grid strong { font-size: .92rem; }
     .cf-garden-transaction-note { font-size: .7rem; }
+}
+
+
+/* ── Suggested for you (right column) ─────────────────────────────────────────
+   Fills the reserved desktop side track with the members who are most
+   consistently ACTIVE, each with a Follow button. The card is a plain white
+   surface like the rest of the feed (1px hairline, no decoration), and every
+   text colour clears AA on white. There is deliberately no animation here: the
+   panel is informational, so it needs no motion (and no reduced-motion entry).
+   ------------------------------------------------------------------------- */
+.cf-suggested {
+    width: 100%;
+    background: var(--cf-card);
+    border: 1px solid var(--cf-border);
+    border-radius: 14px;
+    padding: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    box-shadow: var(--cf-shadow);
+}
+.cf-suggested[hidden] { display: none; }
+.cf-suggested-head { display: flex; flex-direction: column; gap: 0.12rem; }
+.cf-suggested-title {
+    margin: 0;
+    color: var(--cf-ink);
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+.cf-suggested-sub {
+    margin: 0;
+    color: var(--cf-ink-2);
+    font-size: 0.78rem;
+}
+.cf-suggested-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.cf-suggested-item {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+}
+.cf-suggested-avatar {
+    flex: 0 0 auto;
+    width: 38px; height: 38px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--cf-field);
+    color: var(--cf-ink);
+    font-weight: 700; font-size: 0.95rem;
+    overflow: hidden;
+}
+.cf-suggested-avatar .cf-avatar-img {
+    width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+}
+/* The name is a real profile link; the row's meta line explains the ranking
+   honestly ("active 12 of 30 days") rather than implying a follower count. */
+.cf-suggested-who {
+    display: flex; flex-direction: column; gap: 0.05rem;
+    min-width: 0; flex: 1 1 auto;
+}
+.cf-suggested-name {
+    color: var(--cf-ink);
+    font-size: 0.85rem; font-weight: 700;
+    text-decoration: none;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cf-suggested-name:hover { text-decoration: underline; }
+.cf-suggested-name:focus-visible {
+    outline: 2px solid var(--cf-accent); outline-offset: 2px; border-radius: 6px;
+}
+.cf-suggested-meta {
+    color: var(--cf-ink-2);
+    font-size: 0.72rem;
+}
+.cf-suggested-item .cf-follow {
+    flex: 0 0 auto;
+    font-size: 0.76rem;
+    padding: 0.32rem 0.7rem;
+}
+.cf-suggested-more {
+    align-self: flex-start;
+    background: none; border: none; padding: 0;
+    color: var(--cf-accent);
+    font-family: inherit; font-size: 0.8rem; font-weight: 700;
+    cursor: pointer;
+}
+.cf-suggested-more:hover { text-decoration: underline; }
+.cf-suggested-more:focus-visible {
+    outline: 2px solid var(--cf-accent); outline-offset: 2px; border-radius: 6px;
+}
+.cf-suggested-status {
+    margin: 0; color: var(--cf-ink-2); font-size: 0.78rem;
+}
+.cf-suggested-status[hidden] { display: none; }
+.cf-suggested-empty {
+    margin: 0; color: var(--cf-ink-2); font-size: 0.8rem;
 }
