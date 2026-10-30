@@ -1075,7 +1075,20 @@ function getEip5749Provider() {
 
 function isMobileDappContext() {
     const ua = (navigator.userAgent || '').toLowerCase();
-    return /android|iphone|ipad|ipod|minipay|trust|metamask/.test(ua);
+    return /android|iphone|ipad|ipod|minipay|trust|metamask/.test(ua) || _isTouchDesktopUa();
+}
+
+// iPadOS 13+ requests the desktop site by default, so its UA is indistinguishable
+// from macOS ("Macintosh; Intel Mac OS X … Safari"). A Trust Wallet user on an
+// iPad therefore got the DESKTOP wait budgets (300ms / depth 2) and a spurious
+// "not detected". `navigator.maxTouchPoints > 1` is the accepted tell.
+function _isTouchDesktopUa() {
+    try {
+        return /macintosh|mac os x/.test((navigator.userAgent || '').toLowerCase())
+            && Number(navigator.maxTouchPoints || 0) > 1;
+    } catch (_) {
+        return false;
+    }
 }
 
 // Decide whether the Injected Wallet picker card should be shown.
@@ -1200,7 +1213,7 @@ function getPreferredInjectedProvider() {
 function isTrustWalletMobileContext() {
     const ua = (navigator.userAgent || '').toLowerCase();
     const uaTrust = ua.includes('trust') || ua.includes('trustwallet');
-    const touchMobile = /android|iphone|ipad|ipod/i.test(ua);
+    const touchMobile = /android|iphone|ipad|ipod/i.test(ua) || _isTouchDesktopUa();
     const hasTrustInjection = !!(
         window.trustwallet ||
         window.trustWallet ||
@@ -1211,7 +1224,7 @@ function isTrustWalletMobileContext() {
 
 function isLikelyMobileWalletContext() {
     const ua = (navigator.userAgent || '').toLowerCase();
-    return /android|iphone|ipad|ipod|minipay|metamask|trust|trustwallet/.test(ua);
+    return /android|iphone|ipad|ipod|minipay|metamask|trust|trustwallet/.test(ua) || _isTouchDesktopUa();
 }
 
 async function awaitPreferredInjectedProvider(timeoutMs) {
@@ -1282,34 +1295,38 @@ function detectInjectedWallet(_retryDepth) {
     const btn = document.getElementById('injectedWalletBtn');
     const icon = document.getElementById('injectedWalletIcon');
     if (!title || !desc || !btn) return;
-    // Hide the Injected Wallet picker entirely on plain mobile
-    // Safari/Chrome (no provider, no dApp-browser UA). Reveal
-    // it as soon as a provider is found or the UA hints a
-    // wallet's in-app browser.
-    if (!shouldShowInjectedOption() && !provider) {
-        btn.style.display = 'none';
-        return;
-    }
-    btn.style.display = 'flex';
     const depth = Number(_retryDepth || 0);
     const maxDepth = _walletDetectionMaxDepth();
+    // Hide the picker on a plain browser with no provider — but KEEP RETRYING.
+    // A Trust Wallet dApp browser frequently ships a plain Chrome/Safari UA and
+    // injects late, so returning here (the old behaviour) abandoned the retry
+    // chain and the wallet was never detected, even inside the Trust browser.
+    const showCard = shouldShowInjectedOption() || !!provider;
+    btn.style.display = showCard ? 'flex' : 'none';
     if (!provider) {
-        title.textContent = 'Injected Wallet';
-        if (icon) icon.textContent = '👛';
-        if (isMobileDappContext()) {
-            desc.textContent = depth >= 2
-                ? 'Still looking for your wallet… use WalletConnect below if it stays stuck.'
-                : 'Detecting wallet… open in MiniPay/MetaMask/Trust Wallet dapp browser, or use WalletConnect.';
-        } else {
-            desc.textContent = 'Not detected — install MetaMask extension or use WalletConnect QR.';
+        if (showCard) {
+            title.textContent = 'Injected Wallet';
+            if (icon) icon.textContent = '👛';
+            if (isMobileDappContext()) {
+                desc.textContent = depth >= 2
+                    ? 'Still looking for your wallet… use WalletConnect below if it stays stuck.'
+                    : 'Detecting wallet… open in MiniPay/MetaMask/Trust Wallet dapp browser, or use WalletConnect.';
+            } else {
+                desc.textContent = 'Not detected — install MetaMask extension or use WalletConnect QR.';
+            }
+            btn.style.opacity = '0.78';
         }
-        btn.style.opacity = '0.78';
         if (typeof _lwApplyDetectionNudge === 'function') _lwApplyDetectionNudge(null);
         if (depth < maxDepth) {
             _detectWalletTimerId = setTimeout(() => {
                 _detectWalletTimerId = null;
                 detectInjectedWallet(depth + 1);
             }, 350 + depth * 250);
+        } else if (!window.__gmWalletDetectionDumped) {
+            // One-shot diagnostic on final failure: the "wallet not detected"
+            // reports are otherwise undebuggable from a screenshot.
+            window.__gmWalletDetectionDumped = true;
+            try { if (typeof window._gmDebugDumpWallets === 'function') window._gmDebugDumpWallets(); } catch (_) {}
         }
         return;
     }
