@@ -171,7 +171,10 @@
 <main class="cf-wrap cf-layout">
     {# Keep the Today hub first in DOM order for the mobile reading sequence.
        The wide-screen grid places this complementary panel on the right; the
-       skip link above gives keyboard users a direct route to the post stream. #}
+       skip link above gives keyboard users a direct route to the post stream.
+       On desktop the Community G$ card below is relocated into the Community
+       Cards dialog (Menu -> Community Cards), so it is reachable without
+       competing for the capped rail's visible height. #}
     <aside class="cf-today-hub" id="cfTodayHub" aria-labelledby="cfTodayHubTitle" hidden>
         <div class="cf-today-hub-head">
             <h1 class="cf-today-hub-title" id="cfTodayHubTitle">Today in Community</h1>
@@ -645,9 +648,12 @@
     </div>
 </main>
 
-{# Mobile-only quick access to the auxiliary Community cards. JavaScript moves
-   the existing card nodes here below 900px and restores them to their exact
-   template positions on desktop; IDs and event handlers are never duplicated. #}
+{# Quick access to the auxiliary Community cards. JavaScript RELOCATES the
+   existing card nodes here and restores them to their exact template positions;
+   IDs and event handlers are never duplicated. Below 900px every side card moves
+   in; on desktop ONLY the Community G$ card does, so its balance / Withdraw /
+   transaction history live behind Menu -> Community Cards while the daily
+   widgets and "Suggested for you" stay in the side column. #}
 <div class="cf-community-cards-modal" id="cfCommunityCardsModal" role="dialog"
      aria-modal="true" aria-labelledby="cfCommunityCardsTitle"
      aria-describedby="cfCommunityCardsDescription" tabindex="-1" hidden>
@@ -702,7 +708,7 @@
         <button type="button" class="cf-menu-row" id="cfMenuCommunityCards"
                 onclick="GMCommunity.menuOpenCommunityCards()">
             <span class="cf-menu-row-icon" aria-hidden="true">🗂️</span>
-            <span class="cf-menu-row-copy"><strong>Community Cards</strong><small>Open community rewards, vault support, and recent posters.</small></span>
+            <span class="cf-menu-row-copy"><strong>Community Cards</strong><small>Open your Community G$ balance, withdrawals, and transaction history.</small></span>
             <span class="cf-menu-row-arrow" aria-hidden="true">›</span>
         </button>
         <button type="button" class="cf-menu-row" id="cfMenuWallet"
