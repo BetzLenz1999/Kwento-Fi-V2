@@ -2086,6 +2086,24 @@ def api_search_users():
     return jsonify(result), (200 if result.get("success") else 400)
 
 
+@community_feed_bp.route("/api/suggested-members", methods=["GET"])
+def api_suggested_members():
+    """Active members to follow, for the right-column panel (read-only).
+
+    Reading is public, exactly like search and the feed, so a guest may see the
+    panel; the Follow tap raises the shared connect card and issues no request.
+    The response carries usernames only — the service drops the wallet, so the
+    panel can never become an address oracle.
+    """
+    if not svc.is_enabled():
+        return _disabled_response()
+    result = svc.suggested_members(
+        _session_wallet(),
+        limit=request.args.get("limit", type=int),
+    )
+    return jsonify(result), (200 if result.get("success") else 400)
+
+
 # ── Public profile ───────────────────────────────────────────────────────────
 # A member's profile is addressed by USERNAME, never by wallet. The page and
 # every API below strip the wallet in the service layer; the template/bundle
