@@ -1666,6 +1666,13 @@ body.cf-modal-open { overflow: hidden; }
         width: min(92vw, 760px); max-height: min(88dvh, 900px);
         min-height: 0; border-radius: 18px;
     }
+    /* On desktop the dialog hosts ONLY the Community G$ card. That card was
+       designed for the ~300-340px rail, so it is centred and capped instead of
+       stretching across the full 760px panel. */
+    .cf-community-cards-content { align-items: center; }
+    .cf-community-cards-content > .cf-earn {
+        width: 100%; max-width: 560px;
+    }
 }
 
 .cf-reactions-modal[hidden] { display: none !important; }
