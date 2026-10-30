@@ -26,6 +26,7 @@ import re
 import base64
 import hashlib
 import json
+import time
 from functools import lru_cache
 from datetime import datetime, timezone
 
@@ -63,6 +64,21 @@ REACTION_CURSOR_VERSION = 1
 # scripted account cannot mint an unbounded edge table. The follower side is
 # unbounded on purpose (popularity is not a bug).
 FOLLOW_LIMIT = get_env_int("COMMUNITY_FOLLOW_LIMIT", 5000)
+
+# "Suggested for you" — the right-column panel. Ranked by DISTINCT ACTIVE DAYS
+# in a recent window, not by raw volume: "always active" means present most
+# days, and a single viral post must not win the panel. Read per call so a
+# tuning change needs no redeploy; a malformed value falls back to the default
+# (never 0, which would switch the panel off).
+SUGGESTIONS_ENABLED = get_env_int("COMMUNITY_SUGGESTIONS_ENABLED", 1)
+SUGGESTIONS_LIMIT = max(1, get_env_int("COMMUNITY_SUGGESTIONS_LIMIT", 12))
+SUGGESTIONS_WINDOW_DAYS = max(1, get_env_int("COMMUNITY_SUGGESTIONS_WINDOW_DAYS", 30))
+SUGGESTIONS_ACTIVE_FLOOR_DAYS = max(
+    1, get_env_int("COMMUNITY_SUGGESTIONS_ACTIVE_FLOOR_DAYS", 14))
+# The ranking moves slowly, so a short cache is enough and keeps the panel off
+# the per-page-load cost path. Keyed by (viewer, limit) — see the helper.
+SUGGESTIONS_CACHE_TTL_SECONDS = max(
+    0, get_env_int("COMMUNITY_SUGGESTIONS_CACHE_TTL_SECONDS", 120))
 
 # A public post must carry a real username. Without this gate a user who never
 # picked one publishes a shortened wallet address, which looks like spam and
@@ -1060,6 +1076,9 @@ def follow_user(wallet: str | None, username: str | None) -> dict:
         # rather than reporting a failure for a state that already holds.
         logger.warning("community_feed: follow insert failed: %s", exc)
 
+    # The panel excludes members the viewer already follows, so a stale cache
+    # would keep showing the member they just followed.
+    invalidate_suggestions_cache(follower)
     return {"success": True, "following": True,
             "follower_count": followers_count(followee)}
 
@@ -1087,6 +1106,8 @@ def unfollow_user(wallet: str | None, username: str | None) -> dict:
         return {"success": False, "error": "Could not update your follows",
                 "code": "db"}
 
+    # Unfollowing frees a slot in the panel, so drop the viewer's cached copy.
+    invalidate_suggestions_cache(wallet)
     return {"success": True, "following": False,
             "follower_count": followers_count(target)}
 
@@ -1484,6 +1505,227 @@ def public_avatar_path(username: str | None) -> str | None:
     """Build the public same-origin image route for a valid community handle."""
     name = normalize_username(username)
     return f"/community/api/profile/{name}/avatar" if name else None
+
+
+# ── "Suggested for you" ──────────────────────────────────────────────────────
+# The right-column panel on /community. Ranks members by how many DISTINCT DAYS
+# they were active in a recent window (see sql/community_suggested_members.sql),
+# then resolves usernames in ONE batched query and DROPS the wallet: the panel
+# is a set of names, never a list of addresses — the same rule as the feed,
+# search and profile.
+#
+# The ranking moves slowly, so a short per-process cache keeps the panel off the
+# per-page-load cost path. The cache key includes the VIEWER because
+# `is_following` is viewer-specific; a follow toggle invalidates it (see
+# `invalidate_suggestions_cache`). A plain dict is enough here — the GIL makes a
+# get/set of a whole entry atomic, and a torn entry is impossible.
+_SUGGESTIONS_CACHE: dict[tuple[str, int], tuple[float, dict]] = {}
+
+
+def _suggestions_cache_get(viewer_key: str, size: int):
+    if SUGGESTIONS_CACHE_TTL_SECONDS <= 0:
+        return None
+    entry = _SUGGESTIONS_CACHE.get((viewer_key, size))
+    if not entry:
+        return None
+    expires_at, payload = entry
+    if time.monotonic() >= expires_at:
+        _SUGGESTIONS_CACHE.pop((viewer_key, size), None)
+        return None
+    return payload
+
+
+def _suggestions_cache_set(viewer_key: str, size: int, payload: dict) -> None:
+    if SUGGESTIONS_CACHE_TTL_SECONDS <= 0:
+        return
+    _SUGGESTIONS_CACHE[(viewer_key, size)] = (
+        time.monotonic() + SUGGESTIONS_CACHE_TTL_SECONDS, payload)
+
+
+def invalidate_suggestions_cache(viewer: str | None = None) -> None:
+    """Drop the cached panel for one viewer, or for everyone when ``None``.
+
+    Called after a follow/unfollow so a member who just followed somebody does
+    not keep seeing them under "Suggested for you" until the TTL lapses.
+    """
+    if viewer is None:
+        _SUGGESTIONS_CACHE.clear()
+        return
+    key = str(viewer or "").lower()
+    for cache_key in [k for k in _SUGGESTIONS_CACHE if k[0] == key]:
+        _SUGGESTIONS_CACHE.pop(cache_key, None)
+
+
+def _banned_wallets(supabase, wallets: list[str]) -> set[str]:
+    """Batched ban lookup — the same rule as `is_banned`, in ONE query.
+
+    A per-candidate `is_banned()` call would be an N+1 on every panel load. The
+    filter is `ilike` (like `is_banned`) so a legacy non-lowercase ban row still
+    matches. Fails OPEN on a read error, exactly like `is_banned`: a moderation
+    outage must not empty the whole panel.
+    """
+    wanted = sorted({str(w or "").lower() for w in wallets if w})
+    if not wanted:
+        return set()
+    banned: set[str] = set()
+    # Keep the PostgREST OR filter bounded; wallets are validated EVM addresses
+    # by the time they reach here, but the batch size is the real guard.
+    for start in range(0, len(wanted), 100):
+        batch = wanted[start:start + 100]
+        clause = ",".join(f"wallet_address.ilike.{address}" for address in batch)
+        try:
+            result = (
+                supabase.table("community_feed_bans")
+                .select("wallet_address")
+                .or_(clause)
+                .limit(len(batch))
+                .execute()
+            )
+            for row in _rows(result):
+                banned.add(str(row.get("wallet_address") or "").lower())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("community_feed: batched ban lookup failed: %s", exc)
+    return banned
+
+
+def _fill_with_newest(supabase, ranked: list[tuple[str, int]],
+                      size: int) -> list[tuple[str, int]]:
+    """Append newest username-bearing members until ``size`` is reached.
+
+    The cold-start fallback: a young community may not have enough members who
+    clear the activity floor, and an almost-empty panel is worse than a
+    chronological one. This is clearly a fallback, not the ranking.
+    """
+    seen = {wallet for wallet, _ in ranked}
+    if len(ranked) >= size:
+        return ranked
+    try:
+        rows = _rows(supabase.rpc("community_newest_members", {
+            # Over-ask: some of these get filtered (banned / already followed /
+            # no username) before the panel is built.
+            "result_limit": max(size - len(ranked), 1) * 2,
+        }).execute())
+    except Exception as exc:  # noqa: BLE001
+        logger.info("community_feed: newest-members fallback skipped: %s", exc)
+        return ranked
+    for row in rows:
+        wallet = str(row.get("wallet_address") or "").lower()
+        if not wallet or wallet in seen:
+            continue
+        seen.add(wallet)
+        ranked.append((wallet, 0))
+        if len(ranked) >= size:
+            break
+    return ranked
+
+
+def suggested_members(viewer: str | None = None, limit: int | None = None) -> dict:
+    """Active members to suggest to ``viewer``, most consistently active first.
+
+    Returns ``{success, members, enabled, source}``. ``members`` carries
+    usernames only — the wallet is the lookup key and is dropped here, exactly
+    like the feed, search and profile responses. Never raises.
+    """
+    if not SUGGESTIONS_ENABLED:
+        return {"success": True, "members": [], "enabled": False,
+                "source": "disabled"}
+
+    try:
+        size = int(limit or SUGGESTIONS_LIMIT)
+    except (TypeError, ValueError):
+        size = SUGGESTIONS_LIMIT
+    size = max(1, min(SUGGESTIONS_LIMIT, size))
+
+    viewer_key = str(viewer or "").lower()
+    cached = _suggestions_cache_get(viewer_key, size)
+    if cached is not None:
+        return cached
+
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable",
+                "members": [], "source": "error"}
+
+    try:
+        rows = _rows(supabase.rpc("community_suggested_members", {
+            "window_days": SUGGESTIONS_WINDOW_DAYS,
+            "active_floor_days": SUGGESTIONS_ACTIVE_FLOOR_DAYS,
+            "result_limit": size,
+        }).execute())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: suggested-members ranking failed: %s", exc)
+        return {"success": False, "error": "Could not load suggestions",
+                "members": [], "source": "error"}
+
+    ranked: list[tuple[str, int]] = []
+    for row in rows:
+        wallet = str(row.get("wallet_address") or "").lower()
+        if not wallet:
+            continue
+        try:
+            active_days = int(row.get("active_days") or 0)
+        except (TypeError, ValueError):
+            active_days = 0
+        ranked.append((wallet, active_days))
+
+    active_found = len(ranked)
+    ranked = _fill_with_newest(supabase, ranked, size)
+    if not active_found:
+        source = "newest"
+    elif len(ranked) > active_found:
+        source = "mixed"
+    else:
+        source = "activity"
+
+    # The viewer is never suggested to themselves (the server would refuse the
+    # follow anyway), and neither is a member they already follow.
+    candidates = [wallet for wallet, _ in ranked
+                  if wallet and wallet != viewer_key]
+    if not candidates:
+        return {"success": True, "members": [], "enabled": True, "source": source}
+
+    usernames = _current_usernames_for_wallets(supabase, candidates)
+    # A member without a username cannot be shown: the row renders `@name`, and
+    # the only fallback would be a wallet-derived label, which the repo forbids
+    # (ANON_LABEL is a fixed string, never short_wallet()).
+    candidates = [wallet for wallet in candidates if usernames.get(wallet)]
+    if not candidates:
+        return {"success": True, "members": [], "enabled": True, "source": source}
+
+    banned = _banned_wallets(supabase, candidates)
+    candidates = [wallet for wallet in candidates if wallet not in banned]
+
+    # `_follow_states` is the same batched helper the feed uses for its cards,
+    # so this stays ONE query rather than one per row.
+    followed = _follow_states(supabase, candidates, viewer)
+    candidates = [wallet for wallet in candidates if wallet not in followed]
+
+    avatars = _avatars_for_wallets(supabase, candidates)
+    days_by_wallet = dict(ranked)
+
+    members = []
+    seen = set()
+    for wallet in candidates:
+        username = usernames.get(wallet) or ""
+        key = username.lower()
+        if not username or key in seen:
+            continue
+        seen.add(key)
+        members.append({
+            "username": username,
+            "avatar_url": (public_avatar_path(username)
+                           if avatars.get(wallet) else None),
+            "active_days": days_by_wallet.get(wallet, 0),
+            "window_days": SUGGESTIONS_WINDOW_DAYS,
+            "is_following": False,
+        })
+        if len(members) >= size:
+            break
+
+    payload = {"success": True, "members": members, "enabled": True,
+               "source": source}
+    _suggestions_cache_set(viewer_key, size, payload)
+    return payload
 
 
 # Public member search. A user may type a partial name, so the term is
