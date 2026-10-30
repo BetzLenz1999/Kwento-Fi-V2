@@ -178,44 +178,6 @@
             <p>Learn. Share. Earn together.</p>
         </div>
 
-    <section class="cf-daily-prompt" id="cfDailyPrompt" aria-labelledby="cfDailyPromptTitle" hidden>
-        <div class="cf-daily-prompt-kicker">Today’s Community Prompt</div>
-        <h2 id="cfDailyPromptTitle"></h2>
-        <p id="cfDailyPromptBody"></p>
-        <div class="cf-daily-prompt-foot">
-            <span id="cfDailyPromptCount">0 responses</span>
-            <button type="button" class="cf-btn-primary" id="cfAnswerPromptBtn"
-                    onclick="GMCommunity.answerPrompt()">Answer prompt</button>
-            <button type="button" class="cf-btn-text" id="cfSeePromptBtn"
-                    onclick="GMCommunity.seePromptResponses()">See responses</button>
-        </div>
-    </section>
-
-    <section class="cf-daily-learn" id="cfDailyLearn" aria-labelledby="cfDailyLearnTitle" hidden>
-        <div class="cf-daily-learn-head">
-            <div>
-                <p class="cf-daily-learn-kicker">KwentoFi Daily Learn</p>
-                <h2 id="cfDailyLearnTitle">Answer today’s 2 questions</h2>
-            </div>
-            <span class="cf-daily-learn-progress" id="cfDailyLearnProgress"></span>
-        </div>
-        <div class="cf-daily-learn-content" id="cfDailyLearnContent" aria-live="polite"></div>
-        <p class="cf-daily-learn-reset" id="cfDailyLearnReset">Resets daily at 00:00 UTC.</p>
-    </section>
-
-        {% if not is_guest %}
-        {# Completion status is wallet-specific; never render it to guests. #}
-        <div class="cf-learn-done" id="cfLearnDone" hidden>
-            <span class="cf-learn-done-mark" aria-hidden="true">✅</span>
-            <span class="cf-learn-done-text" id="cfLearnDoneText">Daily Learn done today</span>
-            <button type="button" class="cf-learn-done-toggle" id="cfLearnDoneToggle"
-                    aria-controls="cfLearnDoneDetail" aria-expanded="false"
-                    onclick="GMCommunity.toggleLearnDoneDetail()">Details</button>
-        </div>
-        <p class="cf-learn-done-detail" id="cfLearnDoneDetail" role="status"
-           aria-live="polite" hidden></p>
-        {% endif %}
-
 <!-- ── Community G$ card ───────────────────────────────────────────────
          The community rewards balance lives HERE and ONLY here (never on the
          wallet page — see docs/COMMUNITY_REWARDS_LEDGER_PROPOSAL.md §0: two G$
@@ -313,6 +275,44 @@
         </section>
         {% endif %}
     </section>
+
+    <section class="cf-daily-prompt" id="cfDailyPrompt" aria-labelledby="cfDailyPromptTitle" hidden>
+        <div class="cf-daily-prompt-kicker">Today’s Community Prompt</div>
+        <h2 id="cfDailyPromptTitle"></h2>
+        <p id="cfDailyPromptBody"></p>
+        <div class="cf-daily-prompt-foot">
+            <span id="cfDailyPromptCount">0 responses</span>
+            <button type="button" class="cf-btn-primary" id="cfAnswerPromptBtn"
+                    onclick="GMCommunity.answerPrompt()">Answer prompt</button>
+            <button type="button" class="cf-btn-text" id="cfSeePromptBtn"
+                    onclick="GMCommunity.seePromptResponses()">See responses</button>
+        </div>
+    </section>
+
+    <section class="cf-daily-learn" id="cfDailyLearn" aria-labelledby="cfDailyLearnTitle" hidden>
+        <div class="cf-daily-learn-head">
+            <div>
+                <p class="cf-daily-learn-kicker">KwentoFi Daily Learn</p>
+                <h2 id="cfDailyLearnTitle">Answer today’s 2 questions</h2>
+            </div>
+            <span class="cf-daily-learn-progress" id="cfDailyLearnProgress"></span>
+        </div>
+        <div class="cf-daily-learn-content" id="cfDailyLearnContent" aria-live="polite"></div>
+        <p class="cf-daily-learn-reset" id="cfDailyLearnReset">Resets daily at 00:00 UTC.</p>
+    </section>
+
+        {% if not is_guest %}
+        {# Completion status is wallet-specific; never render it to guests. #}
+        <div class="cf-learn-done" id="cfLearnDone" hidden>
+            <span class="cf-learn-done-mark" aria-hidden="true">✅</span>
+            <span class="cf-learn-done-text" id="cfLearnDoneText">Daily Learn done today</span>
+            <button type="button" class="cf-learn-done-toggle" id="cfLearnDoneToggle"
+                    aria-controls="cfLearnDoneDetail" aria-expanded="false"
+                    onclick="GMCommunity.toggleLearnDoneDetail()">Details</button>
+        </div>
+        <p class="cf-learn-done-detail" id="cfLearnDoneDetail" role="status"
+           aria-live="polite" hidden></p>
+        {% endif %}
 
     {# ── Suggested for you ──────────────────────────────────────────────
          Fills the right column with the members who are most consistently
