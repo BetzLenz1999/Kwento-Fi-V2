@@ -1,4 +1,5 @@
 {% set brand_display_name = 'KwentoFi' %}
+{% set garden_boot = garden_boot|default({'enabled': false}) %}
 {# GoodMarket Community Feed — Facebook/Instagram-style posts with media.
 
    Guests may read the feed; they get the shared connect card
@@ -691,7 +692,7 @@
                 aria-expanded="false" aria-controls="cfMenuEarnMore"
                 onclick="GMCommunity.toggleMenuEarnMore(this)">
             <span class="cf-menu-row-icon" aria-hidden="true">✨</span>
-            <span class="cf-menu-row-copy"><strong>Earn More</strong><small>Explore Farming, Savings, and Daily Task inside Community.</small></span>
+            <span class="cf-menu-row-copy"><strong>Earn More</strong><small>Explore Farming, Savings, Daily Task{% if not is_guest and garden_boot.enabled %}, and Garden{% endif %} inside Community.</small></span>
             <span class="cf-menu-row-arrow" aria-hidden="true">⌄</span>
         </button>
         <div class="cf-menu-submenu" id="cfMenuEarnMore" hidden>
@@ -701,12 +702,72 @@
             <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openEarnPage('savings')">
                 <span aria-hidden="true">🏦</span><span>Savings</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
             </button>
-            <button type="button" class="cf-menu-subitem" id="cfMenuDailyTask"
+            {% if not is_guest and garden_boot.enabled %}
+            <button type="button" class="cf-menu-subitem" id="cfMenuGarden" onclick="GMCommunityGarden.open(this)">
+                <span aria-hidden="true">🌱</span><span>Garden</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+            </button>
+            {% endif %}
+            <button type="button" class="cf-menu-subitem" id="cfMenuDailyTask">
                 <span aria-hidden="true">✓</span><span>Daily Task</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
             </button>
         </div>
     </div>
 </div>
+
+{% if not is_guest and garden_boot.enabled %}
+<div class="cf-garden-modal" id="cfGardenModal" hidden role="dialog" aria-modal="true"
+     aria-labelledby="cfGardenTitle" aria-hidden="true">
+    <div class="cf-garden-overlay" onclick="GMCommunityGarden.close()"></div>
+    <section class="cf-garden-card" tabindex="-1">
+        <header class="cf-garden-head">
+            <div><div class="cf-garden-kicker">KWENTOFI GARDEN</div><h2 id="cfGardenTitle">Plant a Garden</h2></div>
+            <div class="cf-garden-head-actions">
+                <button type="button" class="cf-garden-refresh" id="cfGardenRefresh" onclick="GMCommunityGarden.refresh()">Refresh</button>
+                <button type="button" class="cf-garden-close" aria-label="Close Garden" onclick="GMCommunityGarden.close()">×</button>
+            </div>
+        </header>
+        <div class="cf-garden-body">
+            <div class="cf-garden-intro">
+                <span class="cf-garden-mark" aria-hidden="true">🌱</span>
+                <div><strong>Grow together</strong><p>Each seed costs 1 G$ (about $0.000119 at the reference price you provided; not fixed) and starts a 24-hour Garden. Your principal is returnable; any harvest bonus depends on sponsor funding.</p></div>
+            </div>
+            <div class="cf-garden-stats">
+                <div><small>Your G$ balance</small><strong id="cfGardenBalance">Checking…</strong></div>
+                <div><small>Optional sponsor pool</small><strong id="cfGardenPool">Checking…</strong></div>
+            </div>
+            <section id="cfGardenPlantPanel" class="cf-garden-panel">
+                <label for="cfGardenSeedCount">Number of seeds <span>1–100</span></label>
+                <input id="cfGardenSeedCount" type="number" inputmode="numeric" min="1" max="100" step="1" value="1">
+                <div class="cf-garden-total"><span>Total</span><strong id="cfGardenTotal">1 G$</strong></div>
+                <button type="button" class="cf-garden-primary" id="cfGardenPlantButton" onclick="GMCommunityGarden.plant()">Buy seeds &amp; plant</button>
+            </section>
+            <section id="cfGardenActivePanel" class="cf-garden-panel" hidden>
+                <div class="cf-garden-active-title"><span class="cf-garden-pulse" aria-hidden="true"></span><strong>Your Garden is growing</strong></div>
+                <div class="cf-garden-stats">
+                    <div><small>Principal</small><strong id="cfGardenPrincipal">—</strong></div>
+                    <div><small>Seeds</small><strong id="cfGardenSeedCountValue">—</strong></div>
+                    <div><small>Matures</small><strong id="cfGardenMaturity">—</strong></div>
+                    <div><small>Estimated optional bonus</small><strong id="cfGardenBonus">—</strong></div>
+                </div>
+                <div class="cf-garden-actions">
+                    <button type="button" class="cf-garden-primary" id="cfGardenHarvestButton" onclick="GMCommunityGarden.harvest()" hidden>Harvest &amp; withdraw</button>
+                    <button type="button" class="cf-garden-secondary" id="cfGardenExitButton" onclick="GMCommunityGarden.exit()">Exit &amp; return principal</button>
+                </div>
+            </section>
+            <section class="cf-garden-panel cf-garden-sponsor-panel">
+                <div class="cf-garden-sponsor-title"><strong>Support optional Garden bonuses</strong><span>Sponsor-powered</span></div>
+                <p>Contribute G$ to the shared bonus pool. Contributions are irreversible and do not give the sponsor a claim on Garden principal or future rewards.</p>
+                <label for="cfGardenSponsorAmount">Contribution amount <span>G$</span></label>
+                <input id="cfGardenSponsorAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="e.g. 10">
+                <label class="cf-garden-ack"><input id="cfGardenSponsorAck" type="checkbox"> <span>I understand this contribution is irrevocable and only funds optional bonuses.</span></label>
+                <button type="button" class="cf-garden-secondary cf-garden-sponsor-button" id="cfGardenSponsorButton" onclick="GMCommunityGarden.sponsor()" disabled>Contribute to sponsor pool</button>
+            </section>
+            <p class="cf-garden-notice">Bonus is optional, sponsor-funded, and may be zero. Your wallet signs Celo transactions and pays network gas; no gasless sponsor is available. G$ prices can change and the displayed USD reference is not a peg.</p>
+            <p class="cf-garden-status" id="cfGardenStatus" role="status" aria-live="polite">Connect your Celo wallet to load Garden details.</p>
+        </div>
+    </section>
+</div>
+{% endif %}
 
 {# ── Buy Airtime modal ──────────────────────────────────────────────────────
    The Reloadly store (`/reloadly/?embed=1#topup`) rendered INSIDE the feed
@@ -1072,6 +1133,7 @@ window.GM_WALLET_BOOT = {
     communityWallet: true,
     embed: false
 };
+window.GM_GARDEN_BOOT = {{ garden_boot|tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
 <script>window.GMEthersLoader.load().catch(function () {});</script>
@@ -1088,6 +1150,9 @@ window.GM_WALLET_BOOT = {
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-push.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
+{% if garden_boot.enabled %}
+<script src="{{ url_for('static', filename='js/community-garden.js', v=ASSET_VERSION) }}"></script>
+{% endif %}
 <script src="{{ url_for('static', filename='js/community-support.js', v=ASSET_VERSION) }}"></script>
 {% endif %}
 
