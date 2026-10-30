@@ -236,6 +236,29 @@ def _sign_reserved_withdrawal(db, runtime, row: dict) -> dict:
 
 # ── Page ─────────────────────────────────────────────────────────────────────
 
+def _community_garden_boot() -> dict[str, object]:
+    """Return public Garden configuration; never enable an unconfigured contract."""
+    requested = (os.getenv("COMMUNITY_GARDEN_ENABLED", "NO") or "NO").strip().lower() in {
+        "1", "true", "yes", "on", "enabled"
+    }
+    garden_address = (os.getenv("COMMUNITY_GARDEN_CONTRACT_ADDRESS", "") or "").strip()
+    token_address = (os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A") or "").strip()
+    valid_address = lambda value: bool(re.fullmatch(r"0x[a-fA-F0-9]{40}", value))
+    configured = valid_address(garden_address) and valid_address(token_address)
+    if requested and not configured:
+        logger.warning("Community Garden was requested but contract/token address configuration is invalid; keeping it hidden")
+    return {
+        "enabled": bool(requested and configured),
+        "contractAddress": garden_address if configured else "",
+        "tokenAddress": token_address if valid_address(token_address) else "",
+        "chainId": 42220,
+        "seedPrice": "1",
+        "growthPeriodSeconds": 86400,
+        "maxSeeds": 100,
+        "maxBonusBps": 500,
+    }
+
+
 @community_feed_bp.route("/")
 def community_feed_home():
     """Feed page. Guests may view; they get the shared connect card."""
@@ -279,6 +302,7 @@ def community_feed_home():
         # client-rendered date would disagree with the reset for anyone whose
         # device is not on UTC.
         today_label=datetime.now(timezone.utc).strftime("%d %b").lstrip("0"),
+        garden_boot=_community_garden_boot(),
     )
 
 
