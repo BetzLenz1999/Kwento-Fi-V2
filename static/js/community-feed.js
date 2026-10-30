@@ -40,6 +40,10 @@
     var LONG_EDGE = 2048;      // downscale target for images
     var JPEG_QUALITY = 0.85;
 
+    // Remembers whether the member expanded the pinned donor acknowledgments,
+    // for the session only (a fresh visit starts collapsed again).
+    var PINNED_DONATIONS_OPEN_KEY = 'gmPinnedDonationsOpen_v1';
+
     // Fail fast client-side on a type the server will refuse anyway, so the
     // user is not told "upload failed" after waiting for a large file.
     var ALLOWED_TYPES = {
@@ -52,6 +56,11 @@
     var _pinnedDonations = [];
     var _pinnedDonationCursor = null;
     var _pinnedDonationLoading = false;
+    // Collapsed by default: the acknowledgments are a reference list, not the
+    // reason a member opens the feed, and while expanded they sit ABOVE the
+    // real posts and push them down. The choice is remembered for the session
+    // so a member who wants them does not re-open them on every visit.
+    var _pinnedDonationsOpen = false;
     var _vaultDonationConfig = null;
     var _vaultDonationIntent = null;
     var _vaultDonationBusy = false;
@@ -1228,6 +1237,48 @@
         });
         var more = $('cfPinnedDonationMore');
         if (more) more.hidden = !_pinnedDonationCursor;
+        // An empty list can never be open: without this the section would stay
+        // collapsed with an expanded button state (and no cards to show).
+        if (!_pinnedDonations.length) _pinnedDonationsOpen = false;
+        applyPinnedDonationsOpen();
+    }
+
+    // The toggle only moves the `hidden` flag on the already-rendered body, so
+    // expanding never refetches and can never fail.
+    function applyPinnedDonationsOpen() {
+        var body = $('cfPinnedDonationBody');
+        var toggle = $('cfPinnedDonationsToggle');
+        if (body) body.hidden = !_pinnedDonationsOpen;
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', _pinnedDonationsOpen ? 'true' : 'false');
+            toggle.textContent = _pinnedDonationsOpen ? 'Hide donors' : 'Show donors';
+        }
+    }
+
+    function togglePinnedDonations() {
+        _pinnedDonationsOpen = !_pinnedDonationsOpen;
+        _writePinnedDonationsOpen(_pinnedDonationsOpen);
+        applyPinnedDonationsOpen();
+    }
+
+    // Session-scoped and fail-closed: a blocked store (hardened private mode)
+    // just means the panel starts collapsed again next load, which is the
+    // default anyway.
+    function _readPinnedDonationsOpen() {
+        try {
+            return window.sessionStorage
+                && window.sessionStorage.getItem(PINNED_DONATIONS_OPEN_KEY) === '1';
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function _writePinnedDonationsOpen(open) {
+        try {
+            if (window.sessionStorage) {
+                window.sessionStorage.setItem(PINNED_DONATIONS_OPEN_KEY, open ? '1' : '0');
+            }
+        } catch (error) { /* the default (collapsed) is a safe fallback */ }
     }
 
     function renderFeed() {
@@ -2933,7 +2984,7 @@
 
     // A grid TRACK is created by `grid-template-columns`, not by its content:
     // hiding the side column's child removes the element and leaves the track
-    // reserved, which is the blank ~300-340px gap on the right at >=1280px. So
+    // reserved, which is the blank ~300-340px gap on the right at >=900px. So
     // when BOTH side cards are hidden the grid collapses to one centred column.
     // (This is the actual fix for the reported empty space; the suggestions
     // panel only fills it while it has content.)
@@ -5539,6 +5590,10 @@
         // The composer is absent from a guest's DOM, so bind()'s null-checks
         // make that half a no-op; the feed wiring is what matters here.
         setupCommunityCardsLayout();
+        // Restore the member's session choice BEFORE the first render, so the
+        // panel does not paint collapsed and then jump open.
+        _pinnedDonationsOpen = _readPinnedDonationsOpen();
+        applyPinnedDonationsOpen();
         var discoverLoad = $('cfDiscoverLoad');
         var discoverMore = $('cfDiscoverMore');
         if (discoverLoad && !discoverLoad._discoverBound) {
@@ -5624,6 +5679,7 @@
         loadMore: loadMore,
         loadDiscover: loadDiscover,
         loadMorePinnedDonations: loadMorePinnedDonations,
+        togglePinnedDonations: togglePinnedDonations,
         openVaultDonation: openVaultDonation,
         retryVaultDonationConfig: retryVaultDonationConfig,
         closeVaultDonation: closeVaultDonation,
@@ -5718,6 +5774,12 @@
             railAuthors: railAuthors,
             loadSuggestedMembers: loadSuggestedMembers,
             renderSuggestedMembers: renderSuggestedMembers,
+            renderPinnedDonations: renderPinnedDonations,
+            togglePinnedDonations: togglePinnedDonations,
+            setPinnedDonations: function (posts) {
+                _pinnedDonations = Array.isArray(posts) ? posts : [];
+                _pinnedDonationCursor = null;
+            },
             openMemberSearch: openMemberSearch,
             syncLayoutColumns: syncLayoutColumns,
             onMediaTap: onMediaTap,
