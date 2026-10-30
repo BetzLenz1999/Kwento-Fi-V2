@@ -727,19 +727,35 @@
             </div>
         </header>
         <div class="cf-garden-body">
-            <div class="cf-garden-intro">
+            <div class="cf-garden-intro cf-garden-intro-premium">
                 <span class="cf-garden-mark" aria-hidden="true">🌱</span>
-                <div><strong>Grow together</strong><p>Each seed costs 1 G$ (about $0.000119 at the reference price you provided; not fixed) and starts a 24-hour Garden. Your principal is returnable; any harvest bonus depends on sponsor funding.</p></div>
+                <div>
+                    <span class="cf-garden-eyebrow">PLANT · GROW · WITHDRAW</span>
+                    <strong>A small seed. A shared Garden.</strong>
+                    <p>Each seed starts a 24-hour Garden. Your principal is held by the contract and can be returned through early exit or harvest. Any harvest bonus is optional and depends on sponsor funding.</p>
+                </div>
             </div>
             <div class="cf-garden-stats">
                 <div><small>Your G$ balance</small><strong id="cfGardenBalance">Checking…</strong></div>
                 <div><small>Optional sponsor pool</small><strong id="cfGardenPool">Checking…</strong></div>
             </div>
-            <section id="cfGardenPlantPanel" class="cf-garden-panel">
-                <label for="cfGardenSeedCount">Number of seeds <span>1–100</span></label>
-                <input id="cfGardenSeedCount" type="number" inputmode="numeric" min="1" max="100" step="1" value="1">
-                <div class="cf-garden-total"><span>Total</span><strong id="cfGardenTotal">1 G$</strong></div>
-                <button type="button" class="cf-garden-primary" id="cfGardenPlantButton" onclick="GMCommunityGarden.plant()">Buy seeds &amp; plant</button>
+            <section id="cfGardenPlantPanel" class="cf-garden-panel cf-garden-plant-panel">
+                <div class="cf-garden-panel-heading">
+                    <div>
+                        <span class="cf-garden-eyebrow">START YOUR GARDEN</span>
+                        <h3>Choose your seeds</h3>
+                    </div>
+                    <span class="cf-garden-limit">1–100 seeds</span>
+                </div>
+                <label for="cfGardenSeedCount">Number of seeds</label>
+                <input id="cfGardenSeedCount" type="number" inputmode="numeric" min="1" max="100" step="1" value="1" aria-describedby="cfGardenPriceNote">
+                <div class="cf-garden-price-grid">
+                    <div><small>Price per seed</small><strong id="cfGardenSeedUnitPrice">Reading contract price…</strong></div>
+                    <div><small>Total principal</small><strong id="cfGardenTotal">Reading total…</strong></div>
+                </div>
+                <p class="cf-garden-price-note" id="cfGardenPriceNote">Price is read from the Garden contract. The USD value of G$ can change and is not guaranteed.</p>
+                <button type="button" class="cf-garden-primary cf-garden-plant-cta" id="cfGardenPlantButton" onclick="GMCommunityGarden.plant()">Plant my Garden</button>
+                <p class="cf-garden-transaction-note">Your wallet will request approval only for the exact amount needed, then ask you to confirm the Garden transaction.</p>
             </section>
             <section id="cfGardenActivePanel" class="cf-garden-panel" hidden>
                 <div class="cf-garden-active-title"><span class="cf-garden-pulse" aria-hidden="true"></span><strong>Your Garden is growing</strong></div>
