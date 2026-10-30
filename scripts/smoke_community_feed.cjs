@@ -164,6 +164,9 @@ function run(opts) {
    'cfMessagePushEnable', 'cfMessagePushLater',
    'claimModal',
    'cfRail',
+   'cfSuggested', 'cfSuggestedList', 'cfSuggestedStatus', 'cfTodayHub',
+   'cfPinnedDonations', 'cfPinnedDonationFeed', 'cfPinnedDonationMore',
+   'cfPinnedDonationBody', 'cfPinnedDonationsToggle',
    'cfEarn', 'cfEarnChip', 'cfEarnAmount', 'cfEarnGoal', 'cfEarnBar',
    'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates', 'cfEarnRatesToggle',
    'cfEarnBalance', 'cfEarnLead'
@@ -195,6 +198,17 @@ function run(opts) {
   registry.cfWalletSendReview.hidden = true;
   registry.dailyTaskModal.className = '';
   registry.cfCommunityCardsModal.hidden = true;
+  // The suggestions panel ships hidden (revealed only on a successful
+  // response) and the side hub with it, matching the markup.
+  registry.cfSuggested.hidden = true;
+  registry.cfSuggestedStatus.hidden = true;
+  registry.cfTodayHub.hidden = true;
+  // The pinned donor section ships hidden (revealed only when there are pinned
+  // posts) AND its body ships collapsed, so a "revealed" assertion cannot pass
+  // on the stub's default `false`.
+  registry.cfPinnedDonations.hidden = true;
+  registry.cfPinnedDonationBody.hidden = true;
+  registry.cfPinnedDonationsToggle.setAttribute('aria-expanded', 'false');
   registry.cfMenuEarnMore.hidden = true;
   registry.cfSheetEarn.setAttribute('aria-hidden', 'true');
   registry.cfSheetEarn.setAttribute('inert', '');
@@ -257,6 +271,14 @@ function run(opts) {
   };
   sandbox.window = sandbox;
   sandbox.innerWidth = opts.innerWidth === undefined ? 1280 : opts.innerWidth;
+  // The bundle remembers the pinned-donor toggle for the session. The stub is
+  // per-run so one run cannot leak its choice into the next.
+  const sessionStore = new Map();
+  sandbox.sessionStorage = {
+    getItem: key => (sessionStore.has(key) ? sessionStore.get(key) : null),
+    setItem: (key, value) => { sessionStore.set(key, String(value)); },
+    removeItem: key => { sessionStore.delete(key); },
+  };
   sandbox.globalThis = sandbox;
   sandbox.GM_COMMUNITY_BOOT = opts.boot || {};
   sandbox.GMWalletCommunitySend = opts.communitySend || {
@@ -1682,6 +1704,144 @@ function feedFetch(handler, feedRows) {
     ok('the Claim Free G$ item is still an anchor',
        claim.tagName === 'A' && claim.href === '/wallet?claim=1',
        claim.tagName + ' ' + claim.href);
+  }
+
+  // ── 13f. Suggested for you fills the empty right column ──────────────────
+  // Owner report: the grid reserved a 300-340px right track that was
+  // essentially empty. Two things had to be true: the panel renders the most
+  // ACTIVE members with Follow buttons, and when the whole side column is
+  // empty the grid COLLAPSES to one column instead of leaving the gap.
+  {
+    const { api, store } = run({ boot: MEMBER });
+
+    // A failed/empty response must leave the panel hidden AND collapse the grid
+    // (the stub has no .cf-wrap, so syncLayoutColumns must not throw).
+    api.renderSuggestedMembers([]);
+    ok('an empty result hides the panel', store.cfSuggested.hidden === true);
+
+    api.renderSuggestedMembers(null);
+    ok('a failed read hides the panel', store.cfSuggested.hidden === true);
+
+    api.renderSuggestedMembers([
+      { username: 'alice', avatar_url: null, active_days: 21, window_days: 30 },
+      { username: 'bob', avatar_url: null, active_days: 0, window_days: 30 },
+    ]);
+    ok('a successful result reveals the panel', store.cfSuggested.hidden === false);
+    ok('every suggested member gets a row', store.cfSuggestedList.children.length === 2);
+
+    const first = store.cfSuggestedList.children[0];
+    ok('the row links to the public profile by username',
+       first.textContent.includes('@alice'));
+    const link = first.querySelectorAll('a')[0];
+    ok('the profile link carries the username, never a wallet',
+       !!link && link.href === '/community/u/alice' && !/0x/i.test(first.textContent));
+
+    const follow = first.children.filter(n => n.className.indexOf('cf-follow') === 0)[0];
+    ok('the row has a Follow button', !!follow && follow.textContent === 'Follow');
+    ok('the follow button names the member for screen readers',
+       follow.getAttribute('aria-label') === 'Follow @alice');
+    ok('the follow button carries the username as its data attribute',
+       follow.getAttribute('data-follow') === 'alice');
+
+    // The meta line explains WHY they are suggested, and is honest about a
+    // cold-start fallback row (no activity figure).
+    ok('an active member shows their active days',
+       first.textContent.includes('Active 21 of the last 30 days'),
+       first.textContent);
+    const second = store.cfSuggestedList.children[1];
+    ok('a fallback member is labelled as new, not as active 0 days',
+       second.textContent.includes('New member') && !second.textContent.includes('Active 0'),
+       second.textContent);
+
+    // The panel is a set of names: no wallet address may reach the DOM.
+    ok('no wallet address is rendered in the panel',
+       !/0x[0-9a-f]{4}/i.test(store.cfSuggestedList.textContent));
+
+    // A stored `@` (a legacy row) must not render `@@name`.
+    api.renderSuggestedMembers([{ username: '@carol', active_days: 5, window_days: 30 }]);
+    ok('a stored @ is stripped so the row never shows @@',
+       store.cfSuggestedList.children[0].textContent.includes('@carol')
+         && !store.cfSuggestedList.children[0].textContent.includes('@@'));
+
+    // Following from the panel uses the SHARED follow path (one implementation).
+    const { api: api2, store: store2, sandbox: sandbox2 } = run({
+      boot: MEMBER,
+      fetchImpl: (url, options) => {
+        if (String(url).indexOf('/follow') !== -1) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, following: true }) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      },
+    });
+    api2.renderSuggestedMembers([{ username: 'alice', active_days: 9, window_days: 30 }]);
+    const followBtn = store2.cfSuggestedList.children[0]
+      .children.filter(n => n.className.indexOf('cf-follow') === 0)[0];
+    followBtn.onclick();
+    ok('tapping Follow flips the button optimistically',
+       followBtn.textContent === 'Following');
+    await tick();
+    ok('a successful follow keeps the button in the Following state',
+       followBtn.classList.contains('is-following'));
+    ok('a follow from the panel does not navigate away',
+       sandbox2.location.href === undefined);
+  }
+
+  // ── 13g. Pinned donor acknowledgments are collapsed by default ───────────
+  // Owner request: the pinned donor posts should not push the real feed down;
+  // they appear only after tapping "Show donors". The toggle moves the `hidden`
+  // flag on the already-rendered body, so it never refetches.
+  {
+    const { api, store } = run({ boot: MEMBER });
+
+    // Nothing pinned: the section stays hidden and the toggle is never shown.
+    api._internals.setPinnedDonations([]);
+    api._internals.renderPinnedDonations();
+    ok('no pinned posts keeps the whole section hidden',
+       store.cfPinnedDonations.hidden === true);
+
+    // With pinned posts the section is revealed, but the CARDS stay collapsed.
+    api._internals.setPinnedDonations([
+      { id: 1, post_type: 'system_vault_donation', donor_name: 'Betz', amount_gd: '1000', is_pinned: true },
+      { id: 2, post_type: 'system_support', donor_username: 'ana', author_username: 'betz', amount_gd: '5', is_pinned: true },
+    ]);
+    api._internals.renderPinnedDonations();
+    ok('pinned posts reveal the section', store.cfPinnedDonations.hidden === false);
+    ok('the cards are collapsed by default', store.cfPinnedDonationBody.hidden === true);
+    ok('the cards were still rendered while collapsed',
+       store.cfPinnedDonationFeed.children.length === 2);
+    ok('the toggle reads "Show donors" while collapsed',
+       store.cfPinnedDonationsToggle.textContent === 'Show donors');
+    ok('the toggle reports a collapsed state to screen readers',
+       store.cfPinnedDonationsToggle.getAttribute('aria-expanded') === 'false');
+
+    // Tapping reveals the already-loaded cards without another request.
+    api.togglePinnedDonations();
+    ok('tapping the toggle reveals the cards',
+       store.cfPinnedDonationBody.hidden === false);
+    ok('the toggle now reads "Hide donors"',
+       store.cfPinnedDonationsToggle.textContent === 'Hide donors');
+    ok('the toggle reports an expanded state to screen readers',
+       store.cfPinnedDonationsToggle.getAttribute('aria-expanded') === 'true');
+
+    // Tapping again collapses them.
+    api.togglePinnedDonations();
+    ok('tapping again collapses the cards',
+       store.cfPinnedDonationBody.hidden === true);
+    ok('the toggle returns to "Show donors"',
+       store.cfPinnedDonationsToggle.textContent === 'Show donors');
+
+    // A re-render (a feed refresh) must not force the panel back open.
+    api.togglePinnedDonations();
+    api._internals.renderPinnedDonations();
+    ok('a re-render keeps the member\'s expanded choice',
+       store.cfPinnedDonationBody.hidden === false);
+
+    // An empty list can never stay "expanded" with nothing to show.
+    api._internals.setPinnedDonations([]);
+    api._internals.renderPinnedDonations();
+    ok('an empty list collapses the toggle state again',
+       store.cfPinnedDonationBody.hidden === true
+         && store.cfPinnedDonationsToggle.getAttribute('aria-expanded') === 'false');
   }
 
   // ── 14. Follow pill: another author gets one, your own post does not ──────
