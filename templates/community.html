@@ -584,14 +584,27 @@
 
         <section class="cf-posts" aria-labelledby="cfPostsTitle">
             <section class="cf-pinned-donations" id="cfPinnedDonations" aria-labelledby="cfPinnedDonationsTitle" hidden>
-                <div class="cf-feed-section-head">
-                    <h2 id="cfPinnedDonationsTitle">Pinned donor acknowledgments</h2>
-                    <span>Confirmed post-support and Community Vault donation posts stay pinned.</span>
+                <div class="cf-feed-section-head cf-pinned-donations-head">
+                    <div>
+                        <h2 id="cfPinnedDonationsTitle">Pinned donor acknowledgments</h2>
+                        <span>Confirmed post-support and Community Vault donation posts stay pinned.</span>
+                    </div>
+                    {# Collapsed by default: donor acknowledgments are not the reason
+                       a member opens the feed, and while they render at the top of
+                       the stream they push the real posts down. The toggle reveals
+                       them in place (no request — the posts are already loaded). #}
+                    <button type="button" class="cf-pinned-donations-toggle"
+                            id="cfPinnedDonationsToggle"
+                            onclick="GMCommunity.togglePinnedDonations()"
+                            aria-expanded="false"
+                            aria-controls="cfPinnedDonationBody">Show donors</button>
                 </div>
-                <div id="cfPinnedDonationFeed" class="cf-pinned-donation-feed" aria-live="polite"></div>
-                <div class="cf-feed-foot">
-                    <button type="button" class="cf-load-more" id="cfPinnedDonationMore"
-                            onclick="GMCommunity.loadMorePinnedDonations()" hidden>Load more acknowledgments</button>
+                <div class="cf-pinned-donation-body" id="cfPinnedDonationBody" hidden>
+                    <div id="cfPinnedDonationFeed" class="cf-pinned-donation-feed" aria-live="polite"></div>
+                    <div class="cf-feed-foot">
+                        <button type="button" class="cf-load-more" id="cfPinnedDonationMore"
+                                onclick="GMCommunity.loadMorePinnedDonations()" hidden>Load more acknowledgments</button>
+                    </div>
                 </div>
             </section>
             <div class="cf-feed-section-head">
