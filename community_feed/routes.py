@@ -252,7 +252,6 @@ def _community_garden_boot() -> dict[str, object]:
         "contractAddress": garden_address if configured else "",
         "tokenAddress": token_address if valid_address(token_address) else "",
         "chainId": 42220,
-        "seedPrice": "1",
         "growthPeriodSeconds": 86400,
         "maxSeeds": 100,
         "maxBonusBps": 500,
