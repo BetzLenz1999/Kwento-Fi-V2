@@ -2966,11 +2966,16 @@
             var card = $(id);
             return !!(card && !card.hidden);
         });
-        var earnCard = $('cfEarn');
+        // A card relocated into the Community Cards dialog is no longer in the
+        // side column, so it must not keep the column alive. This is parent-
+        // based, NOT breakpoint-based: the Community G$ card now lives in the
+        // dialog on desktop too, so `!isCommunityCardsMobileLayout()` can no
+        // longer stand in for "still in the hub".
         var cardsContent = $('cfCommunityCardsContent');
-        var earnStillBelongsInHub = !isCommunityCardsMobileLayout()
-            || !cardsContent || (earnCard && earnCard.parentNode !== cardsContent);
-        if (earnCard && !earnCard.hidden && earnStillBelongsInHub) hasVisibleCard = true;
+        var earnCard = $('cfEarn');
+        var earnInHub = !!(earnCard && !earnCard.hidden
+            && (!cardsContent || earnCard.parentNode !== cardsContent));
+        if (earnInHub) hasVisibleCard = true;
         // The suggestions panel lives in the same side column, so it keeps the
         // hub visible too — but only while it is in the column (on a phone the
         // bundle moves it into the Community cards sheet).
@@ -3003,28 +3008,66 @@
         return typeof window.innerWidth === 'number' && window.innerWidth < 900;
     }
 
+    // The auxiliary cards the Community Cards dialog hosts at each breakpoint.
+    // On a phone every side card moves in, as before. On desktop ONLY the
+    // Community G$ card moves: its balance / Withdraw / transaction history live
+    // behind Menu -> Community Cards, while the daily widgets and "Suggested for
+    // you" stay in the side column. The cards are RELOCATED (never cloned) so an
+    // id, its inline handlers and its listeners stay singular.
+    var COMMUNITY_CARDS_MOBILE_IDS =
+        ['cfEarn', 'cfVaultDonationCard', 'cfDailyHeading', 'cfRail', 'cfSuggested'];
+    var COMMUNITY_CARDS_DESKTOP_IDS = ['cfEarn'];
+
+    // The dialog's aria-description must match what it actually holds, and that
+    // differs by breakpoint (the phone sheet carries the vault card, the
+    // suggestions panel and the posters rail; the desktop dialog carries only the
+    // G$ card). A single static string would describe the wrong contents on one
+    // of them.
+    var COMMUNITY_CARDS_MOBILE_COPY =
+        'Community G$, vault support, suggested members, and recent posters.';
+    var COMMUNITY_CARDS_DESKTOP_COPY =
+        'Your Community G$ balance, withdrawals, and transaction history.';
+
+    function communityCardsIds() {
+        return isCommunityCardsMobileLayout()
+            ? COMMUNITY_CARDS_MOBILE_IDS : COMMUNITY_CARDS_DESKTOP_IDS;
+    }
+
+    function syncCommunityCardsCopy() {
+        var description = $('cfCommunityCardsDescription');
+        if (!description) return;
+        description.textContent = isCommunityCardsMobileLayout()
+            ? COMMUNITY_CARDS_MOBILE_COPY : COMMUNITY_CARDS_DESKTOP_COPY;
+    }
+
     function moveCommunityCardsIntoModal() {
         var content = $('cfCommunityCardsContent');
         if (!content || typeof document.createComment !== 'function') return;
-        ['cfEarn', 'cfVaultDonationCard', 'cfDailyHeading', 'cfRail', 'cfSuggested'].forEach(function (id) {
+        communityCardsIds().forEach(function (id) {
             var node = $(id);
             if (!node || !node.parentNode || node.parentNode === content) return;
             var marker = document.createComment('cf-community-card-slot:' + id);
             node.parentNode.insertBefore(marker, node);
-            _communityCardsSlots.push({ node: node, marker: marker });
+            _communityCardsSlots.push({ id: id, node: node, marker: marker });
             content.appendChild(node);
         });
     }
 
+    // Puts every relocated card back EXCEPT the ones the current breakpoint keeps
+    // in the dialog. This is what lets a phone->desktop resize return the vault
+    // card / rail / suggestions to the feed while the G$ card stays behind Menu.
     function restoreCommunityCardsToFeed() {
-        _communityCardsSlots.forEach(function (slot) {
+        var keep = communityCardsIds();
+        _communityCardsSlots = _communityCardsSlots.filter(function (slot) {
+            if (keep.indexOf(slot.id) !== -1) return true;
             var marker = slot.marker;
             var parent = marker && marker.parentNode;
-            if (!parent || !slot.node) return;
-            parent.insertBefore(slot.node, marker);
-            parent.removeChild(marker);
+            if (parent && slot.node) {
+                parent.insertBefore(slot.node, marker);
+                parent.removeChild(marker);
+            }
+            return false;
         });
-        _communityCardsSlots = [];
     }
 
     function communityCardsKeydown(event) {
@@ -3073,12 +3116,18 @@
     }
 
     function syncCommunityCardsPlacement() {
-        if (isCommunityCardsMobileLayout()) {
-            moveCommunityCardsIntoModal();
-        } else {
-            if (_communityCardsOpen && !closeCommunityCards(false)) return;
+        if (!isCommunityCardsMobileLayout()) {
+            // Leaving the phone layout: return the vault card / rail / suggestions
+            // to the feed. The G$ card is kept (it stays in the dialog on desktop).
+            // The dialog itself is NOT force-closed, so a resize while it is open
+            // leaves the G$ card on screen.
             restoreCommunityCardsToFeed();
         }
+        // Then relocate whatever this breakpoint keeps in the dialog. On desktop
+        // that is the G$ card alone, so it is out of the side column and reachable
+        // only through Menu -> Community Cards.
+        moveCommunityCardsIntoModal();
+        syncCommunityCardsCopy();
         syncTodayHub();
     }
 
@@ -3099,7 +3148,6 @@
     }
 
     function openCommunityCards(trigger) {
-        if (!isCommunityCardsMobileLayout()) return false;
         var modal = $('cfCommunityCardsModal');
         if (!modal) return false;
         bindCommunityCardsModal();
