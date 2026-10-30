@@ -142,22 +142,100 @@
         return text;
     }
     function isLocal() { return String(BOOT.loginMethod || '').toLowerCase() === 'local'; }
+    function isPrivyLogin() { return String(BOOT.loginMethod || '').toLowerCase() === 'privy'; }
     function isWcLogin() {
         return ['walletconnect', 'manual', 'manual_address'].indexOf(String(BOOT.loginMethod || '').toLowerCase()) >= 0;
     }
+    // A stored WalletConnect session outranks an injected extension (the user
+    // picked WC and it is still live). Same rule as p2p-wallet.js.
+    function prefersWc() {
+        return !!(window.GMWalletConnect
+            && typeof window.GMWalletConnect.prefersWcSigning === 'function'
+            && window.GMWalletConnect.prefersWcSigning());
+    }
+    // The WC bridge exists to recover legacy logins that predate login_method
+    // persistence (they report "injected"). A KNOWN non-WC method must never be
+    // routed there by omission.
+    function wcFallbackAllowed() {
+        if (isLocal() || isPrivyLogin()) return false;
+        if (isWcLogin()) return true;
+        return prefersWc();
+    }
+    // Providers are exposed in several shapes: a bare EIP-1193 object, a wrapper
+    // with `.ethereum`, or an EIP-6963 `{ provider }` entry. Collect them all —
+    // a Trust build that only exposes `window.trustwallet.ethereum` used to be
+    // invisible here.
+    function coerceToRequestProvider(candidate) {
+        if (!candidate) return null;
+        if (typeof candidate.request === 'function') return candidate;
+        if (candidate.ethereum && typeof candidate.ethereum.request === 'function') return candidate.ethereum;
+        if (candidate.provider && typeof candidate.provider.request === 'function') return candidate.provider;
+        return null;
+    }
+    function announced6963() {
+        var out = [];
+        var list = Array.isArray(window.__announced6963Providers) ? window.__announced6963Providers : [];
+        for (var i = 0; i < list.length; i++) {
+            if (list[i] && list[i].provider) out.push(list[i]);
+        }
+        return out;
+    }
+    function looksLikeTrustInfo(info) {
+        if (!info) return false;
+        var rdns = String(info.rdns || '').toLowerCase();
+        var name = String(info.name || '').toLowerCase();
+        return rdns.indexOf('trustwallet') >= 0 || name.indexOf('trust') >= 0;
+    }
+    function isTrustWalletProvider(provider) {
+        if (!provider) return false;
+        if (provider.isTrust || provider.isTrustWallet) return true;
+        var announced = announced6963();
+        for (var i = 0; i < announced.length; i++) {
+            if (announced[i].provider === provider) return looksLikeTrustInfo(announced[i].info);
+        }
+        return false;
+    }
     function injectedCandidates() {
         var all = [];
-        function add(provider) {
-            if (provider && typeof provider.request === 'function' && all.indexOf(provider) < 0) all.push(provider);
+        function add(candidate) {
+            var provider = coerceToRequestProvider(candidate);
+            if (provider && all.indexOf(provider) < 0) all.push(provider);
         }
         if (window.ethereum && Array.isArray(window.ethereum.providers)) window.ethereum.providers.forEach(add);
         add(window.ethereum);
         add(window.trustwallet);
+        add(window.trustwallet && window.trustwallet.ethereum);
         add(window.trustWallet);
-        (Array.isArray(window.__announced6963Providers) ? window.__announced6963Providers : []).forEach(function (entry) {
-            add(entry && entry.provider);
-        });
+        add(window.trustWallet && window.trustWallet.ethereum);
+        announced6963().forEach(function (entry) { add(entry.provider); });
         return all;
+    }
+    async function accountsOf(provider) {
+        var accounts = [];
+        try { accounts = await provider.request({ method: 'eth_requestAccounts' }) || []; } catch (_) {}
+        if (!accounts.length) {
+            try { accounts = await provider.request({ method: 'eth_accounts' }) || []; } catch (_) {}
+        }
+        return accounts;
+    }
+    // The provider whose ACTIVE account is the signed-in wallet. When several
+    // hold the same address, MiniPay first (it needs CIP-64 fee handling), then
+    // Trust (inside its browser the branded provider is the authentic one),
+    // then the first match.
+    async function matchingInjectedProvider(candidates) {
+        var wanted = String(BOOT.wallet || '').toLowerCase();
+        var matches = [];
+        for (var i = 0; i < candidates.length; i++) {
+            var accounts = await accountsOf(candidates[i]);
+            if (!wanted || accounts.some(function (a) { return String(a).toLowerCase() === wanted; })) {
+                matches.push(candidates[i]);
+            }
+        }
+        if (!matches.length) return null;
+        var mini = matches.find(function (p) { return p && p.isMiniPay; });
+        if (mini) return mini;
+        var trust = matches.find(function (p) { return isTrustWalletProvider(p); });
+        return trust || matches[0];
     }
     async function resolveProvider() {
         if (isLocal()) {
@@ -182,17 +260,24 @@
             if (privy[p] && privy[p].provider && typeof privy[p].provider.request === 'function') return privy[p].provider;
         }
         var candidates = injectedCandidates();
-        if (!candidates.length && window.GMWalletConnect && typeof window.GMWalletConnect.getProvider === 'function') {
-            return await window.GMWalletConnect.getProvider();
+        // A live WC session the user chose must not be shadowed by an extension.
+        if (candidates.length && !prefersWc()) {
+            var matched = await matchingInjectedProvider(candidates);
+            if (matched) return matched;
         }
-        var wanted = String(BOOT.wallet || '').toLowerCase();
-        for (var i = 0; i < candidates.length; i++) {
-            var accounts = [];
-            try { accounts = await candidates[i].request({ method: 'eth_requestAccounts' }) || []; } catch (_) {}
-            if (!accounts.length) {
-                try { accounts = await candidates[i].request({ method: 'eth_accounts' }) || []; } catch (_) {}
+        if (candidates.length && !wcFallbackAllowed()) {
+            throw new Error('Wrong wallet connected. Switch to your GoodMarket wallet and try again.');
+        }
+        if (isPrivyLogin()) throw new Error('Privy wallet is not ready. Please sign in again.');
+        if (window.GMWalletConnect && typeof window.GMWalletConnect.getProvider === 'function') {
+            try {
+                return await window.GMWalletConnect.getProvider();
+            } catch (error) {
+                // The bridge's own "No active WalletConnect session." is an
+                // internal string; translate it into something actionable.
+                if (candidates.length) throw new Error('Wrong wallet connected. Switch to your GoodMarket wallet and try again.');
+                throw new Error('No Celo wallet was detected. Open GoodMarket in your wallet and try again.');
             }
-            if (!wanted || accounts.some(function (account) { return String(account).toLowerCase() === wanted; })) return candidates[i];
         }
         throw new Error(candidates.length ? 'Wrong wallet connected. Switch to your GoodMarket wallet and try again.' : 'No Celo wallet was detected. Open GoodMarket in your wallet and try again.');
     }
