@@ -33,7 +33,28 @@ window.P2PWallet = (function () {
         USDC_ADAPTER: "0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B",
     };
 
-    function configure(o) { Object.assign(cfg, o || {}); }
+    // Read the page's boot config LAZILY. It is an inline object emitted late in
+    // <body>, so snapshotting it at load time would always read "". A page that
+    // forgets to call configure() (the Community Garden did) therefore used to
+    // leave loginMethod empty, which made every local (in-app) wallet sign fall
+    // through to the WalletConnect bridge and fail with "No active WalletConnect
+    // session." — and let an installed MetaMask extension sign for an in-app
+    // account. Explicit configure() values still win.
+    function _bootConfig() {
+        var boot = window.GM_WALLET_BOOT || window.GM_COMMUNITY_BOOT || {};
+        return {
+            wallet: boot.wallet || "",
+            chainId: Number(boot.celoChainId || boot.chainId || 42220),
+            loginMethod: boot.loginMethod || "",
+        };
+    }
+
+    function configure(o) {
+        Object.assign(cfg, _bootConfig(), o || {});
+    }
+    // Seed the defaults so a caller that never configures still signs with the
+    // right method. A guest render has no wallet, so the guards below still hold.
+    configure();
 
     function _isPrivyLogin() {
         return String(cfg.loginMethod || "").toLowerCase() === "privy";
@@ -79,10 +100,54 @@ window.P2PWallet = (function () {
         );
     }
 
+    function _announced6963Providers() {
+        var out = [];
+        var seen = [];
+        try {
+            var list = window.__announced6963Providers;
+            if (Array.isArray(list)) {
+                for (var i = 0; i < list.length; i++) {
+                    var entry = list[i];
+                    if (!entry || !entry.provider) continue;
+                    if (seen.indexOf(entry.provider) >= 0) continue;
+                    seen.push(entry.provider);
+                    out.push(entry);
+                }
+            }
+        } catch (_) { /* older browsers / strict CSPs */ }
+        return out;
+    }
+
+    function _coerceToRequestProvider(candidate) {
+        if (!candidate) return null;
+        if (typeof candidate.request === "function") return candidate;
+        if (candidate.ethereum && typeof candidate.ethereum.request === "function") return candidate.ethereum;
+        if (candidate.provider && typeof candidate.provider.request === "function") return candidate.provider;
+        return null;
+    }
+
+    function _looksLikeTrustInfo(info) {
+        if (!info) return false;
+        var rdns = String(info.rdns || "").toLowerCase();
+        var name = String(info.name || "").toLowerCase();
+        return rdns.indexOf("trustwallet") >= 0 || name.indexOf("trust") >= 0;
+    }
+
+    function _isTrustWalletProvider(provider) {
+        if (!provider) return false;
+        if (provider.isTrust || provider.isTrustWallet) return true;
+        var announced = _announced6963Providers();
+        for (var i = 0; i < announced.length; i++) {
+            if (announced[i].provider === provider) return _looksLikeTrustInfo(announced[i].info);
+        }
+        return false;
+    }
+
     function _collectInjected() {
         var out = [];
         var push = function (p) {
-            if (p && typeof p.request === "function" && out.indexOf(p) < 0) out.push(p);
+            var provider = _coerceToRequestProvider(p);
+            if (provider && out.indexOf(provider) < 0) out.push(provider);
         };
         if (window.ethereum) {
             if (window.ethereum.providers && window.ethereum.providers.length) {
@@ -90,8 +155,15 @@ window.P2PWallet = (function () {
             }
             push(window.ethereum);
         }
+        // Trust Wallet's branded injection. The alias casing varies across builds
+        // and platforms, and recent mobile builds expose ONLY this (no
+        // window.ethereum), so both spellings must be collected.
         if (window.trustwallet) push(window.trustwallet);
         if (window.trustwallet && window.trustwallet.ethereum) push(window.trustwallet.ethereum);
+        if (window.trustWallet) push(window.trustWallet);
+        if (window.trustWallet && window.trustWallet.ethereum) push(window.trustWallet.ethereum);
+        var announced = _announced6963Providers();
+        for (var i = 0; i < announced.length; i++) push(announced[i].provider);
         return out;
     }
 
@@ -105,8 +177,43 @@ window.P2PWallet = (function () {
         if (!providers.length) return null;
         var mini = providers.find(function (p) { return p && p.isMiniPay; });
         if (mini) return mini;
+        // Inside Trust Wallet's dApp browser the authentic provider may only be
+        // exposed via window.trustwallet or an EIP-6963 announcement, and its UA
+        // is often plain Chrome/Safari — so prefer a Trust provider whenever one
+        // is present rather than falling through to a co-installed extension.
+        var trust = providers.find(function (p) { return _isTrustWalletProvider(p); });
+        if (trust) return trust;
         var mm = providers.find(function (p) { return p && p.isMetaMask && !p.isBraveWallet; });
         return mm || providers[0];
+    }
+
+    // An injected provider whose ACTIVE account is the session wallet. Without
+    // this, a multi-extension phone can sign from an unrelated account (the
+    // "Wrong wallet connected" report). Only used for the injected path — a
+    // WalletConnect/Privy login must never prompt a stray extension.
+    async function _injectedMatchingWallet() {
+        if (_wcFamilyLogin() || _isPrivyLogin() || _isLocalLogin()) return null;
+        var candidates = _collectInjected();
+        if (!candidates.length) return null;
+        var want = String(cfg.wallet || "").toLowerCase();
+        if (!want) return null;
+        var matches = [];
+        for (var i = 0; i < candidates.length; i++) {
+            try {
+                var accounts = await candidates[i].request({ method: "eth_requestAccounts" });
+                if (!accounts || !accounts.length) accounts = await candidates[i].request({ method: "eth_accounts" });
+                var hit = (accounts || []).some(function (a) { return String(a).toLowerCase() === want; });
+                if (hit) matches.push(candidates[i]);
+            } catch (_) { /* locked / rejected — try the next provider */ }
+        }
+        if (!matches.length) return null;
+        // Both may hold the same address. MiniPay first (it is the user's actual
+        // wallet and needs CIP-64 fee handling), then Trust Wallet (inside its
+        // browser the branded provider is the authentic one), then the first.
+        var mini = matches.find(function (p) { return p && p.isMiniPay; });
+        if (mini) return mini;
+        var trust = matches.find(function (p) { return _isTrustWalletProvider(p); });
+        return trust || matches[0];
     }
 
     function isMiniPay() {
@@ -121,6 +228,22 @@ window.P2PWallet = (function () {
 
     function _isLocalLogin() {
         return String(cfg.loginMethod || "").toLowerCase() === "local";
+    }
+
+    function _wcFamilyLogin() {
+        return ["walletconnect", "manual", "manual_address"].indexOf(
+            String(cfg.loginMethod || "").toLowerCase()
+        ) >= 0;
+    }
+
+    // Should the WalletConnect fallback be allowed at all? It exists to recover
+    // legacy logins that predate login_method persistence (they report
+    // "injected"), so a KNOWN non-WC method must never be routed there by
+    // omission — that is how a local login ended up asking for a WC session.
+    function _wcFallbackAllowed() {
+        if (_isLocalLogin() || _isPrivyLogin()) return false;
+        if (_wcFamilyLogin()) return true;
+        return _preferWc();
     }
 
     async function getProvider() {
@@ -139,9 +262,13 @@ window.P2PWallet = (function () {
         }
         var privy = await _getPrivyProvider({ promptLogin: true, timeoutMs: 10000 });
         if (privy) return privy;
+        // Prefer the injected provider that actually holds the session wallet, so
+        // a multi-extension phone cannot sign from an unrelated account.
+        var matched = await _injectedMatchingWallet();
+        if (matched) return matched;
         var ep = _getInjected();
         if (ep) return ep;
-        if (typeof GMWalletConnect !== "undefined") {
+        if (_wcFallbackAllowed() && typeof GMWalletConnect !== "undefined") {
             try { return await GMWalletConnect.getProvider(); } catch (_) {}
         }
         throw new Error(
