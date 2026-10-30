@@ -7,6 +7,7 @@
 
     var GARDEN_ABI = [
         "function goodDollarToken() view returns (address)",
+        "function SEED_PRICE() view returns (uint256)",
         "function gardens(address) view returns (uint256 principal,uint64 plantedAt,uint16 seedCount,bool active)",
         "function maturityAt(address) view returns (uint256)",
         "function maximumBonus(address) view returns (uint256)",
@@ -23,6 +24,7 @@
     var _garden = null;
     var _token = null;
     var _ethers = null;
+    var _seedPrice = 0n;
     var _busy = false;
     var _returnFocus = null;
 
@@ -47,9 +49,11 @@
     function formatGd(amount, digits) {
         var text = _ethers.formatUnits(amount, 18);
         var decimals = Number(typeof digits === "number" ? digits : 6);
-        var re = new RegExp("^(\\d+\\.\\d{0," + decimals + "})");
-        var match = text.match(re);
-        return (match ? match[1] : text).replace(/0+$/, "").replace(/\.$/, "") || "0";
+        var parts = text.split(".");
+        var whole = parts[0] || "0";
+        if (!parts[1] || decimals <= 0) return whole;
+        var fraction = parts[1].slice(0, decimals).replace(/0+$/, "");
+        return fraction ? whole + "." + fraction : whole;
     }
     function money(amount) { return formatGd(amount) + " G$"; }
     function isActive(record) { return !!(record && record.active); }
@@ -80,7 +84,11 @@
             setText("cfGardenTotal", "Enter 1–100 seeds");
             return;
         }
-        setText("cfGardenTotal", count + " G$");
+        if (_seedPrice <= 0n) {
+            setText("cfGardenTotal", "Reading contract price…");
+            return;
+        }
+        setText("cfGardenTotal", money(BigInt(count) * _seedPrice));
     }
 
     async function contracts() {
@@ -107,6 +115,12 @@
                 _garden = null;
                 throw new Error("Garden token configuration does not match the deployed contract. Please contact support.");
             }
+            _seedPrice = BigInt(await _garden.SEED_PRICE());
+            if (_seedPrice <= 0n) {
+                _garden = null;
+                _seedPrice = 0n;
+                throw new Error("The Garden contract returned an invalid seed price.");
+            }
             _token = new _ethers.Contract(deployedTokenAddress, TOKEN_ABI, provider);
         }
         return { garden: _garden, token: _token, provider: window.P2PWallet };
@@ -116,6 +130,8 @@
         try {
             var wallet = walletAddress();
             var loaded = await contracts();
+            setText("cfGardenSeedUnitPrice", money(_seedPrice));
+            updateTotal();
             var values = await Promise.all([
                 loaded.token.balanceOf(wallet),
                 loaded.garden.sponsorRewardPool(),
@@ -132,7 +148,7 @@
             if (plantPanel) plantPanel.hidden = active;
             if (activePanel) activePanel.hidden = !active;
             if (!active) {
-                setStatus("Choose 1–100 seeds. Each seed costs 1 G$; your wallet will request approval only for the exact total if needed.");
+                setStatus("Choose 1–100 seeds. Each seed costs " + money(_seedPrice) + ". Your wallet will request approval only for the exact total if needed.");
                 return;
             }
             setText("cfGardenPrincipal", money(record.principal));
@@ -171,17 +187,18 @@
             if (input) input.focus();
             return;
         }
-        var amount = BigInt(seeds) * 10n ** 18n;
+        var amount;
         var address;
         try {
             address = walletAddress();
             setBusy(true);
             var loaded = await contracts();
+            amount = BigInt(seeds) * _seedPrice;
             var balance = await loaded.token.balanceOf(address);
             if (balance < amount) throw new Error("Insufficient G$ balance for " + seeds + (seeds === 1 ? " seed." : " seeds."));
             var allowance = await loaded.token.allowance(address, boot.contractAddress);
             if (allowance < amount) {
-                setStatus("Approve exactly " + seeds + " G$ for this purchase in your Celo wallet.");
+                setStatus("Approve exactly " + money(amount) + " for this purchase in your Celo wallet.");
                 await send("function approve(address spender,uint256 amount) returns (bool)", [boot.contractAddress, amount], boot.tokenAddress);
             }
             setStatus("Confirm the Garden purchase in your wallet. Your seeds will be planted after the transaction confirms.");
