@@ -3262,3 +3262,73 @@ body.cf-push-optin-open { overflow: hidden; }
     #pkModal .modal-sheet,
     #fvDeVerifyModal .modal-sheet { animation: none; }
 }
+
+
+/* ── KwentoFi Garden: native Community experience (disabled until configured) ── */
+.cf-garden-modal { position: fixed; inset: 0; z-index: 1450; display: grid; place-items: center; padding: 1rem; }
+.cf-garden-modal[hidden] { display: none !important; }
+.cf-garden-overlay { position: absolute; inset: 0; background: rgba(11, 16, 36, 0.76); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+.cf-garden-card { position: relative; z-index: 1; display: flex; flex-direction: column; width: min(760px, 92vw); max-height: min(88dvh, 880px); overflow: hidden; border: 1px solid rgba(255,255,255,.24); border-radius: 22px; background: #fff; color: #172554; box-shadow: 0 28px 90px rgba(7, 12, 36, .4); outline: none; }
+.cf-garden-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.05rem 1.25rem; color: #fff; background: linear-gradient(120deg, #25245f 0%, #4338ca 58%, #5b5be8 100%); }
+.cf-garden-head h2 { margin: .15rem 0 0; color: #fff; font-size: 1.35rem; line-height: 1.2; font-weight: 850; }
+.cf-garden-head-actions { display: flex; align-items: center; gap: .5rem; }
+.cf-garden-refresh { min-height: 36px; padding: .4rem .7rem; border: 1px solid rgba(255,255,255,.36); border-radius: 11px; background: rgba(255,255,255,.13); color: #fff; font: inherit; font-size: .75rem; font-weight: 800; cursor: pointer; }
+.cf-garden-refresh:hover:not(:disabled) { background: rgba(255,255,255,.25); }
+.cf-garden-refresh:focus-visible { outline: 3px solid #fbbf24; outline-offset: 2px; }
+.cf-garden-refresh:disabled { opacity: .56; cursor: wait; }
+.cf-garden-kicker { color: #c7d2fe; font-size: .65rem; letter-spacing: .16em; font-weight: 800; }
+.cf-garden-close { width: 40px; height: 40px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.4); border-radius: 13px; background: rgba(255,255,255,.13); color: #fff; font-size: 1.5rem; line-height: 1; cursor: pointer; }
+.cf-garden-close:hover { background: rgba(255,255,255,.25); }
+.cf-garden-close:focus-visible, .cf-garden-primary:focus-visible, .cf-garden-secondary:focus-visible { outline: 3px solid #fbbf24; outline-offset: 2px; }
+.cf-garden-body { min-height: 0; overflow: auto; padding: 1.2rem; }
+.cf-garden-intro { display: flex; align-items: flex-start; gap: .9rem; padding: 1rem; border: 1px solid #dbeafe; border-radius: 17px; background: linear-gradient(135deg, #eff6ff, #f0fdf4); }
+.cf-garden-mark { width: 44px; height: 44px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 14px; background: #dcfce7; font-size: 1.5rem; }
+.cf-garden-intro strong { color: #172554; font-size: 1rem; }
+.cf-garden-intro p { margin: .25rem 0 0; color: #475569; font-size: .85rem; line-height: 1.55; }
+.cf-garden-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; margin-top: .85rem; }
+.cf-garden-stats > div { min-width: 0; padding: .8rem .9rem; border: 1px solid #e2e8f0; border-radius: 14px; background: #f8fafc; }
+.cf-garden-stats small { display: block; color: #64748b; font-size: .72rem; font-weight: 700; }
+.cf-garden-stats strong { display: block; margin-top: .28rem; overflow-wrap: anywhere; color: #1e1b4b; font-size: .98rem; font-weight: 850; }
+.cf-garden-panel { margin-top: .9rem; padding: 1rem; border: 1px solid #dbe2f1; border-radius: 17px; background: #fff; }
+.cf-garden-panel[hidden] { display: none !important; }
+.cf-garden-panel label { display: flex; justify-content: space-between; gap: .5rem; color: #1e293b; font-size: .86rem; font-weight: 800; }
+.cf-garden-panel label span { color: #64748b; font-size: .75rem; font-weight: 700; }
+.cf-garden-panel input { width: 100%; box-sizing: border-box; margin-top: .55rem; padding: .8rem .85rem; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #0f172a; font: inherit; font-size: 1rem; font-weight: 750; }
+.cf-garden-panel input:focus { border-color: #4f46e5; outline: 3px solid rgba(99,102,241,.18); }
+.cf-garden-total { display: flex; justify-content: space-between; align-items: center; gap: .8rem; margin: .75rem 0; color: #64748b; font-size: .82rem; }
+.cf-garden-total strong { color: #1e1b4b; font-size: 1rem; }
+.cf-garden-primary, .cf-garden-secondary { min-height: 47px; padding: .7rem 1rem; border-radius: 13px; font: inherit; font-size: .88rem; font-weight: 850; cursor: pointer; }
+.cf-garden-primary { border: 0; background: linear-gradient(120deg, #4f46e5, #3730a3); color: #fff; box-shadow: 0 7px 18px rgba(67,56,202,.2); }
+.cf-garden-primary:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+.cf-garden-primary:disabled, .cf-garden-secondary:disabled { opacity: .56; cursor: wait; }
+.cf-garden-panel > .cf-garden-primary { width: 100%; }
+.cf-garden-active-title { display: flex; align-items: center; gap: .55rem; color: #166534; font-size: .98rem; }
+.cf-garden-pulse { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 5px #dcfce7; }
+.cf-garden-actions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: .9rem; }
+.cf-garden-secondary { border: 1px solid #cbd5e1; background: #fff; color: #334155; }
+.cf-garden-sponsor-title { display: flex; align-items: center; justify-content: space-between; gap: .5rem; color: #1e1b4b; font-size: .91rem; }
+.cf-garden-sponsor-title span { padding: .25rem .5rem; border-radius: 999px; background: #ecfdf5; color: #047857; font-size: .65rem; font-weight: 800; }
+.cf-garden-sponsor-panel p { margin: .45rem 0 .75rem; color: #64748b; font-size: .76rem; line-height: 1.5; }
+.cf-garden-sponsor-panel input[type="text"] { margin-bottom: .65rem; }
+.cf-garden-ack { display: flex !important; align-items: flex-start; justify-content: flex-start !important; gap: .55rem !important; margin: .2rem 0 .75rem; color: #475569 !important; font-size: .72rem !important; font-weight: 650 !important; line-height: 1.45; }
+.cf-garden-ack input { width: 18px; height: 18px; flex: 0 0 auto; margin: 0; accent-color: #4f46e5; }
+.cf-garden-sponsor-button { width: 100%; }
+.cf-garden-sponsor-button:disabled { opacity: .55; cursor: not-allowed; }
+.cf-garden-notice { margin: .9rem 0 .45rem; color: #64748b; font-size: .75rem; line-height: 1.55; }
+.cf-garden-status { min-height: 1.4rem; margin: .4rem 0 0; color: #334155; font-size: .8rem; line-height: 1.5; }
+.cf-garden-status.is-error { color: #b91c1c; font-weight: 700; }
+@media (max-width: 640px) {
+    .cf-garden-modal { padding: 0; }
+    .cf-garden-card { width: 100vw; height: 100vh; height: 100dvh; max-height: 100vh; max-height: 100dvh; border: 0; border-radius: 0; }
+    .cf-garden-head { padding: .8rem 1rem; }
+    .cf-garden-head h2 { font-size: 1.15rem; }
+    .cf-garden-body { padding: .85rem; }
+    .cf-garden-intro { gap: .65rem; padding: .8rem; }
+    .cf-garden-mark { width: 38px; height: 38px; }
+    .cf-garden-intro p { font-size: .79rem; }
+    .cf-garden-stats { gap: .5rem; margin-top: .65rem; }
+    .cf-garden-stats > div { padding: .65rem .7rem; }
+    .cf-garden-stats strong { font-size: .88rem; }
+    .cf-garden-panel { margin-top: .65rem; padding: .85rem; }
+    .cf-garden-actions > button { flex: 1 1 100%; }
+}
