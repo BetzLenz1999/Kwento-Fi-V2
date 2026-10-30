@@ -313,6 +313,34 @@
         </section>
         {% endif %}
     </section>
+
+    {# ── Suggested for you ──────────────────────────────────────────────
+         Fills the right column with the members who are most consistently
+         ACTIVE (most distinct active days recently), each with a Follow button,
+         so the reserved desktop track is never a blank 300-340px gap.
+
+         Ranked by active DAYS, not volume: "always active" means present most
+         days, and a single viral post must not win the panel. The wallet is
+         resolved server-side and never reaches the browser — the row renders
+         `@username` only (see community_feed/service.py).
+
+         Starts `hidden` and is revealed only on a successful response, so a
+         disabled/errored deployment renders nothing AND lets the layout
+         collapse to one column (`.is-single-column`) instead of leaving the
+         reserved track empty. On a phone the bundle moves this into the
+         Community cards sheet, like the other side cards. #}
+    <section class="cf-suggested" id="cfSuggested"
+             aria-labelledby="cfSuggestedTitle" hidden>
+        <div class="cf-suggested-head">
+            <h2 class="cf-suggested-title" id="cfSuggestedTitle">Suggested for you</h2>
+            <p class="cf-suggested-sub">Active members you can follow</p>
+        </div>
+        <ul class="cf-suggested-list" id="cfSuggestedList"></ul>
+        <p class="cf-suggested-status" id="cfSuggestedStatus"
+           role="status" aria-live="polite" hidden></p>
+        <button type="button" class="cf-suggested-more" id="cfSuggestedMore"
+                onclick="GMCommunity.openMemberSearch()">See all members</button>
+    </section>
     </aside>
 
     <div class="cf-primary" id="cfPrimary" role="region" aria-label="Community composer and posts">
@@ -616,7 +644,7 @@
             <div>
                 <p class="cf-community-cards-kicker">Your community hub</p>
                 <h2 id="cfCommunityCardsTitle">Community Cards</h2>
-                <p id="cfCommunityCardsDescription">Community G$, vault support, and recent posters.</p>
+                <p id="cfCommunityCardsDescription">Community G$, vault support, suggested members, and recent posters.</p>
             </div>
             <button type="button" class="cf-community-cards-close" id="cfCommunityCardsClose"
                     aria-label="Close Community Cards">×</button>
