@@ -2821,6 +2821,92 @@
         }
     }
 
+    // ── Suggested for you ──────────────────────────────────────────────────
+    // The right-column panel: the most consistently ACTIVE members, each with a
+    // Follow button. Reading is public (like the feed and search), so a guest
+    // sees the panel; the Follow tap raises the connect card and issues no
+    // request. The response carries usernames only — never a wallet.
+
+    function loadSuggestedMembers() {
+        var section = $('cfSuggested');
+        if (!section) return Promise.resolve();
+        return api('/community/api/suggested-members').then(function (result) {
+            var data = result && result.data;
+            if (!result.ok || !data || data.success === false) {
+                // Leave the section hidden: an errored panel must not hold the
+                // reserved column open (syncTodayHub collapses the grid).
+                renderSuggestedMembers(null);
+                return;
+            }
+            renderSuggestedMembers(data.members || []);
+        }).catch(function () {
+            renderSuggestedMembers(null);
+        });
+    }
+
+    function renderSuggestedMembers(members) {
+        var section = $('cfSuggested');
+        var list = $('cfSuggestedList');
+        var status = $('cfSuggestedStatus');
+        if (!section || !list) return;
+        list.textContent = '';
+        if (status) { status.hidden = true; status.textContent = ''; }
+        if (members === null) {
+            // A failed read is not an error the member can act on; hide the
+            // panel entirely rather than show a dead card.
+            section.hidden = true;
+            syncTodayHub();
+            return;
+        }
+        if (!members.length) {
+            section.hidden = true;
+            syncTodayHub();
+            return;
+        }
+        members.forEach(function (member) {
+            // Strip a stored `@` (a legacy row) — the row draws its own prefix.
+            var name = esc(member && member.username).trim().replace(/^@+/, '');
+            if (!name) return;
+            var item = el('li', 'cf-suggested-item');
+
+            item.appendChild(avatarNode(member && member.avatar_url, name,
+                'cf-suggested-avatar'));
+
+            var who = el('div', 'cf-suggested-who');
+            var link = document.createElement('a');
+            link.className = 'cf-suggested-name';
+            link.href = '/community/u/' + encodeURIComponent(name);
+            link.textContent = '@' + name;
+            who.appendChild(link);
+            // Honest meta: says WHY they are suggested (active days), not a
+            // follower count we do not rank on.
+            var days = Number(member && member.active_days) || 0;
+            var windowDays = Number(member && member.window_days) || 0;
+            who.appendChild(el('span', 'cf-suggested-meta', days > 0 && windowDays > 0
+                ? 'Active ' + days + ' of the last ' + windowDays + ' days'
+                : 'New member'));
+            item.appendChild(who);
+
+            item.appendChild(buildFollowButton(name, false));
+            list.appendChild(item);
+        });
+        if (!list.children.length) {
+            section.hidden = true;
+            syncTodayHub();
+            return;
+        }
+        section.hidden = false;
+        syncTodayHub();
+    }
+
+    function openMemberSearch() {
+        openSearch();
+        var bar = $('cfSearchBar');
+        if (bar && bar.scrollIntoView) {
+            bar.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+    }
+
     function syncTodayHub() {
         var hub = $('cfTodayHub');
         if (!hub) return;
@@ -2834,7 +2920,29 @@
         var earnStillBelongsInHub = !isCommunityCardsMobileLayout()
             || !cardsContent || (earnCard && earnCard.parentNode !== cardsContent);
         if (earnCard && !earnCard.hidden && earnStillBelongsInHub) hasVisibleCard = true;
+        // The suggestions panel lives in the same side column, so it keeps the
+        // hub visible too — but only while it is in the column (on a phone the
+        // bundle moves it into the Community cards sheet).
+        var suggested = $('cfSuggested');
+        var suggestedInHub = !!(suggested && !suggested.hidden
+            && (!cardsContent || suggested.parentNode !== cardsContent));
+        if (suggestedInHub) hasVisibleCard = true;
         hub.hidden = !hasVisibleCard;
+        syncLayoutColumns();
+    }
+
+    // A grid TRACK is created by `grid-template-columns`, not by its content:
+    // hiding the side column's child removes the element and leaves the track
+    // reserved, which is the blank ~300-340px gap on the right at >=1280px. So
+    // when BOTH side cards are hidden the grid collapses to one centred column.
+    // (This is the actual fix for the reported empty space; the suggestions
+    // panel only fills it while it has content.)
+    function syncLayoutColumns() {
+        var layout = document.querySelector('.cf-wrap.cf-layout');
+        if (!layout) return;
+        var hub = $('cfTodayHub');
+        var hubVisible = !!(hub && !hub.hidden);
+        layout.classList.toggle('is-single-column', !hubVisible);
     }
 
     function isCommunityCardsMobileLayout() {
@@ -2847,7 +2955,7 @@
     function moveCommunityCardsIntoModal() {
         var content = $('cfCommunityCardsContent');
         if (!content || typeof document.createComment !== 'function') return;
-        ['cfEarn', 'cfVaultDonationCard', 'cfDailyHeading', 'cfRail'].forEach(function (id) {
+        ['cfEarn', 'cfVaultDonationCard', 'cfDailyHeading', 'cfRail', 'cfSuggested'].forEach(function (id) {
             var node = $(id);
             if (!node || !node.parentNode || node.parentNode === content) return;
             var marker = document.createComment('cf-community-card-slot:' + id);
@@ -5457,6 +5565,10 @@
         loadMessageUnread();
         initMessageUnreadRefresh();
         initNotifications();
+        // The right-column panel. Fired alongside the feed so it never delays
+        // the posts; an empty/errored response just leaves it hidden and the
+        // grid collapses to one column.
+        loadSuggestedMembers();
         loadRewards().then(function () {
             if (!WALLET) return;
             var pending = null;
@@ -5505,6 +5617,10 @@
         refresh: refresh,
         loadRewards: loadRewards,
         syncTodayHub: syncTodayHub,
+        loadSuggestedMembers: loadSuggestedMembers,
+        renderSuggestedMembers: renderSuggestedMembers,
+        openMemberSearch: openMemberSearch,
+        syncLayoutColumns: syncLayoutColumns,
         loadMore: loadMore,
         loadDiscover: loadDiscover,
         loadMorePinnedDonations: loadMorePinnedDonations,
@@ -5600,6 +5716,10 @@
             buildRail: buildRail,
             buildRailItem: buildRailItem,
             railAuthors: railAuthors,
+            loadSuggestedMembers: loadSuggestedMembers,
+            renderSuggestedMembers: renderSuggestedMembers,
+            openMemberSearch: openMemberSearch,
+            syncLayoutColumns: syncLayoutColumns,
             onMediaTap: onMediaTap,
             avatarNode: avatarNode,
             renderAvatarInto: renderAvatarInto,
