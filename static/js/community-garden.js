@@ -105,6 +105,15 @@
         if (!window.P2PWallet || typeof window.P2PWallet.getReadProvider !== "function" || typeof window.P2PWallet.sendTx !== "function") {
             throw new Error("Celo wallet support is not ready. Please reload the Community page.");
         }
+        // Tell the shared signing helper who is logged in. Without this the Garden
+        // signed with empty defaults: a local (in-app) wallet fell through to the
+        // WalletConnect bridge ("No active WalletConnect session.") and an
+        // installed MetaMask extension could sign for an in-app account.
+        window.P2PWallet.configure({
+            wallet: walletAddress(),
+            chainId: Number(boot.chainId) || 42220,
+            loginMethod: (window.GM_WALLET_BOOT && window.GM_WALLET_BOOT.loginMethod) || "",
+        });
         if (!_garden || !_token) {
             var provider = window.P2PWallet.getReadProvider();
             var gardenAddress = _ethers.getAddress(boot.contractAddress);
