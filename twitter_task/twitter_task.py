@@ -4,6 +4,7 @@ import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
+from config import DAILY_TASK_COOLDOWN_HOURS
 from supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ class TwitterTaskService:
         # Custom messages for Twitter posts (keeps @GoodDollarTeam @gooddollarorg mentions)
         self.custom_messages = self._generate_custom_messages()
 
-        self.cooldown_hours = 72  # 72 hour cooldown
+        self.cooldown_hours = DAILY_TASK_COOLDOWN_HOURS
 
         logger.info("🐦 Twitter Task Service initialized")
         logger.info(f"⏰ Cooldown: {self.cooldown_hours} hours")
