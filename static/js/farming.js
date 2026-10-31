@@ -269,8 +269,17 @@
     }
 
     function _isMobile() {
-        return /android|iphone|ipad|ipod|minipay|metamask|trust|trustwallet/i
-            .test((navigator.userAgent || "").toLowerCase());
+        var ua = (navigator.userAgent || "").toLowerCase();
+        if (/android|iphone|ipad|ipod|minipay|metamask|trust|trustwallet|mobile/i.test(ua)) return true;
+        // iPadOS 13+ asks for the desktop site by default, so its UA is
+        // indistinguishable from macOS and none of the tokens above match. A
+        // Trust Wallet user on an iPad therefore got the SHORT desktop wait and
+        // a spurious "No wallet detected". `maxTouchPoints > 1` is the accepted
+        // tell — same fix get-started.js applies.
+        try {
+            if (/macintosh|mac os x/.test(ua) && Number(navigator.maxTouchPoints || 0) > 1) return true;
+        } catch (_) { /* no navigator.maxTouchPoints */ }
+        return false;
     }
 
     function _awaitProviders(timeoutMs) {
