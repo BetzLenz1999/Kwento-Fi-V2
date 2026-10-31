@@ -193,12 +193,16 @@ def issue_payment_authorization(
         "fee": SUBMISSION_FEE_WEI,
         "deadline": deadline,
     }
-    signature = Account.sign_typed_data(
-        private_key=_private_key(),
-        domain_data=domain,
-        message_types=message_types,
-        message_data=message,
-    ).signature.hex()
+    # Web3.to_hex (not HexBytes.hex) so the value keeps its 0x prefix; ethers v6
+    # rejects unprefixed hex for the bytes ownerSignature argument.
+    signature = Web3.to_hex(
+        Account.sign_typed_data(
+            private_key=_private_key(),
+            domain_data=domain,
+            message_types=message_types,
+            message_data=message,
+        ).signature
+    )
     return {
         "intent_id": Web3.to_hex(intent_id),
         "platform_hash": Web3.to_hex(PLATFORM_HASHES[platform]),
