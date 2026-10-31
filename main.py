@@ -1282,9 +1282,8 @@ def dashboard():
     if fv_gate:
         return fv_gate
 
-    # Track page view and get dashboard data
+    # Track the visit, but skip building analytics data that dashboard.html does not render.
     analytics.track_page_view(wallet, "dashboard")
-    dashboard_data = analytics.get_dashboard_stats(wallet)
 
     wc_project_id = os.environ.get("WALLETCONNECT_PROJECT_ID", "")
     has_explicit_sidecar = bool(os.getenv("WC_SERVICE_URL"))
@@ -1293,7 +1292,6 @@ def dashboard():
     return render_template(
         "dashboard.html",
         wallet=wallet,
-        data=dashboard_data,
         wc_project_id=wc_project_id,
         walletconnect_project_id=wc_project_id,
         walletconnect_sidecar_enabled=walletconnect_sidecar_enabled,
