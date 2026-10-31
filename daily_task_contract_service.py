@@ -1,6 +1,7 @@
 """Celo Daily Task v2 contract access and owner-bound payment authorization."""
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 from dataclasses import dataclass
@@ -9,9 +10,12 @@ from typing import Any
 
 from eth_account import Account
 from web3 import Web3
+from web3.logs import DISCARD
 
 from config import GOODDOLLAR_CONTRACT_ADDRESS
 from chain_rpc import make_provider
+
+logger = logging.getLogger(__name__)
 
 CHAIN_ID = 42220
 SUBMISSION_FEE_WEI = 20 * 10**18
@@ -231,7 +235,7 @@ def verify_payment_receipt(tx_hash: str, expected: dict[str, Any], *, context: D
             raise DailyTaskContractError("Payment transaction sender does not match the signed-in wallet")
         if int(context.w3.eth.chain_id) != CHAIN_ID:
             raise DailyTaskContractError("Payment transaction was not verified on Celo Mainnet")
-        decoded = context.contract.events.SubmissionFeePaid().process_receipt(receipt, errors="DISCARD")
+        decoded = context.contract.events.SubmissionFeePaid().process_receipt(receipt, errors=DISCARD)
         for log in decoded:
             args = log["args"]
             if (
@@ -250,6 +254,10 @@ def verify_payment_receipt(tx_hash: str, expected: dict[str, Any], *, context: D
     except DailyTaskContractError:
         raise
     except Exception as exc:
+        # The client only ever sees the generic message below, so log the real
+        # cause here or a decode/format regression is invisible in the platform
+        # logs (that is how an invalid `errors=` flag hid for a whole release).
+        logger.exception("Daily Task payment verification failed for tx %s", tx_hash)
         raise DailyTaskContractError("Unable to verify the Daily Task payment transaction") from exc
 
 
