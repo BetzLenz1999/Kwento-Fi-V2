@@ -2392,18 +2392,7 @@ def dashboard():
     import threading
     threading.Thread(target=analytics.track_page_view, args=(wallet, "dashboard"), daemon=True).start()
 
-    import os as _os
-    try:
-        homepage_stats = analytics.get_homepage_public_stats()
-    except Exception as e:
-        logger.error(f"dashboard stats failed: {e}")
-        homepage_stats = {
-            "total_g_disbursed_formatted": "���",
-            "total_g_disbursed_week_growth_pct": None,
-            "active_earners_formatted": "—",
-            "tasks_last_30_days_formatted": "—",
-        }
-    return render_template("dashboard.html", wallet=wallet, homepage_stats=homepage_stats, is_admin_user=is_admin_user)
+    return render_template("dashboard.html", wallet=wallet, is_admin_user=is_admin_user)
 
 
 @routes.route("/api/user/username", methods=["GET"])
