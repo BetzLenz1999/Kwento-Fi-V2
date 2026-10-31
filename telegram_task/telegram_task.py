@@ -4,6 +4,7 @@ import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
+from config import DAILY_TASK_COOLDOWN_HOURS
 from supabase_client import get_supabase_client
 from cache_utils import supabase_cache
 from referral_program.referral_service import current_origin_domain
@@ -205,7 +206,7 @@ class TelegramTaskService:
         self.custom_messages = _TELEGRAM_MESSAGES
 
         self.telegram_channel = "GoodDollarX"
-        self.cooldown_hours = 72  # 72 hour cooldown
+        self.cooldown_hours = DAILY_TASK_COOLDOWN_HOURS
 
         logger.info("📱 Telegram Task Service initialized")
         # logger.info(f"💰 Reward: {self.task_reward} G$") # REMOVED - dynamic reward
@@ -427,8 +428,7 @@ class TelegramTaskService:
                     'last_claim': pending_time.isoformat()
                 }
 
-            # Check last COMPLETED or REJECTED claim within 72 hours
-            # Only check claims from the last 72 hours
+            # Check the last COMPLETED or REJECTED claim within the cooldown window
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=self.cooldown_hours)
             last_claim = _wallet_filter(
                 self.supabase.table('telegram_task_log')\
@@ -441,7 +441,7 @@ class TelegramTaskService:
                 .limit(1)\
                 .execute()
 
-            logger.info(f"🔍 Recent claims (last 72h): {len(last_claim.data) if last_claim.data else 0}")
+            logger.info(f"🔍 Recent claims (last {self.cooldown_hours}h): {len(last_claim.data) if last_claim.data else 0}")
             if last_claim.data:
                 logger.info(f"🔍 Last claim: {last_claim.data[0]}")
 
