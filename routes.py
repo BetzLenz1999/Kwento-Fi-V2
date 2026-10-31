@@ -662,60 +662,86 @@ def _decode_bridge_to_input(input_data: str) -> dict | None:
 @routes.route('/api/daily-task/claim', methods=['POST'])
 @auth_required
 def claim_daily_task():
-    """Claim unified daily task (Twitter or Telegram)"""
+    """Reject legacy unpaid inserts: every new post must use the paid flow."""
+    return jsonify({
+        'success': False,
+        'error': 'Daily Task submissions now require the 20 G$ on-chain anti-spam payment. Start again from Community > Menu > Earn More > Daily Task.',
+        'code': 'payment_required',
+    }), 410
+
+
+def _daily_task_same_origin():
+    """Reject cross-origin task-payment requests when a browser Origin is present."""
+    from urllib.parse import urlsplit
+    origin = (request.headers.get('Origin') or '').strip()
+    if not origin:
+        return True
     try:
-        wallet = session.get('wallet')
-        data = request.get_json()
+        return urlsplit(origin).netloc.lower() == (request.host or '').lower()
+    except Exception:
+        return False
 
-        platform = data.get('platform')  # 'twitter' or 'telegram'
-        post_url = data.get('post_url')
 
-        if platform not in ['twitter', 'telegram']:
-            return jsonify({
-                'success': False,
-                'error': 'Invalid platform. Choose twitter or telegram.'
-            }), 400
+@routes.route('/api/daily-task/payment-intent', methods=['POST'])
+@auth_required
+def create_daily_task_payment_intent():
+    if not _daily_task_same_origin():
+        return jsonify({'success': False, 'error': 'Cross-origin request rejected.'}), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        from daily_task_payment_service import create_payment_intent, DailyTaskSubmissionError
+        result = create_payment_intent(
+            session.get('wallet'),
+            str(data.get('platform') or '').strip().lower(),
+            str(data.get('post_url') or '').strip(),
+            str(data.get('salt') or '').strip(),
+        )
+        return jsonify({'success': True, **result}), 200
+    except DailyTaskSubmissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception:
+        logger.exception('Daily Task payment intent creation failed')
+        return jsonify({'success': False, 'error': 'Daily Task payment is temporarily unavailable. Your post has not been stored.'}), 503
 
-        if not post_url:
-            return jsonify({
-                'success': False,
-                'error': f'{platform.capitalize()} post URL is required'
-            }), 400
 
-        # Import appropriate service
-        if platform == 'twitter':
-            from twitter_task.twitter_task import twitter_task_service
-            service = twitter_task_service
-        else:  # telegram
-            from telegram_task.telegram_task import telegram_task_service
-            service = telegram_task_service
+@routes.route('/api/daily-task/gas-sponsor', methods=['POST'])
+@auth_required
+def sponsor_daily_task_gas():
+    if not _daily_task_same_origin():
+        return jsonify({'success': False, 'error': 'Cross-origin request rejected.'}), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        from daily_task_gas_sponsor import sponsor_for_payment, DailyTaskGasSponsorError
+        result = sponsor_for_payment(session.get('wallet'), str(data.get('intent_id') or '').strip())
+        return jsonify(result), 200
+    except DailyTaskGasSponsorError as exc:
+        return jsonify({'success': False, 'error': str(exc), **exc.detail}), exc.status_code
+    except Exception:
+        logger.exception('Daily Task gas sponsorship failed')
+        return jsonify({'success': False, 'error': 'Daily Task gas support is temporarily unavailable.'}), 503
 
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
 
-        try:
-            result = loop.run_until_complete(
-                service.claim_task_reward(wallet, post_url)
-            )
-
-            if result is None:
-                logger.error(f"❌ claim_task_reward returned None for platform={platform}")
-                return jsonify({'success': False, 'error': 'Unexpected error processing your submission. Please try again.'}), 500
-
-            if result.get('success'):
-                return jsonify(result), 200
-            else:
-                return jsonify(result), 400
-
-        finally:
-            loop.close()
-
-    except Exception as e:
-        logger.error(f"❌ Daily task claim error: {e}")
-        import traceback
-        logger.error(f"🔍 Traceback: {traceback.format_exc()}")
-        return jsonify({'success': False, 'error': 'Failed to claim reward'}), 500
+@routes.route('/api/daily-task/payment-confirm', methods=['POST'])
+@auth_required
+def confirm_daily_task_payment():
+    if not _daily_task_same_origin():
+        return jsonify({'success': False, 'error': 'Cross-origin request rejected.'}), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        from daily_task_payment_service import confirm_paid_submission, DailyTaskSubmissionError
+        result = confirm_paid_submission(
+            session.get('wallet'),
+            str(data.get('intent_id') or '').strip(),
+            str(data.get('post_url') or '').strip(),
+            str(data.get('salt') or '').strip(),
+            str(data.get('payment_tx_hash') or '').strip(),
+        )
+        return jsonify(result), 200
+    except DailyTaskSubmissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception:
+        logger.exception('Daily Task payment confirmation failed')
+        return jsonify({'success': False, 'error': 'Could not verify the payment yet. Retry confirmation without paying again.'}), 503
 
 @routes.route('/api/daily-task/status', methods=['GET'])
 @auth_required
