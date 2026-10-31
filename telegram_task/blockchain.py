@@ -7,7 +7,7 @@ from web3 import Web3
 logger = logging.getLogger(__name__)
 
 class TelegramTaskBlockchain:
-    """Telegram Task reward disbursement through DailyTaskRewardsV2."""
+    """Telegram Task reward disbursement through KwentoFiDailyTaskRewardsV2."""
 
     def __init__(self):
         self.celo_rpc_url = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
@@ -17,7 +17,7 @@ class TelegramTaskBlockchain:
         from chain_rpc import make_provider
         self.w3 = Web3(make_provider(self.celo_rpc_url))
 
-        logger.info("Telegram Task Blockchain Service initialized (DailyTaskRewardsV2 mode)")
+        logger.info("Telegram Task Blockchain Service initialized (KwentoFiDailyTaskRewardsV2 mode)")
 
     def mask_wallet_address(self, wallet_address: str) -> str:
         """Mask wallet address for logging"""
@@ -33,7 +33,7 @@ class TelegramTaskBlockchain:
         )
 
     def disburse_telegram_reward_sync(self, wallet_address: str, amount: float, task_id: str = None) -> dict:
-        """Pay through the configured owner-only DailyTaskRewardsV2 contract."""
+        """Pay through the configured owner-only KwentoFiDailyTaskRewardsV2 contract."""
         if task_id is None:
             return {"success": False, "error": "A unique task submission ID is required"}
         try:
