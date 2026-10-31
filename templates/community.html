@@ -802,7 +802,7 @@
                 </div>
                 <p class="cf-garden-price-note" id="cfGardenPriceNote">Price is read from the Garden contract. The USD value of G$ can change and is not guaranteed.</p>
                 <button type="button" class="cf-garden-primary cf-garden-plant-cta" id="cfGardenPlantButton" onclick="GMCommunityGarden.plant()">Plant my Garden</button>
-                <p class="cf-garden-transaction-note">Your wallet will request approval only for the exact amount needed, then ask you to confirm the Garden transaction.</p>
+                <p class="cf-garden-transaction-note">Your wallet signs the exact G$ approval and seed purchase. If your CELO balance is 0.3 CELO or less, the app may send a limited gas top-up first; sponsorship is subject to per-purchase and daily caps.</p>
             </section>
             <section id="cfGardenActivePanel" class="cf-garden-panel" hidden>
                 <div class="cf-garden-active-title"><span class="cf-garden-pulse" aria-hidden="true"></span><strong id="cfGardenActiveTitle">Your Garden is growing</strong></div>
@@ -848,7 +848,7 @@
                 <label class="cf-garden-ack"><input id="cfGardenSponsorAck" type="checkbox"> <span>I understand this contribution is irrevocable and only funds optional bonuses.</span></label>
                 <button type="button" class="cf-garden-secondary cf-garden-sponsor-button" id="cfGardenSponsorButton" onclick="GMCommunityGarden.sponsor()" disabled>Contribute to sponsor pool</button>
             </section>
-            <p class="cf-garden-notice">Bonus is optional, sponsor-funded, and may be zero. Your wallet signs Celo transactions and pays network gas; no gasless sponsor is available. G$ prices can change and the displayed USD reference is not a peg.</p>
+            <p class="cf-garden-notice">Bonus is optional, sponsor-funded, and may be zero. Gas support only tops up estimated CELO; your wallet signs each transaction and pays network gas whenever sponsorship is not offered or available. Support is limited to eligible seed purchases and may be unavailable when limits or app funds are exhausted. G$ prices can change and the displayed USD reference is not a peg.</p>
             <p class="cf-garden-status" id="cfGardenStatus" role="status" aria-live="polite">Connect your Celo wallet to load Garden details.</p>
         </div>
     </section>
