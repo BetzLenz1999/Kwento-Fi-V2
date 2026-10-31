@@ -468,219 +468,13 @@ class TwitterTaskService:
             
             return error_result
 
-    async def claim_task_reward(self, wallet_address: str, twitter_url: str) -> Dict[str, Any]:
-        """Submit Twitter task for admin approval"""
-        try:
-            logger.info(f"🐦 Twitter task submission started for {wallet_address[:8]}... with URL: {twitter_url}")
-
-            if not twitter_url or not twitter_url.strip():
-                logger.warning(f"❌ Empty URL provided")
-                return {
-                    'success': False,
-                    'error': 'Twitter post URL is required'
-                }
-
-            # Validate URL
-            validation = self._validate_twitter_url(twitter_url)
-            logger.info(f"🔍 URL validation result: {validation}")
-
-            if not validation.get('valid'):
-                logger.warning(f"❌ URL validation failed: {validation.get('error')}")
-                return {
-                    'success': False,
-                    'error': validation.get('error', 'Invalid Twitter URL')
-                }
-
-            # Check eligibility
-            eligibility = await self.check_eligibility(wallet_address)
-            logger.info(f"🔍 Eligibility check result: {eligibility}")
-
-            if not eligibility.get('can_claim'):
-                logger.warning(f"❌ Not eligible to claim: {eligibility.get('reason')}")
-                return {
-                    'success': False,
-                    'error': eligibility.get('reason', 'Cannot claim at this time')
-                }
-
-            # Check if URL already exists (STRICT DUPLICATE PREVENTION)
-            if self.supabase:
-                try:
-                    # Extract tweet ID from URL for consistent checking
-                    url_parts = twitter_url.split('/')
-                    status_index = url_parts.index('status')
-                    tweet_id = url_parts[status_index + 1].split('?')[0]
-
-                    logger.info(f"🔍 Checking if tweet ID {tweet_id} has been used before...")
-
-                    # Get all existing twitter URLs from database
-                    from supabase_client import safe_supabase_operation
-
-                    url_check = safe_supabase_operation(
-                        lambda: self.supabase.table('twitter_task_log')\
-                            .select('wallet_address, created_at, twitter_url, status')\
-                            .execute(),
-                        fallback_result=type('obj', (object,), {'data': []})(),
-                        operation_name="check twitter URL uniqueness"
-                    )
-
-                    if url_check and url_check.data:
-                        # Check each URL to see if it contains the same tweet ID
-                        for record in url_check.data:
-                            existing_url = record.get('twitter_url', '')
-                            # Check if tweet ID exists in the URL
-                            if f'/status/{tweet_id}' in existing_url or tweet_id in existing_url:
-                                previous_wallet = record.get('wallet_address', 'Unknown')
-                                previous_status = record.get('status', 'pending')
-
-                                if str(previous_wallet).lower() == wallet_address.lower():
-                                    if previous_status == 'pending':
-                                        return {
-                                            'success': False,
-                                            'error': 'You already submitted this post. Please wait for admin approval.'
-                                        }
-                                    else:
-                                        logger.warning(f"❌ User {wallet_address[:8]}... already used tweet ID {tweet_id}")
-                                        return {
-                                            'success': False,
-                                            'error': f'⚠️ This Twitter post link (ID: {tweet_id}) has already been used by you. Please create a NEW Twitter post and submit its link.'
-                                        }
-                                else:
-                                    logger.warning(f"❌ Tweet ID {tweet_id} already used by another wallet: {previous_wallet[:8]}...")
-                                    return {
-                                        'success': False,
-                                        'error': f'⚠️ This Twitter post link (ID: {tweet_id}) has already been claimed by another user. Please create your OWN Twitter post about GoodDollar and submit its link.'
-                                    }
-
-                    logger.info(f"✅ Tweet ID {tweet_id} is unique and unused - submitting for approval")
-
-                except ValueError:
-                    logger.error(f"❌ Could not extract tweet ID from URL")
-                    return {
-                        'success': False,
-                        'error': 'Invalid Twitter URL format. Please provide a valid tweet link.'
-                    }
-                except Exception as db_error:
-                    logger.error(f"❌ Database URL check error: {db_error}")
-                    import traceback
-                    logger.error(f"🔍 Database error traceback: {traceback.format_exc()}")
-                    return {
-                        'success': False,
-                        'error': 'Unable to verify post uniqueness. Please try again.'
-                    }
-
-            # Submit for admin approval with retry logic
-            if self.supabase:
-                max_retries = 5  # Increased from 3 to 5
-                for attempt in range(max_retries):
-                    try:
-                        if attempt > 0:
-                            # Exponential backoff: 2s, 4s, 8s, 16s
-                            import time
-                            wait_time = 2 ** attempt
-                            logger.info(f"⏳ Waiting {wait_time}s before retry {attempt + 1}...")
-                            time.sleep(wait_time)
-                            
-                            # Reinitialize Supabase connection
-                            from supabase_client import get_supabase_client
-                            self.supabase = get_supabase_client()
-                            if not self.supabase:
-                                logger.error(f"❌ Failed to reconnect to database on attempt {attempt + 1}")
-                                if attempt < max_retries - 1:
-                                    continue
-                                return {
-                                    'success': False,
-                                    'error': 'Database connection failed. Please try again in a moment.'
-                                }
-                        
-                        logger.info(f"📝 Submitting Twitter task (attempt {attempt + 1}/{max_retries})...")
-                        logger.info(f"   URL: {twitter_url}")
-                        
-                        # Get dynamic reward for this specific submission
-                        current_reward = self.get_task_reward()
-                        logger.info(f"   Reward: {current_reward} G$")
-                        
-                        # Insert with NULL transaction_hash for pending submissions
-                        result = self.supabase.table('twitter_task_log').insert({
-                            # Store lowercase so rows written here, by the web
-                            # app (checksummed session wallet) and by the
-                            # Telegram bot (lowercase) are uniform going
-                            # forward; reads match case-insensitively via
-                            # _wallet_filter.
-                            'wallet_address': wallet_address.lower(),
-                            'twitter_url': twitter_url,
-                            'reward_amount': current_reward,
-                            'status': 'pending',
-                            'transaction_hash': None,
-                            'created_at': datetime.now(timezone.utc).isoformat()
-                        }).execute()
-
-                        logger.info(f"🔍 Database insert result: {result}")
-                        
-                        if result and hasattr(result, 'data') and result.data:
-                            logger.info(f"✅ Twitter task submitted for approval: {self._mask_wallet(wallet_address)}")
-
-                            return {
-                                'success': True,
-                                'pending': True,
-                                'message': f'✅ Submission successful! Your post is waiting for admin approval.',
-                                'status': 'pending_approval',
-                                'twitter_url': twitter_url
-                            }
-                        else:
-                            logger.error(f"❌ Database insert failed - no data returned")
-                            if attempt < max_retries - 1:
-                                continue
-                            return {
-                                'success': False,
-                                'error': 'Failed to save submission. Please try again.'
-                            }
-                            
-                    except Exception as insert_error:
-                        error_msg = str(insert_error).lower()
-                        
-                        logger.error(f"❌ Submission attempt {attempt + 1} failed: {insert_error}")
-                        
-                        # Check if it's a network/connection error
-                        is_network_error = any(keyword in error_msg for keyword in [
-                            'connection', 'timeout', 'network', 'disconnect', 
-                            'refused', 'unreachable', 'temporary failure'
-                        ])
-                        
-                        if is_network_error and attempt < max_retries - 1:
-                            logger.warning(f"⚠️ Network error detected, will retry...")
-                            continue
-                        
-                        if attempt >= max_retries - 1:
-                            logger.error(f"❌ Failed to submit after {max_retries} attempts: {insert_error}")
-                        
-                        if 'unique' in error_msg or 'duplicate' in error_msg:
-                            return {
-                                'success': False,
-                                'error': 'This post has already been submitted.'
-                            }
-                        elif is_network_error:
-                            return {
-                                'success': False,
-                                'error': 'Database connection issue. Please wait a moment and try again.'
-                            }
-                        else:
-                            return {
-                                'success': False,
-                                'error': 'Failed to save submission. Please try again.'
-                            }
-            else:
-                logger.error(f"❌ Supabase client not available")
-                return {
-                    'success': False,
-                    'error': 'Database not available. Please try again later.'
-                }
-
-        except Exception as e:
-            logger.error(f"❌ Twitter task submission error: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+    async def claim_task_reward(self, wallet_address: str, post_url: str) -> Dict[str, Any]:
+        """Reject legacy direct inserts; new submissions require verified v2 payment."""
+        return {
+            'success': False,
+            'error': 'Daily Task submissions require the 20 G$ on-chain anti-spam payment. Submit through Community.',
+            'code': 'payment_required',
+        }
 
     async def approve_submission(self, submission_id: int, admin_wallet: str) -> Dict[str, Any]:
         """Admin approves a submission and disburses reward"""
@@ -699,6 +493,8 @@ class TwitterTaskService:
                 return {'success': False, 'error': 'Submission not found or already processed'}
 
             sub_data = submission.data[0]
+            if sub_data.get('payment_status') not in ('paid', 'grandfathered'):
+                return {'success': False, 'error': 'This submission has no verified Daily Task payment and cannot be rewarded.'}
             wallet_address = sub_data['wallet_address']
             twitter_url = sub_data['twitter_url']
 
@@ -707,7 +503,9 @@ class TwitterTaskService:
             # Disburse reward (use the amount stored in the submission)
             from twitter_task.blockchain import twitter_blockchain_service
 
-            current_reward = float(sub_data['reward_amount'])
+            # Preserve the exact DB decimal string through the contract
+            # conversion; a binary float can round valid 18-decimal rewards.
+            current_reward = str(sub_data['reward_amount'])
             disbursement = twitter_blockchain_service.disburse_twitter_reward_sync(
                 wallet_address=wallet_address,
                 amount=current_reward,
