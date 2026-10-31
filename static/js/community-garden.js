@@ -47,6 +47,9 @@
     var GARDEN_ABI = [
         "function goodDollarToken() view returns (address)",
         "function SEED_PRICE() view returns (uint256)",
+        "function seedPrice() view returns (uint256)",
+        "function MAX_SEEDS() view returns (uint256)",
+        "function maxSeeds() view returns (uint16)",
         "function gardens(address) view returns (uint256 principal,uint64 plantedAt,uint16 seedCount,bool active)",
         "function maturityAt(address) view returns (uint256)",
         "function maximumBonus(address) view returns (uint256)",
@@ -64,6 +67,9 @@
     var _token = null;
     var _ethers = null;
     var _seedPrice = 0n;
+    var _maxSeeds = Number(boot.maxSeeds) || 100;
+    var _gasRequestId = null;
+    var _gasRequestSeeds = null;
     var _busy = false;
     var _returnFocus = null;
     var _growthInterval = null;
@@ -173,8 +179,8 @@
         var input = el("cfGardenSeedCount");
         if (!input) return;
         var count = Number(input.value);
-        if (!Number.isInteger(count) || count < 1 || count > 100) {
-            setText("cfGardenTotal", "Enter 1–100 seeds");
+        if (!Number.isInteger(count) || count < 1 || count > _maxSeeds) {
+            setText("cfGardenTotal", "Enter 1–" + _maxSeeds + " seeds");
             return;
         }
         if (_seedPrice <= 0n) {
@@ -217,7 +223,24 @@
                 _garden = null;
                 throw new Error("Garden token configuration does not match the deployed contract. Please contact support.");
             }
-            _seedPrice = BigInt(await _garden.SEED_PRICE());
+            try {
+                _seedPrice = BigInt(await _garden.seedPrice());
+            } catch (_) {
+                _seedPrice = BigInt(await _garden.SEED_PRICE());
+            }
+            try {
+                _maxSeeds = Number(await _garden.maxSeeds());
+            } catch (_) {
+                _maxSeeds = Number(await _garden.MAX_SEEDS());
+            }
+            if (!Number.isInteger(_maxSeeds) || _maxSeeds < 1 || _maxSeeds > 1000) {
+                _garden = null;
+                throw new Error("The Garden contract returned an invalid seed limit.");
+            }
+            var seedInput = el("cfGardenSeedCount");
+            if (seedInput) seedInput.max = String(_maxSeeds);
+            var limitLabel = modal.querySelector(".cf-garden-limit");
+            if (limitLabel) limitLabel.textContent = "1–" + _maxSeeds + " seeds";
             if (_seedPrice <= 0n) {
                 _garden = null;
                 _seedPrice = 0n;
@@ -254,7 +277,7 @@
                 _maturityAt = 0;
                 _chainTimeOffset = 0;
                 stopGrowthTicker();
-                setStatus("Choose 1–100 seeds. Each seed costs " + money(_seedPrice) + ". Your wallet will request approval only for the exact total if needed.");
+                setStatus("Choose 1–" + _maxSeeds + " seeds. Each seed costs " + money(_seedPrice) + ". The app may cover estimated Celo gas for wallets with 0.3 CELO or less, subject to limits.");
                 return;
             }
             _plantedAt = Number(record.plantedAt);
@@ -289,13 +312,51 @@
         return loaded.provider.sendTx(to, abi, methodArgs, "0x0", { waitForReceipt: true });
     }
 
+    function newGasRequestId() {
+        var bytes = new Uint8Array(32);
+        if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+            throw new Error("Secure random generation is unavailable. Reload the page and try again.");
+        }
+        window.crypto.getRandomValues(bytes);
+        return "0x" + Array.from(bytes, function (value) { return value.toString(16).padStart(2, "0"); }).join("");
+    }
+
+    async function requestGardenGas(seeds, loaded) {
+        if (!_gasRequestId || _gasRequestSeeds !== seeds) {
+            _gasRequestId = newGasRequestId();
+            _gasRequestSeeds = seeds;
+        }
+        var response = await fetch("/api/community/garden/gas-sponsor", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ seed_count: seeds, request_id: _gasRequestId })
+        });
+        var result = await response.json().catch(function () { return {}; });
+        if (!response.ok || !result.success) throw new Error(result.error || "Garden gas support could not be prepared.");
+        if (result.sponsored && result.sponsor_tx_hash) {
+            setStatus("The app is sponsoring an estimated " + result.estimated_fee_celo + " CELO of gas. Waiting for the top-up to confirm before opening your wallet…");
+            var provider = loaded.garden.runner && loaded.garden.runner.provider;
+            if (!provider || typeof provider.waitForTransaction !== "function") {
+                throw new Error("Could not monitor the app gas top-up. No Garden purchase was submitted; retry using the same request.");
+            }
+            var receipt = await provider.waitForTransaction(result.sponsor_tx_hash, 1, 120000);
+            if (!receipt || Number(receipt.status) !== 1) {
+                throw new Error("The app gas top-up did not confirm. No G$ purchase was made; retry later.");
+            }
+            return result;
+        }
+        setStatus("Your wallet will pay the estimated Celo network fee (" + result.estimated_fee_celo + " CELO). Confirm the seed purchase in your wallet.");
+        return result;
+    }
+
     async function plant() {
         if (_busy) return;
         if (fvBlocked("plant seeds")) return;
         var input = el("cfGardenSeedCount");
         var seeds = Number(input && input.value);
-        if (!Number.isInteger(seeds) || seeds < 1 || seeds > 100) {
-            setStatus("Choose a whole number of seeds from 1 to 100.", true);
+        if (!Number.isInteger(seeds) || seeds < 1 || seeds > _maxSeeds) {
+            setStatus("Choose a whole number of seeds from 1 to " + _maxSeeds + ".", true);
             if (input) input.focus();
             return;
         }
@@ -309,12 +370,15 @@
             var balance = await loaded.token.balanceOf(address);
             if (balance < amount) throw new Error("Insufficient G$ balance for " + seeds + (seeds === 1 ? " seed." : " seeds."));
             var allowance = await loaded.token.allowance(address, boot.contractAddress);
+            await requestGardenGas(seeds, loaded);
             if (allowance < amount) {
                 setStatus("Approve exactly " + money(amount) + " for this purchase in your Celo wallet.");
                 await send("function approve(address spender,uint256 amount) returns (bool)", [boot.contractAddress, amount], boot.tokenAddress);
             }
             setStatus("Confirm the Garden purchase in your wallet. Your seeds will be planted after the transaction confirms.");
             await send("function buyAndPlant(uint256 seedCount)", [BigInt(seeds)], boot.contractAddress);
+            _gasRequestId = null;
+            _gasRequestSeeds = null;
             await refresh();
             setStatus("Garden purchase submitted. Your 24-hour cycle begins when the transaction confirms on Celo.");
         } catch (error) {
@@ -424,7 +488,10 @@
     }
 
     var seedInput = el("cfGardenSeedCount");
-    if (seedInput) seedInput.addEventListener("input", updateTotal);
+    if (seedInput) {
+        seedInput.max = String(_maxSeeds);
+        seedInput.addEventListener("input", updateTotal);
+    }
     var sponsorAcknowledgement = el("cfGardenSponsorAck");
     if (sponsorAcknowledgement) sponsorAcknowledgement.addEventListener("change", updateSponsorButton);
     updateSponsorButton();
