@@ -873,9 +873,23 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         const ua = (navigator.userAgent || '').toLowerCase();
         return ua.includes('trust') || ua.includes('trustwallet');
     }
+    // Is `provider` the object Trust Wallet exposes through its branded
+    // `window.trustwallet` / `window.trustWallet` alias (either the root or a
+    // nested `.ethereum`)? Some Trust builds inject ONLY the alias with no
+    // `isTrust` flag and no EIP-6963 announcement, so flag- and rdns-based
+    // detection alone reject the authentic provider and the shared
+    // `_awaitEthProvider()` reports "No wallet detected".
+    function _isTrustWalletAliasProvider(provider) {
+        if (!provider) return false;
+        return [window.trustwallet, window.trustWallet].some(root => {
+            if (!root) return false;
+            return _coerceToRequestProvider(root) === provider;
+        });
+    }
     function _isTrustWalletProvider(provider) {
         if (!provider) return false;
         if (provider.isTrust || provider.isTrustWallet) return true;
+        if (_isTrustWalletAliasProvider(provider)) return true;
         return _eip6963Providers().some(d => {
             if (!d || d.provider !== provider) return false;
             const info = d.info || {};
@@ -909,6 +923,13 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     }
 
     function _pickTrustWallet(candidates) {
+        // Prefer the branded `window.trustwallet` object itself when present:
+        // inside Trust Wallet's dApp browser that alias is the authentic
+        // provider, and some builds expose a co-installed extension's
+        // `window.ethereum` alongside it. A build with no `isTrust` flag must
+        // still be recognised through the alias, not just the flags.
+        const aliased = candidates.find(p => _isTrustWalletAliasProvider(p));
+        if (aliased) return aliased;
         return candidates.find(p => p && (p.isTrust || p.isTrustWallet)) || null;
     }
 
@@ -981,8 +1002,11 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         // Branded Trust Wallet injection (`window.trustwallet`) wins even when
         // the UA doesn't self-identify — many Trust Wallet mobile builds ship
         // a plain WebView UA but expose the provider via `window.trustwallet`.
-        const trustByFlag = candidates.find(p => p && (p.isTrust || p.isTrustWallet));
-        if (trustByFlag) return trustByFlag;
+        // `_pickTrustWallet` also recognises a build that exposes the alias
+        // with no `isTrust` flag, so a co-installed extension's `window.ethereum`
+        // cannot shadow the authentic Trust provider.
+        const trustBranded = _pickTrustWallet(candidates);
+        if (trustBranded) return trustBranded;
         const trustBy6963 = _eip6963Providers().find(d => {
             const info = d.info || {};
             const rdns = String(info.rdns || '').toLowerCase();
