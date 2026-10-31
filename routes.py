@@ -743,6 +743,28 @@ def sponsor_daily_task_gas():
         return jsonify({'success': False, 'error': 'Daily Task gas support is temporarily unavailable.'}), 503
 
 
+@routes.route('/api/community/garden/gas-sponsor', methods=['POST'])
+@auth_required
+def sponsor_community_garden_gas():
+    if not _daily_task_same_origin():
+        return jsonify({'success': False, 'error': 'Cross-origin request rejected.'}), 403
+    fv_gate = _daily_task_fv_gate()
+    if fv_gate:
+        return fv_gate
+    data = request.get_json(silent=True) or {}
+    try:
+        from community_garden_gas_sponsor import sponsor_for_purchase, GardenGasSponsorError
+        result = sponsor_for_purchase(
+            session.get('wallet'), data.get('seed_count'), str(data.get('request_id') or '').strip()
+        )
+        return jsonify(result), 200
+    except GardenGasSponsorError as exc:
+        return jsonify({'success': False, 'error': str(exc), **exc.detail}), exc.status_code
+    except Exception:
+        logger.exception('Community Garden gas sponsorship failed')
+        return jsonify({'success': False, 'error': 'Garden gas support is temporarily unavailable.'}), 503
+
+
 @routes.route('/api/daily-task/payment-confirm', methods=['POST'])
 @auth_required
 def confirm_daily_task_payment():
