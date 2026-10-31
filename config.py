@@ -76,6 +76,16 @@ DAILY_TASK_CONTRACT_ADDRESS = os.getenv(
 )
 
 # ============================
+# Daily Task cooldown
+# ============================
+# Shared Twitter/Telegram daily-task cooldown, in hours. A submission stays
+# 'pending' until an admin approves it; the cooldown starts at the APPROVAL
+# and blocks BOTH platforms until it elapses (a rejection resets it
+# immediately). Single source of truth for the two task services, the Telegram
+# bot copy and the homepage template copy — never hardcode the number again.
+DAILY_TASK_COOLDOWN_HOURS = get_env_int('DAILY_TASK_COOLDOWN_HOURS', 48)
+
+# ============================
 # Post-login landing
 # ============================
 # Where a freshly created, logged-in or wallet-connected user is sent once the
