@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link rel="icon" type="image/svg+xml" href="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Learn & Earn - GoodMarket</title>
@@ -1612,6 +1613,8 @@
         <!-- Quiz History -->
         <div class="quiz-history">
             <h2><i class="fas fa-history"></i> Quiz History</h2>
+            <p style="color:var(--text-muted);margin:0 0 0.8rem;">Load your recent quiz results only when you want to view them.</p>
+            <button id="load-quiz-history-btn" type="button" class="btn-primary" style="margin-bottom:0.8rem;" onclick="loadQuizHistory()">Load Quiz History</button>
             <div id="history-content" style="display: none;">
                 <table class="history-table">
                     <thead>
@@ -1620,7 +1623,6 @@
                             <th>Score</th>
                             <th>Reward</th>
                             <th>TX</th>
-                            <th>Achievement</th>
                         </tr>
                     </thead>
                     <tbody id="history-table-body">
@@ -1629,233 +1631,18 @@
             </div>
         </div>
 
-        <!-- Achievement Card Sales History -->
-        <div class="quiz-history" id="card-sale-section" style="margin-top: 12px; display: none !important;">
-            <h2><i class="fas fa-receipt"></i> Achievement Card Sales</h2>
-            <div id="card-sale-history-content">
-                <table class="history-table" id="card-sale-table">
-                    <thead>
-                        <tr>
-                            <th>Date Sold</th>
-                            <th>Score</th>
-                            <th>Original Reward</th>
-                            <th>Sell Price</th>
-                            <th>TX</th>
-                        </tr>
-                    </thead>
-                    <tbody id="card-sale-table-body">
-                    </tbody>
-                </table>
-                <div id="card-sale-total" style="display: none; text-align: right; padding: 12px 0 4px; color: rgba(255,255,255,0.85); font-size: 0.95rem; font-weight: 600;"></div>
-            </div>
-        </div>
 
-        <!-- NFT Marketplace Section -->
-        <div id="nft-marketplace-section" style="margin-top: 16px; background: rgba(255,255,255,0.95); border: 1.5px solid var(--card-border); border-radius: 14px; padding: 14px 12px; backdrop-filter: blur(10px); box-shadow: 0 6px 24px rgba(67,56,43,0.05); display: none !important;">
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
-                <div>
-                    <h2 style="margin: 0; color: var(--text); font-size: 1rem; font-weight: 800;">🎨 NFT Achievement Marketplace</h2>
-                    <p style="margin: 6px 0 0; color: var(--text-dim); font-size: 0.88rem;">Buy & sell real on-chain Achievement NFTs on Celo — App pays gas for all transactions</p>
-                </div>
-                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                    <div id="nft-my-balance-badge" style="background: rgba(var(--accent-rgb),0.12); border: 1px solid rgba(var(--accent-rgb),0.35); border-radius: 8px; padding: 5px 10px; color: #b45309; font-size: 0.78rem; font-weight: 700;">
-                        💎 Balance: <span id="nft-balance-display">--</span> G$
-                    </div>
-                    <button onclick="window.loadNFTMarketplace()" style="padding: 5px 10px; background: #fbfaf8; color: var(--text-dim); border: 1px solid var(--card-border); border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.78rem;">🔄 Refresh</button>
-                    <button onclick="window.showMyNFTsTab()" style="padding: 5px 10px; background: linear-gradient(135deg, #f97316, #ea580c); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.78rem;">👤 My NFTs</button>
-                </div>
-            </div>
-
-            <!-- Tabs -->
-            <div style="display: flex; gap: 6px; margin-bottom: 12px; border-bottom: 2px solid var(--card-border); padding-bottom: 0; flex-wrap: wrap;">
-                <button id="tab-market" onclick="window.switchNFTTab('market')" style="padding: 7px 12px; background: linear-gradient(135deg,#f97316,#ea580c); color: white; border: none; border-radius: 8px 8px 0 0; font-weight: 700; cursor: pointer; font-size: 0.78rem;">🏪 Marketplace</button>
-                <button id="tab-mynfts" onclick="window.switchNFTTab('mynfts')" style="padding: 7px 12px; background: rgba(var(--accent-rgb),0.08); color: #8a8378; border: none; border-radius: 8px 8px 0 0; font-weight: 600; cursor: pointer; font-size: 0.78rem;">👤 My NFTs</button>
-                <button id="tab-history" onclick="window.switchNFTTab('history')" style="padding: 7px 12px; background: rgba(var(--accent-rgb),0.08); color: #8a8378; border: none; border-radius: 8px 8px 0 0; font-weight: 600; cursor: pointer; font-size: 0.78rem;">📜 Tx History</button>
-            </div>
-
-            <!-- Marketplace Tab -->
-            <div id="nft-tab-market">
-                <div id="nft-market-loading" style="text-align: center; padding: 20px; color: var(--text-muted);">
-                    <div style="font-size: 1.5rem; margin-bottom: 8px;">⏳</div>
-                    <div>Loading marketplace...</div>
-                </div>
-                <div id="nft-market-empty" style="display: none; text-align: center; padding: 20px; color: var(--text-muted);">
-                    <div style="font-size: 1.8rem; margin-bottom: 8px;">🏪</div>
-                    <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;">No NFTs Listed Yet</div>
-                    <div style="font-size: 0.9rem;">Complete a quiz and mint your Achievement NFT to be the first seller!</div>
-                </div>
-                <div id="nft-market-grid" style="display: none; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; max-height: 520px; overflow-y: auto; padding-right: 4px;"></div>
-            </div>
-
-            <!-- My NFTs Tab -->
-            <div id="nft-tab-mynfts" style="display: none;">
-                <div id="nft-mynfts-loading" style="text-align: center; padding: 20px; color: var(--text-muted);">
-                    <div style="font-size: 1.5rem; margin-bottom: 8px;">⏳</div>
-                    <div>Loading your NFTs...</div>
-                </div>
-                <div id="nft-mynfts-empty" style="display: none; text-align: center; padding: 20px; color: var(--text-muted);">
-                    <div style="font-size: 1.8rem; margin-bottom: 8px;">🎨</div>
-                    <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;">No NFTs Yet</div>
-                    <div style="font-size: 0.9rem;">Complete a quiz and click "Mint as NFT" on your Achievement Card!</div>
-                </div>
-                <div id="nft-mynfts-grid" style="display: none; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; max-height: 520px; overflow-y: auto; padding-right: 4px;"></div>
-            </div>
-
-            <!-- Transaction History Tab -->
-            <div id="nft-tab-history" style="display: none;">
-                <div id="nft-history-loading" style="text-align: center; padding: 20px; color: var(--text-muted);">
-                    <div style="font-size: 1.5rem; margin-bottom: 8px;">⏳</div>
-                    <div>Loading transaction history...</div>
-                </div>
-                <div id="nft-history-empty" style="display: none; text-align: center; padding: 20px; color: var(--text-muted);">
-                    <div style="font-size: 1.8rem; margin-bottom: 8px;">📜</div>
-                    <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;">No Transactions Yet</div>
-                    <div style="font-size: 0.9rem;">NFT sale transactions will appear here.</div>
-                </div>
-                <div id="nft-history-list" style="display: none; overflow-x: auto;"></div>
-            </div>
-        </div>
     </div>
         {% endif %}
 
     <!-- List for Sale Modal — placed outside backdrop-filter parent to preserve position:fixed viewport behaviour -->
-    <div id="nft-list-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 10001; align-items: center; justify-content: center;">
-        <div style="background: linear-gradient(135deg, #1e1b4b, #312e81); border: 2px solid rgba(139,92,246,0.6); border-radius: 14px; padding: 16px; max-width: 360px; width: 92%;">
-            <div id="nft-list-form-view">
-                <h3 style="color: white; margin: 0 0 6px; font-size: 1.05rem;">🏷️ List NFT for Sale</h3>
-                <p id="nft-list-modal-desc" style="color: rgba(255,255,255,0.65); margin: 0 0 10px; font-size: 0.88rem;"></p>
-                <label style="color: rgba(255,255,255,0.8); font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 6px;">Set Price (G$)</label>
-                <div id="nft-list-price-hint" style="color: rgba(167,139,250,0.85); font-size: 0.78rem; margin-bottom: 6px;"></div>
-                <input id="nft-list-price-input" type="number" min="1" max="1000" step="1" placeholder="e.g. 500" style="width: 100%; padding: 10px 12px; border-radius: 10px; border: 2px solid rgba(139,92,246,0.5); background: rgba(255,255,255,0.08); color: white; font-size: 0.95rem; box-sizing: border-box; margin-bottom: 5px;">
-                <div style="color: rgba(255,255,255,0.4); font-size: 0.75rem; margin-bottom: 12px;">Maximum: 1,000 G$ • Min based on your score</div>
-                <div style="display: flex; gap: 8px;">
-                    <button id="nft-list-confirm-btn" onclick="window.confirmListNFT()" style="flex: 1; padding: 10px; background: linear-gradient(135deg,#7c3aed,#4f46e5); color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 0.88rem;">List for Sale</button>
-                    <button onclick="window.closeListModal()" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 0.88rem;">Cancel</button>
-                </div>
-            </div>
-            <div id="nft-list-result-view" style="display:none; text-align:center; padding: 10px 0;">
-                <div id="nft-list-result-icon" style="font-size: 2.5rem; margin-bottom: 8px;"></div>
-                <div id="nft-list-result-msg" style="font-size: 0.95rem; font-weight: 700; color: white; margin-bottom: 12px;"></div>
-                <button onclick="window.closeListModal()" style="padding: 9px 24px; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 0.85rem;">Close</button>
-            </div>
-        </div>
-    </div>
+
 
     <!-- Burn NFT Modal — placed outside backdrop-filter parent -->
-    <div id="nft-burn-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 10003; align-items: center; justify-content: center;">
-        <div style="background: linear-gradient(135deg, #2d1010, #450a0a); border: 2px solid rgba(239,68,68,0.6); border-radius: 14px; padding: 16px; max-width: 360px; width: 92%;">
-            <div style="text-align:center; margin-bottom: 10px;">
-                <div style="font-size: 1.8rem; margin-bottom: 6px;">🔥</div>
-                <h3 style="color: white; margin: 0 0 6px; font-size: 1.35rem;">Burn this NFT?</h3>
-                <p id="nft-burn-modal-desc" style="color: rgba(255,255,255,0.65); margin: 0 0 0; font-size: 0.88rem;"></p>
-            </div>
-            <div style="background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.35); border-radius: 12px; padding: 16px; margin-bottom: 18px; text-align: center;">
-                <div id="nft-burn-reward-display" style="font-size: 1.4rem; font-weight: 900; color: #fca5a5;"></div>
-                <div style="color: rgba(255,255,255,0.55); font-size: 0.78rem; margin-top: 4px;">G$ to be sent to your wallet</div>
-            </div>
-            <div style="background: rgba(255,255,255,0.05); border-radius: 10px; padding: 14px; margin-bottom: 20px;">
-                <div style="color: rgba(255,255,255,0.7); font-size: 0.82rem; line-height: 1.8;">
-                    <div>🔥 NFT will be permanently destroyed</div>
-                    <div>💰 G$ reward is disbursed by current payout mode (instant or stream)</div>
-                    <div style="color: rgba(239,68,68,0.85); margin-top: 6px; font-weight: 700;">⚠️ This action cannot be undone!</div>
-                </div>
-            </div>
-            <div id="nft-burn-action-row" style="display: flex; gap: 10px;">
-                <button id="nft-burn-confirm-btn" onclick="window.confirmBurnNFT()" style="flex: 1; padding: 10px; background: linear-gradient(135deg,#dc2626,#b91c1c); color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 0.88rem;">🔥 Burn & Claim</button>
-                <button onclick="window.closeBurnModal()" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 0.88rem;">Cancel</button>
-            </div>
-            <div id="nft-burn-result-view" style="display:none; text-align:center; padding: 10px 0;">
-                <div id="nft-burn-result-icon" style="font-size: 2.5rem; margin-bottom: 8px;"></div>
-                <div id="nft-burn-result-msg" style="font-size: 0.95rem; font-weight: 700; color: white; margin-bottom: 12px;"></div>
-                <button onclick="window.closeBurnModal()" style="padding: 9px 24px; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 0.85rem;">Close</button>
-            </div>
-        </div>
-    </div>
+
 
     <!-- Buy NFT Modal — placed outside backdrop-filter parent -->
-    <div id="nft-buy-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 10002; align-items: center; justify-content: center;">
-        <div style="background: linear-gradient(135deg, #1e1b4b, #312e81); border: 2px solid rgba(245,158,11,0.6); border-radius: 14px; padding: 16px; max-width: 360px; width: 92%; max-height: 90vh; overflow-y: auto;">
-            <!-- Step: Confirm -->
-            <div id="nft-buy-step-confirm">
-                <h3 style="color: white; margin: 0 0 6px; font-size: 1.05rem;">💎 Buy NFT</h3>
-                <p id="nft-buy-modal-desc" style="color: rgba(255,255,255,0.65); margin: 0 0 12px; font-size: 0.88rem;"></p>
-                <div style="background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.35); border-radius: 12px; padding: 12px; margin-bottom: 14px; text-align: center;">
-                    <div id="nft-buy-price-display" style="font-size: 1.4rem; font-weight: 900; color: #f59e0b;"></div>
-                    <div style="color: rgba(255,255,255,0.6); font-size: 0.8rem; margin-top: 4px;">Purchase Price</div>
-                </div>
-                <div style="background: rgba(255,255,255,0.05); border-radius: 10px; padding: 14px; margin-bottom: 20px;">
-                    <div style="color: rgba(255,255,255,0.75); font-size: 0.82rem; line-height: 1.7;">
-                        <div>✅ <strong>Step 1:</strong> Send G$ to seller — sign in your wallet</div>
-                        <div>✅ <strong>Step 2:</strong> App verifies payment &amp; transfers NFT to you</div>
-                        <div style="margin-top: 8px; color: rgba(255,255,255,0.45); font-size: 0.78rem;">App pays all blockchain gas fees for you.</div>
-                    </div>
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button id="nft-buy-confirm-btn" onclick="window.executeBuyNFT()" style="flex: 1; padding: 13px; background: linear-gradient(135deg,#f59e0b,#d97706); color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 0.95rem;">Approve &amp; Buy</button>
-                    <button onclick="window.closeBuyModal()" style="flex: 1; padding: 13px; background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.25); border-radius: 10px; font-weight: 600; cursor: pointer;">Cancel</button>
-                </div>
-            </div>
-            <!-- Step: WalletConnect QR (regular browser) -->
-            <div id="nft-buy-step-wc" style="display: none; text-align: center;">
-                <h3 style="color: white; margin: 0 0 4px; font-size: 1.2rem;">🔗 Connect Your Wallet</h3>
-                <p style="color: rgba(255,255,255,0.55); font-size: 0.8rem; margin: 0 0 16px;">Scan with MetaMask, Trust Wallet, or any WalletConnect wallet</p>
-                <!-- Alert box -->
-                <div id="nft-buy-wc-alert" style="display:none; border-radius:10px; padding:0.7rem 0.9rem; font-size:0.82rem; font-weight:500; text-align:left; margin-bottom:12px;"></div>
-                <!-- Loading -->
-                <div id="nft-buy-wc-loading" style="padding: 30px 0; color: rgba(255,255,255,0.6); font-size:0.9rem;">
-                    <div style="font-size:2rem; margin-bottom:10px;">⏳</div>
-                    Generating QR code…
-                </div>
-                <!-- QR Box -->
-                <div id="nft-buy-wc-qrbox" style="display:none;">
-                    <div style="background: white; border-radius: 14px; padding: 14px; display: inline-block; margin-bottom: 14px;">
-                        <div id="nft-buy-wc-canvas"></div>
-                    </div>
-                    <div style="color: rgba(255,255,255,0.5); font-size: 0.78rem; margin-bottom: 16px;">Waiting for wallet connection…</div>
-                </div>
-                <!-- Connected — sending TX -->
-                <div id="nft-buy-wc-sending" style="display:none; padding: 20px 0;">
-                    <div style="font-size:2rem; margin-bottom:10px;">📲</div>
-                    <div style="color: #86efac; font-weight: 700; margin-bottom: 6px;">Wallet Connected!</div>
-                    <div id="nft-buy-wc-sending-msg" style="color: rgba(255,255,255,0.6); font-size:0.85rem;">Preparing transaction…</div>
-                </div>
-                <button onclick="window.closeBuyModal()" style="margin-top:8px; padding: 10px 24px; background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; font-weight: 600; cursor: pointer; font-size: 0.85rem;">Cancel</button>
-            </div>
-            <!-- Step: Processing -->
-            <div id="nft-buy-step-processing" style="display: none; text-align: center;">
-                <div style="font-size: 2.5rem; margin-bottom: 12px;">⏳</div>
-                <h3 style="color: white; margin: 0 0 8px; font-size: 1.2rem;" id="nft-buy-processing-title">Processing…</h3>
-                <p id="nft-buy-processing-msg" style="color: rgba(255,255,255,0.6); font-size: 0.88rem; margin: 0 0 20px;"></p>
-                <div style="background: rgba(255,255,255,0.05); border-radius: 10px; padding: 14px;">
-                    <div id="nft-buy-step1-row" style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; color: rgba(255,255,255,0.7); font-size: 0.85rem;">
-                        <span id="nft-buy-step1-icon" style="font-size: 1.1rem;">⏳</span>
-                        <span id="nft-buy-step1-label">Step 1: Sign transaction in your wallet</span>
-                    </div>
-                    <div id="nft-buy-step2-row" style="display: flex; align-items: center; gap: 10px; color: rgba(255,255,255,0.4); font-size: 0.85rem;">
-                        <span id="nft-buy-step2-icon" style="font-size: 1.1rem;">⭕</span>
-                        <span id="nft-buy-step2-label">Step 2: App completes the trade securely</span>
-                    </div>
-                </div>
-            </div>
-            <!-- Step: Done -->
-            <div id="nft-buy-step-done" style="display: none; text-align: center;">
-                <div style="font-size: 3rem; margin-bottom: 12px;">🎉</div>
-                <h3 style="color: white; margin: 0 0 8px; font-size: 1.3rem;">Purchase Complete!</h3>
-                <p id="nft-buy-done-msg" style="color: rgba(255,255,255,0.65); font-size: 0.88rem; margin: 0 0 20px;"></p>
-                <button onclick="window.closeBuyModal()" style="padding: 12px 32px; background: linear-gradient(135deg,#7c3aed,#4f46e5); color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer;">Done ✓</button>
-            </div>
-            <!-- Step: Error -->
-            <div id="nft-buy-step-error" style="display: none; text-align: center;">
-                <div style="font-size: 2.5rem; margin-bottom: 12px;">❌</div>
-                <h3 style="color: #fca5a5; margin: 0 0 8px; font-size: 1.2rem;">Purchase Failed</h3>
-                <p id="nft-buy-error-msg" style="color: rgba(255,255,255,0.6); font-size: 0.85rem; margin: 0 0 20px;"></p>
-                <div style="display: flex; gap: 10px; justify-content: center;">
-                    <button onclick="window.retryBuyNFT()" style="padding: 11px 24px; background: linear-gradient(135deg,#f59e0b,#d97706); color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer;">Retry</button>
-                    <button onclick="window.closeBuyModal()" style="padding: 11px 24px; background: rgba(255,255,255,0.08); color: white; border: 1px solid rgba(255,255,255,0.25); border-radius: 10px; font-weight: 600; cursor: pointer;">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
+
 
     <!-- Sponsorship Wizard Modal -->
     <div id="sponsor-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9000; overflow-y:auto;">
@@ -2117,54 +1904,10 @@
             <h2 id="results-title">Quiz Completed!</h2>
             <div id="results-details"></div>
 
-            <!-- Achievement Card (Shareable) -->
-    <div id="achievement-card" class="achievement-card" style="display: none;">
-        <div class="achievement-header">
-            <img src="https://img.icons8.com/fluency/96/trophy.png" alt="Trophy" class="achievement-icon">
-            <h2 class="achievement-title">🎉 Congratulations!</h2>
-        </div>
-        <div class="achievement-badge" id="achievement-badge">
-            <div class="badge-rank" id="badge-rank">🥇 RANK #1</div>
-            <div class="badge-subtitle" id="badge-subtitle">Daily Quiz Champion</div>
-        </div>
-        <div class="achievement-stats">
-            <div class="stat-item">
-                <div class="stat-label">Username</div>
-                <div class="stat-value" id="achievement-username">User</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">Score</div>
-                <div class="stat-value" id="achievement-score">10/10</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">Reward</div>
-                <div class="stat-value" id="achievement-reward">🎨 NFT</div>
-            </div>
-        </div>
-        <div class="achievement-footer">
-            <p>GoodDollar Learn & Earn</p>
-            <p class="achievement-date" id="achievement-date">Dec 14, 2025</p>
-        </div>
-    </div>
-
-    <div class="action-buttons">
-        <button class="btn-share" id="download-achievement-btn" style="display: none;">
-            <span>📥 Download Achievement Card</span>
-        </button>
-        <button class="btn-share" id="share-twitter" style="display: none;">
-            <span>🐦 Share on Twitter</span>
-        </button>
-        <button class="btn-share" id="share-telegram" style="display: none;">
-            <span>✈️ Share on Telegram</span>
-        </button>
-    </div>
-
             <button class="btn-primary" onclick="location.reload()">Take Another Quiz</button>
         </div>
     </div>
 
-    <!-- Achievement Modal -->
-    <div id="achievement-modal" style="display: none;"></div>
 
     <!-- html2canvas is lazy-loaded on first cert/screenshot download via _ensureHtml2Canvas() -->
     <script>
@@ -2254,7 +1997,6 @@
             reward_per_correct: 200
         };
 
-        let quizHistory = []; // Store quiz history globally for showHistoryAchievement
         let cooldownTimerInterval = null; // Store interval for cooldown timer
 
         // Audio context for sound effects
@@ -3037,7 +2779,7 @@
 
                 if (data.success) {
                     showQuizResults(data);
-                    loadQuizHistory(); // Refresh history
+                    if (quizHistoryLoaded) loadQuizHistory(true); // Refresh only after opting into history
                     checkEligibility(); // Refresh eligibility
                 } else {
                     // Hide loading and show error
@@ -3129,276 +2871,6 @@
             }
         }
 
-        // Show achievement card in modal
-        async function showAchievementCard(score, total, soldInfo = {}) {
-            const modal = document.getElementById('achievement-modal');
-            modal.style.display = 'flex';
-            modal.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0, 0, 0, 0.8);
-                backdrop-filter: blur(10px);
-                z-index: 10000;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                animation: fadeIn 0.3s ease-out;
-            `;
-
-            const percentage = Math.round((score / total) * 100);
-            const dateSource = soldInfo && soldInfo.quiz_timestamp ? new Date(soldInfo.quiz_timestamp) : new Date();
-            const today = dateSource.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-            modal.innerHTML = `
-                <div style="background: white; border-radius: 18px; padding: 0; max-width: 400px; width: 95%; position: relative; overflow: hidden; overflow-y: auto; max-height: 90vh; box-shadow: 0 12px 40px rgba(0,0,0,0.3);">
-                    <!-- X close button at top right -->
-                    <button id="close-x-btn-modal" style="position: absolute; top: 10px; right: 10px; z-index: 100; background: rgba(0,0,0,0.35); border: none; color: white; border-radius: 50%; width: 30px; height: 30px; font-size: 1rem; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;">✕</button>
-                    <div id="achievement-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%); padding: 20px 16px; color: white; text-align: center; position: relative; box-shadow: 0 6px 20px rgba(0,0,0,0.4);">
-                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.25) 0%, transparent 70%); animation: pulse 3s infinite;"></div>
-                        <img src="https://img.icons8.com/fluency/96/trophy.png" alt="Trophy" style="width: 56px; height: 56px; animation: bounce 2s infinite; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.5));">
-                        <h2 style="margin: 8px 0 6px 0; font-size: 1.4rem; font-weight: 900; text-shadow: 2px 2px 6px rgba(0,0,0,0.6); position: relative; z-index: 1; letter-spacing: 1px;">Quiz Completed!</h2>
-                        <p style="margin: 0 0 12px 0; font-weight: 700; font-size: 0.85rem; position: relative; z-index: 1; text-shadow: 1px 1px 4px rgba(0,0,0,0.5);">${today}</p>
-
-                        <!-- Score Stats -->
-                        <div style="background: linear-gradient(135deg, rgba(255,255,255,0.35), rgba(255,255,255,0.2)); border-radius: 12px; padding: 14px; margin: 10px 0; backdrop-filter: blur(15px); border: 2px solid rgba(255,255,255,0.5); position: relative; z-index: 1; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
-                                <div>
-                                    <div style="font-size: 0.72rem; font-weight: 700; margin-bottom: 4px; text-shadow: 1px 1px 3px rgba(0,0,0,0.5); text-transform: uppercase; letter-spacing: 1px;">Score</div>
-                                    <div style="font-size: 1.5rem; font-weight: 900; text-shadow: 2px 2px 5px rgba(0,0,0,0.6);">${score}/${total}</div>
-                                    <div style="font-size: 0.85rem; font-weight: 700; margin-top: 4px; text-shadow: 1px 1px 3px rgba(0,0,0,0.5);">${percentage}%</div>
-                                </div>
-                                <div>
-                                    <div style="font-size: 0.72rem; font-weight: 700; margin-bottom: 4px; text-shadow: 1px 1px 3px rgba(0,0,0,0.5); text-transform: uppercase; letter-spacing: 1px;">Reward</div>
-                                    <div style="font-size: 1.4rem; font-weight: 900; text-shadow: 2px 2px 5px rgba(0,0,0,0.6);">🎨</div>
-                                    <div style="font-size: 0.78rem; font-weight: 700; margin-top: 4px; text-shadow: 1px 1px 3px rgba(0,0,0,0.5);">Achievement NFT</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 10px; opacity: 0.95; font-size: 0.82rem; font-weight: 600; position: relative; z-index: 1;">
-                            <div style="margin-bottom: 3px;">🌟 GoodDollar Learn & Earn</div>
-                            <div style="font-size: 0.72rem; opacity: 0.8;">Building Knowledge, Earning Rewards</div>
-                        </div>
-                    </div>
-
-                    <!-- Action Buttons -->
-                    <div id="share-description" style="padding: 14px 12px; background: linear-gradient(135deg, #f8f9fa, #e9ecef); text-align: center;">
-                        <p style="margin: 0 0 10px 0; color: #495057; font-size: 0.85rem; font-weight: 600;">🎉 Congratulations! Share your achievement!</p>
-                        <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
-                            ${soldInfo && soldInfo.not_eligible
-                                ? `<button id="mint-nft-btn-modal" disabled style="padding: 9px 16px; background: #6b2020; color: #fca5a5; border: none; border-radius: 10px; font-weight: 700; cursor: not-allowed; opacity: 0.85; font-size: 0.82rem; display: none !important;">🚫 Not Eligible (Before Feb 11, 2026)</button>`
-                                : soldInfo && soldInfo.already_minted
-                                    ? `<button id="mint-nft-btn-modal" disabled style="padding: 9px 16px; background: #4b5563; color: #9ca3af; border: none; border-radius: 10px; font-weight: 700; cursor: not-allowed; opacity: 0.75; font-size: 0.82rem; display: none !important;">✅ Already Minted${soldInfo.minted_token_id ? ' #' + soldInfo.minted_token_id : ''}</button>`
-                                    : `<button id="mint-nft-btn-modal" style="padding: 9px 16px; background: linear-gradient(135deg, #7c3aed, #4f46e5); color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; box-shadow: 0 3px 8px rgba(124,58,237,0.4); font-size: 0.82rem; display: none !important;">🎨 Mint as NFT</button>`
-                            }
-                            <button id="download-btn-modal" style="padding: 9px 16px; background: linear-gradient(135deg, #28a745, #20c997); color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 0.82rem;">
-                                📥 Download
-                            </button>
-                            <button id="twitter-btn-modal" style="padding: 9px 16px; background: linear-gradient(135deg, #1da1f2, #0d8bd9); color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 0.82rem;">
-                                🐦 Twitter
-                            </button>
-                            <button id="telegram-btn-modal" style="padding: 9px 16px; background: linear-gradient(135deg, #0088cc, #006699); color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 0.82rem;">
-                                📱 Telegram
-                            </button>
-                        </div>
-                        <button id="close-btn-modal" style="margin-top: 10px; padding: 9px 16px; background: #6c757d; color: white; border: none; border-radius: 10px; cursor: pointer; width: 100%; font-weight: 600; font-size: 0.85rem;">
-                            ✕ Close
-                        </button>
-                    </div>
-                </div>
-            `;
-
-            // Attach event listeners after modal is rendered
-            setTimeout(() => {
-                const mintNftBtn = document.getElementById('mint-nft-btn-modal');
-                const downloadBtn = document.getElementById('download-btn-modal');
-                const twitterBtn = document.getElementById('twitter-btn-modal');
-                const telegramBtn = document.getElementById('telegram-btn-modal');
-                const closeBtn = document.getElementById('close-btn-modal');
-                const closeXBtn = document.getElementById('close-x-btn-modal');
-
-                if (closeXBtn) {
-                    closeXBtn.onclick = function(e) {
-                        e.preventDefault();
-                        window.closeAchievementModal();
-                    };
-                }
-
-                const mintInfo = (soldInfo && typeof soldInfo === 'object') ? soldInfo : {};
-                if (mintNftBtn && !mintInfo.already_minted && !mintInfo.not_eligible) {
-                    mintNftBtn.onclick = function(e) {
-                        e.preventDefault();
-                        window.mintAchievementNFT(soldInfo.quiz_id || '', score, total, soldInfo.quiz_name || 'Learn & Earn Quiz', mintNftBtn);
-                    };
-                }
-                if (downloadBtn) {
-                    downloadBtn.onclick = function(e) {
-                        e.preventDefault();
-                        window.downloadAchievementCard();
-                    };
-                }
-                if (twitterBtn) {
-                    twitterBtn.onclick = function(e) {
-                        e.preventDefault();
-                        window.shareToTwitter(score, total, 0);
-                    };
-                }
-                if (telegramBtn) {
-                    telegramBtn.onclick = function(e) {
-                        e.preventDefault();
-                        window.shareToTelegram(score, total, 0);
-                    };
-                }
-                if (closeBtn) {
-                    closeBtn.onclick = function(e) {
-                        e.preventDefault();
-                        window.closeAchievementModal();
-                    };
-                }
-            }, 100);
-        }
-
-        // Make functions globally accessible
-        window.downloadAchievementCard = async function() {
-            try {
-                console.log('📥 Starting achievement card download...');
-                const card = document.getElementById('achievement-card');
-
-                if (!card) {
-                    console.error('❌ Achievement card element not found');
-                    showNotification('Failed to download card: Card element not found', 'error');
-                    return;
-                }
-
-                console.log('✅ Achievement card element found');
-                showNotification('⏳ Generating image...', 'info');
-
-                await window._ensureHtml2Canvas();
-                const canvas = await html2canvas(card, {
-                    backgroundColor: '#667eea',
-                    scale: 2,
-                    logging: false,
-                    useCORS: true,
-                    allowTaint: false,
-                    windowWidth: card.scrollWidth,
-                    windowHeight: card.scrollHeight
-                });
-
-                console.log('✅ Canvas created successfully');
-
-                // Convert to blob and download
-                canvas.toBlob(function(blob) {
-                    if (!blob) {
-                        console.error('❌ Failed to create blob from canvas');
-                        showNotification('Failed to create image. Please try again.', 'error');
-                        return;
-                    }
-
-                    // Create download URL
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-                    link.download = `gooddollar-achievement-${timestamp}.png`;
-                    link.href = url;
-
-                    // Trigger download
-                    document.body.appendChild(link);
-                    link.click();
-
-                    // Cleanup
-                    setTimeout(() => {
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(url);
-                    }, 100);
-
-                    console.log('✅ Download completed!');
-                    showNotification('✅ Achievement card downloaded successfully!', 'success');
-                }, 'image/png', 1.0);
-
-            } catch (error) {
-                console.error('❌ Download error:', error);
-                showNotification('Failed to download card. Please try again.', 'error');
-            }
-        };
-
-        window.shareToTwitter = function(score, total, reward) {
-            const tweetText = `🎓 Just achieved ${score}/${total} on GoodDollar Learn & Earn! Earned ${reward} G$! Join me and learn crypto. #GoodDollar #LearnAndEarn #Web3`;
-            window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}&url=${encodeURIComponent(window.location.href)}`, '_blank');
-        };
-
-        window.shareToTelegram = function(score, total, reward) {
-            const telegramText = `🎓 Achievement Unlocked on GoodDollar Learn & Earn!\n\nScore: ${score}/${total}\nEarned: ${reward} G$\n\nJoin me in learning and earning crypto! 🚀\n\n#GoodDollar #LearnAndEarn`;
-            window.open(`https://t.me/share/url?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(telegramText)}`, '_blank');
-        };
-
-        window.closeAchievementModal = function() {
-            const modal = document.getElementById('achievement-modal');
-            if (modal) {
-                modal.style.display = 'none';
-                modal.innerHTML = '';
-            }
-        };
-
-        window.mintAchievementNFT = async function(quizId, score, total, quizName, btnEl) {
-            try {
-                if (!quizId) {
-                    showNotification('Cannot mint: Quiz ID is missing.', 'error');
-                    return;
-                }
-                if (btnEl) {
-                    btnEl.disabled = true;
-                    btnEl.textContent = '⏳ Minting...';
-                }
-                showNotification('Minting your Achievement NFT on Celo... App is paying gas for you!', 'info');
-                const response = await fetch('/learn-earn/mint-nft', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quiz_id: quizId, score, total, quiz_name: quizName })
-                });
-                const result = await response.json();
-                if (result.success) {
-                    if (result.already_minted) {
-                        showNotification(`You already have an NFT for this quiz! Token #${result.token_id}`, 'info');
-                        if (btnEl) { btnEl.disabled = true; btnEl.textContent = '✅ Already Minted'; }
-                    } else {
-                        showNotification(`🎨 NFT #${result.token_id} minted successfully on Celo! App paid the gas.`, 'success');
-                        if (btnEl) { btnEl.disabled = true; btnEl.style.background = '#4b5563'; btnEl.style.color = '#9ca3af'; btnEl.style.cursor = 'not-allowed'; btnEl.style.opacity = '0.75'; btnEl.textContent = `✅ NFT #${result.token_id} Minted!`; }
-                        if (result.explorer_url) {
-                            setTimeout(() => {
-                                const viewLink = confirm(`NFT #${result.token_id} is live on Celo!\n\nView on Celoscan?`);
-                                if (viewLink) window.open(result.explorer_url, '_blank');
-                            }, 500);
-                        }
-                        if (typeof window.loadNFTMarketplace === 'function') window.loadNFTMarketplace();
-                        if (typeof window.loadMyNFTs === 'function') window.loadMyNFTs();
-                    }
-                } else {
-                    if (result.not_eligible) {
-                        showNotification('🚫 This quiz is not eligible for NFT minting (taken before Feb 11, 2026).', 'error');
-                        if (btnEl) { btnEl.disabled = true; btnEl.textContent = '🚫 Not Eligible'; }
-                    } else {
-                        const msg = result.not_deployed
-                            ? 'NFT contract is not deployed yet. Please contact admin.'
-                            : (result.error || 'Minting failed. Please try again.');
-                        showNotification(msg, 'error');
-                        if (btnEl) { btnEl.disabled = false; btnEl.textContent = '🎨 Mint as NFT'; }
-                    }
-                }
-            } catch (err) {
-                console.error('Mint NFT error:', err);
-                showNotification('Minting failed. Please try again.', 'error');
-                if (btnEl) { btnEl.disabled = false; btnEl.textContent = '🎨 Mint as NFT'; }
-            }
-        };
-
-        window.sellAchievementCard = function() {
-            showNotification('Card selling has been removed. Mint your NFT instead!', 'info');
-        };
-
-
         // Reset quiz interface
         function resetQuiz() {
             // Clear any active timer
@@ -3412,7 +2884,13 @@
         }
 
         // Load quiz history
-        async function loadQuizHistory() {
+        let quizHistoryLoading = false;
+        let quizHistoryLoaded = false;
+        async function loadQuizHistory(force = false) {
+            if (quizHistoryLoading || (quizHistoryLoaded && !force)) return;
+            quizHistoryLoading = true;
+            const historyButton = document.getElementById('load-quiz-history-btn');
+            if (historyButton) { historyButton.disabled = true; historyButton.textContent = 'Loading history…'; }
             try {
                 const response = await fetch('/learn-earn/quiz-history?limit=10');
                 const data = await response.json();
@@ -3423,19 +2901,11 @@
                 const historyContent = document.getElementById('history-content');
 
                 if (data.success && data.quiz_history && data.quiz_history.length > 0) {
-                    quizHistory = data.quiz_history; // Store history globally
                     historyTableBody.innerHTML = '';
 
                     data.quiz_history.forEach(quiz => {
                         const row = document.createElement('tr');
                         const date = new Date(quiz.timestamp).toLocaleDateString();
-
-                        // Create achievement card link
-                        const achievementLink = `
-                            <a href="#" class="achievement-link" onclick="event.preventDefault(); window.showHistoryAchievement('${quiz.quiz_id}'); return false;" style="cursor: pointer; color: #ffffff !important; text-decoration: none; font-weight: 900 !important; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);">
-                                🏆 View Card
-                            </a>
-                        `;
 
                         const reward = parseFloat(quiz['amount_g$'] || 0).toFixed(2);
                         const txHash = quiz.transaction_hash;
@@ -3448,115 +2918,25 @@
                             <td>${quiz.score}/${quiz.total_questions}</td>
                             <td style="color:#86efac;font-weight:700;">${reward} G$</td>
                             <td>${txLink}</td>
-                            <td>${achievementLink}</td>
                         `;
 
                         historyTableBody.appendChild(row);
                     });
                 } else {
-                    historyTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">No quiz history yet</td></tr>';
+                    historyTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">No quiz history yet</td></tr>';
                 }
                 historyContent.style.display = 'block';
+                quizHistoryLoaded = true;
+                if (historyButton) historyButton.style.display = 'none';
             } catch (error) {
                 console.error('Error loading quiz history:', error);
                 document.getElementById('history-content').style.display = 'block';
-                document.getElementById('history-table-body').innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Failed to load history</td></tr>';
+                document.getElementById('history-table-body').innerHTML = '<tr><td colspan="4" style="text-align: center; color: red;">Failed to load history</td></tr>';
+                if (historyButton) { historyButton.style.display = 'inline-flex'; historyButton.disabled = false; historyButton.textContent = 'Retry Quiz History'; }
+            } finally {
+                quizHistoryLoading = false;
             }
         }
-
-        // Load achievement card sale history (shown below quiz history if any sales exist)
-        async function loadCardSaleHistory() {
-            try {
-                const response = await fetch('/learn-earn/card-sale-history?limit=50');
-                const data = await response.json();
-
-                if (!data.success || !data.sales || data.sales.length === 0) return;
-
-                const section = document.getElementById('card-sale-section');
-                const tbody = document.getElementById('card-sale-table-body');
-                const totalEl = document.getElementById('card-sale-total');
-
-                tbody.innerHTML = '';
-                data.sales.forEach(sale => {
-                    const row = document.createElement('tr');
-                    const date = new Date(sale.created_at).toLocaleDateString();
-                    const score = `${sale.score}/${sale.total_questions}`;
-                    const originalReward = parseFloat(sale.original_reward || 0).toFixed(2);
-                    const sellPrice = parseFloat(sale.sell_price || 0);
-                    const txHash = sale.transaction_hash;
-                    const txLink = txHash
-                        ? `<a href="https://celoscan.io/tx/${txHash}" target="_blank" class="tx-hash-link" title="View on Celoscan">
-                            ${txHash.substring(0, 10)}...
-                            <i class="fas fa-external-link-alt" style="font-size:0.8rem;"></i>
-                          </a>`
-                        : '<span style="color:#999;font-size:0.9rem;">Pending</span>';
-                    row.innerHTML = `
-                        <td>${date}</td>
-                        <td>${score}</td>
-                        <td>${originalReward} G$</td>
-                        <td style="color:#86efac;font-weight:700;">${sellPrice} G$</td>
-                        <td>${txLink}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-
-                totalEl.style.display = 'block';
-                totalEl.innerHTML = `Total Earned from Sales: <span style="color:#86efac;">${parseFloat(data.total_earned).toFixed(2)} G$</span>`;
-                section.style.display = 'block';
-            } catch (error) {
-                console.error('Error loading card sale history:', error);
-            }
-        }
-
-        // Show achievement card from history — checks eligibility + mint status first
-        const MINT_ELIGIBLE_FROM = new Date('2026-02-11T00:00:00Z');
-
-        window.showHistoryAchievement = async function(quizId) {
-            const quiz = quizHistory.find(q => q.quiz_id === quizId);
-            if (!quiz) {
-                console.error('Quiz not found:', quizId);
-                return;
-            }
-            const score = quiz.score || 0;
-            const total = quiz.total_questions || 0;
-            const quizTimestamp = quiz.timestamp || null;
-
-            // Fast local eligibility check (no API call needed for old quizzes)
-            if (quizTimestamp && new Date(quizTimestamp) < MINT_ELIGIBLE_FROM) {
-                showAchievementCard(score, total, {
-                    quiz_id: quizId,
-                    quiz_name: quiz.quiz_name || 'Learn & Earn Quiz',
-                    quiz_timestamp: quizTimestamp,
-                    already_minted: false,
-                    not_eligible: true
-                });
-                return;
-            }
-
-            let alreadyMinted = false;
-            let mintedTokenId = null;
-            let notEligible = false;
-            try {
-                const params = new URLSearchParams({ quiz_id: quizId });
-                if (quizTimestamp) params.append('quiz_timestamp', quizTimestamp);
-                const mintCheck = await fetch(`/learn-earn/check-nft-minted?${params}`);
-                const mintData = await mintCheck.json();
-                alreadyMinted = mintData.already_minted || false;
-                mintedTokenId = mintData.token_id || null;
-                notEligible = mintData.not_eligible || false;
-            } catch(e) {
-                console.warn('Could not check mint status:', e);
-            }
-            showAchievementCard(score, total, {
-                quiz_id: quizId,
-                quiz_name: quiz.quiz_name || 'Learn & Earn Quiz',
-                quiz_timestamp: quizTimestamp,
-                already_minted: alreadyMinted,
-                minted_token_id: mintedTokenId,
-                not_eligible: notEligible
-            });
-        };
-
 
         // Show notification
         function showNotification(message, type) {
@@ -3583,83 +2963,6 @@
         // Trust Wallet / MetaMask mobile may redirect the user away mid-purchase
         // after the on-chain tx is signed but before the backend call was made.
         // On every page load we check localStorage for a pending purchase and retry.
-        async function _recoverPendingBuy() {
-            try {
-                const raw = localStorage.getItem('gm_pending_buy');
-                if (!raw) return;
-                const pending = JSON.parse(raw);
-                if (!pending) { localStorage.removeItem('gm_pending_buy'); return; }
-                if (Date.now() - pending.ts > 30 * 60 * 1000) { localStorage.removeItem('gm_pending_buy'); return; }
-
-                // ── New flow: job_id tracking ───────────────────────────────────
-                if (pending.jobId) {
-                    console.log('🔄 Recovering pending NFT purchase via job_id:', pending.jobId.slice(0,8));
-                    try {
-                        const statusResp = await fetch(`/learn-earn/nft-buy-status?job_id=${encodeURIComponent(pending.jobId)}`);
-                        const statusData = await statusResp.json();
-                        if (statusData.status === 'success') {
-                            localStorage.removeItem('gm_pending_buy');
-                            showNotification(`🎉 NFT purchase completed! Check "My NFTs".`, 'success');
-                            if (typeof window.loadMyNFTs === 'function') setTimeout(window.loadMyNFTs, 1000);
-                            if (typeof window.loadNFTMarketplace === 'function') setTimeout(window.loadNFTMarketplace, 1000);
-                        } else if (statusData.status === 'failed') {
-                            localStorage.removeItem('gm_pending_buy');
-                            console.warn('⚠️ Recovered job failed:', statusData.error_message);
-                        }
-                        // pending/processing — keep in localStorage, will retry next load
-                    } catch (e) {
-                        console.warn('⚠️ Recovery status check error:', e);
-                    }
-                    return;
-                }
-
-                // ── Legacy flow: txHash tracking (backward compat) ──────────────
-                if (!pending.txHash || !pending.tokenId) { localStorage.removeItem('gm_pending_buy'); return; }
-
-                // Safety guard: if the saved pending purchase was made in a different
-                // flow mode (e.g., legacy transfer but current page is escrow, or vice
-                // versa), the tx hash is incompatible with the current backend mode.
-                // Clear localStorage and abort — do NOT re-submit the incompatible tx.
-                const savedEscrow  = pending.escrowEnabled === true || pending.escrowEnabled === 'true';
-                const currentEscrow = (ESCROW_ENABLED && !!ESCROW_ADDRESS);
-                if (savedEscrow !== currentEscrow) {
-                    localStorage.removeItem('gm_pending_buy');
-                    console.warn(
-                        '⚠️ Pending purchase flow mode mismatch (saved escrow=' + savedEscrow +
-                        ' vs current=' + currentEscrow + '). Clearing stale localStorage entry to prevent ' +
-                        'submitting an incompatible tx hash. Please retry the purchase manually.'
-                    );
-                    return;
-                }
-
-                console.log('🔄 Found pending NFT purchase (legacy), recovering...', pending.tokenId);
-                const resp = await fetch('/learn-earn/nft-buy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token_id: pending.tokenId, g_tx_hash: pending.txHash })
-                });
-                const result = await resp.json();
-                if (result.success && result.job_id) {
-                    // Update localStorage to track by job_id going forward
-                    localStorage.setItem('gm_pending_buy', JSON.stringify({...pending, jobId: result.job_id}));
-                    console.log('✅ Legacy buy upgraded to job_id tracking:', result.job_id.slice(0,8));
-                    if (typeof window.loadMyNFTs === 'function') setTimeout(window.loadMyNFTs, 1000);
-                    if (typeof window.loadNFTMarketplace === 'function') setTimeout(window.loadNFTMarketplace, 1000);
-                } else {
-                    const alreadyDone = result.error && (result.error.includes('not listed') || result.error.includes('not found'));
-                    if (alreadyDone) {
-                        localStorage.removeItem('gm_pending_buy');
-                        console.log('ℹ️ Pending buy already completed, cleared localStorage');
-                    } else {
-                        console.warn('⚠️ Pending buy recovery failed:', result.error);
-                    }
-                }
-            } catch (e) {
-                console.warn('⚠️ Pending buy recovery error (will retry next page load):', e);
-            }
-        }
-
-        
         // Backward compatibility
         function openSponsorWizard() { openCollaborationWizard(); }
         function closeSponsorWizard() { closeCollaborationWizard(); }
@@ -3671,16 +2974,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // elements to exist.
             if (window.GM_LEARN_GUEST) return;
 
-            // Auto-recover any interrupted purchase first
-            _recoverPendingBuy();
 
-            // Run all four initial fetches in parallel; loadQuizSettings only updates
-            // stat cards / time per question and is not consumed by the others.
+            // Load only data needed to start the quiz. History is explicitly on-demand.
             Promise.allSettled([
                 loadQuizSettings(),
-                checkEligibility(),
-                loadQuizHistory(),
-                loadCardSaleHistory()
+                checkEligibility()
             ]).catch(function(err) { console.warn('Initial fetches error:', err); });
 
             // Check eligibility every 30 seconds to update timer if needed
@@ -4448,8 +3746,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }, { rootMargin: '200px' });
                 io.observe(nftSection);
-            } else if (nftSection) {
-                window._ensureNftSectionLoaded();
             }
         });
 
@@ -5627,21 +4923,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     name: 'GoodMarket',
                     description: 'Learn & Earn G$ with GoodMarket on Celo',
                     url: window.location.origin,
-                    icons: [window.location.origin + '/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}']
+                    icons: [window.location.origin + '/static/icons/kwentofi-pwa-192.png?v={{ ASSET_VERSION }}']
                 }
             }).then(function(client) {
                 window._wcSignClient = client;
-                
+
                 // Check localStorage FIRST (fast path) - available immediately
                 var storedTopic = localStorage.getItem('wc_session_topic');
                 var storedAddress = localStorage.getItem('wc_session_address');
                 var storedSessionData = localStorage.getItem('wc_session_data');
                 var storedTimestamp = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
-                
+
                 var MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
                 var sessionAge = storedTimestamp ? (Date.now() - storedTimestamp) : Infinity;
                 var sessionTooOld = sessionAge > MAX_SESSION_AGE_MS;
-                
+
                 if (storedTopic && storedAddress && !sessionTooOld && storedSessionData) {
                     try {
                         var parsedSession = JSON.parse(storedSessionData);
@@ -5664,14 +4960,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                     }
                                 } catch (_) {}
                             }
-                            
+
                             // If SDK has the session, use it
                             if (sdkSessions[storedTopic]) {
                                 window._wcSession = sdkSessions[storedTopic];
                                 console.log('[learn] WC session restored from SDK storage:', storedTopic);
                                 return client;
                             }
-                            
+
                             // Try to restore from localStorage
                             if (parsedSession.topic === storedTopic) {
                                 // Subscribe to relay first
@@ -5680,14 +4976,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                         client.core.relayer.subscribe(storedTopic).catch(function(_){});
                                     }
                                 } catch (_) {}
-                                
+
                                 // Inject session
                                 try {
                                     if (client.session && typeof client.session.set === 'function') {
                                         client.session.set(parsedSession.topic, parsedSession);
                                     }
                                 } catch (_) {}
-                                
+
                                 window._wcSession = parsedSession;
                                 console.log('[learn] WC session restored from localStorage:', storedTopic);
                                 return client;
@@ -5695,7 +4991,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     } catch (parseErr) { console.warn('[learn] localStorage parse error:', parseErr); }
                 }
-                
+
                 // Clean up stale localStorage
                 if (storedTopic && (sessionTooOld || !storedSessionData)) {
                     try {
@@ -5706,7 +5002,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         localStorage.removeItem('wc_session_chains');
                     } catch (_) {}
                 }
-                
+
                 return client;
             });
         });
