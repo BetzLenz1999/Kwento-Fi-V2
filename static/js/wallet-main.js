@@ -2,6 +2,7 @@
 // Per-request values come from window.GM_WALLET_BOOT (set inline in wallet.html).
 const WALLET = window.GM_WALLET_BOOT.wallet;
     var LOGIN_METHOD = window.GM_WALLET_BOOT.loginMethod;
+    var _wlDailyPaymentState = null;
     const CLAIM_ONLY = !!window.GM_WALLET_BOOT.claimOnly;
     const IS_PRIVY_LOGIN = (LOGIN_METHOD || '').toLowerCase() === 'privy';
     // Shared by /wallet and /community; keep this defined before bridge setup.
@@ -2515,7 +2516,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             }
         } else {
             color = '#34d399'; label = '✅ Available';
-            text = 'Claim your 100 G$ daily reward now!';
+            text = 'Submit a qualifying post to request the admin-configured reward after review.';
         }
         banner.innerHTML = '<div style="display:flex;align-items:center;gap:0.5rem;background:var(--card-soft);border:1px solid ' + color + '55;border-radius:12px;padding:0.7rem 0.85rem;font-size:0.82rem;line-height:1.5;color:var(--text);">'
             + '<span style="font-weight:700;color:' + color + ';flex-shrink:0;">' + label + '</span>'
@@ -2532,7 +2533,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         fetch('/api/daily-task/history?limit=50').then(function (resp) { return resp.json(); }).then(function (data) {
             if (!data || !data.success) throw new Error((data && data.error) || 'Failed to load history');
             if (!data.transactions || data.transactions.length === 0) {
-                listEl.innerHTML = '<div style="text-align:center;padding:1.5rem 0.5rem;color:var(--text-muted);font-size:0.82rem;">📭 No transaction history yet. Complete a daily task to earn 100 G$!</div>';
+                listEl.innerHTML = '<div style="text-align:center;padding:1.5rem 0.5rem;color:var(--text-muted);font-size:0.82rem;">📭 No Daily Task history yet. Submit a qualifying post and pay the 20 G$ fee to request the admin-configured reward.</div>';
                 return;
             }
             const statusColors = {
@@ -2573,9 +2574,13 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         _wlDailySelectedPlatform = null;
         _wlDailyEl('wlPlatformSelection').style.display = 'block';
         _wlDailyEl('wlTaskSubmissionForm').style.display = 'none';
+        const review = _wlDailyEl('wlDailyTaskPaymentReview');
+        if (review) review.style.display = 'none';
         const urlInput = _wlDailyEl('wlTaskUrlInput');
         if (urlInput) urlInput.value = '';
         _wlDailyEl('wlDailyTaskStatusMessage').style.display = 'none';
+        const pendingPayment = _wlDailyRestorePaymentState();
+        if (pendingPayment) _wlDailyShowPaymentReview(pendingPayment);
         // Live status + transaction history, exactly like the referral modal
         // loads its stats on open.
         fetch('/api/daily-task/status').then(function (resp) { return resp.json(); })
@@ -2601,9 +2606,17 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     }
 
     function goBackToDailyTaskPlatformSelection() {
+        if (_wlDailyPaymentState && _wlDailyPaymentState.paymentTxHash) {
+            _wlDailyFlash('A payment was already broadcast. Verify it before starting another task.', '#fcd34d');
+            return;
+        }
+        _wlDailyPaymentState = null;
+        try { localStorage.removeItem(DAILY_TASK_PAYMENT_STORAGE_KEY); } catch (_) {}
         _wlDailySelectedPlatform = null;
         _wlDailyEl('wlPlatformSelection').style.display = 'block';
         _wlDailyEl('wlTaskSubmissionForm').style.display = 'none';
+        const review = _wlDailyEl('wlDailyTaskPaymentReview');
+        if (review) review.style.display = 'none';
     }
 
     async function loadDailyTaskMessage(platform) {
@@ -2652,68 +2665,259 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         setTimeout(function () { statusEl.style.display = 'none'; }, 3000);
     }
 
-    async function submitWalletDailyTask(event) {
-        if (!_wlDailySelectedPlatform) {
-            _wlDailyFlash('⚠️ Please select a platform first.', '#fcd34d');
-            return;
-        }
-        const taskUrl = _wlDailyEl('wlTaskUrlInput').value.trim();
-        if (!taskUrl) {
-            _wlDailyFlash('⚠️ Please enter your ' + (_wlDailySelectedPlatform === 'twitter' ? 'Twitter' : 'Telegram') + ' post URL.', '#fcd34d');
-            return;
-        }
-        if (_wlDailySelectedPlatform === 'twitter') {
-            if (!taskUrl.startsWith('https://twitter.com/') && !taskUrl.startsWith('https://x.com/')) {
-                _wlDailyFlash('⚠️ Please enter a valid Twitter post URL.', '#fcd34d');
-                return;
-            }
-        } else if (_wlDailySelectedPlatform === 'telegram') {
-            if (!taskUrl.startsWith('https://t.me/')) {
-                _wlDailyFlash('⚠️ Please enter a valid Telegram post URL.', '#fcd34d');
-                return;
-            }
-        }
+    var DAILY_TASK_PAYMENT_STORAGE_KEY = 'kwentofiDailyTaskPaymentPendingV2:'
+        + (typeof WALLET !== 'undefined' ? String(WALLET).toLowerCase() : 'unknown');
 
-        const btn = _wlDailyEl('wlSubmitDailyTaskBtn');
-        const originalText = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = '⏳ Verifying...';
+    function _wlDailyPaymentStorages() {
+        var stores = [];
+        try { if (window.localStorage) stores.push(window.localStorage); } catch (_) {}
+        try { if (window.sessionStorage) stores.push(window.sessionStorage); } catch (_) {}
+        return stores;
+    }
+
+    function _wlDailyRandomSalt() {
+        if (!window.crypto || typeof window.crypto.getRandomValues !== 'function') {
+            throw new Error('Secure browser randomness is unavailable. Please update your browser.');
+        }
+        var bytes = new Uint8Array(32);
+        window.crypto.getRandomValues(bytes);
+        return '0x' + Array.from(bytes).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    }
+
+    function _wlDailyStorePaymentState() {
+        var stores = _wlDailyPaymentStorages();
+        if (!_wlDailyPaymentState) {
+            stores.forEach(function (store) { try { store.removeItem(DAILY_TASK_PAYMENT_STORAGE_KEY); } catch (_) {} });
+            return true;
+        }
+        var value = JSON.stringify(_wlDailyPaymentState);
+        for (var i = 0; i < stores.length; i += 1) {
+            try { stores[i].setItem(DAILY_TASK_PAYMENT_STORAGE_KEY, value); return true; } catch (_) {}
+        }
+        return false;
+    }
+
+    function _wlDailyRestorePaymentState() {
+        if (_wlDailyPaymentState) return _wlDailyPaymentState;
         try {
-            const resp = await fetch('/api/daily-task/claim', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ platform: _wlDailySelectedPlatform, post_url: taskUrl })
-            });
-            const result = await resp.json();
-            if (result && result.success) {
-                if (result.pending) {
-                    const displayName = _wlDailySelectedPlatform === 'twitter' ? 'Twitter' : 'Telegram';
-                    _wlDailyFlash('✅ Submission successful! Your ' + displayName + ' post is waiting for admin approval.', '#34d399');
-                    _wlDailyEl('wlTaskSubmissionForm').style.display = 'none';
-                    _wlDailyEl('wlPlatformSelection').style.display = 'none';
-                    const statusData = { has_pending_submission: true, pending_platform: _wlDailySelectedPlatform, can_claim: false };
-                    _wlDailyStatusBanner(statusData);
-                    _wlDailyLoadHistory();
-                } else {
-                    _wlDailyFlash('🎉 Successfully earned 100 G$ from ' + (_wlDailySelectedPlatform === 'twitter' ? 'Twitter' : 'Telegram') + ' task!', '#34d399');
-                    _wlDailySelectedPlatform = null;
-                    _wlDailyEl('wlTaskSubmissionForm').style.display = 'none';
-                    _wlDailyEl('wlPlatformSelection').style.display = 'block';
-                    _wlDailyEl('wlTaskUrlInput').value = '';
-                    fetch('/api/daily-task/status').then(function (r) { return r.json(); })
-                        .then(function (data) { _wlDailyStatusBanner(data); })
-                        .catch(function () {});
-                    _wlDailyLoadHistory();
-                }
-            } else {
-                const errMsg = (result && (result.error || result.message)) || 'Failed to claim task';
-                _wlDailyFlash('❌ ' + errMsg, '#f87171');
+            var stores = _wlDailyPaymentStorages();
+            var stored = null;
+            for (var i = 0; i < stores.length && !stored; i += 1) {
+                try { stored = stores[i].getItem(DAILY_TASK_PAYMENT_STORAGE_KEY); } catch (_) {}
             }
-        } catch (e) {
-            _wlDailyFlash('❌ Network error. Please check your connection and try again.', '#f87171');
+            if (!stored) return null;
+            var state = JSON.parse(stored);
+            if (!state || !state.intent || !state.intent.intent_id || !state.postUrl || !state.salt) return null;
+            if (Number(state.intent.deadline || 0) < Math.floor(Date.now() / 1000) && !state.paymentTxHash) {
+                stores.forEach(function (store) { try { store.removeItem(DAILY_TASK_PAYMENT_STORAGE_KEY); } catch (_) {} });
+                return null;
+            }
+            _wlDailyPaymentState = state;
+            return state;
+        } catch (_) { return null; }
+    }
+
+    function _wlDailyShowPaymentReview(state) {
+        if (!state) return;
+        _wlDailySelectedPlatform = state.platform;
+        _wlDailyEl('wlPlatformSelection').style.display = 'none';
+        _wlDailyEl('wlTaskSubmissionForm').style.display = 'block';
+        _wlDailyEl('wlTaskUrlInput').value = state.postUrl;
+        _wlDailyEl('wlDailyTaskPaymentReview').style.display = 'block';
+        _wlDailyEl('wlDailyTaskRewardAmount').textContent = (state.intent.reward_amount || 'Admin configured') + ' G$ if approved';
+        var gasText = _wlDailyEl('wlDailyTaskGasPayerText');
+        if (state.paymentTxHash) {
+            gasText.textContent = 'Payment transaction sent: ' + state.paymentTxHash + '. Verify it to finish storing your submission.';
+            _wlDailyEl('wlDailyTaskPayBtn').style.display = 'none';
+            _wlDailyEl('wlDailyTaskVerifyBtn').style.display = 'block';
+        } else {
+            gasText.textContent = 'Celo Mainnet. If your CELO balance is below 0.3, the app will try to sponsor the estimated approval/payment fees, subject to strict caps. Otherwise your wallet pays gas.';
+            _wlDailyEl('wlDailyTaskPayBtn').style.display = 'block';
+            _wlDailyEl('wlDailyTaskVerifyBtn').style.display = 'none';
+        }
+    }
+
+    async function _wlDailyPaymentRequest(path, body) {
+        var response = await fetch(path, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        var result = await response.json().catch(function () { return {}; });
+        if (!response.ok || !result.success) throw new Error(result.error || 'Daily Task request failed.');
+        return result;
+    }
+
+    async function submitWalletDailyTask() {
+        if (!_wlDailySelectedPlatform) {
+            _wlDailyFlash('Please select a platform first.', '#fcd34d');
+            return;
+        }
+        var taskUrl = _wlDailyEl('wlTaskUrlInput').value.trim();
+        if (!taskUrl) {
+            _wlDailyFlash('Please enter your public post URL.', '#fcd34d');
+            return;
+        }
+        if (_wlDailySelectedPlatform === 'twitter' && !/^https:\/\/(twitter\.com|x\.com)\//i.test(taskUrl)) {
+            _wlDailyFlash('Please enter a valid X/Twitter post URL.', '#fcd34d');
+            return;
+        }
+        if (_wlDailySelectedPlatform === 'telegram' && !/^https:\/\/(t\.me|telegram\.me)\//i.test(taskUrl)) {
+            _wlDailyFlash('Please enter a valid Telegram post URL.', '#fcd34d');
+            return;
+        }
+        var existingAttempt = _wlDailyRestorePaymentState();
+        if (existingAttempt && existingAttempt.platform === _wlDailySelectedPlatform && existingAttempt.postUrl === taskUrl && !existingAttempt.paymentTxHash) {
+            _wlDailyShowPaymentReview(existingAttempt);
+            _wlDailyFlash('Your existing payment review is ready. No link was stored and no payment was made.', '#60a5fa');
+            return;
+        }
+        var btn = _wlDailyEl('wlSubmitDailyTaskBtn');
+        if (btn.disabled) return;
+        btn.disabled = true;
+        btn.textContent = 'Checking eligibility…';
+        try {
+            var salt = _wlDailyRandomSalt();
+            var intent = await _wlDailyPaymentRequest('/api/daily-task/payment-intent', {
+                platform: _wlDailySelectedPlatform,
+                post_url: taskUrl,
+                salt: salt
+            });
+            _wlDailyPaymentState = {
+                platform: _wlDailySelectedPlatform,
+                postUrl: taskUrl,
+                salt: salt,
+                intent: intent,
+                paymentTxHash: ''
+            };
+            _wlDailyStorePaymentState();
+            _wlDailyShowPaymentReview(_wlDailyPaymentState);
+            _wlDailyFlash('Review the non-refundable 20 G$ payment before signing.', '#60a5fa');
+        } catch (error) {
+            _wlDailyFlash('Unable to prepare payment: ' + (error.message || 'Please try again.'), '#f87171');
         } finally {
             btn.disabled = false;
-            btn.textContent = originalText;
+            btn.textContent = 'Check post & continue';
+        }
+    }
+
+    async function _wlDailyVerifyPayment() {
+        var state = _wlDailyRestorePaymentState();
+        if (!state || !state.paymentTxHash) throw new Error('No payment transaction is available to verify.');
+        var result = await _wlDailyPaymentRequest('/api/daily-task/payment-confirm', {
+            intent_id: state.intent.intent_id,
+            post_url: state.postUrl,
+            salt: state.salt,
+            payment_tx_hash: state.paymentTxHash
+        });
+        localStorage.removeItem(DAILY_TASK_PAYMENT_STORAGE_KEY);
+        _wlDailyPaymentState = null;
+        var platformName = state.platform === 'twitter' ? 'X/Twitter' : 'Telegram';
+        _wlDailyFlash('20 G$ confirmed. Your ' + platformName + ' post is now waiting for admin review.', '#34d399');
+        _wlDailyEl('wlDailyTaskPaymentReview').style.display = 'none';
+        _wlDailyEl('wlTaskSubmissionForm').style.display = 'none';
+        _wlDailyEl('wlPlatformSelection').style.display = 'none';
+        _wlDailyStatusBanner({ has_pending_submission: true, pending_platform: platformName, can_claim: false });
+        fetch('/api/daily-task/status').then(function (r) { return r.json(); }).then(function (data) { _wlDailyStatusBanner(data); }).catch(function () {});
+        _wlDailyLoadHistory();
+        return result;
+    }
+
+    async function verifyWalletDailyTaskPayment() {
+        var btn = _wlDailyEl('wlDailyTaskVerifyBtn');
+        if (btn.disabled) return;
+        btn.disabled = true;
+        btn.textContent = 'Verifying on Celo…';
+        try {
+            await _wlDailyVerifyPayment();
+        } catch (error) {
+            _wlDailyFlash('Payment not recorded yet: ' + (error.message || 'Retry verification; do not pay again.'), '#f87171');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'I paid — retry confirmation';
+        }
+    }
+
+    async function payWalletDailyTask() {
+        var state = _wlDailyRestorePaymentState();
+        if (!state || !state.intent || state.paymentTxHash) {
+            if (state && state.paymentTxHash) return verifyWalletDailyTaskPayment();
+            _wlDailyFlash('Prepare the post and payment review first.', '#fcd34d');
+            return;
+        }
+        var btn = _wlDailyEl('wlDailyTaskPayBtn');
+        if (btn.disabled) return;
+        btn.disabled = true;
+        btn.textContent = 'Preparing Celo transaction…';
+        var verifyButton = _wlDailyEl('wlDailyTaskVerifyBtn');
+        try {
+            if (!_wlDailyStorePaymentState()) throw new Error('Browser storage is unavailable. Enable site storage before paying so you can recover the payment confirmation if needed.');
+            if (!window.P2PWallet || !window.GMEthersLoader) throw new Error('Celo wallet tools are unavailable. Please refresh and try again.');
+            var ethersLib = await window.GMEthersLoader.load();
+            window.P2PWallet.configure({ wallet: WALLET, chainId: 42220, loginMethod: LOGIN_METHOD });
+            var read = window.P2PWallet.getReadProvider();
+            var token = new ethersLib.Contract(state.intent.token_address, [
+                'function balanceOf(address owner) view returns (uint256)',
+                'function allowance(address owner,address spender) view returns (uint256)'
+            ], read);
+            var fee = BigInt(state.intent.fee_wei);
+            var tokenBalance = await token.balanceOf(WALLET);
+            if (tokenBalance < fee) throw new Error('Your wallet needs at least 20 G$ before continuing. No app gas was sponsored.');
+            var allowance = await token.allowance(WALLET, state.intent.contract_address);
+            var gas = await _wlDailyPaymentRequest('/api/daily-task/gas-sponsor', { intent_id: state.intent.intent_id });
+            if (gas.sponsored && gas.sponsor_tx_hash) {
+                _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'The app is sponsoring the estimated Celo gas (' + gas.estimated_fee_celo + ' CELO). Waiting for the top-up to confirm…';
+                var topupReceipt = await read.waitForTransaction(gas.sponsor_tx_hash, 1, 120000);
+                if (!topupReceipt || Number(topupReceipt.status) !== 1) throw new Error('The app gas top-up did not confirm. No G$ payment was made; retry later.');
+            } else {
+                _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'Your CELO balance is at least 0.3 CELO, so your wallet will pay the estimated network fee.';
+            }
+
+            if (allowance < fee) {
+                btn.textContent = 'Approve exact 20 G$…';
+                await window.P2PWallet.sendTx(
+                    state.intent.token_address,
+                    'function approve(address spender,uint256 amount) returns (bool)',
+                    [state.intent.contract_address, fee],
+                    '0x0',
+                    { waitForReceipt: true }
+                );
+            }
+
+            btn.textContent = 'Confirm 20 G$ payment…';
+            var paymentHash = await window.P2PWallet.sendTx(
+                state.intent.contract_address,
+                'function payTaskSubmission(bytes32 intentId,bytes32 platformHash,bytes32 postCommitment,uint256 rewardAmount,uint256 deadline,bytes ownerSignature)',
+                [state.intent.intent_id, state.intent.platform_hash, state.intent.post_commitment,
+                    BigInt(state.intent.reward_amount_wei), BigInt(state.intent.deadline), state.intent.owner_signature],
+                '0x0',
+                {
+                    waitForReceipt: true,
+                    onTransactionHash: function (hash) {
+                        state.paymentTxHash = hash;
+                        _wlDailyPaymentState = state;
+                        _wlDailyStorePaymentState();
+                    }
+                }
+            );
+            state.paymentTxHash = paymentHash;
+            _wlDailyPaymentState = state;
+            _wlDailyStorePaymentState();
+            _wlDailyShowPaymentReview(state);
+            btn.textContent = 'Verifying payment…';
+            await _wlDailyVerifyPayment();
+        } catch (error) {
+            if (state.paymentTxHash) {
+                _wlDailyShowPaymentReview(state);
+                verifyButton.style.display = 'block';
+                _wlDailyFlash('A payment transaction was broadcast. Use “I paid — retry confirmation”; do not pay again. ' + (error.message || ''), '#f87171');
+            } else {
+                _wlDailyFlash('Payment was not completed: ' + (error.message || 'Please try again.'), '#f87171');
+            }
+        } finally {
+            btn.disabled = false;
+            if (!state.paymentTxHash) btn.textContent = 'Pay 20 G$ & submit';
         }
     }
 
@@ -2740,6 +2944,12 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                     break;
                 case 'submit':
                     submitWalletDailyTask(event);
+                    break;
+                case 'pay':
+                    payWalletDailyTask();
+                    break;
+                case 'verify':
+                    verifyWalletDailyTaskPayment();
                     break;
                 case 'close':
                     if (window.GMCommunity && typeof window.GMCommunity.closeDailyTask === 'function') {
