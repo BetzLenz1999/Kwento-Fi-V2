@@ -17,7 +17,7 @@ from reloadly import init_reloadly
 from savings import init_savings
 from farming import init_farming
 from ai_agent import init_ai_agent
-from config import get_post_login_path
+from config import get_post_login_path, DAILY_TASK_COOLDOWN_HOURS
 
 
 from functools import wraps
@@ -205,6 +205,16 @@ def _inject_post_login_path():
     client-side redirect fallbacks agree with the backend's ``redirect_to``.
     """
     return {'POST_LOGIN_PATH': get_post_login_path()}
+
+
+@app.context_processor
+def _inject_daily_task_cooldown():
+    """Expose the shared daily-task cooldown (hours) to every template.
+
+    The homepage/task copy must agree with the backend eligibility window
+    (config.DAILY_TASK_COOLDOWN_HOURS) instead of hardcoding a number.
+    """
+    return {'DAILY_TASK_COOLDOWN_HOURS': DAILY_TASK_COOLDOWN_HOURS}
 
 
 @app.after_request
