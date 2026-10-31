@@ -206,6 +206,8 @@
         return false;
     }
     function injectedCandidates() {
+        var shared = window.GMCommunityWalletDetection;
+        if (shared && typeof shared.collect === 'function') return shared.collect();
         var all = [];
         function add(candidate) {
             var provider = coerceToRequestProvider(candidate);
