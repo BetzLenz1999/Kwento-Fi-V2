@@ -2569,7 +2569,24 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         });
     }
 
+    // Daily Task is verified-only, like Swap and Reloadly: the 20 G$ fee is
+    // non-refundable and the server refuses the payment endpoints for an
+    // unverified wallet. Bounce to the shared Claim G$ verification flow
+    // instead of opening a modal whose payment step cannot succeed.
+    function dailyTaskFvGateBlocks() {
+        var boot = window.GM_WALLET_BOOT || {};
+        return boot.fvVerified !== true;
+    }
+
     function openDailyTaskModal() {
+        if (dailyTaskFvGateBlocks()) {
+            window._walletNeedsFV = true;
+            if (window._walletFvReason !== 're_verification_needed') {
+                window._walletFvReason = 'not_verified';
+            }
+            openClaimOrVerify();
+            return false;
+        }
         openModal('dailyTaskModal');
         _wlDailySelectedPlatform = null;
         _wlDailyEl('wlPlatformSelection').style.display = 'block';
