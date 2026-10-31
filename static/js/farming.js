@@ -216,6 +216,8 @@
     }
 
     function _collectProviders() {
+        var shared = window.GMCommunityWalletDetection;
+        if (shared && typeof shared.collect === "function") return shared.collect();
         var out = [];
         var push = function (p) {
             var provider = _coerceProvider(p);
