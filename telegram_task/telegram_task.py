@@ -484,133 +484,13 @@ class TelegramTaskService:
                 'reason': 'Error checking eligibility'
             }
 
-    async def claim_task_reward(self, wallet_address: str, telegram_url: str) -> Dict[str, Any]:
-        """Submit Telegram task for admin approval"""
-        try:
-            logger.info(f"📱 Telegram task submission started for {wallet_address[:8]}... with URL: {telegram_url}")
-
-            # Check maintenance mode
-            from maintenance_service import maintenance_service
-            maintenance_status = maintenance_service.get_maintenance_status('telegram_task')
-
-            if maintenance_status.get('is_maintenance'):
-                logger.warning(f"🔧 Telegram Task in maintenance mode")
-                return {
-                    'success': False,
-                    'error': maintenance_status.get('message', 'Telegram Task is under maintenance')
-                }
-
-            # Validate URL
-            validation = self._validate_telegram_url(telegram_url)
-            logger.info(f"🔍 URL validation result: {validation}")
-
-            if not validation.get('valid'):
-                logger.warning(f"❌ URL validation failed: {validation.get('error')}")
-                return {
-                    'success': False,
-                    'error': validation.get('error')
-                }
-
-            # Check eligibility
-            eligibility = await self.check_eligibility(wallet_address)
-            logger.info(f"🔍 Eligibility check result: {eligibility}")
-
-            if not eligibility.get('can_claim'):
-                logger.warning(f"❌ Not eligible to claim: {eligibility.get('reason')}")
-                return {
-                    'success': False,
-                    'error': eligibility.get('reason', 'Cannot claim at this time')
-                }
-
-            # CRITICAL: Check if URL already exists in database
-            if self.supabase:
-                try:
-                    # Check if this EXACT URL was already used by ANYONE
-                    url_check = self.supabase.table('telegram_task_log')\
-                        .select('wallet_address, created_at, status')\
-                        .eq('telegram_url', telegram_url)\
-                        .execute()
-
-                    if url_check.data and len(url_check.data) > 0:
-                        previous_claim = url_check.data[0]
-                        previous_wallet = previous_claim.get('wallet_address', 'Unknown')
-                        previous_status = previous_claim.get('status', 'pending')
-
-                        if str(previous_wallet).lower() == wallet_address.lower():
-                            if previous_status == 'pending':
-                                return {
-                                    'success': False,
-                                    'error': 'You already submitted this post. Please wait for admin approval.'
-                                }
-                            else:
-                                logger.warning(f"❌ User {wallet_address[:8]}... already claimed with this URL")
-                                return {
-                                    'success': False,
-                                    'error': 'You have already used this Telegram post for rewards. Please create a new post.'
-                                }
-                        else:
-                            logger.warning(f"❌ URL already used by another wallet: {previous_wallet[:8]}...")
-                            return {
-                                'success': False,
-                                'error': 'This Telegram post link has already been used. Please create your own post.'
-                            }
-
-                    logger.info(f"✅ URL is unique and unused - submitting for approval")
-
-                except Exception as db_error:
-                    logger.error(f"❌ Database URL check error: {db_error}")
-                    return {
-                        'success': False,
-                        'error': 'Unable to verify post uniqueness. Please try again.'
-                    }
-
-            # Submit for admin approval instead of immediate disbursement
-            if self.supabase:
-                try:
-                    # Insert with NULL transaction_hash for pending submissions
-                    # Transaction hash will be added when admin approves
-                    current_reward = self.get_task_reward() # Fetch dynamic reward
-                    self.supabase.table('telegram_task_log').insert({
-                        # Store lowercase so rows written here, by the web app
-                        # (checksummed session wallet) and by the Telegram bot
-                        # (lowercase) are uniform going forward; reads match
-                        # case-insensitively via _wallet_filter.
-                        'wallet_address': wallet_address.lower(),
-                        'telegram_url': telegram_url,
-                        'reward_amount': current_reward,
-                        'status': 'pending',
-                        'transaction_hash': None,  # Will be set after admin approval
-                        'created_at': datetime.now(timezone.utc).isoformat()
-                    }).execute()
-
-                    logger.info(f"✅ Telegram task submitted for approval: {self._mask_wallet(wallet_address)} with reward {current_reward} G$")
-
-                    return {
-                        'success': True,
-                        'pending': True,
-                        'message': f'✅ Submission successful! Your post is waiting for admin approval.',
-                        'status': 'pending_approval',
-                        'telegram_url': telegram_url
-                    }
-                except Exception as insert_error:
-                    logger.error(f"❌ Failed to submit for approval: {insert_error}")
-                    return {
-                        'success': False,
-                        'error': 'Failed to submit for approval. Please try again.'
-                    }
-            else:
-                logger.warning(f"⚠️ Database not configured - cannot save Telegram task submission for {wallet_address[:8]}...")
-                return {
-                    'success': False,
-                    'error': 'The reward system database is not available right now. Please contact the administrator.'
-                }
-
-        except Exception as e:
-            logger.error(f"❌ Telegram task submission error: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+    async def claim_task_reward(self, wallet_address: str, post_url: str) -> Dict[str, Any]:
+        """Reject legacy direct inserts; new submissions require verified v2 payment."""
+        return {
+            'success': False,
+            'error': 'Daily Task submissions require the 20 G$ on-chain anti-spam payment. Submit through Community.',
+            'code': 'payment_required',
+        }
 
     async def approve_submission(self, submission_id: int, admin_wallet: str) -> Dict[str, Any]:
         """Admin approves a submission and disburses reward"""
@@ -629,6 +509,8 @@ class TelegramTaskService:
                 return {'success': False, 'error': 'Submission not found or already processed'}
 
             sub_data = submission.data[0]
+            if sub_data.get('payment_status') not in ('paid', 'grandfathered'):
+                return {'success': False, 'error': 'This submission has no verified Daily Task payment and cannot be rewarded.'}
             wallet_address = sub_data['wallet_address']
             telegram_url = sub_data['telegram_url']
             reward_amount = sub_data['reward_amount'] # Use the reward amount stored in the submission
