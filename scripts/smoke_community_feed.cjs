@@ -309,6 +309,10 @@ function run(opts) {
   };
   sandbox.globalThis = sandbox;
   sandbox.GM_COMMUNITY_BOOT = opts.boot || {};
+  // The shared wallet boot payload. `fvVerified` drives the Garden and Daily
+  // Task face-verification gates, so the harness must set it exactly like the
+  // server-rendered templates do. Default: a verified member.
+  sandbox.GM_WALLET_BOOT = opts.walletBoot || { fvVerified: true };
   sandbox.GMWalletCommunitySend = opts.communitySend || {
     selected: null,
     selectToken(token, button) {
@@ -1452,6 +1456,30 @@ function feedFetch(handler, feedRows) {
     ok('closing Daily Task restores the Community page scroll',
        !store.dailyTaskModal.classList.contains('open')
          && !sandbox.document.body.classList.contains('cf-modal-open'));
+
+    // Daily Task is verified-only: an unverified member must NOT reach the
+    // payment modal — the tap opens the shared Claim G$ verification flow
+    // instead (the server refuses the payment endpoints for them anyway, and
+    // the 20 G$ fee is non-refundable).
+    {
+      let fvOpens = 0;
+      const gated = run({
+        boot: MEMBER,
+        walletBoot: { fvVerified: false },
+        innerWidth: 1280,
+        fetchImpl: feedFetch(() => Promise.resolve({
+          ok: true, json: () => Promise.resolve({ success: true }) })),
+      });
+      await tick();
+      gated.sandbox.window.openClaimOrVerify = function () { fvOpens++; };
+      gated.api.openDailyTask();
+      ok('an unverified member is sent to verification, not the payment modal',
+         fvOpens === 1 && !gated.store.dailyTaskModal.classList.contains('open'),
+         'fvOpens=' + fvOpens);
+      ok('the verification bounce seeds the shared FV router flags',
+         gated.sandbox.window._walletNeedsFV === true
+           && gated.sandbox.window._walletFvReason === 'not_verified');
+    }
 
     // …and Search opens the read-only member search for a member too.
     store.cfSearchBar.hidden = true;
