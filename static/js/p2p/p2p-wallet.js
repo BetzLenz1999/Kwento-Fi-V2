@@ -157,6 +157,8 @@ window.P2PWallet = (function () {
     }
 
     function _collectInjected() {
+        var shared = window.GMCommunityWalletDetection;
+        if (shared && typeof shared.collect === "function") return shared.collect();
         var out = [];
         var push = function (p) {
             var provider = _coerceToRequestProvider(p);
