@@ -2832,7 +2832,6 @@
             <button class="section-tab" id="tab-referral" onclick="showSection('referral')">🔗 Referral Program</button>
             <button class="section-tab" id="tab-ubi-tracker" onclick="showSection('ubi-tracker')">📊 UBI Tracker</button>
             <button class="section-tab" id="tab-why-choose" onclick="showSection('why-choose')">⭐ Why Choose KwentoFi?</button>
-            <button class="section-tab" id="tab-developers" onclick="showSection('developers')">👨‍💻 Meet our Developers</button>
         </nav>
     </div>
 
@@ -3123,16 +3122,6 @@
         </div>
     </div>
 
-    <!-- Panel: Meet our Developers -->
-    <div class="section-panel" id="panel-developers">
-        <h2 class="panel-title">👨‍💻 Meet our Developers</h2>
-        <p class="panel-subtitle">The team behind KwentoFi.</p>
-        <div class="dev-grid" id="developerGrid">
-            <div class="dev-card" style="opacity:0.35;">
-                <div style="width:80px;height:80px;border-radius:50%;background:#e5e7eb;margin:0 auto 1rem;"></div>
-                <div class="dev-name">Loading...</div>
-            </div>
-        </div>
         <div class="community-bar">
             <div class="community-bar-text">
                 <h3>📱 Join Our Community</h3>
@@ -3170,56 +3159,6 @@
         </div>
     </div>
 
-    <!-- Sponsor Certificate Carousel -->
-    <div id="cert-carousel-section" class="cert-carousel-section">
-        <div class="cert-carousel-title">🤝 Our <span>Community Sponsors</span></div>
-        <!-- Skeleton loader shown while certs load -->
-        <div id="certCarouselSkeleton" class="hp-skeleton-box" style="width:100%;padding-bottom:38%;border-radius:16px;position:relative;">
-            <div class="hp-skeleton-shimmer"></div>
-        </div>
-        <!-- Real carousel (hidden until certs load) -->
-        <div id="certCarouselInner" style="display:none;">
-            <div class="cert-carousel-outer" id="certCarouselOuter">
-                <div class="cert-carousel-track" id="certCarouselTrack"></div>
-            </div>
-            <div class="cert-carousel-dots" id="certCarouselDots"></div>
-        </div>
-    </div>
-
-    <!-- Full-screen certificate viewer (opened by tapping a certificate) -->
-    <div class="cert-lightbox" id="certLightbox" role="dialog" aria-modal="true" aria-label="Certificate viewer">
-        <button type="button" class="cert-lightbox-close" id="certLightboxClose" aria-label="Close certificate viewer">&times;</button>
-        <img id="certLightboxImg" alt="">
-        <div class="cert-lightbox-hint">Tap anywhere to close</div>
-    </div>
-
-
-
-
-
-
-
-    <!-- YouTube Video Carousel -->
-    <div id="video-carousel-section" class="video-carousel-section">
-        <div class="video-carousel-title">GoodDollar <span>Community Stories</span></div>
-        <!-- Skeleton loader shown while videos load -->
-        <div id="videoCarouselSkeleton" class="hp-skeleton-box" style="width:100%;padding-bottom:56.25%;border-radius:16px;position:relative;">
-            <div class="hp-skeleton-shimmer"></div>
-        </div>
-        <!-- Real carousel (hidden until videos load) -->
-        <div id="videoCarouselInner" style="display:none;">
-            <div class="video-carousel-wrapper">
-                <div class="video-carousel-track" id="videoCarouselTrack"></div>
-            </div>
-            <p class="video-title-label" id="videoTitleLabel"></p>
-            <div class="video-carousel-nav">
-                <button class="carousel-btn" id="carouselPrev" onclick="carouselMove(-1)" disabled>&#8592;</button>
-                <div class="carousel-dots" id="carouselDots"></div>
-                <button class="carousel-btn" id="carouselNext" onclick="carouselMove(1)">&#8594;</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Footer small print -->
     <footer class="site-footer">
         <p>⚠️ KwentoFi is an independent community project &mdash; not an official product of, or affiliated with, GoodDollar (gooddollar.org).</p>
@@ -3250,28 +3189,6 @@
             }
         });
 
-        // ── Certificate lightbox ──────────────────────────────────────────
-        // Certificates are dense documents; the carousel size was unreadable
-        // and there was no zoom at all. Tapping one opens it full-screen.
-        function openCertLightbox(src, alt) {
-            const box = document.getElementById('certLightbox');
-            const img = document.getElementById('certLightboxImg');
-            if (!box || !img || !src) return;
-            img.src = src;
-            img.alt = alt || 'Certificate';
-            box.classList.add('open');
-            document.documentElement.style.overflow = 'hidden';
-            document.body.style.overflow = 'hidden';
-        }
-        function closeCertLightbox() {
-            const box = document.getElementById('certLightbox');
-            if (!box) return;
-            box.classList.remove('open');
-            document.getElementById('certLightboxImg').removeAttribute('src');
-            document.documentElement.style.overflow = '';
-            document.body.style.overflow = '';
-        }
-
         function showSection(name) {
             document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
@@ -3288,157 +3205,9 @@
 
 
 
-        // Load developer profiles
-        async function loadDeveloperProfile() {
-            try {
-                const response = await fetch('/api/developer-profile');
-                const data = await response.json();
-
-                if (data.success && data.profiles && data.profiles.length > 0) {
-                    const grid = document.getElementById('developerGrid');
-                    grid.innerHTML = '';
-
-                    data.profiles.forEach(profile => {
-                        const profileCard = document.createElement('div');
-                        profileCard.style.cssText = 'background: linear-gradient(135deg, #f3f4f6, #e5e7eb); border-radius: 16px; padding: 1.5rem; text-align: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); transition: transform 0.3s ease;';
-                        profileCard.onmouseover = function() { this.style.transform = 'translateY(-5px)'; };
-                        profileCard.onmouseout = function() { this.style.transform = 'translateY(0)'; };
-
-                        profileCard.innerHTML = `
-                            <div style="display: inline-block; position: relative; margin-bottom: 1rem;">
-                                <img src="${profile.image_url}" alt="${profile.name}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #7c3aed; box-shadow: 0 4px 8px rgba(124, 58, 237, 0.3);">
-                            </div>
-                            <h3 style="font-size: 1.1rem; font-weight: 700; color: #1f2937; margin-bottom: 0.5rem;">${profile.name}</h3>
-                            <p style="font-size: 0.9rem; color: #6b7280; font-weight: 500;">${profile.position}</p>
-                        `;
-
-                        grid.appendChild(profileCard);
-                    });
-
-                    // panel-developers is shown via showSection(), no legacy display toggle needed
-                }
-            } catch (error) {
-                console.error('Error loading developer profiles:', error);
-            }
-        }
-
-        // Load profiles on page load
-        window.addEventListener('load', loadDeveloperProfile);
-
-        // ── YouTube Video Carousel ──
-        let carouselVideos = [];
-        let carouselIndex = 0;
-        let carouselTouchStartX = 0;
-        let carouselTouchStartY = 0;
-
-        async function loadHomepageVideos() {
-            try {
-                const response = await fetch('/api/youtube-videos');
-                const data = await response.json();
-                if (!data.success || !data.videos || data.videos.length === 0) {
-                    const sk = document.getElementById('videoCarouselSkeleton');
-                    if (sk) sk.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:0.9rem;">🎬 Community videos coming soon!</div>';
-                    return;
-                }
-
-                carouselVideos = data.videos;
-                const track = document.getElementById('videoCarouselTrack');
-                const dotsContainer = document.getElementById('carouselDots');
-
-                // Build slides
-                track.innerHTML = carouselVideos.map((v, i) => `
-                    <div class="video-carousel-slide">
-                        <div class="video-iframe-wrapper">
-                            <iframe
-                                src="${v.embed_url}?rel=0&modestbranding=1"
-                                title="${v.title || 'KwentoFi Video'}"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                allowfullscreen
-                                loading="${i === 0 ? 'eager' : 'lazy'}"
-                            ></iframe>
-                        </div>
-                    </div>
-                `).join('');
-
-                // Build dots
-                dotsContainer.innerHTML = carouselVideos.map((_, i) =>
-                    `<div class="carousel-dot${i === 0 ? ' active' : ''}" onclick="carouselGoTo(${i})"></div>`
-                ).join('');
-
-                updateCarouselState();
-                // Swap skeleton → real content
-                document.getElementById('videoCarouselSkeleton').style.display = 'none';
-                document.getElementById('videoCarouselInner').style.display = 'block';
-
-                // Touch/swipe support
-                const wrapper = document.querySelector('.video-carousel-wrapper');
-                wrapper.addEventListener('touchstart', e => {
-                    carouselTouchStartX = e.touches[0].clientX;
-                    carouselTouchStartY = e.touches[0].clientY;
-                }, { passive: true });
-                wrapper.addEventListener('touchend', e => {
-                    const dx = e.changedTouches[0].clientX - carouselTouchStartX;
-                    const dy = e.changedTouches[0].clientY - carouselTouchStartY;
-                    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
-                        carouselMove(dx < 0 ? 1 : -1);
-                    }
-                }, { passive: true });
-
-            } catch (e) {
-                console.warn('Could not load homepage videos:', e);
-            }
-        }
-
-        function carouselMove(direction) {
-            const next = carouselIndex + direction;
-            if (next < 0 || next >= carouselVideos.length) return;
-            carouselGoTo(next);
-        }
-
-        function carouselGoTo(index) {
-            carouselIndex = index;
-            updateCarouselState();
-        }
-
-        function updateCarouselState() {
-            const track = document.getElementById('videoCarouselTrack');
-            track.style.transform = `translateX(-${carouselIndex * 100}%)`;
-
-            document.getElementById('carouselPrev').disabled = carouselIndex === 0;
-            document.getElementById('carouselNext').disabled = carouselIndex === carouselVideos.length - 1;
-
-            document.querySelectorAll('.carousel-dot').forEach((dot, i) => {
-                dot.classList.toggle('active', i === carouselIndex);
-            });
-
-            const titleLabel = document.getElementById('videoTitleLabel');
-            if (carouselVideos[carouselIndex]) {
-                titleLabel.textContent = carouselVideos[carouselIndex].title || '';
-            }
-        }
-
-        window.addEventListener('load', loadHomepageVideos);
-
         // Connect-modal functions are exposed on window by the shared
         // static/js/get-started.js bundle. Only homepage-local helpers remain here.
-        window.showSection             = showSection;
-        window.carouselGoTo            = carouselGoTo;
-        window.carouselMove            = carouselMove;
-        window.openCertLightbox        = openCertLightbox;
-        window.closeCertLightbox       = closeCertLightbox;
-
-        // Close the certificate viewer on tap-outside, on the × and on Escape.
-        (function () {
-            const box = document.getElementById('certLightbox');
-            if (!box) return;
-            box.addEventListener('click', function (e) {
-                if (e.target === box || e.target.id === 'certLightboxClose') closeCertLightbox();
-            });
-            document.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape' && box.classList.contains('open')) closeCertLightbox();
-            });
-        })();
-
+        window.showSection = showSection;
         </script>
 
 
@@ -3551,139 +3320,6 @@
     </script>
 
     <div id="ytBgMusic" style="display:none;"></div>
-
-    <!-- Sponsor Certificate Carousel Script -->
-    <script>
-    (function() {
-        var certs = [];
-        var certIdx = 0;
-        var certTimer = null;
-        var certPaused = false;
-
-        function certGoTo(idx) {
-            if (!certs.length) return;
-            certIdx = (idx + certs.length) % certs.length;
-            var track = document.getElementById('certCarouselTrack');
-            if (track) track.style.transform = 'translateX(-' + (certIdx * 100) + '%)';
-            var dots = document.querySelectorAll('.cert-dot');
-            dots.forEach(function(d, i) {
-                d.classList.toggle('active', i === certIdx);
-            });
-        }
-
-        function certNext() {
-            certGoTo(certIdx + 1);
-        }
-
-        function certStartAuto() {
-            certStopAuto();
-            certTimer = setInterval(function() {
-                if (!certPaused) certNext();
-            }, 2000);
-        }
-
-        function certStopAuto() {
-            if (certTimer) { clearInterval(certTimer); certTimer = null; }
-        }
-
-        function buildCertCarousel(data) {
-            var section = document.getElementById('cert-carousel-section');
-            var track = document.getElementById('certCarouselTrack');
-            var dotsEl = document.getElementById('certCarouselDots');
-            if (!section || !track || !dotsEl) return;
-
-            certs = data;
-            if (!certs.length) return;
-
-            track.innerHTML = '';
-            dotsEl.innerHTML = '';
-
-            certs.forEach(function(cert, i) {
-                var slide = document.createElement('div');
-                slide.className = 'cert-slide';
-
-                var img = document.createElement('img');
-                img.src = cert.cert_url;
-                img.alt = 'Sponsorship certificate for ' + cert.sponsor_name;
-                img.loading = i === 0 ? 'eager' : 'lazy';
-                img.addEventListener('click', function () {
-                    openCertLightbox(cert.cert_url, img.alt);
-                });
-
-                var caption = document.createElement('div');
-                caption.className = 'cert-slide-caption';
-
-                var nameEl = document.createElement('div');
-                nameEl.className = 'cert-caption-name';
-                nameEl.textContent = cert.sponsor_name;
-
-                var amtEl = document.createElement('div');
-                amtEl.className = 'cert-caption-amount';
-                if (cert.amount_gd && cert.amount_gd > 0) {
-                    var amt = parseFloat(cert.amount_gd);
-                    amtEl.textContent = (Number.isInteger(amt) ? amt.toLocaleString() : amt.toFixed(2)) + ' G$';
-                }
-
-                caption.appendChild(nameEl);
-                caption.appendChild(amtEl);
-                slide.appendChild(img);
-                slide.appendChild(caption);
-                track.appendChild(slide);
-
-                var dot = document.createElement('div');
-                dot.className = 'cert-dot' + (i === 0 ? ' active' : '');
-                dot.setAttribute('aria-label', 'Go to slide ' + (i + 1));
-                (function(idx) { dot.addEventListener('click', function() { certGoTo(idx); }); })(i);
-                dotsEl.appendChild(dot);
-            });
-
-            // Swap skeleton → real content
-            var sk = document.getElementById('certCarouselSkeleton');
-            var inner = document.getElementById('certCarouselInner');
-            if (sk) sk.style.display = 'none';
-            if (inner) inner.style.display = 'block';
-            certGoTo(0);
-            certStartAuto();
-
-            // Pause on hover / touch
-            var outer = document.getElementById('certCarouselOuter');
-            if (outer) {
-                outer.addEventListener('mouseenter', function() { certPaused = true; });
-                outer.addEventListener('mouseleave', function() { certPaused = false; });
-                outer.addEventListener('touchstart', function(e) {
-                    certPaused = true;
-                    var startX = e.touches[0].clientX;
-                    function onEnd(ev) {
-                        var dx = (ev.changedTouches ? ev.changedTouches[0].clientX : startX) - startX;
-                        if (Math.abs(dx) > 40) certGoTo(dx < 0 ? certIdx + 1 : certIdx - 1);
-                        certPaused = false;
-                        outer.removeEventListener('touchend', onEnd);
-                    }
-                    outer.addEventListener('touchend', onEnd);
-                }, { passive: true });
-            }
-        }
-
-        function loadCertCarousel() {
-            fetch('/api/sponsor-certificates')
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    if (data.success && data.certificates && data.certificates.length > 0) {
-                        buildCertCarousel(data.certificates);
-                    } else {
-                        var sk = document.getElementById('certCarouselSkeleton');
-                        if (sk) sk.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:0.9rem;">🤝 Sponsor certificates coming soon!</div>';
-                    }
-                })
-                .catch(function(e) {
-                    console.warn('Could not load sponsor certificates:', e);
-                    var sk = document.getElementById('certCarouselSkeleton');
-                    if (sk) sk.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:0.9rem;">🤝 Sponsor certificates coming soon!</div>';
-                });
-        }
-
-        document.addEventListener('DOMContentLoaded', loadCertCarousel);
-    })();
 
     // ── Community Tweets Carousel ───────────────────────────────────────────
     (function() {
