@@ -66,6 +66,10 @@
     var _seedPrice = 0n;
     var _busy = false;
     var _returnFocus = null;
+    var _growthInterval = null;
+    var _plantedAt = 0;
+    var _maturityAt = 0;
+    var _chainTimeOffset = 0;
 
     function el(id) { return document.getElementById(id); }
     function setText(id, value) {
@@ -99,6 +103,56 @@
     function maturityDate(seconds) {
         if (!Number(seconds)) return "—";
         return new Date(Number(seconds) * 1000).toLocaleString();
+    }
+    function formatDuration(seconds) {
+        var remaining = Math.max(0, Math.floor(Number(seconds) || 0));
+        var hours = Math.floor(remaining / 3600);
+        var minutes = Math.floor((remaining % 3600) / 60);
+        if (hours > 0) return hours + "h " + String(minutes).padStart(2, "0") + "m until harvest";
+        return minutes + "m until harvest";
+    }
+    function renderGrowth(plantedAt, maturityAt, currentTime) {
+        var plot = el("cfGardenPlot");
+        if (!plot || !plantedAt || !maturityAt) return;
+        var now = Number.isFinite(Number(currentTime)) ? Number(currentTime) : Math.floor(Date.now() / 1000) + _chainTimeOffset;
+        var total = Math.max(1, maturityAt - plantedAt);
+        var progress = Math.max(0, Math.min(1, (now - plantedAt) / total));
+        var stage = progress >= 1 ? 6 : Math.min(5, Math.floor(progress * 6));
+        var stages = [
+            ["Seed tucked into the soil", "Your seed is in the soil. Come back as it starts to sprout."],
+            ["A tiny sprout is breaking through", "The first green shoots are reaching for the light."],
+            ["Leaves are unfolding", "Your plant is settling in and growing stronger."],
+            ["The plant is flowering", "A blossom is forming. The vegetable is on its way."],
+            ["Your vegetable is taking shape", "The harvest is getting fuller with every passing hour."],
+            ["Almost ready to harvest", "One last growth stage remains before your Garden matures."],
+            ["Mature vegetable ready", "Your Garden is mature. Harvest your principal and any available bonus."]
+        ];
+        plot.dataset.stage = String(stage);
+        setText("cfGardenStageLabel", stages[stage][0]);
+        setText("cfGardenStageHint", stages[stage][1]);
+        setText("cfGardenActiveTitle", progress >= 1 ? "Your Garden is ready" : "Your Garden is growing");
+        setText("cfGardenGrowthStage", "Stage " + (stage + 1) + " of 7");
+        setText("cfGardenGrowthPercent", Math.round(progress * 100) + "%");
+        setText("cfGardenGrowthCountdown", progress >= 1 ? "Ready to harvest" : formatDuration(maturityAt - now));
+        var bar = el("cfGardenGrowthBar");
+        if (bar) bar.style.width = Math.round(progress * 100) + "%";
+        var progressBar = plot.parentElement && plot.parentElement.querySelector('[role="progressbar"]');
+        if (progressBar) progressBar.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+        var markers = modal.querySelectorAll(".cf-garden-timeline span");
+        markers.forEach(function (marker, index) {
+            marker.classList.toggle("is-done", index < stage);
+            marker.classList.toggle("is-current", index === stage);
+        });
+    }
+    function startGrowthTicker() {
+        if (_growthInterval) window.clearInterval(_growthInterval);
+        _growthInterval = window.setInterval(function () {
+            if (!_busy && !modal.hidden && _plantedAt && _maturityAt) renderGrowth(_plantedAt, _maturityAt);
+        }, 60000);
+    }
+    function stopGrowthTicker() {
+        if (_growthInterval) window.clearInterval(_growthInterval);
+        _growthInterval = null;
     }
     function setBusy(value) {
         _busy = !!value;
@@ -196,9 +250,15 @@
             if (plantPanel) plantPanel.hidden = active;
             if (activePanel) activePanel.hidden = !active;
             if (!active) {
+                _plantedAt = 0;
+                _maturityAt = 0;
+                _chainTimeOffset = 0;
+                stopGrowthTicker();
                 setStatus("Choose 1–100 seeds. Each seed costs " + money(_seedPrice) + ". Your wallet will request approval only for the exact total if needed.");
                 return;
             }
+            _plantedAt = Number(record.plantedAt);
+            _maturityAt = Number(values[3]);
             setText("cfGardenPrincipal", money(record.principal));
             setText("cfGardenSeedCountValue", String(record.seedCount));
             setText("cfGardenMaturity", maturityDate(values[3]));
@@ -208,6 +268,9 @@
                 var latestBlock = await loaded.garden.runner.provider.getBlock("latest");
                 if (latestBlock && Number(latestBlock.timestamp)) chainTimestamp = Number(latestBlock.timestamp);
             } catch (_) { /* Display can fall back to the device clock if the public RPC is temporarily unavailable. */ }
+            _chainTimeOffset = chainTimestamp - Math.floor(Date.now() / 1000);
+            renderGrowth(_plantedAt, _maturityAt, chainTimestamp);
+            startGrowthTicker();
             var mature = Number(values[3]) <= chainTimestamp;
             var harvestButton = el("cfGardenHarvestButton");
             var exitButton = el("cfGardenExitButton");
@@ -351,6 +414,7 @@
 
     function close() {
         if (modal.hidden) return;
+        stopGrowthTicker();
         modal.hidden = true;
         modal.setAttribute("aria-hidden", "true");
         document.body.classList.remove("cf-modal-open");
