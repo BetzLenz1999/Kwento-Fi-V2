@@ -950,11 +950,12 @@ def get_daily_task_history():
 
 @routes.route("/api/recent-daily-tasks", methods=["GET"])
 def get_recent_daily_tasks():
-    """Get recent daily task submissions from last 72 hours"""
+    """Get recent daily task submissions within the shared cooldown window"""
     try:
         from datetime import datetime, timedelta
         from supabase_client import get_supabase_client
         from cache_utils import api_cache, cached
+        from config import DAILY_TASK_COOLDOWN_HOURS
 
         # Check cache first (2 minute TTL)
         cache_key = "recent_daily_tasks"
@@ -971,10 +972,10 @@ def get_recent_daily_tasks():
             response.headers['Content-Type'] = 'application/json'
             return response, 200
 
-        # Calculate 72 hours ago (aligned with daily task cooldown window)
-        cooldown_window_start = (datetime.utcnow() - timedelta(hours=72)).isoformat()
+        # Window aligned with the daily task cooldown (config.DAILY_TASK_COOLDOWN_HOURS)
+        cooldown_window_start = (datetime.utcnow() - timedelta(hours=DAILY_TASK_COOLDOWN_HOURS)).isoformat()
 
-        # Get Twitter task submissions from last 72 hours
+        # Get Twitter task submissions from the cooldown window
         twitter_submissions = safe_supabase_operation(
             lambda: supabase.table('twitter_task_log')\
                 .select('wallet_address, reward_amount, created_at, twitter_url')\
@@ -986,7 +987,7 @@ def get_recent_daily_tasks():
             operation_name="get recent twitter tasks"
         )
 
-        # Get Telegram task submissions from last 72 hours
+        # Get Telegram task submissions from the cooldown window
         telegram_submissions = safe_supabase_operation(
             lambda: supabase.table('telegram_task_log')\
                 .select('wallet_address, reward_amount, created_at, telegram_url')\
