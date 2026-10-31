@@ -51,6 +51,7 @@ def main():
             "tasks_last_30_days_formatted": "6,731",
         },
         pwa_installable=True,
+        DAILY_TASK_COOLDOWN_HOURS=48,
     )
     out = os.path.join(OUT, "homepage.html")
     with open(out, "w", encoding="utf-8") as fh:
