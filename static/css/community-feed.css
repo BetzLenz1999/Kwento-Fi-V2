@@ -3384,6 +3384,41 @@ body.cf-page .btn-secondary:hover { background: var(--cf-field); }
 .cf-garden-panel > .cf-garden-primary { width: 100%; }
 .cf-garden-active-title { display: flex; align-items: center; gap: .55rem; color: #166534; font-size: .98rem; }
 .cf-garden-pulse { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 5px #dcfce7; }
+.cf-garden-plot { position: relative; min-height: 214px; margin-top: .9rem; overflow: hidden; border: 1px solid #bbf7d0; border-radius: 20px; background: linear-gradient(180deg, #dff7ff 0%, #effcf7 61%, #86c979 61%, #5c9b52 100%); isolation: isolate; }
+.cf-garden-plot-sky { position: absolute; inset: 0 0 39%; overflow: hidden; }
+.cf-garden-sun { position: absolute; top: 23px; right: 12%; width: 46px; height: 46px; border-radius: 50%; background: #fbbf24; box-shadow: 0 0 0 10px rgba(251,191,36,.15), 0 0 34px rgba(251,191,36,.45); }
+.cf-garden-cloud { position: absolute; width: 72px; height: 18px; border-radius: 999px; background: rgba(255,255,255,.65); filter: blur(.2px); }
+.cf-garden-cloud::before, .cf-garden-cloud::after { content: ""; position: absolute; bottom: 0; border-radius: 50%; background: inherit; }
+.cf-garden-cloud::before { left: 14px; width: 28px; height: 28px; } .cf-garden-cloud::after { left: 38px; width: 20px; height: 20px; }
+.cf-garden-cloud-one { top: 45px; left: 12%; } .cf-garden-cloud-two { top: 82px; right: 29%; transform: scale(.72); opacity: .55; }
+.cf-garden-plot-copy { position: absolute; z-index: 4; top: 20px; left: 24px; max-width: 57%; }
+.cf-garden-plot-copy .cf-garden-eyebrow { color: #166534; } .cf-garden-plot-copy strong { display: block; color: #14532d; font-size: 1.1rem; font-weight: 950; }
+.cf-garden-plot-copy span:last-child { display: block; margin-top: .35rem; color: #285943; font-size: .76rem; line-height: 1.45; }
+.cf-garden-ground { position: absolute; z-index: 3; left: 50%; bottom: 0; width: 166px; height: 126px; transform: translateX(-50%); }
+.cf-garden-mound { position: absolute; left: 50%; bottom: -24px; width: 182px; height: 104px; transform: translateX(-50%); border-radius: 50% 50% 0 0; background: radial-gradient(circle at 35% 38%, #b9784f 0 2px, transparent 3px), radial-gradient(circle at 68% 46%, #7f4d36 0 2px, transparent 3px), linear-gradient(180deg, #8f563b, #633927); box-shadow: inset 0 12px 12px rgba(50,25,15,.22); }
+.cf-garden-seed { position: absolute; z-index: 4; left: 72px; bottom: 30px; width: 22px; height: 14px; border-radius: 70% 40% 70% 40%; background: linear-gradient(135deg, #f4c27a, #8f563b); box-shadow: 0 2px 0 rgba(55,28,16,.42); transform: rotate(-16deg); transition: opacity .5s ease, transform .7s ease; }
+.cf-garden-seed::after { content: ""; position: absolute; left: 9px; top: 2px; width: 2px; height: 9px; border-radius: 999px; background: rgba(255,239,194,.62); transform: rotate(18deg); }
+.cf-garden-plot[data-stage="1"] .cf-garden-seed, .cf-garden-plot[data-stage="2"] .cf-garden-seed, .cf-garden-plot[data-stage="3"] .cf-garden-seed, .cf-garden-plot[data-stage="4"] .cf-garden-seed, .cf-garden-plot[data-stage="5"] .cf-garden-seed, .cf-garden-plot[data-stage="6"] .cf-garden-seed { opacity: 0; transform: translateY(10px) scale(.7) rotate(-16deg); }
+.cf-garden-stem { position: absolute; z-index: 2; left: 79px; bottom: 26px; width: 8px; height: 82px; border-radius: 999px; background: linear-gradient(90deg, #166534, #4ade80, #166534); transform-origin: bottom; transform: scaleY(0); transition: transform .8s ease; }
+.cf-garden-leaf { position: absolute; z-index: 3; bottom: 67px; width: 50px; height: 24px; border-radius: 100% 0 100% 0; background: linear-gradient(135deg, #22c55e, #15803d); opacity: 0; transform: scale(0) rotate(-18deg); transition: opacity .6s ease, transform .8s ease; }
+.cf-garden-leaf-left { left: 33px; transform-origin: right bottom; } .cf-garden-leaf-right { right: 31px; transform: scale(0) rotate(108deg); transform-origin: left bottom; }
+.cf-garden-blossom { position: absolute; z-index: 4; left: 65px; bottom: 91px; width: 36px; height: 36px; border-radius: 50%; background: radial-gradient(circle, #fef3c7 0 4px, #fb7185 5px 11px, transparent 12px), radial-gradient(circle at 50% 0, #fb7185 0 10px, transparent 11px); opacity: 0; transform: scale(0); transition: opacity .6s ease, transform .8s ease; }
+.cf-garden-vegetable { position: absolute; z-index: 4; left: 54px; bottom: 21px; width: 50px; height: 60px; border-radius: 46% 46% 42% 42%; background: radial-gradient(circle at 33% 27%, rgba(255,255,255,.4) 0 3px, transparent 4px), linear-gradient(135deg, #facc15, #ea580c); box-shadow: 0 5px 0 #166534, 0 9px 18px rgba(41,72,26,.3); opacity: 0; transform: scale(.2) translateY(18px); transition: opacity .8s ease, transform .8s ease; }
+.cf-garden-plot[data-stage="1"] .cf-garden-stem, .cf-garden-plot[data-stage="2"] .cf-garden-stem, .cf-garden-plot[data-stage="3"] .cf-garden-stem, .cf-garden-plot[data-stage="4"] .cf-garden-stem, .cf-garden-plot[data-stage="5"] .cf-garden-stem, .cf-garden-plot[data-stage="6"] .cf-garden-stem { transform: scaleY(.35); }
+.cf-garden-plot[data-stage="2"] .cf-garden-stem, .cf-garden-plot[data-stage="3"] .cf-garden-stem, .cf-garden-plot[data-stage="4"] .cf-garden-stem, .cf-garden-plot[data-stage="5"] .cf-garden-stem, .cf-garden-plot[data-stage="6"] .cf-garden-stem { transform: scaleY(.62); }
+.cf-garden-plot[data-stage="3"] .cf-garden-stem, .cf-garden-plot[data-stage="4"] .cf-garden-stem, .cf-garden-plot[data-stage="5"] .cf-garden-stem, .cf-garden-plot[data-stage="6"] .cf-garden-stem { transform: scaleY(.82); }
+.cf-garden-plot[data-stage="4"] .cf-garden-stem, .cf-garden-plot[data-stage="5"] .cf-garden-stem, .cf-garden-plot[data-stage="6"] .cf-garden-stem { transform: scaleY(1); }
+.cf-garden-plot[data-stage="1"] .cf-garden-leaf, .cf-garden-plot[data-stage="2"] .cf-garden-leaf, .cf-garden-plot[data-stage="3"] .cf-garden-leaf, .cf-garden-plot[data-stage="4"] .cf-garden-leaf, .cf-garden-plot[data-stage="5"] .cf-garden-leaf, .cf-garden-plot[data-stage="6"] .cf-garden-leaf { opacity: .75; transform: scale(.55) rotate(-18deg); }
+.cf-garden-plot[data-stage="2"] .cf-garden-leaf, .cf-garden-plot[data-stage="3"] .cf-garden-leaf, .cf-garden-plot[data-stage="4"] .cf-garden-leaf, .cf-garden-plot[data-stage="5"] .cf-garden-leaf, .cf-garden-plot[data-stage="6"] .cf-garden-leaf { opacity: 1; transform: scale(.86) rotate(-18deg); }
+.cf-garden-plot[data-stage="3"] .cf-garden-blossom, .cf-garden-plot[data-stage="4"] .cf-garden-blossom { opacity: 1; transform: scale(1); }
+.cf-garden-plot[data-stage="5"] .cf-garden-vegetable, .cf-garden-plot[data-stage="6"] .cf-garden-vegetable { opacity: 1; transform: scale(1) translateY(0); }
+.cf-garden-plot[data-stage="6"] .cf-garden-vegetable { background: radial-gradient(circle at 33% 27%, rgba(255,255,255,.46) 0 3px, transparent 4px), linear-gradient(135deg, #fde047, #16a34a); animation: cfGardenVegPulse 2.8s ease-in-out infinite; }
+@keyframes cfGardenVegPulse { 50% { transform: scale(1.06) translateY(-2px); } }
+.cf-garden-growth-meta { display: flex; align-items: end; justify-content: space-between; gap: .7rem; margin-top: .75rem; color: #166534; }
+.cf-garden-growth-meta span { display: grid; gap: .12rem; } .cf-garden-growth-meta strong { font-size: .84rem; font-weight: 900; } .cf-garden-growth-meta small { color: #64748b; font-size: .72rem; }
+.cf-garden-growth-meta > strong { color: #4f46e5; font-size: 1rem; }
+.cf-garden-growth-bar { height: 9px; margin-top: .4rem; overflow: hidden; border-radius: 999px; background: #dcfce7; } .cf-garden-growth-bar span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #22c55e, #84cc16, #f59e0b); transition: width .8s ease; }
+.cf-garden-timeline { display: grid; grid-template-columns: repeat(7, 1fr); gap: .2rem; margin: .55rem 0 .15rem; } .cf-garden-timeline span { display: grid; justify-items: center; gap: .2rem; color: #94a3b8; text-align: center; } .cf-garden-timeline i { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid #cbd5e1; border-radius: 50%; background: #fff; font-size: .65rem; font-style: normal; font-weight: 900; } .cf-garden-timeline small { font-size: .59rem; font-weight: 750; } .cf-garden-timeline span.is-done { color: #15803d; } .cf-garden-timeline span.is-done i { border-color: #86efac; background: #dcfce7; } .cf-garden-timeline span.is-current i { border-color: #f59e0b; background: #fef3c7; color: #92400e; box-shadow: 0 0 0 3px rgba(245,158,11,.14); }
 .cf-garden-actions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: .9rem; }
 .cf-garden-secondary { border: 1px solid #cbd5e1; background: #fff; color: #334155; }
 .cf-garden-sponsor-title { display: flex; align-items: center; justify-content: space-between; gap: .5rem; color: #1e1b4b; font-size: .91rem; }
@@ -3411,6 +3446,7 @@ body.cf-page .btn-secondary:hover { background: var(--cf-field); }
 .cf-garden-price-grid strong { display: block; margin-top: .3rem; color: #3730a3; font-size: 1.05rem; font-weight: 950; overflow-wrap: anywhere; }
 .cf-garden-price-note, .cf-garden-transaction-note { margin: .55rem 0 0; color: #64748b; font-size: .73rem; line-height: 1.5; }
 .cf-garden-plant-cta { min-height: 52px; margin-top: .85rem; font-size: .95rem; letter-spacing: .01em; }
+@media (prefers-reduced-motion: reduce) { .cf-garden-stem, .cf-garden-leaf, .cf-garden-blossom, .cf-garden-vegetable { transition: none; } .cf-garden-plot[data-stage="6"] .cf-garden-vegetable { animation: none; } }
 @media (max-width: 640px) {
     .cf-garden-modal { padding: 0; }
     .cf-garden-card { width: 100vw; height: 100vh; height: 100dvh; max-height: 100vh; max-height: 100dvh; border: 0; border-radius: 0; }
@@ -3430,6 +3466,7 @@ body.cf-page .btn-secondary:hover { background: var(--cf-field); }
     .cf-garden-price-grid > div { padding: .7rem; }
     .cf-garden-price-grid strong { font-size: .92rem; }
     .cf-garden-transaction-note { font-size: .7rem; }
+    .cf-garden-plot { min-height: 224px; } .cf-garden-plot-copy { top: 17px; left: 17px; max-width: 68%; } .cf-garden-plot-copy strong { font-size: .95rem; } .cf-garden-plot-copy span:last-child { font-size: .69rem; } .cf-garden-timeline small { font-size: .5rem; } .cf-garden-timeline i { width: 20px; height: 20px; }
 }
 
 
