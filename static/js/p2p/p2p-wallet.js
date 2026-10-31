@@ -284,11 +284,23 @@ window.P2PWallet = (function () {
         // failing loudly. Never pass a bare quorum number here — it is read as
         // the network and breaks every Celo read with
         // "network changed: 1 => 42220".
+        //
+        // quorum MUST be 1. ethers defaults it to ceil(providers/2) = 2, but G$
+        // is a rebasing token whose balanceOf differs at every block, so three
+        // RPCs sitting at three heights never agree. Every G$ read then dies
+        // with SERVER_ERROR "quorum not met" — including the balanceOf guard
+        // that runs before any signing prompt.
         return new ethers.FallbackProvider(
-            CELO_RPC_URLS.map(function (u) {
-                return new ethers.JsonRpcProvider(u, { chainId: cfg.chainId, name: "celo" });
+            CELO_RPC_URLS.map(function (u, i) {
+                return {
+                    provider: new ethers.JsonRpcProvider(u, { chainId: cfg.chainId, name: "celo" }),
+                    priority: i + 1,
+                    weight: 1,
+                    stallTimeout: 2000,
+                };
             }),
-            { chainId: cfg.chainId, name: "celo" }
+            { chainId: cfg.chainId, name: "celo" },
+            { quorum: 1 }
         );
     }
 
