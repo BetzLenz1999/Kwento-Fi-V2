@@ -682,11 +682,30 @@ def _daily_task_same_origin():
         return False
 
 
+def _daily_task_fv_gate():
+    """Return a 403 response when the signed-in wallet is not face-verified.
+
+    Runs BEFORE any payment intent is created: the 20 G$ fee is non-refundable,
+    so an unverified wallet must never reach the payment step. Fails closed.
+
+    Deliberately not configurable: Daily Task spends real G$, so the
+    requirement is hard-coded rather than an env flag that could be unset by
+    mistake or flipped in an emergency to let an unverified wallet pay.
+    """
+    from human_verification import fv_required_response, wallet_is_face_verified
+    if wallet_is_face_verified(session.get('wallet')) is True:
+        return None
+    return fv_required_response()
+
+
 @routes.route('/api/daily-task/payment-intent', methods=['POST'])
 @auth_required
 def create_daily_task_payment_intent():
     if not _daily_task_same_origin():
         return jsonify({'success': False, 'error': 'Cross-origin request rejected.'}), 403
+    fv_gate = _daily_task_fv_gate()
+    if fv_gate:
+        return fv_gate
     data = request.get_json(silent=True) or {}
     try:
         from daily_task_payment_service import create_payment_intent, DailyTaskSubmissionError
@@ -709,6 +728,9 @@ def create_daily_task_payment_intent():
 def sponsor_daily_task_gas():
     if not _daily_task_same_origin():
         return jsonify({'success': False, 'error': 'Cross-origin request rejected.'}), 403
+    fv_gate = _daily_task_fv_gate()
+    if fv_gate:
+        return fv_gate
     data = request.get_json(silent=True) or {}
     try:
         from daily_task_gas_sponsor import sponsor_for_payment, DailyTaskGasSponsorError
@@ -726,6 +748,9 @@ def sponsor_daily_task_gas():
 def confirm_daily_task_payment():
     if not _daily_task_same_origin():
         return jsonify({'success': False, 'error': 'Cross-origin request rejected.'}), 403
+    fv_gate = _daily_task_fv_gate()
+    if fv_gate:
+        return fv_gate
     data = request.get_json(silent=True) or {}
     try:
         from daily_task_payment_service import confirm_paid_submission, DailyTaskSubmissionError
@@ -8232,6 +8257,20 @@ def _safe_fv_return_path(value: str | None) -> str:
     )
 
 
+def _fv_verified_for_boot(wallet: str) -> bool:
+    """Face-verification state for the page boot payload.
+
+    Drives the client-side gate on Garden and Daily Task so an unverified
+    member is sent to the shared Claim G$ verification flow instead of into a
+    flow the server will refuse. A guest is False; an unreadable chain answer
+    is also False, which matches the fail-closed server gate.
+    """
+    if not wallet:
+        return False
+    from human_verification import wallet_is_face_verified
+    return wallet_is_face_verified(wallet) is True
+
+
 def _claim_boot_context(wallet: str, login_method: str = "", *, claim_only: bool = False,
                         embed_claim: bool = False, fv_return_to: str = "/wallet") -> dict:
     """Build the single claim runtime contract shared by Wallet and Community.
@@ -8244,6 +8283,7 @@ def _claim_boot_context(wallet: str, login_method: str = "", *, claim_only: bool
     return {
         "wallet": wallet,
         "login_method": login_method or "",
+        "fv_verified": _fv_verified_for_boot(wallet),
         "gd_token_address": GOODDOLLAR_CONTRACTS.get("GOODDOLLAR_TOKEN", ""),
         "raffle_contract_address": os.environ.get("GOODMARKET_RAFFLE_CONTRACT_ADDRESS", ""),
         "walletconnect_project_id": os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
