@@ -242,14 +242,21 @@ def _community_garden_boot() -> dict[str, object]:
         "1", "true", "yes", "on", "enabled"
     }
     garden_address = (os.getenv("COMMUNITY_GARDEN_CONTRACT_ADDRESS", "") or "").strip()
+    legacy_garden_address = (os.getenv(
+        "COMMUNITY_GARDEN_V1_CONTRACT_ADDRESS",
+        "0xcCD5F87c74d876347aAA9b85ADaF1EEFC75CE3d4",
+    ) or "").strip()
     token_address = (os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A") or "").strip()
     valid_address = lambda value: bool(re.fullmatch(r"0x[a-fA-F0-9]{40}", value))
     configured = valid_address(garden_address) and valid_address(token_address)
+    legacy_configured = valid_address(legacy_garden_address)
     if requested and not configured:
         logger.warning("Community Garden was requested but contract/token address configuration is invalid; keeping it hidden")
     return {
         "enabled": bool(requested and configured),
         "contractAddress": garden_address if configured else "",
+        "legacyContractAddress": legacy_garden_address if legacy_configured else "",
+        "legacyContractVersion": "v1" if legacy_configured else "",
         "tokenAddress": token_address if valid_address(token_address) else "",
         "chainId": 42220,
         "growthPeriodSeconds": 86400,
