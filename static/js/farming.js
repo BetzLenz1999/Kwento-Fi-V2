@@ -167,6 +167,12 @@
     // ── signer resolution (mirrors swap.html / lotto.html) ──────────────────
 
     var isLocal = function () { return LOGIN_METHOD === "local"; };
+    // The STRICT WalletConnect signal. `prefersWc()` below is broader — it is
+    // also true for any *stored* WC session — so it must not decide routing on
+    // its own (see _awaitProviders / resolveSigner).
+    var isWcFamilyLogin = function () {
+        return ["walletconnect", "manual", "manual_address"].indexOf(LOGIN_METHOD) >= 0;
+    };
     var prefersWc = function () {
         return typeof GMWalletConnect !== "undefined" &&
             typeof GMWalletConnect.prefersWcSigning === "function" &&
@@ -222,6 +228,43 @@
         if (window.trustwallet) push(window.trustwallet);
         if (window.trustWallet) push(window.trustWallet);
         (window.__farmEip6963Providers || []).forEach(function (d) { push(d.provider); });
+        _parentProviders().forEach(push);
+        return out;
+    }
+
+    // When /farming is embedded (Community → Menu → Earn More → Farming), a
+    // mobile dApp browser injects its provider into the TOP frame only. The
+    // iframe's own window has no window.ethereum, so the page reported "No
+    // wallet detected" while the wallet was right there in the parent. Borrow
+    // the parent's injected provider — same-origin only (a cross-origin parent
+    // throws on property access) and never for a local/WC login, which have
+    // their own signer.
+    function _parentProviders() {
+        var out = [];
+        if (isLocal() || isWcFamilyLogin()) return out;
+        try {
+            var parent = window.parent;
+            if (!parent || parent === window) return out;
+            var pe = parent.ethereum;
+            if (pe) {
+                if (Array.isArray(pe.providers)) {
+                    pe.providers.forEach(function (p) {
+                        var c = _coerceProvider(p);
+                        if (c && out.indexOf(c) === -1) out.push(c);
+                    });
+                }
+                var own = _coerceProvider(pe);
+                if (own && out.indexOf(own) === -1) out.push(own);
+            }
+            var pt = _coerceProvider(parent.trustwallet) || _coerceProvider(parent.trustWallet);
+            if (pt && out.indexOf(pt) === -1) out.push(pt);
+            if (Array.isArray(parent.__announced6963Providers)) {
+                parent.__announced6963Providers.forEach(function (d) {
+                    var c = d && _coerceProvider(d.provider);
+                    if (c && out.indexOf(c) === -1) out.push(c);
+                });
+            }
+        } catch (_) { /* cross-origin parent — its provider is not reachable */ }
         return out;
     }
 
@@ -231,7 +274,13 @@
     }
 
     function _awaitProviders(timeoutMs) {
-        if (prefersWc() || isLocal()) return Promise.resolve([]);
+        // Only a WC-FAMILY login bypasses injected discovery. The broad
+        // `prefersWc()` (true for any stored WC session) must NOT decide this:
+        // a genuine injected/Trust login with a leftover session would then be
+        // hidden from its own extension and routed to the dead WC relay
+        // ("No active WalletConnect session."). A legacy "injected" login with
+        // no matching provider still reaches WC via resolveSigner's fallback.
+        if (isWcFamilyLogin() || isLocal()) return Promise.resolve([]);
         var budget = typeof timeoutMs === "number" ? timeoutMs : (_isMobile() ? 3000 : 900);
         var start = Date.now();
         var providers = _collectProviders();
@@ -271,6 +320,18 @@
         return Promise.resolve(GMLocalWallet.getProvider());
     }
 
+    function _signWithWc() {
+        return _wcProviderPromise().then(function (wcProvider) {
+            var p = new ethers.BrowserProvider(wcProvider);
+            return p.getSigner().then(function (signer) {
+                if (_toLower(signer.address) !== _toLower(WALLET)) {
+                    throw new Error("Wrong WalletConnect wallet connected. Please switch to your " + DISPLAY_BRAND + " wallet.");
+                }
+                return { signer: signer, provider: wcProvider };
+            });
+        });
+    }
+
     function resolveSigner() {
         if (isLocal()) {
             return _localProvider().then(function (provider) {
@@ -286,17 +347,7 @@
 
         return _awaitProviders().then(function (providers) {
             if (!providers.length) {
-                if (prefersWc()) {
-                    return _wcProviderPromise().then(function (wcProvider) {
-                        var p = new ethers.BrowserProvider(wcProvider);
-                        return p.getSigner().then(function (signer) {
-                            if (_toLower(signer.address) !== _toLower(WALLET)) {
-                                throw new Error("Wrong WalletConnect wallet connected. Please switch to your " + DISPLAY_BRAND + " wallet.");
-                            }
-                            return { signer: signer, provider: wcProvider };
-                        });
-                    });
-                }
+                if (prefersWc()) return _signWithWc();
                 throw new Error("No wallet detected. Open this page in MetaMask, Trust Wallet or another Celo wallet.");
             }
 
