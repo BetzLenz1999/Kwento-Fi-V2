@@ -1593,16 +1593,58 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        const OVERVIEW_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
         document.addEventListener('DOMContentLoaded', function() {
             const wallet = '{{ wallet if wallet else "" }}';
-            if (wallet && wallet !== 'None' && wallet !== '') {
-                loadAnalyticsData();
-                loadGdPriceOverview();
-                setInterval(loadAnalyticsData, 60000);
+            const hasWallet = wallet && wallet !== 'None' && wallet !== '';
+            let balanceRefreshTimer = null;
+            let poolRefreshTimer = null;
+
+            function refreshVisibleOverviewData() {
+                if (document.visibilityState !== 'visible') return;
+                if (hasWallet) {
+                    loadAnalyticsData();
+                    loadGdPriceOverview();
+                }
+                loadUbiPoolBalance();
             }
 
-            loadUbiPoolBalance();
-            setInterval(loadUbiPoolBalance, 120000);
+            function stopOverviewRefreshTimers() {
+                if (balanceRefreshTimer !== null) {
+                    clearInterval(balanceRefreshTimer);
+                    balanceRefreshTimer = null;
+                }
+                if (poolRefreshTimer !== null) {
+                    clearInterval(poolRefreshTimer);
+                    poolRefreshTimer = null;
+                }
+            }
+
+            function startOverviewRefreshTimers() {
+                if (document.visibilityState !== 'visible') return;
+                if (hasWallet && balanceRefreshTimer === null) {
+                    balanceRefreshTimer = setInterval(loadAnalyticsData, OVERVIEW_REFRESH_INTERVAL_MS);
+                }
+                if (poolRefreshTimer === null) {
+                    poolRefreshTimer = setInterval(loadUbiPoolBalance, OVERVIEW_REFRESH_INTERVAL_MS);
+                }
+            }
+
+            function handleOverviewVisibilityChange() {
+                if (document.visibilityState === 'visible') {
+                    refreshVisibleOverviewData();
+                    startOverviewRefreshTimers();
+                } else {
+                    stopOverviewRefreshTimers();
+                }
+            }
+
+            document.addEventListener('visibilitychange', handleOverviewVisibilityChange);
+            if (document.visibilityState === 'visible') {
+                refreshVisibleOverviewData();
+                startOverviewRefreshTimers();
+            }
 
             const today = new Date();
             const yyyy  = today.getFullYear();
