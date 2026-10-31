@@ -3326,6 +3326,7 @@
     window.GM_WALLET_BOOT = {
         "wallet": {{ wallet|tojson }},
         "loginMethod": {{ login_method|default('', true)|tojson }},
+        "fvVerified": {{ 'true' if fv_verified|default(false, true) else 'false' }},
         "gdTokenAddress": {{ gd_token_address|default('', true)|tojson }},
         "raffleContractAddress": {{ raffle_contract_address|default('', true)|tojson }},
         "walletConnectProjectId": {{ walletconnect_project_id|default('', true)|tojson }},
