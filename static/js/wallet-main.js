@@ -961,6 +961,8 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     }
 
     function _collectInjectedProviders() {
+        const shared = window.GMCommunityWalletDetection;
+        if (shared && typeof shared.collect === 'function') return shared.collect();
         const out = [];
         const push = (p) => {
             const provider = _coerceToRequestProvider(p);
