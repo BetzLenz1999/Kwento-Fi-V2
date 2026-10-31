@@ -1,18 +1,21 @@
-{# Shared Daily Task modal. Its IDs are consumed by wallet-main.js on both the
-   standalone wallet template and the authenticated Community page. #}
+{# Shared Daily Task modal used in the Community and legacy Wallet templates. #}
 <div class="modal-overlay cf-community-daily-task-modal" id="dailyTaskModal"
      role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="wlDailyTaskTitle">
     <div class="modal-sheet cf-community-daily-task-sheet">
         <div class="modal-handle"></div>
         <div class="modal-title" id="wlDailyTaskTitle">Daily Task</div>
 
-        <!-- Status banner (Available / Under Review / On Cooldown) -->
         <div id="wlDailyTaskStatusBanner" style="display:none;margin-bottom:1rem;"></div>
 
-        <!-- Platform Selection -->
+        <div id="wlDailyTaskTerms" style="margin:0 0 1rem;padding:0.9rem;border:1px solid var(--card-border);border-radius:14px;background:var(--card-soft);font-size:0.78rem;line-height:1.55;color:var(--text-dim);">
+            <strong style="display:block;color:var(--text);font-size:0.86rem;margin-bottom:0.35rem;">Before you submit</strong>
+            Each new post submission requires a <strong style="color:var(--text);">20 G$ on-chain contribution</strong>. It is <strong style="color:#f59e0b;">non-refundable</strong>, including if your post is rejected, and it helps fund the shared reward pool. Your post link is not saved by KwentoFi until this payment is confirmed.
+            <br><br>Rewards are set by the admin reward configuration, are paid only after review and approval, and depend on available pool funds. If your Celo wallet has at least <strong>0.3 CELO</strong>, you pay your own estimated network fee. Below 0.3 CELO, the app may sponsor the estimated fee within its per-task, per-wallet, and daily limits; otherwise you will need to add CELO.
+        </div>
+
         <div id="wlPlatformSelection" style="margin-bottom:1rem;">
             <div style="font-size:0.82rem;color:var(--text-dim);line-height:1.5;margin-bottom:0.75rem;">
-                Choose ONE platform to post and earn <strong style="color:#34d399;">100 G$</strong> today:
+                Choose one platform. A post is stored for review only after the payment transaction is confirmed on Celo.
             </div>
             <div style="display:flex;gap:0.6rem;flex-direction:column;">
                 <button type="button" class="platform-btn" data-daily-task-platform="twitter" style="padding:0.9rem;background:linear-gradient(135deg,#1da1f2,#0d8bd9);border:none;color:#fff;border-radius:14px;cursor:pointer;font-weight:700;font-size:0.95rem;display:flex;align-items:center;justify-content:center;gap:0.5rem;">
@@ -24,37 +27,39 @@
             </div>
         </div>
 
-        <!-- Task submission form (hidden until a platform is chosen) -->
         <div id="wlTaskSubmissionForm" style="display:none;">
             <div style="font-size:0.82rem;color:var(--text-dim);line-height:1.5;margin-bottom:0.75rem;">
-                Post the message below to <strong id="wlSelectedPlatformName"></strong>,
-                then copy your post link and submit it here to claim your 100 G$ reward!
+                Post the message below to <strong id="wlSelectedPlatformName"></strong>, then paste your public post link. KwentoFi checks eligibility and prepares a short-lived payment authorization first; the link is not stored at that stage.
             </div>
             <div id="wlTaskMessageDisplay" style="background:var(--card-soft);border:1px solid var(--card-border);padding:0.9rem;border-radius:12px;margin-bottom:0.75rem;position:relative;cursor:text;user-select:text;font-size:0.85rem;color:var(--text);white-space:pre-wrap;line-height:1.6;">
                 <div class="spinner" style="width:22px;height:22px;"></div>
             </div>
             <button type="button" class="btn-secondary" data-daily-task-action="copy" style="margin-bottom:0.75rem;width:100%;padding:0.7rem;">Copy Message</button>
-
             <div style="margin-bottom:0.75rem;">
-                <label style="display:block;margin-bottom:0.4rem;color:var(--text);font-size:0.85rem;"><span id="wlPlatformUrlLabel"></span> Post URL:</label>
-                <input type="url" id="wlTaskUrlInput" placeholder="" style="width:100%;padding:0.7rem;background:var(--card-soft);border:1px solid var(--card-border);border-radius:10px;color:var(--text);margin-bottom:0.75rem;font-size:0.9rem;-webkit-appearance:none;" />
+                <label for="wlTaskUrlInput" style="display:block;margin-bottom:0.4rem;color:var(--text);font-size:0.85rem;"><span id="wlPlatformUrlLabel"></span> post URL</label>
+                <input type="url" id="wlTaskUrlInput" placeholder="" autocomplete="url" style="width:100%;padding:0.7rem;background:var(--card-soft);border:1px solid var(--card-border);border-radius:10px;color:var(--text);margin-bottom:0.75rem;font-size:0.9rem;-webkit-appearance:none;" />
             </div>
-
             <div style="display:flex;gap:0.6rem;flex-direction:column;">
                 <button type="button" class="btn-secondary" data-daily-task-action="back" style="padding:0.7rem;font-size:0.9rem;">Back to Platform Selection</button>
-                <button type="button" id="wlSubmitDailyTaskBtn" class="btn-primary" data-daily-task-action="submit" style="padding:0.9rem;font-size:0.95rem;cursor:pointer;touch-action:manipulation;">Submit &amp; Claim 100 G$</button>
+                <button type="button" id="wlSubmitDailyTaskBtn" class="btn-primary" data-daily-task-action="submit" style="padding:0.9rem;font-size:0.95rem;cursor:pointer;touch-action:manipulation;">Check post &amp; continue</button>
             </div>
+
+            <section id="wlDailyTaskPaymentReview" aria-live="polite" style="display:none;margin-top:1rem;padding:1rem;border:1px solid var(--card-border);border-radius:14px;background:var(--card-soft);">
+                <strong style="display:block;color:var(--text);font-size:0.95rem;margin-bottom:0.45rem;">Review your payment</strong>
+                <div style="display:flex;justify-content:space-between;gap:0.75rem;font-size:0.82rem;line-height:1.7;"><span>Non-refundable pool contribution</span><strong>20 G$</strong></div>
+                <div style="display:flex;justify-content:space-between;gap:0.75rem;font-size:0.82rem;line-height:1.7;"><span>Reward if approved</span><strong id="wlDailyTaskRewardAmount">Admin configured</strong></div>
+                <div id="wlDailyTaskGasPayerText" style="margin-top:0.5rem;color:var(--text-dim);font-size:0.76rem;line-height:1.5;">Celo gas support is checked when you continue.</div>
+                <div style="margin-top:0.55rem;color:#f59e0b;font-size:0.75rem;line-height:1.45;">By continuing, you authorize exactly 20 G$ to be transferred to the Daily Task contract. The fee is not refunded if the post is rejected.</div>
+                <button type="button" id="wlDailyTaskPayBtn" class="btn-primary" data-daily-task-action="pay" style="width:100%;margin-top:0.8rem;padding:0.9rem;font-weight:700;">Pay 20 G$ &amp; submit</button>
+                <button type="button" id="wlDailyTaskVerifyBtn" class="btn-secondary" data-daily-task-action="verify" style="display:none;width:100%;margin-top:0.55rem;padding:0.8rem;">I paid — retry confirmation</button>
+            </section>
         </div>
 
-        <!-- Status message shown after a submission attempt -->
-        <div id="wlDailyTaskStatusMessage" style="display:none;font-size:0.85rem;line-height:1.5;margin-bottom:0.75rem;"></div>
-
-        <!-- Transaction history (loaded when the modal opens) -->
+        <div id="wlDailyTaskStatusMessage" role="status" aria-live="polite" style="display:none;font-size:0.85rem;line-height:1.5;margin-bottom:0.75rem;"></div>
         <div id="wlDailyTaskHistorySection" style="margin-top:0.75rem;display:none;">
             <div style="font-size:0.78rem;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem;">Transaction History</div>
             <div id="wlDailyTaskHistoryList" style="max-height:200px;overflow-y:auto;"></div>
         </div>
-
         <div class="modal-sheet-footer">
             <button class="btn-secondary" type="button" data-daily-task-action="close">Close</button>
         </div>
