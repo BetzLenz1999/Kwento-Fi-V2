@@ -3098,6 +3098,13 @@ body.cf-push-optin-open { overflow: hidden; }
 .cf-community-daily-task-sheet .modal-sheet-footer { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px solid #e4e7ec; }
 .cf-community-daily-task-sheet input { box-sizing: border-box; max-width: 100%; }
 .cf-community-daily-task-sheet button:focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; }
+/* Platform pickers carry their brand gradient inline (Twitter blue, Telegram
+   blue); the class supplies the shared states those inline styles can't. */
+.platform-btn { font: inherit; line-height: 1.2; transition: filter .18s ease, transform .18s ease; }
+.platform-btn:hover:not(:disabled) { filter: brightness(1.07); transform: translateY(-1px); }
+.platform-btn:active:not(:disabled) { transform: translateY(0); }
+.platform-btn:disabled { opacity: .55; cursor: not-allowed; filter: none; transform: none; }
+.platform-btn:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; }
 @media (max-width: 640px) {
     .cf-wallet-modal { padding: 0; }
     .cf-wallet-card {
@@ -3196,10 +3203,18 @@ body.cf-push-optin-open { overflow: hidden; }
 
 /* Buttons. `.btn-primary` carries the money-action gold, per the app rule
    that gold means "this moves funds" — with DARK ink, because white on gold
-   fails AA. */
+   fails AA.
+   On the Community page the scope is `body.cf-page` (set only by
+   community.html) rather than an allowlist of modal ids: the page renders the
+   claim sheet, the daily-task sheet, the claim-support sheets AND dynamically
+   built sheets (e.g. #passkeyEnrollModal appended to <body>), so an id
+   allowlist silently left every new sheet's buttons with default browser
+   chrome — the "no design" Claim / Daily-task buttons. The three wallet-page
+   sheet ids stay for the shared Settings markup. */
 #settingsModal .btn-primary,
 #pkModal .btn-primary,
-#fvDeVerifyModal .btn-primary {
+#fvDeVerifyModal .btn-primary,
+body.cf-page .btn-primary {
     padding: 0.75rem;
     border: 1px solid rgba(245, 166, 35, 0.55);
     border-radius: 14px;
@@ -3210,10 +3225,12 @@ body.cf-push-optin-open { overflow: hidden; }
 }
 #settingsModal .btn-primary:disabled,
 #pkModal .btn-primary:disabled,
-#fvDeVerifyModal .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+#fvDeVerifyModal .btn-primary:disabled,
+body.cf-page .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
 #settingsModal .btn-secondary,
 #pkModal .btn-secondary,
-#fvDeVerifyModal .btn-secondary {
+#fvDeVerifyModal .btn-secondary,
+body.cf-page .btn-secondary {
     margin-top: 0.5rem;
     padding: 0.75rem;
     border: 1px solid var(--cf-border);
@@ -3225,7 +3242,8 @@ body.cf-push-optin-open { overflow: hidden; }
 }
 #settingsModal .btn-secondary:hover,
 #pkModal .btn-secondary:hover,
-#fvDeVerifyModal .btn-secondary:hover { background: var(--cf-field); }
+#fvDeVerifyModal .btn-secondary:hover,
+body.cf-page .btn-secondary:hover { background: var(--cf-field); }
 #settingsModal .btn-danger,
 #pkModal .btn-danger,
 #fvDeVerifyModal .btn-danger {
