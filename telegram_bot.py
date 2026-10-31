@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
 from flask import Blueprint, current_app, redirect, request, jsonify, session, url_for
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from config import PRODUCTION_DOMAIN
+from config import PRODUCTION_DOMAIN, DAILY_TASK_COOLDOWN_HOURS
 from supabase_client import get_supabase_admin_client, get_supabase_client
 from news_feed import news_feed_service
 
@@ -1963,7 +1963,8 @@ def handle_trustpilot_rewards(chat_id, telegram_user):
 # URL. Submissions go through the SAME twitter_task_service /
 # telegram_task_service into the SAME twitter_task_log / telegram_task_log
 # tables keyed by the SAME saved wallet — so the admin dashboard
-# approve/decline flow, the shared 72h cooldown, and the web app history all
+# approve/decline flow, the shared cooldown (config.DAILY_TASK_COOLDOWN_HOURS),
+# and the web app history all
 # apply identically whether the user submits from the bot or the web app.
 
 _DAILY_TASK_PLATFORMS = ("twitter", "telegram")
@@ -1982,7 +1983,7 @@ def _daily_task_keyboard(state: str = "ready"):
 
     Platform buttons only appear while the wallet can submit right now — the
     same gating as the web modal, which blocks claiming during a pending
-    review or the shared 72h cooldown.
+    review or the shared cooldown.
     """
     keyboard = [[
         {"text": "📊 Status", "callback_data": "daily_task_status"},
@@ -1999,7 +2000,7 @@ def _daily_task_keyboard(state: str = "ready"):
 def _get_daily_task_unified_status(wallet: str) -> dict:
     """Unified daily task status — mirrors /api/daily-task/status in routes.py.
 
-    Pending submissions AND the 72h cooldown are shared across platforms: a
+    Pending submissions AND the shared cooldown are shared across platforms: a
     pending row or cooldown on EITHER platform blocks BOTH, exactly like the
     web app.
     """
@@ -2114,7 +2115,7 @@ def _daily_task_status_message(wallet: str, status: dict) -> tuple:
     reward = _format_gd_amount(status.get("reward_amount") or 0)
     header = (
         "📅 <b>Daily Task</b>\n\n"
-        f"Post once every 72 hours on <b>Twitter/X</b> or <b>Telegram</b> to earn <b>{reward}</b>!\n"
+        f"Post once every {DAILY_TASK_COOLDOWN_HOURS} hours on <b>Twitter/X</b> or <b>Telegram</b> to earn <b>{reward}</b>!\n"
         f"Wallet: <code>{_mask_wallet(wallet)}</code>\n\n"
     )
     if status.get("has_pending_submission"):
@@ -2143,7 +2144,8 @@ def _daily_task_status_message(wallet: str, status: dict) -> tuple:
         return (
             header + (
                 "⏰ <b>Cooldown active</b>\n\n"
-                "You already completed this cycle's daily task. The 72-hour cooldown "
+                "You already completed this cycle's daily task. The "
+                f"{DAILY_TASK_COOLDOWN_HOURS}-hour cooldown "
                 "is shared across Twitter and Telegram.\n\n"
                 f"⏳ Time remaining: <b>{html.escape(remaining)}</b>\n"
                 f"🗓 Next claim: <code>{html.escape(str(next_time))}</code>"
@@ -2155,7 +2157,7 @@ def _daily_task_status_message(wallet: str, status: dict) -> tuple:
             "✅ <b>You can claim today's daily task!</b>\n\n"
             "Choose ONE platform below, post the custom message, then paste your "
             "post link here.\n\n"
-            "⚠️ One submission per 72 hours — the cooldown is shared across "
+            f"⚠️ One submission per {DAILY_TASK_COOLDOWN_HOURS} hours — the cooldown is shared across "
             "Twitter and Telegram."
         ),
         "ready",
@@ -2291,7 +2293,8 @@ def handle_daily_task_text(chat_id, telegram_user, text) -> bool:
                 "✅ <b>Daily task submitted!</b>\n\n"
                 "Your post is now <b>pending admin approval</b> in the admin dashboard.\n"
                 "Your reward will be sent automatically once approved.\n\n"
-                "⏳ Approval usually takes 24-48 hours. The 72-hour cooldown "
+                "⏳ Approval usually takes 24-48 hours. The "
+                f"{DAILY_TASK_COOLDOWN_HOURS}-hour cooldown "
                 "starts now — your web app dashboard shows the same status "
                 "for this wallet.",
                 _daily_task_keyboard("pending"),
