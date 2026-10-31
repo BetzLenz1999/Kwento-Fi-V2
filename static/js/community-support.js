@@ -186,9 +186,19 @@
         var name = String(info.name || '').toLowerCase();
         return rdns.indexOf('trustwallet') >= 0 || name.indexOf('trust') >= 0;
     }
+    function isTrustWalletAliasProvider(provider) {
+        if (!provider) return false;
+        return [window.trustwallet, window.trustWallet].some(function (root) {
+            return root && coerceToRequestProvider(root) === provider;
+        });
+    }
     function isTrustWalletProvider(provider) {
         if (!provider) return false;
         if (provider.isTrust || provider.isTrustWallet) return true;
+        // Some Trust builds inject ONLY the branded alias with no `isTrust`
+        // flag and no EIP-6963 announcement. Recognise the alias itself so a
+        // co-installed extension's provider cannot shadow the authentic one.
+        if (isTrustWalletAliasProvider(provider)) return true;
         var announced = announced6963();
         for (var i = 0; i < announced.length; i++) {
             if (announced[i].provider === provider) return looksLikeTrustInfo(announced[i].info);
