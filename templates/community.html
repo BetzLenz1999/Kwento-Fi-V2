@@ -805,7 +805,30 @@
                 <p class="cf-garden-transaction-note">Your wallet will request approval only for the exact amount needed, then ask you to confirm the Garden transaction.</p>
             </section>
             <section id="cfGardenActivePanel" class="cf-garden-panel" hidden>
-                <div class="cf-garden-active-title"><span class="cf-garden-pulse" aria-hidden="true"></span><strong>Your Garden is growing</strong></div>
+                <div class="cf-garden-active-title"><span class="cf-garden-pulse" aria-hidden="true"></span><strong id="cfGardenActiveTitle">Your Garden is growing</strong></div>
+                <div class="cf-garden-plot" id="cfGardenPlot" data-stage="0" aria-live="polite">
+                    <div class="cf-garden-plot-sky" aria-hidden="true"><span class="cf-garden-sun"></span><span class="cf-garden-cloud cf-garden-cloud-one"></span><span class="cf-garden-cloud cf-garden-cloud-two"></span></div>
+                    <div class="cf-garden-plot-copy">
+                        <span class="cf-garden-eyebrow">LIVE GROWTH VIEW</span>
+                        <strong id="cfGardenStageLabel">Seed tucked into the soil</strong>
+                        <span id="cfGardenStageHint">Your seed is in the soil. Come back as it starts to sprout.</span>
+                    </div>
+                    <div class="cf-garden-ground" aria-hidden="true">
+                        <span class="cf-garden-mound"></span>
+                        <span class="cf-garden-seed"></span>
+                        <span class="cf-garden-stem"></span>
+                        <span class="cf-garden-leaf cf-garden-leaf-left"></span><span class="cf-garden-leaf cf-garden-leaf-right"></span>
+                        <span class="cf-garden-blossom"></span><span class="cf-garden-vegetable"></span>
+                    </div>
+                </div>
+                <div class="cf-garden-growth-meta">
+                    <span><strong id="cfGardenGrowthStage">Stage 1 of 7</strong><small id="cfGardenGrowthCountdown">Calculating growth…</small></span>
+                    <strong id="cfGardenGrowthPercent">0%</strong>
+                </div>
+                <div class="cf-garden-growth-bar" role="progressbar" aria-label="Garden growth progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="cfGardenGrowthBar"></span></div>
+                <div class="cf-garden-timeline" aria-label="Garden growth timeline">
+                    <span><i>1</i><small>Seed</small></span><span><i>2</i><small>Sprout</small></span><span><i>3</i><small>Leafy</small></span><span><i>4</i><small>Flower</small></span><span><i>5</i><small>Fruit</small></span><span><i>6</i><small>Ready</small></span><span><i>7</i><small>Harvest</small></span>
+                </div>
                 <div class="cf-garden-stats">
                     <div><small>Principal</small><strong id="cfGardenPrincipal">—</strong></div>
                     <div><small>Seeds</small><strong id="cfGardenSeedCountValue">—</strong></div>
