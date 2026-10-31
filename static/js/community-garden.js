@@ -5,6 +5,45 @@
     var modal = document.getElementById("cfGardenModal");
     if (!modal || !boot.enabled || !boot.contractAddress || !boot.tokenAddress) return;
 
+    /* Garden is verified-only, like Swap and Reloadly: buying seeds spends G$
+       and earns a share of the reward pool, so an unverified (sybil) wallet
+       must not take part. The gate is UI-level because planting is a direct
+       contract call from this bundle — there is no server endpoint to refuse.
+       `fv_verified` comes from the shared wallet boot payload. Deliberately
+       hard-coded: there is no env flag that can turn this off. */
+    function fvVerified() {
+        var walletBoot = window.GM_WALLET_BOOT || {};
+        return walletBoot.fvVerified === true;
+    }
+
+    function requireFaceVerification() {
+        if (window.GMCommunity && typeof window.GMCommunity.closeSheet === "function") {
+            window.GMCommunity.closeSheet(false);
+        }
+        window._walletNeedsFV = true;
+        if (window._walletFvReason !== "re_verification_needed") {
+            window._walletFvReason = "not_verified";
+        }
+        if (typeof window.openClaimOrVerify === "function") {
+            window.openClaimOrVerify();
+            return true;
+        }
+        if (window.GMCommunity && typeof window.GMCommunity.openClaim === "function") {
+            window.GMCommunity.openClaim();
+        }
+        return true;
+    }
+
+    /* Defense in depth: every signing action is reachable as a bare export
+       (window.GMCommunityGarden.plant()), so gating only open() would let a
+       console call still sign. Each money-moving action re-checks first. */
+    function fvBlocked(action) {
+        if (fvVerified()) return false;
+        requireFaceVerification();
+        setStatus("Verify your identity to " + action + ".", true);
+        return true;
+    }
+
     var GARDEN_ABI = [
         "function goodDollarToken() view returns (address)",
         "function SEED_PRICE() view returns (uint256)",
@@ -189,6 +228,7 @@
 
     async function plant() {
         if (_busy) return;
+        if (fvBlocked("plant seeds")) return;
         var input = el("cfGardenSeedCount");
         var seeds = Number(input && input.value);
         if (!Number.isInteger(seeds) || seeds < 1 || seeds > 100) {
@@ -223,6 +263,7 @@
 
     async function harvest() {
         if (_busy) return;
+        if (fvBlocked("harvest")) return;
         try {
             setBusy(true);
             setStatus("Confirm harvest in your Celo wallet. The contract returns principal and any available sponsor-funded bonus.");
@@ -238,6 +279,7 @@
 
     async function exit() {
         if (_busy) return;
+        if (fvBlocked("exit the Garden")) return;
         try {
             setBusy(true);
             setStatus("Confirm early exit in your Celo wallet. This returns principal only; no bonus is paid.");
@@ -253,6 +295,7 @@
 
     async function sponsor() {
         if (_busy) return;
+        if (fvBlocked("sponsor the reward pool")) return;
         var amountText = String((el("cfGardenSponsorAmount") || {}).value || "").trim();
         var acknowledgement = el("cfGardenSponsorAck");
         if (!acknowledgement || !acknowledgement.checked) {
@@ -291,6 +334,7 @@
     }
 
     function open(trigger) {
+        if (!fvVerified()) return requireFaceVerification();
         if (window.GMCommunity && typeof window.GMCommunity.closeSheet === "function") {
             window.GMCommunity.closeSheet(false);
         }
