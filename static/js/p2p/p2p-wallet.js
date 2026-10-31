@@ -201,6 +201,57 @@ window.P2PWallet = (function () {
         return mm || providers[0];
     }
 
+    function _isMobileContext() {
+        try {
+            var ua = (navigator.userAgent || "").toLowerCase();
+            if (/android|iphone|ipad|ipod|minipay|metamask|trust|trustwallet|mobile/.test(ua)) return true;
+            // iPadOS 13+ sends a desktop UA but exposes touch points.
+            if (/macintosh|mac os x/.test(ua) && Number(navigator.maxTouchPoints || 0) > 1) return true;
+        } catch (_) { /* no navigator (older browsers / tests) */ }
+        return false;
+    }
+
+    // Late-injecting mobile dApp browsers publish their provider some hundreds
+    // of ms AFTER the page asks for it. Trust Wallet ships a generic UA and may
+    // expose only `window.trustwallet` / an EIP-6963 announcement, neither of
+    // which exists when the sheet first opens. getProvider() used to read the
+    // injection points exactly once, so it found nothing and failed instantly
+    // with "No wallet available" — which is why the Community Garden and the
+    // Daily Task payment never detected Trust Wallet even inside its own
+    // browser, while Claim (wallet-main.js `_awaitEthProvider`) already waited.
+    // Poll for a bounded window instead, mirroring that helper.
+    async function _awaitInjected(timeoutMs) {
+        var immediate = _getInjected();
+        if (immediate) return immediate;
+        // Only the injected path waits; WC/Privy/local have their own signer and
+        // must never have an extension prompted on their behalf.
+        if (_wcFamilyLogin() || _isPrivyLogin() || _isLocalLogin()) return null;
+        var budget = typeof timeoutMs === "number" ? timeoutMs : (_isMobileContext() ? 4000 : 900);
+        var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        var start = Date.now();
+        while (Date.now() - start < budget) {
+            try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
+            await wait(120);
+            var found = _getInjected();
+            if (found) return found;
+        }
+        return null;
+    }
+
+    // Re-prime discovery when the tab becomes visible again — some mobile
+    // wallets only inject once their WebView is foregrounded.
+    if (typeof window !== "undefined" && _isMobileContext()) {
+        try {
+            window.addEventListener("pageshow", function () {
+                try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
+            });
+            document.addEventListener("visibilitychange", function () {
+                if (document.visibilityState !== "visible") return;
+                try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
+            });
+        } catch (_) { /* non-DOM environment */ }
+    }
+
     // An injected provider whose ACTIVE account is the session wallet. Without
     // this, a multi-extension phone can sign from an unrelated account (the
     // "Wrong wallet connected" report). Only used for the injected path — a
@@ -285,12 +336,17 @@ window.P2PWallet = (function () {
         }
         var privy = await _getPrivyProvider({ promptLogin: true, timeoutMs: 10000 });
         if (privy) return privy;
-        // Prefer the injected provider that actually holds the session wallet, so
-        // a multi-extension phone cannot sign from an unrelated account.
-        var matched = await _injectedMatchingWallet();
-        if (matched) return matched;
-        var ep = _getInjected();
-        if (ep) return ep;
+        // Wait for the injected provider first — a mobile dApp browser (Trust
+        // Wallet especially) may publish it only a few hundred ms after the tap.
+        var ep = await _awaitInjected();
+        if (ep) {
+            // Then prefer the provider that actually holds the session wallet, so
+            // a multi-extension phone cannot sign from an unrelated account. Runs
+            // on the now-populated candidate list, so late injections get the same
+            // account binding as an immediate one.
+            var matched = await _injectedMatchingWallet();
+            return matched || ep;
+        }
         if (_wcFallbackAllowed() && await _wcSessionHasNoInjectedCompetitor() && typeof GMWalletConnect !== "undefined") {
             try { return await GMWalletConnect.getProvider(); } catch (_) {}
         }
