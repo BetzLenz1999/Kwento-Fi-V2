@@ -79,6 +79,16 @@ function _swapEip6963Providers() {
         ? window.__swapEip6963Providers.slice()
         : [];
 }
+// The provider Trust Wallet exposes through its branded alias, if any. Some
+// Trust builds inject ONLY the alias with no `isTrust` flag, so a co-installed
+// extension's provider must not shadow it.
+function _isSwapTrustProvider(provider) {
+    if (!provider) return false;
+    if (provider.isTrust || provider.isTrustWallet) return true;
+    return [window.trustwallet, window.trustWallet].some(function (root) {
+        return root && _coerceSwapProvider(root) === provider;
+    });
+}
 function _isTrustWalletMobileContext() {
     const ua = (navigator.userAgent || '').toLowerCase();
     const uaTrust = ua.includes('trust') || ua.includes('trustwallet');
@@ -150,7 +160,7 @@ function _getEthProvider() {
     const providers = _collectSwapProviders();
     if (!providers.length) return null;
     if (_isTrustWalletMobileContext()) {
-        const trust = providers.find(p => p && (p.isTrust || p.isTrustWallet));
+        const trust = providers.find(p => _isSwapTrustProvider(p));
         if (trust) return trust;
         const trust6963 = _swapEip6963Providers().find(d => {
             const info = d.info || {};
@@ -164,7 +174,7 @@ function _getEthProvider() {
     if (window.ethereum && window.ethereum.providers && window.ethereum.providers.length) {
         const miniPay = window.ethereum.providers.find(p => p && p.isMiniPay);
         if (miniPay) return miniPay;
-        const trust = window.ethereum.providers.find(p => p && (p.isTrust || p.isTrustWallet));
+        const trust = window.ethereum.providers.find(p => _isSwapTrustProvider(p));
         if (trust) return trust;
         const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
         if (mm) return mm;
