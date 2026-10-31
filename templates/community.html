@@ -1162,6 +1162,7 @@ window.GM_COMMUNITY_BOOT = {
 <script src="{{ url_for('static', filename='js/logout.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/community-wallet-detection.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/get-started.js', v=ASSET_VERSION) }}"></script>
 {# The feed bundle loads for guests too: reading is public, and the bundle is
    what renders the cards and raises the connect card on a gated write. It
@@ -1205,6 +1206,7 @@ window.GM_GARDEN_BOOT = {{ garden_boot|tojson }};
 <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/community-wallet-detection.js', v=ASSET_VERSION) }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"
         integrity="sha384-0d+Gr7vM4Drod8E3hXKgciWJSWbjD/opKLLygI9ktiWbuvlDwQLzU46wJ9s5gsp7"
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
