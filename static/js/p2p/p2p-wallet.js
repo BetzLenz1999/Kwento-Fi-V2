@@ -168,10 +168,11 @@ window.P2PWallet = (function () {
     }
 
     function _getInjected() {
-        // WalletConnect / manual logins must never use an injected wallet — its
-        // account differs from the logged-in GoodMarket wallet.
-        // Same for local in-app wallets: an injected MetaMask is a different account.
-        if (_preferWc() || _isPrivyLogin() || _isLocalLogin()) return null;
+        // WalletConnect / manual / local logins must never use an injected
+        // wallet — its account differs from the logged-in GoodMarket wallet.
+        // Keyed on the STRICT `_wcFamilyLogin()`, never the broad `_preferWc()`
+        // (true for any stored session, which hid a genuine injected/Trust login).
+        if (_wcFamilyLogin() || _isPrivyLogin() || _isLocalLogin()) return null;
         try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
         var providers = _collectInjected();
         if (!providers.length) return null;
@@ -236,6 +237,15 @@ window.P2PWallet = (function () {
         ) >= 0;
     }
 
+    // Legacy "injected" login guard: a leftover stored WC session must not
+    // hijack a genuine injected/Trust login (the request would go to the dead WC
+    // relay and the extension would never be asked). A WC-family login is
+    // unaffected — it always keeps its own session.
+    async function _wcSessionHasNoInjectedCompetitor() {
+        if (_wcFamilyLogin()) return true;
+        return (await _injectedMatchingWallet()) === null;
+    }
+
     // Should the WalletConnect fallback be allowed at all? It exists to recover
     // legacy logins that predate login_method persistence (they report
     // "injected"), so a KNOWN non-WC method must never be routed there by
@@ -268,7 +278,7 @@ window.P2PWallet = (function () {
         if (matched) return matched;
         var ep = _getInjected();
         if (ep) return ep;
-        if (_wcFallbackAllowed() && typeof GMWalletConnect !== "undefined") {
+        if (_wcFallbackAllowed() && await _wcSessionHasNoInjectedCompetitor() && typeof GMWalletConnect !== "undefined") {
             try { return await GMWalletConnect.getProvider(); } catch (_) {}
         }
         throw new Error(
