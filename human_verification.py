@@ -20,18 +20,44 @@ logger = logging.getLogger(__name__)
 FV_REQUIRED_URL = "/wallet?fv_required=1"
 
 
+def wallet_is_face_verified(wallet) -> bool | None:
+    """Tri-state on-chain FV read for JSON/API gates.
+
+    ``True``/``False`` are the chain's answer; ``None`` means the chain could
+    not be asked (RPC down). Callers that move money must fail closed on
+    ``None`` — see ``fv_required_response``.
+    """
+    if not wallet:
+        return False
+    try:
+        from blockchain import is_identity_verified
+        result = is_identity_verified(wallet) or {}
+        if result.get("verified") is True:
+            return True
+        return None if result.get("error") else False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("FV gate check failed for %s…: %s", str(wallet)[:10], exc)
+        return None
+
+
+def fv_required_response():
+    """The shared 403 body for an FV-gated API. Fail-closed: an unreadable
+    chain answer blocks the action rather than letting it through."""
+    from flask import jsonify
+
+    return jsonify({
+        "success": False,
+        "error": "Verify your identity to continue. Face verification is required for this action.",
+        "code": "verified_wallet_required",
+    }), 403
+
+
 def human_verification_redirect(wallet):
     """Return a redirect response when `wallet` is NOT face-verified
     on-chain, otherwise None. Callers must authenticate the session first
     (this only checks FV, not login). Fails closed: an FV check error blocks
     access, matching the safety intent of the gate."""
-    try:
-        from blockchain import is_identity_verified
-        if is_identity_verified(wallet).get("verified"):
-            return None
-        logger.info(f"🪪 FV gate: blocked unverified wallet {str(wallet)[:10]}…")
-    except Exception as e:
-        # is_identity_verified already swallows RPC errors into
-        # {"verified": False}; an exception here is unexpected — fail closed.
-        logger.warning(f"⚠️ FV gate check failed for {str(wallet)[:10]}…: {e}")
+    if wallet_is_face_verified(wallet) is True:
+        return None
+    logger.info(f"🪪 FV gate: blocked unverified wallet {str(wallet)[:10]}…")
     return redirect(FV_REQUIRED_URL)
