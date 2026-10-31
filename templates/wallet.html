@@ -3348,6 +3348,13 @@
         "embed": {{ 'true' if embed_claim else 'false' }}
     };
     </script>
+    <!-- Shared P2P/Garden/withdrawal signing helper. wallet-main.js drives the
+         Daily Task payment through window.P2PWallet, so this page MUST load it —
+         without it the "Pay 20 G$ &amp; submit" button threw "Celo wallet tools are
+         unavailable" and never prompted a signature. Community loads the same
+         bundle; keep the two pages in step. Loaded before wallet-main.js so the
+         global exists when the bundle wires its Daily Task handler. -->
+    <script src="{{ url_for('static', filename='js/p2p/p2p-wallet.js', v=ASSET_VERSION) }}"></script>
     <script src="{{ url_for('static', filename='js/wallet-main.js', v=ASSET_VERSION) }}"></script>
 
         <!-- Superfluid P2P streaming (extracted; versioned + immutable-cached). -->
