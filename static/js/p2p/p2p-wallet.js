@@ -133,9 +133,22 @@ window.P2PWallet = (function () {
         return rdns.indexOf("trustwallet") >= 0 || name.indexOf("trust") >= 0;
     }
 
+    function _isTrustWalletAliasProvider(provider) {
+        if (!provider) return false;
+        var roots = [window.trustwallet, window.trustWallet];
+        for (var i = 0; i < roots.length; i++) {
+            if (roots[i] && _coerceToRequestProvider(roots[i]) === provider) return true;
+        }
+        return false;
+    }
+
     function _isTrustWalletProvider(provider) {
         if (!provider) return false;
         if (provider.isTrust || provider.isTrustWallet) return true;
+        // Some Trust builds inject ONLY the branded alias with no `isTrust`
+        // flag and no EIP-6963 announcement. Recognise the alias itself so a
+        // co-installed extension's provider cannot shadow the authentic one.
+        if (_isTrustWalletAliasProvider(provider)) return true;
         var announced = _announced6963Providers();
         for (var i = 0; i < announced.length; i++) {
             if (announced[i].provider === provider) return _looksLikeTrustInfo(announced[i].info);
