@@ -2315,6 +2315,8 @@
 
         let _gdBalance = 0;
         let _gdPrices = {};
+        let _gdPricesLoaded = false;
+        let _gdPricesLoading = false;
         let _selectedCurrency = localStorage.getItem('gdSelectedCurrency') || 'usd';
         let _priceVisible = true;
         let _filteredCurrencies = [...CURRENCY_LIST];
@@ -2350,6 +2352,8 @@
         }
 
         async function loadGdPrices() {
+            if (_gdPricesLoaded || _gdPricesLoading) return;
+            _gdPricesLoading = true;
             try {
                 const visRes = await fetch('/api/price-visibility');
                 const visData = await visRes.json();
@@ -2359,15 +2363,22 @@
                     const btnEl = document.getElementById('gdCurrencyBtn');
                     if (fiatEl) fiatEl.style.display = 'none';
                     if (btnEl) btnEl.style.display = 'none';
+                    _gdPricesLoaded = true;
                     return;
                 }
                 const res = await fetch('/api/gd-price');
                 const data = await res.json();
                 if (data.success && data.prices) {
                     _gdPrices = data.prices;
+                    _gdPricesLoaded = true;
                     updateFiatDisplay();
+                    renderCurrencyList();
                 }
-            } catch(e) { console.warn('Price fetch failed:', e); }
+            } catch(e) {
+                console.warn('Price fetch failed:', e);
+            } finally {
+                _gdPricesLoading = false;
+            }
         }
 
         function renderCurrencyList() {
@@ -2397,6 +2408,7 @@
         }
 
         function openCurrencyPicker() {
+            if (!_gdPricesLoaded) loadGdPrices();
             if (!_priceVisible) return;
             const modal = document.getElementById('currencyPickerModal');
             if (modal) { modal.style.display = 'flex'; renderCurrencyList(); }
@@ -3300,12 +3312,6 @@
     </script>
 
     <script>
-        // Auto-refresh recent submissions every 2 minutes (reduced frequency)
-        setInterval(loadRecentDailyTasks, 120000);
-
-        // Auto-refresh community screenshots every 3 minutes (reduced frequency)
-        setInterval(loadCommunityScreenshots, 180000);
-
         async function loadRecentDailyTasks() {
             try {
                 // Check cache first
@@ -3553,30 +3559,9 @@
             if (modal && event.target === modal) closeEditUsernameModal();
         });
 
-        function runWhenIdle(task, timeoutMs = 1500) {
-            if (window.requestIdleCallback) {
-                requestIdleCallback(() => task(), { timeout: timeoutMs });
-            } else {
-                setTimeout(task, timeoutMs);
-            }
-        }
-
-        // Initial load - prioritize critical data
+        // Keep initial page-load data requests to username only. Other dashboard
+        // data is not prefetched; action-specific requests remain in their handlers.
         loadUsername();
-        loadGoodDollarBalance();
-        loadGdPrices();
-        checkDailyTaskStatus().then(updateDailyTaskUI);
-        updateTotalEarned();
-
-        // Delay non-critical data to improve first render
-        runWhenIdle(() => {
-            loadRecentDailyTasks();
-            loadCommunityScreenshots();
-        }, 1800);
-
-        // Check for admin access after critical data paints. Notifications are
-        // fetched on demand when the inbox is opened, not while the dashboard is idle.
-        runWhenIdle(checkAdminAccess, 2000);
     </script>
 
     <script>
