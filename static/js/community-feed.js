@@ -4790,8 +4790,47 @@
         });
     }
 
+    /* ── Face-verification gate for the rewarded flows ──────────────────────
+       Garden and Daily Task are verified-only, like Swap and Reloadly. The
+       server refuses the Daily Task payment endpoints for an unverified wallet
+       anyway, so opening the modal would only walk the member to a payment
+       screen that cannot succeed — and Daily Task's 20 G$ fee is
+       non-refundable. Instead, route them to the SAME shared Claim G$
+       verification entry point used by the "Verify to earn" chip.
+
+       `fv_verified` comes from the server boot payload, so this is decided
+       before any request. The value is safe to cache for the page's lifetime:
+       the FV flow itself is a full navigation to GoodDollar and back, so the
+       next page load re-reads it (the on-chain read caches a negative answer
+       for only 60s, and the callback invalidates it). */
+    var _fvVerified = null;
+
+    function fvVerified() {
+        if (_fvVerified !== null) return _fvVerified;
+        var boot = window.GM_WALLET_BOOT || {};
+        _fvVerified = boot.fvVerified === true;
+        return _fvVerified;
+    }
+
+    function requireFaceVerification() {
+        closeSheet(false);
+        window._walletNeedsFV = true;
+        if (window._walletFvReason !== 're_verification_needed') {
+            window._walletFvReason = 'not_verified';
+        }
+        openClaim();
+        return false;
+    }
+
+    function fvGateBlocks() {
+        if (fvVerified()) return false;
+        if (!WALLET) return false;   // guests get the connect card instead
+        return true;
+    }
+
     function openDailyTask() {
         if (!WALLET) { closeSheet(false); requiresLogin(); return false; }
+        if (fvGateBlocks()) return requireFaceVerification();
         var modal = $('dailyTaskModal');
         if (!modal) {
             closeSheet(false);
