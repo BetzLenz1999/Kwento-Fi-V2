@@ -541,7 +541,10 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         tx_url = ("https://celoscan.io/tx/" + tx_hash
                   if re.fullmatch(r"0x[0-9a-f]{64}", tx_hash) else "")
         donor_name = (donation.get("donor_name") or "").strip()
-        body = f"{donor_name} donated {amount} G$ to the Community Withdrawal Vault."
+        is_garden_sponsor = donation.get("consent_version") == "garden-sponsor-v1"
+        body = (f"{donor_name} contributed {amount} G$ to the KwentoFi Garden sponsor pool."
+                if is_garden_sponsor else
+                f"{donor_name} donated {amount} G$ to the Community Withdrawal Vault.")
         return {
             "id": row.get("id"),
             "post_type": "system_vault_donation",
@@ -567,6 +570,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
             "linkedin_url": donation.get("linkedin_url") or "",
             "tx_hash": tx_hash,
             "tx_url": tx_url,
+            "donation_type": "garden_sponsor" if is_garden_sponsor else "community_vault",
         }
     if row.get("post_type") == "system_support":
         support = support or {}
@@ -1130,7 +1134,7 @@ def _donation_rows_for_posts(supabase, post_ids: list) -> dict[int, dict]:
         return {}
     try:
         rows = _rows(supabase.table("community_vault_donations")
-                     .select("feed_post_id,donor_name,linkedin_url,amount_base_units,token_decimals,tx_hash")
+                     .select("feed_post_id,donor_name,linkedin_url,amount_base_units,token_decimals,tx_hash,consent_version")
                      .in_("feed_post_id", post_ids)
                      .eq("status", "confirmed").execute())
         result = {}
