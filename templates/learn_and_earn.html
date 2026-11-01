@@ -1989,6 +1989,8 @@
         let userAnswers = [];
         let quizSessionId = null;
         let questionTimer = null;
+        let quizStarted = false;
+        let quizStarting = false;
         let timeRemaining = 20;
         let quizSettings = {
             questions_per_quiz: 10,
@@ -2260,6 +2262,11 @@
 
         // Start quiz
         async function startQuiz() {
+            const startBtn = document.getElementById('start-quiz-btn');
+            if (!startBtn || startBtn.disabled || quizStarting || quizStarted) return;
+            quizStarting = true;
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
             try {
                 showNotification('Starting quiz...', 'info');
 
@@ -2273,6 +2280,8 @@
                 const data = await response.json();
 
                 if (data.success) {
+                    quizStarted = true;
+                    quizStarting = false;
                     quizData = data.quiz_session.questions;
                     quizSessionId = data.quiz_session.session_id;
                     moduleLinks = data.quiz_session.module_links || [];
@@ -2297,9 +2306,22 @@
                         showNotification('Quiz started successfully!', 'success');
                     }
                 } else {
+                    quizStarting = false;
                     const errorMsg = data.error || 'Failed to start quiz';
                     const notificationType = data.high_demand ? 'info' : 'error';
                     showNotification(errorMsg, notificationType);
+
+                    if (data.verification_required || data.auth_required) {
+                        startBtn.disabled = true;
+                        startBtn.innerHTML = data.verification_required
+                            ? '<i class="fas fa-lock"></i> Verification Required'
+                            : '<i class="fas fa-lock"></i> Login Required';
+                    } else if (data.high_demand) {
+                        startBtn.disabled = true;
+                    } else {
+                        startBtn.disabled = false;
+                        startBtn.innerHTML = '<i class="fas fa-play"></i> Start Quiz';
+                    }
 
                     // If high demand, update the eligibility status UI
                     if (data.high_demand) {
@@ -2310,6 +2332,9 @@
                     }
                 }
             } catch (error) {
+                quizStarting = false;
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fas fa-play"></i> Start Quiz';
                 console.error('Error starting quiz:', error);
                 showNotification('Failed to start quiz', 'error');
             }
@@ -2587,6 +2612,10 @@
 
         // Start question timer
         function startQuestionTimer() {
+            // The question clock is gated by the successful, user-initiated
+            // Start Quiz request; rendering a page or eligibility status alone
+            // must never start the timed quiz.
+            if (!quizStarted) return;
             // Clear any existing timer
             if (questionTimer) {
                 clearInterval(questionTimer);
@@ -2876,8 +2905,10 @@
             // Clear any active timer
             if (questionTimer) {
                 clearInterval(questionTimer);
+                questionTimer = null;
             }
 
+            quizStarted = false;
             document.getElementById('quiz-container').style.display = 'none';
             document.getElementById('start-quiz-btn').style.display = 'block';
             checkEligibility();
