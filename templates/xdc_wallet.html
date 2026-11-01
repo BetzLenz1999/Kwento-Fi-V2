@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XDC Wallet - GoodMarket</title>
     <meta name="theme-color" content="#f97316">
-    <link rel="icon" type="image/svg+xml" href="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
     <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"
             integrity="sha384-gpR0Q6Hx/O+uevlbpbANbS0LWjbejPV1sqD/8w422l/fW8whGY0EPmKw3uG7ACYP"
             crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -614,7 +615,8 @@
             <!-- Not whitelisted warning -->
             <div id="xdcNotWhitelisted" style="display:none; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25); border-radius: 10px; padding: 0.85rem 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: #fbbf24; line-height: 1.6;">
                 ⚠️ <strong>You are not yet verified on XDC GoodDollar.</strong><br>
-                To claim G$ on XDC, you need to verify your identity on <a href="https://wallet.gooddollar.org" target="_blank" style="color:#b45309;">GoodWallet</a> using the same wallet address.
+                To claim G$ on XDC, complete your face verification in the app. It is the same check that unlocks G$ on every chain.
+                <a href="/wallet?fv_required=1" style="color:#b45309; font-weight:600;">Verify my identity →</a>
             </div>
 
             <!-- Entitlement display -->
