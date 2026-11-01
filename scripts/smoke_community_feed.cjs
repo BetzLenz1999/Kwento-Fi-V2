@@ -183,11 +183,12 @@ function run(opts) {
    'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates', 'cfEarnRatesToggle',
    'cfEarnBalance', 'cfEarnLead',
    'cfEarnOverview', 'cfEarnActions', 'cfEarnWithdrawRow', 'cfEarnWithdrawBtn',
+   'cfEarnWithdrawAmount', 'cfEarnWithdrawBounds',
    'cfEarnWithdrawStatus', 'cfEarnHistoryToggle', 'cfEarnReconcile'
   ].forEach(id => {
     const node = dom.mk(
       id === 'cfMenuWallet' || id === 'cfMenuXdcWallet' ? 'a' : id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
-        || id === 'cfSearchInput'
+        || id === 'cfSearchInput' || id === 'cfEarnWithdrawAmount'
         ? 'textarea' : 'div');
     node.id = id;
     if (id === 'cfMenuWallet') node.href = '/wallet';
@@ -207,6 +208,8 @@ function run(opts) {
   registry.cfEarnActions.hidden = true;
   registry.cfEarnWithdrawRow.hidden = true;
   registry.cfEarnWithdrawStatus.hidden = true;
+  registry.cfEarnWithdrawAmount.value = '';
+  registry.cfEarnWithdrawBounds.textContent = '';
   registry.cfEarnHistoryToggle.hidden = true;
   registry.cfEarnReconcile.hidden = true;
   registry.cfUsernameInput.value = '';
@@ -2497,8 +2500,8 @@ function feedFetch(handler, feedRows) {
     ok('the pending state does not offer a withdrawal action',
        !/ready to withdraw/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
-    ok('a member is told withdrawals require the threshold and an enabled vault',
-       /full balance becomes withdrawable after the minimum is reached and the vault is enabled/i.test(store.cfEarnNote.textContent),
+    ok('a member is told withdrawals require the minimum and an enabled vault',
+       /can withdraw once the minimum is reached and the vault is enabled/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
   }
 
@@ -2593,8 +2596,8 @@ function feedFetch(handler, feedRows) {
     ok('a guest does not get the personal balance block',
        store.cfEarnBalance.hidden === true,
        String(store.cfEarnBalance.hidden));
-    ok('a guest is told withdrawals require the threshold and an enabled vault',
-       /full balance becomes withdrawable after the minimum is reached and the vault is enabled/i.test(store.cfEarnNote.textContent),
+    ok('a guest is told withdrawals require the minimum and an enabled vault',
+       /can withdraw once the minimum is reached and the vault is enabled/i.test(store.cfEarnNote.textContent),
        String(store.cfEarnNote.textContent));
 
     api._internals.renderRewards({ enabled: false });
@@ -2734,6 +2737,120 @@ function feedFetch(handler, feedRows) {
       const generic = api._internals.describeWithdrawalError(new Error('execution reverted'));
       ok('a non-gas failure still gets a human sentence',
          !!generic && !/^Error:/.test(generic), generic);
+    }
+  }
+
+  // ── 20d-iii. Partial withdrawals: the member picks the amount ────────────
+  //
+  // The vault's immutable maximum is PER WITHDRAWAL, not daily. A balance above
+  // it used to be refused outright ("Partial withdrawals are not enabled"),
+  // which stranded every G$ past the maximum. The card must now send the
+  // member's chosen amount, mirror the server bounds before signing, and never
+  // let a blank field mean "more than the vault can pay".
+  {
+    // A server that advertises the real vault bounds for a 2000 G$ balance.
+    function partialServer(bounds) {
+      const calls = [];
+      const impl = function (url, o) {
+        const u = String(url);
+        if (u.indexOf('/community/api/rewards/withdrawals/reconciliation') === 0) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({
+            success: true, needs_reconciliation: false }) });
+        }
+        if (u.indexOf('/community/api/rewards/withdrawal-eligibility') === 0) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(Object.assign({
+            success: true, threshold_met: true, can_request: true, status: 'ready',
+            balance_gd: '2000', min_withdrawable_gd: '500',
+            max_withdrawable_gd: '1000', amount_gd: '1000',
+          }, bounds)) });
+        }
+        if (u.indexOf('/community/api/rewards/withdrawals/authorize') === 0) {
+          calls.push({ url: u, body: JSON.parse((o && o.body) || '{}') });
+          // Deliberately incomplete: the flow stops BEFORE any wallet opens,
+          // which is exactly what these assertions need to observe.
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      };
+      return { impl, calls };
+    }
+
+    function withdrawAmountOf(calls) {
+      const hit = calls.find(c => c.body && Object.prototype.hasOwnProperty.call(c.body, 'amount_gd'));
+      return hit ? hit.body.amount_gd : null;
+    }
+
+    // The bounds hint states the real floor and ceiling before the member
+    // types anything, so the "1000 G$ limit" is explained instead of looking
+    // like a total balance.
+    {
+      const server = partialServer({});
+      const { api, store } = run({ boot: MEMBER, fetchImpl: feedFetch(server.impl) });
+      await api._internals.checkWithdrawalEligibility();
+      const hint = store.cfEarnWithdrawBounds.textContent;
+      ok('the bounds hint names the floor and the ceiling',
+         /500/.test(hint) && /1000/.test(hint), hint);
+    }
+
+    // A typed partial amount is sent verbatim to the server.
+    {
+      const server = partialServer({});
+      const { api, store } = run({ boot: MEMBER, fetchImpl: feedFetch(server.impl) });
+      store.cfEarnWithdrawAmount.value = '600';
+      await api._internals.checkWithdrawalEligibility();
+      ok('a partial amount reaches the authorize request',
+         withdrawAmountOf(server.calls) === '600',
+         String(withdrawAmountOf(server.calls)));
+    }
+
+    // An empty field means "the most I can take now", never the raw balance.
+    {
+      const server = partialServer({});
+      const { api, store } = run({ boot: MEMBER, fetchImpl: feedFetch(server.impl) });
+      store.cfEarnWithdrawAmount.value = '';
+      await api._internals.checkWithdrawalEligibility();
+      ok('a blank field defaults to the vault ceiling, not the whole balance',
+         withdrawAmountOf(server.calls) === '1000',
+         String(withdrawAmountOf(server.calls)));
+    }
+
+    // Below the minimum: explained locally, and no authorization is requested.
+    {
+      const server = partialServer({});
+      const { api, store } = run({ boot: MEMBER, fetchImpl: feedFetch(server.impl) });
+      store.cfEarnWithdrawAmount.value = '50';
+      await api._internals.checkWithdrawalEligibility();
+      ok('an amount below the minimum never reaches the server',
+         server.calls.length === 0, String(server.calls.length));
+      ok('the minimum is named in the status line',
+         /500/.test(store.cfEarnWithdrawStatus.textContent),
+         store.cfEarnWithdrawStatus.textContent);
+    }
+
+    // Above the ceiling: explained locally, and no authorization is requested.
+    {
+      const server = partialServer({});
+      const { api, store } = run({ boot: MEMBER, fetchImpl: feedFetch(server.impl) });
+      store.cfEarnWithdrawAmount.value = '1500';
+      await api._internals.checkWithdrawalEligibility();
+      ok('an amount above the ceiling never reaches the server',
+         server.calls.length === 0, String(server.calls.length));
+      ok('the ceiling is named in the status line',
+         /1000/.test(store.cfEarnWithdrawStatus.textContent),
+         store.cfEarnWithdrawStatus.textContent);
+    }
+
+    // Resuming an existing reservation must ignore the field: the server
+    // re-signs the amount it already stored.
+    {
+      const server = partialServer({ status: 'resume', amount_gd: '777' });
+      const { api, store } = run({ boot: MEMBER, fetchImpl: feedFetch(server.impl) });
+      store.cfEarnWithdrawAmount.value = '600';
+      await api._internals.checkWithdrawalEligibility();
+      const sent = server.calls[0] && server.calls[0].body;
+      ok('resuming does not resend a changed amount',
+         !!sent && !Object.prototype.hasOwnProperty.call(sent, 'amount_gd'),
+         JSON.stringify(sent));
     }
   }
 
