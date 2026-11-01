@@ -48,6 +48,7 @@
         "function goodDollarToken() view returns (address)",
         "function SEED_PRICE() view returns (uint256)",
         "function seedPrice() view returns (uint256)",
+        "function plantingPaused() view returns (bool)",
         "function MAX_SEEDS() view returns (uint256)",
         "function maxSeeds() view returns (uint16)",
         "function gardens(address) view returns (uint256 principal,uint16 bonusBpsAtPlant,uint64 plantedAt,uint16 seedCount,bool active)",
@@ -89,6 +90,7 @@
     var _selectedGarden = null;
     var _maturityAt = 0;
     var _chainTimeOffset = 0;
+    var _plantingPaused = false;
 
     function el(id) { return document.getElementById(id); }
     function setText(id, value) {
@@ -223,12 +225,17 @@
         if (boot.v2Enabled && !_v2) {
             if (!boot.contractAddress) throw new Error("Garden V2 is enabled but its contract address is missing.");
             _v2 = await checkedContract(boot.contractAddress, V2_GARDEN_ABI);
+            _token = new _ethers.Contract(configuredTokenAddress, TOKEN_ABI, provider);
+        }
+        if (_v2) {
             try { _seedPrice = BigInt(await _v2.seedPrice()); } catch (_) { _seedPrice = BigInt(await _v2.SEED_PRICE()); }
             try { _maxSeeds = Number(await _v2.maxSeeds()); } catch (_) { _maxSeeds = Number(await _v2.MAX_SEEDS()); }
-            if (!Number.isInteger(_maxSeeds) || _maxSeeds < 1 || _maxSeeds > 1000 || _seedPrice <= 0n) { _v2 = null; throw new Error("The Garden V2 contract returned invalid planting settings."); }
+            _plantingPaused = await _v2.plantingPaused();
+            if (!Number.isInteger(_maxSeeds) || _maxSeeds < 1 || _maxSeeds > 1000 || _seedPrice <= 0n) throw new Error("The Garden V2 contract returned invalid planting settings.");
+            setText("cfGardenSeedUnitPrice", money(_seedPrice));
             var input = el("cfGardenSeedCount"); if (input) input.max = String(_maxSeeds);
             var limit = modal.querySelector(".cf-garden-limit"); if (limit) limit.textContent = "1–" + _maxSeeds + " seeds";
-            _token = new _ethers.Contract(configuredTokenAddress, TOKEN_ABI, provider);
+            updateTotal();
         }
         if (boot.legacyEnabled && !_v1) {
             if (!boot.legacyContractAddress) throw new Error("Legacy Garden is enabled but its contract address is missing.");
@@ -268,7 +275,7 @@
             var activePanel = el("cfGardenActivePanel"), plantPanel = el("cfGardenPlantPanel");
             if (activePanel) activePanel.hidden = !position;
             var legacyUnreadable = !!(boot.legacyEnabled && !v1);
-            var canPlant = !!(boot.v2Enabled && v2 && !legacyUnreadable && !choices.length);
+            var canPlant = !!(boot.v2Enabled && v2 && !legacyUnreadable && !choices.length && !_plantingPaused);
             if (plantPanel) plantPanel.hidden = !canPlant;
             var sponsorPanel = modal.querySelector(".cf-garden-sponsor-panel"); if (sponsorPanel) sponsorPanel.hidden = !boot.v2Enabled;
             if (position) {
@@ -294,10 +301,14 @@
                 setText("cfGardenPool", v2 ? money(v2.pool) : (v1 ? money(v1.pool) : "—"));
                 if (legacyUnreadable) setStatus("Legacy Garden could not be read. Planting is disabled to avoid creating a duplicate position.", true);
                 else if (!boot.v2Enabled) setStatus("Your legacy Garden is clear. V2 planting and sponsorship are not available.");
+                else if (_plantingPaused) setStatus("New Garden planting is temporarily paused by the contract owner. You can still contribute to the V2 sponsor pool.");
                 else if (v1 && !v1.active && !v2.active) setStatus("Choose 1–" + _maxSeeds + " seeds. Each seed costs " + money(_seedPrice) + ". The app may cover estimated Celo gas for wallets with 0.3 CELO or less, subject to limits.");
                 else setStatus("No active Garden found.");
             }
-        } catch (error) { setStatus((error && error.message) || "Could not read Garden details. Check your connection and try again.", true); }
+        } catch (error) {
+            if (_seedPrice <= 0n) setText("cfGardenSeedUnitPrice", "Price unavailable");
+            setStatus((error && error.message) || "Could not read Garden details. Check your connection and try again.", true);
+        }
     }
 
     async function send(abi, methodArgs, to) {
@@ -360,6 +371,7 @@
             address = walletAddress();
             setBusy(true);
             var loaded = await contracts();
+            if (await loaded.v2.plantingPaused()) throw new Error("New Garden planting is temporarily paused by the contract owner.");
             var positions = await Promise.all([boot.legacyEnabled ? _v1.gardens(address) : Promise.resolve(null), _v2.gardens(address)]);
             if ((positions[0] && isActive(positions[0])) || isActive(positions[1])) throw new Error("An active V1 or V2 Garden already exists. Harvest or exit it before planting again.");
             amount = BigInt(seeds) * _seedPrice;
