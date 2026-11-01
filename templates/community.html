@@ -232,6 +232,14 @@
           {% if not is_guest %}
           <div class="cf-earn-actions" id="cfEarnActions" hidden>
             <div class="cf-earn-withdraw-row" id="cfEarnWithdrawRow" hidden>
+                <label class="cf-earn-withdraw-field" for="cfEarnWithdrawAmount">
+                    <span>Amount to withdraw (G$)</span>
+                    <input id="cfEarnWithdrawAmount" name="withdraw_amount" type="text"
+                           inputmode="decimal" pattern="[0-9]+(\.[0-9]+)?"
+                           placeholder="Leave blank for the maximum"
+                           autocomplete="off" aria-describedby="cfEarnWithdrawBounds">
+                </label>
+                <small class="cf-earn-withdraw-bounds" id="cfEarnWithdrawBounds"></small>
                 <button type="button" class="cf-earn-withdraw" id="cfEarnWithdrawBtn"
                         onclick="GMCommunity.checkWithdrawalEligibility()">Withdraw</button>
                 <p class="cf-earn-withdraw-status" id="cfEarnWithdrawStatus"
