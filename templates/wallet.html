@@ -1625,6 +1625,7 @@
             color: inherit;
             transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
         }
+        .bn-sheet-item[hidden] { display: none !important; }
         .bn-sheet-item:hover {
             
             
@@ -3482,7 +3483,7 @@
         <div class="bn-sheet-handle"></div>
         <div class="bn-sheet-title">✨ KwentoFi Menu</div>
         <div class="bn-sheet-grid">
-            <button type="button" class="bn-sheet-item" onclick="bnGo(function(){ openBottomSheet('bnSheetEarn'); })">
+            <button type="button" class="bn-sheet-item" hidden aria-hidden="true" onclick="bnGo(function(){ openBottomSheet('bnSheetEarn'); })">
                 <span class="bn-sheet-circle" style="background:linear-gradient(135deg,#f59e0b,#e11d48);color:#fff;">💰</span>
                 <span class="bn-sheet-name">More Ways To Earn</span>
             </button>
@@ -3547,10 +3548,10 @@
             <span class="bn-icon" aria-hidden="true">🏦</span>
             <span class="bn-label">Savings</span>
         </a>
-        <button type="button" class="bn-item bn-earn" onclick="openBottomSheet('bnSheetEarn')" aria-haspopup="dialog" aria-controls="bnSheetEarn" aria-label="Earn" title="Earn">
-            <span class="bn-icon" aria-hidden="true">💰</span>
-            <span class="bn-label">Earn</span>
-        </button>
+        <a class="bn-item bn-earn" href="/community" aria-label="Social Feed" title="Social Feed">
+            <span class="bn-icon" aria-hidden="true">📸</span>
+            <span class="bn-label">Social Feed</span>
+        </a>
         <button type="button" class="bn-item bn-desktop-only bn-send" onclick="openModal('sendModal')" aria-haspopup="dialog" aria-controls="sendModal" aria-label="Send" title="Send">
             <span class="bn-icon" aria-hidden="true">↑</span>
             <span class="bn-label">Send</span>
