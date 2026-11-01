@@ -168,7 +168,7 @@ function run(opts) {
    'cfReactionUsersModal', 'cfReactionUsersClose', 'cfReactionUsersFilters',
    'cfReactionUsersStatus', 'cfReactionUsersList', 'cfReactionUsersRetry', 'cfReactionUsersMore',
    'cfSheetEarn', 'cfSheetOverlay', 'cfMenuCommunityCards',
-   'cfMenuEarnMoreToggle', 'cfMenuEarnMore', 'cfMenuWallet',
+   'cfMenuEarnMoreToggle', 'cfMenuEarnMore', 'cfMenuWallet', 'cfMenuXdcWallet',
    'cfAirtimeModal', 'cfAirtimeFrame',
    'cfEarnPageModal', 'cfEarnPageFrame', 'cfEarnPageTitle', 'cfEarnPageClose',
    'dailyTaskModal',
@@ -186,11 +186,12 @@ function run(opts) {
    'cfEarnWithdrawStatus', 'cfEarnHistoryToggle', 'cfEarnReconcile'
   ].forEach(id => {
     const node = dom.mk(
-      id === 'cfMenuWallet' ? 'a' : id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
+      id === 'cfMenuWallet' || id === 'cfMenuXdcWallet' ? 'a' : id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
         || id === 'cfSearchInput'
         ? 'textarea' : 'div');
     node.id = id;
     if (id === 'cfMenuWallet') node.href = '/wallet';
+    if (id === 'cfMenuXdcWallet') node.href = '/xdc-wallet';
     registry[id] = node;
   });
   registry.cfPreviews.hidden = true;
@@ -1418,6 +1419,8 @@ function feedFetch(handler, feedRows) {
     ok('Wallet is offered inside the Community Menu', !!store.cfMenuWallet);
     ok('Wallet menu item does not invoke an in-page Wallet modal',
        !!store.cfMenuWallet && typeof api.openWalletModal === 'undefined');
+    ok('XDC Wallet is offered inside the Community Menu',
+       !!store.cfMenuXdcWallet && store.cfMenuXdcWallet.href === '/xdc-wallet');
     ok('Community does not render or expose a Wallet modal',
        !store.cfCommunityWalletModal && typeof api.openWalletModal === 'undefined',
        String(!!store.cfCommunityWalletModal) + ' ' + typeof api.openWalletModal);
