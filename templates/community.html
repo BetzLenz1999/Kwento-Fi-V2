@@ -711,11 +711,12 @@
             <span class="cf-menu-row-copy"><strong>Community Cards</strong><small>Open your Community G$ balance, withdrawals, and transaction history.</small></span>
             <span class="cf-menu-row-arrow" aria-hidden="true">›</span>
         </button>
-        <a class="cf-menu-row" id="cfMenuWallet" href="/wallet">
+        <button type="button" class="cf-menu-row" id="cfMenuWallet"
+                onclick="GMCommunity.openWalletModal(this)">
             <span class="cf-menu-row-icon" aria-hidden="true">◈</span>
-            <span class="cf-menu-row-copy"><strong>Wallet</strong><small>Open your wallet page to manage your on-chain assets.</small></span>
+            <span class="cf-menu-row-copy"><strong>Wallet</strong><small>View your live Celo token balances.</small></span>
             <span class="cf-menu-row-arrow" aria-hidden="true">›</span>
-        </a>
+        </button>
         <button type="button" class="cf-menu-row" id="cfMenuSettingsToggle"
                 aria-expanded="false" aria-controls="cfMenuSettings"
                 onclick="GMCommunity.toggleMenuSettings(this)">
@@ -766,7 +767,7 @@
     <div class="cf-garden-overlay" onclick="GMCommunityGarden.close()"></div>
     <section class="cf-garden-card" tabindex="-1">
         <header class="cf-garden-head">
-            <div><div class="cf-garden-kicker">KWENTOFI GARDEN</div><h2 id="cfGardenTitle">Plant a Garden</h2></div>
+            <div><div class="cf-garden-kicker">KWENTOFI GARDEN</div><h2 id="cfGardenTitle">{% if garden_boot.v2Enabled %}Plant a Garden{% else %}Your Garden{% endif %}</h2></div>
             <div class="cf-garden-head-actions">
                 <button type="button" class="cf-garden-refresh" id="cfGardenRefresh" onclick="GMCommunityGarden.refresh()">Refresh</button>
                 <button type="button" class="cf-garden-close" aria-label="Close Garden" onclick="GMCommunityGarden.close()">×</button>
@@ -781,11 +782,15 @@
                     <p>Each seed starts a 24-hour Garden. Your principal is held by the contract and can be returned through early exit or harvest. Any harvest bonus is optional and depends on sponsor funding.</p>
                 </div>
             </div>
+            {% if garden_boot.legacyEnabled %}
+            <p class="cf-garden-price-note" id="cfGardenMigrationNotice">Garden V1 and V2 are separate deployments. Existing V1 seeds stay on V1; use the position selector to view and manage each active Garden independently. New planting and sponsorship are available only on V2.</p>
+            {% endif %}
             <div class="cf-garden-stats">
                 <div><small>Your G$ balance</small><strong id="cfGardenBalance">Checking…</strong></div>
-                <div><small>Optional sponsor pool</small><strong id="cfGardenPool">Checking…</strong></div>
+                <div><small id="cfGardenPoolLabel">Optional sponsor pool</small><strong id="cfGardenPool">Checking…</strong></div>
             </div>
-            <section id="cfGardenPlantPanel" class="cf-garden-panel cf-garden-plant-panel">
+            {% if garden_boot.v2Enabled %}
+            <section id="cfGardenPlantPanel" class="cf-garden-panel cf-garden-plant-panel" hidden>
                 <div class="cf-garden-panel-heading">
                     <div>
                         <span class="cf-garden-eyebrow">START YOUR GARDEN</span>
@@ -803,7 +808,11 @@
                 <button type="button" class="cf-garden-primary cf-garden-plant-cta" id="cfGardenPlantButton" onclick="GMCommunityGarden.plant()">Plant my Garden</button>
                 <p class="cf-garden-transaction-note">Your wallet signs the exact G$ approval and seed purchase. If your CELO balance is 0.3 CELO or less, the app may send a limited gas top-up first; sponsorship is subject to per-purchase and daily caps.</p>
             </section>
+            {% endif %}
             <section id="cfGardenActivePanel" class="cf-garden-panel" hidden>
+                <label for="cfGardenPositionSelect">Active Garden position</label>
+                <select id="cfGardenPositionSelect" hidden aria-label="Select active Garden deployment"></select>
+                <p class="cf-garden-eyebrow" id="cfGardenPositionVersion">Legacy deployment · V1</p>
                 <div class="cf-garden-active-title"><span class="cf-garden-pulse" aria-hidden="true"></span><strong id="cfGardenActiveTitle">Your Garden is growing</strong></div>
                 <div class="cf-garden-plot" id="cfGardenPlot" data-stage="0" aria-live="polite">
                     <div class="cf-garden-plot-sky" aria-hidden="true"><span class="cf-garden-sun"></span><span class="cf-garden-cloud cf-garden-cloud-one"></span><span class="cf-garden-cloud cf-garden-cloud-two"></span></div>
@@ -839,7 +848,8 @@
                     <button type="button" class="cf-garden-secondary" id="cfGardenExitButton" onclick="GMCommunityGarden.exit()">Exit &amp; return principal</button>
                 </div>
             </section>
-            <section class="cf-garden-panel cf-garden-sponsor-panel">
+            {% if garden_boot.v2Enabled %}
+            <section class="cf-garden-panel cf-garden-sponsor-panel" hidden>
                 <div class="cf-garden-sponsor-title"><strong>Support optional Garden bonuses</strong><span>Sponsor-powered</span></div>
                 <p>Contribute G$ to the shared bonus pool. Contributions are irreversible and do not give the sponsor a claim on Garden principal or future rewards.</p>
                 <label for="cfGardenSponsorAmount">Contribution amount <span>G$</span></label>
@@ -847,7 +857,8 @@
                 <label class="cf-garden-ack"><input id="cfGardenSponsorAck" type="checkbox"> <span>I understand this contribution is irrevocable and only funds optional bonuses.</span></label>
                 <button type="button" class="cf-garden-secondary cf-garden-sponsor-button" id="cfGardenSponsorButton" onclick="GMCommunityGarden.sponsor()" disabled>Contribute to sponsor pool</button>
             </section>
-            <p class="cf-garden-notice">Bonus is optional, sponsor-funded, and may be zero. Gas support only tops up estimated CELO; your wallet signs each transaction and pays network gas whenever sponsorship is not offered or available. Support is limited to eligible seed purchases and may be unavailable when limits or app funds are exhausted. G$ prices can change and the displayed USD reference is not a peg.</p>
+            {% endif %}
+            <p class="cf-garden-notice">Bonus is optional, sponsor-funded, and may be zero. Any gas support applies only to eligible new V2 seed purchases; your wallet signs the transaction and pays gas if sponsorship is unavailable. V1 harvest and early exit remain separate user-signed transactions on the original V1 contract. G$ prices can change and the displayed USD reference is not a peg.</p>
             <p class="cf-garden-status" id="cfGardenStatus" role="status" aria-live="polite">Connect your Celo wallet to load Garden details.</p>
         </div>
     </section>
