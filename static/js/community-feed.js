@@ -86,9 +86,7 @@
     var _earnBusy = false;     // one in-flight rewards fetch at a time
     var _earnDirty = false;    // a refresh arrived while one was in flight
     var _earnPromise = null;   // callers can await the coalesced latest read
-    var _communityWalletRequestId = 0;
-    var _communityWalletReturnFocus = null;
-    var _communityWalletModalBound = false;
+    var _communityDailyTaskModalBound = false;
     // Reconciliation is deliberately page-memory-only: the cursor is a
     // bounded scan continuation, never a durable withdrawal authorization.
     var _reconciliation = {
@@ -4478,318 +4476,7 @@
         if (trigger && trigger.focus) trigger.focus();
     }
 
-    var _communityWalletPanel = 'overview';
-    var _communityWalletSelectedToken = '';
     var _communityDailyTaskReturnFocus = null;
-    var _communitySendInFlight = false;
-
-    function setCommunityWalletPanel(name) {
-        var panels = {
-            overview: 'cfWalletOverview',
-            picker: 'cfWalletSendTokenPicker',
-            form: 'cfWalletSendForm',
-            review: 'cfWalletSendReview'
-        };
-        Object.keys(panels).forEach(function (key) {
-            var panel = $(panels[key]);
-            if (!panel) return;
-            panel.hidden = key !== name;
-            panel.setAttribute('aria-hidden', key === name ? 'false' : 'true');
-        });
-        _communityWalletPanel = name;
-        var sendButton = $('cfCommunityWalletSendOpen');
-        var refreshButton = $('cfCommunityWalletRefresh');
-        if (sendButton) sendButton.hidden = name !== 'overview';
-        if (refreshButton) refreshButton.hidden = name !== 'overview';
-        return !!$(panels[name]);
-    }
-
-    function setCommunityWalletValues(text) {
-        [
-            'cfWalletBalanceCelo', 'cfWalletBalanceGd', 'cfWalletBalanceCusd',
-            'cfWalletBalanceUsdt', 'cfWalletBalanceUsdc', 'cfWalletBalancePhpm',
-            'cfWalletSendBalanceCelo', 'cfWalletSendBalanceGd', 'cfWalletSendBalanceCusd',
-            'cfWalletSendBalanceUsdt', 'cfWalletSendBalanceUsdc', 'cfWalletSendBalancePhpm'
-        ].forEach(function (id) {
-            var node = $(id);
-            if (node) node.textContent = text;
-        });
-    }
-
-    function renderCommunityWalletBalances(data) {
-        var assets = [
-            { key: 'celo', id: 'cfWalletBalanceCelo', sendId: 'cfWalletSendBalanceCelo' },
-            { key: 'gd', id: 'cfWalletBalanceGd', sendId: 'cfWalletSendBalanceGd' },
-            { key: 'cusd', id: 'cfWalletBalanceCusd', sendId: 'cfWalletSendBalanceCusd' },
-            { key: 'usdt', id: 'cfWalletBalanceUsdt', sendId: 'cfWalletSendBalanceUsdt' },
-            { key: 'usdc', id: 'cfWalletBalanceUsdc', sendId: 'cfWalletSendBalanceUsdc' },
-            { key: 'phpm', id: 'cfWalletBalancePhpm', sendId: 'cfWalletSendBalancePhpm' }
-        ];
-        assets.forEach(function (asset) {
-            var node = $(asset.id);
-            var sendNode = $(asset.sendId);
-            var value = data && data[asset.key];
-            var formatted = value && value.success === true
-                && typeof value.balance_formatted === 'string'
-                ? value.balance_formatted : 'Unavailable';
-            if (node) node.textContent = formatted;
-            if (sendNode) sendNode.textContent = formatted;
-        });
-    }
-
-    function loadCommunityWalletBalances(forceRefresh) {
-        var modal = $('cfCommunityWalletModal');
-        if (!modal || modal.hidden || !WALLET) return Promise.resolve(false);
-        var requestId = ++_communityWalletRequestId;
-        var status = $('cfCommunityWalletStatus');
-        var refreshButton = $('cfCommunityWalletRefresh');
-        var url = '/api/wallet/balances' + (forceRefresh ? '?force=1' : '');
-        setCommunityWalletValues('Loading…');
-        if (status) {
-            status.textContent = forceRefresh ? 'Refreshing balances from Celo…' : 'Reading balances from Celo…';
-            status.setAttribute('data-state', 'loading');
-        }
-        if (refreshButton) {
-            refreshButton.disabled = true;
-            refreshButton.setAttribute('aria-busy', 'true');
-            refreshButton.textContent = 'Refreshing…';
-        }
-        return api(url, { method: 'GET', cache: 'no-store', headers: { Accept: 'application/json' } })
-            .then(function (result) {
-                if (requestId !== _communityWalletRequestId || modal.hidden) return false;
-                if (result.status === 401) {
-                    closeWalletModal();
-                    requiresLogin();
-                    return false;
-                }
-                if (!result.ok || !result.data || result.data.success !== true) {
-                    throw new Error('Wallet balances are unavailable.');
-                }
-                renderCommunityWalletBalances(result.data);
-                var updated = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                if (status) {
-                    status.textContent = 'Balances updated from Celo at ' + updated + '.';
-                    status.setAttribute('data-state', 'loaded');
-                }
-                return true;
-            })
-            .catch(function () {
-                if (requestId !== _communityWalletRequestId || modal.hidden) return false;
-                setCommunityWalletValues('Unavailable');
-                if (status) {
-                    status.textContent = 'Could not load Celo balances. Check your connection and try again.';
-                    status.setAttribute('data-state', 'error');
-                }
-                return false;
-            })
-            .then(function (loaded) {
-                if (requestId === _communityWalletRequestId && refreshButton) {
-                    refreshButton.disabled = false;
-                    refreshButton.removeAttribute('aria-busy');
-                    refreshButton.textContent = 'Refresh';
-                }
-                return loaded;
-            });
-    }
-
-    function openWalletModal(trigger) {
-        if (!WALLET) {
-            closeSheet(false);
-            requiresLogin();
-            return false;
-        }
-        var modal = $('cfCommunityWalletModal');
-        if (!modal) return false;
-        setCommunityWalletPanel('overview');
-        var returnFocus = _sheetReturnFocus || document.querySelector('[data-nav="menu"]') || trigger;
-        closeSheet(false);
-        _communityWalletReturnFocus = returnFocus || null;
-        var address = $('cfCommunityWalletAddress');
-        if (address) {
-            var wallet = String(WALLET);
-            address.textContent = /^0x[0-9a-f]{40}$/i.test(wallet)
-                ? wallet.slice(0, 6) + '…' + wallet.slice(-4) : 'Connected wallet';
-        }
-        modal.hidden = false;
-        modal.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('cf-modal-open');
-        var closeButton = $('cfCommunityWalletClose');
-        if (closeButton && closeButton.focus) closeButton.focus();
-        loadCommunityWalletBalances(false);
-        return true;
-    }
-
-    function closeWalletModal() {
-        var modal = $('cfCommunityWalletModal');
-        if (!modal || modal.hidden) return;
-        _communityWalletRequestId += 1;
-        setCommunityWalletPanel('overview');
-        modal.hidden = true;
-        modal.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('cf-modal-open');
-        var trigger = _communityWalletReturnFocus;
-        _communityWalletReturnFocus = null;
-        if (trigger && trigger.focus) trigger.focus();
-    }
-
-    function refreshWalletBalances() {
-        return loadCommunityWalletBalances(true);
-    }
-
-    function openWalletSend() {
-        if (!WALLET) { closeSheet(false); requiresLogin(); return false; }
-        if (!$('cfCommunityWalletModal') || $('cfCommunityWalletModal').hidden) return false;
-        _communityWalletSelectedToken = '';
-        var picker = $('cfWalletSendTokenPicker');
-        if (picker) picker.querySelectorAll('.cf-wallet-send-token').forEach(function (node) {
-            node.classList.remove('active');
-            node.setAttribute('aria-pressed', 'false');
-        });
-        var recipient = $('sendTo');
-        var amount = $('sendAmount');
-        if (recipient) recipient.value = '';
-        if (amount) amount.value = '';
-        var error = $('cfWalletSendError');
-        if (error) error.textContent = '';
-        var alert = $('sendAlert');
-        if (alert) { alert.textContent = ''; alert.className = 'cf-wallet-send-alert'; }
-        setCommunityWalletPanel('picker');
-        var first = $('cfWalletSendTokenPicker') && $('cfWalletSendTokenPicker').querySelector('button');
-        if (first && first.focus) first.focus();
-        return true;
-    }
-
-    function selectWalletSendToken(token, button) {
-        var normalized = String(token || '').toUpperCase();
-        var bridge = window.GMWalletCommunitySend;
-        if (!bridge || typeof bridge.selectToken !== 'function'
-                || !bridge.selectToken(normalized, button)) {
-            var error = $('cfWalletSendError');
-            if (error) error.textContent = 'The Celo send tool is unavailable. Please reload and try again.';
-            return false;
-        }
-        _communityWalletSelectedToken = normalized;
-        var picker = $('cfWalletSendTokenPicker');
-        if (picker) picker.querySelectorAll('.cf-wallet-send-token').forEach(function (node) {
-            node.setAttribute('aria-pressed', node === button ? 'true' : 'false');
-        });
-        var status = $('sendAlert');
-        if (status) { status.textContent = ''; status.className = 'cf-wallet-send-alert'; }
-        var errorBox = $('cfWalletSendError');
-        if (errorBox) errorBox.textContent = '';
-        setCommunityWalletPanel('form');
-        var to = $('sendTo');
-        if (to && to.focus) to.focus();
-        return true;
-    }
-
-    function backToWalletOverview() {
-        _communityWalletSelectedToken = '';
-        setCommunityWalletPanel('overview');
-        var sendButton = $('cfCommunityWalletSendOpen');
-        if (sendButton && sendButton.focus) sendButton.focus();
-    }
-
-    function backToWalletTokenPicker() {
-        setCommunityWalletPanel('picker');
-        var picker = $('cfWalletSendTokenPicker');
-        var selected = picker && picker.querySelector('.cf-wallet-send-token.active');
-        var focusTarget = selected || (picker && picker.querySelector('button'));
-        if (focusTarget && focusTarget.focus) focusTarget.focus();
-    }
-
-    function backToWalletSendForm() {
-        setCommunityWalletPanel('form');
-        var to = $('sendTo');
-        if (to && to.focus) to.focus();
-    }
-
-    function reviewWalletSend() {
-        var error = $('cfWalletSendError');
-        var recipientInput = $('sendTo');
-        var amountInput = $('sendAmount');
-        var recipient = recipientInput ? String(recipientInput.value || '').trim() : '';
-        var amount = amountInput ? String(amountInput.value || '').trim() : '';
-        var decimalPattern = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
-        var allowed = ['CELO', 'GD', 'CUSD', 'USDT', 'USDC', 'PHPM'];
-        if (!allowed.includes(_communityWalletSelectedToken)) {
-            if (error) error.textContent = 'Choose a Celo asset first.';
-            return false;
-        }
-        if (!/^0x[0-9a-f]{40}$/i.test(recipient)) {
-            if (error) error.textContent = 'Enter a valid 0x wallet address.';
-            if (recipientInput && recipientInput.focus) recipientInput.focus();
-            return false;
-        }
-        if (!decimalPattern.test(amount) || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
-            if (error) error.textContent = 'Enter a positive amount using standard decimal notation.';
-            if (amountInput && amountInput.focus) amountInput.focus();
-            return false;
-        }
-        if (recipient.toLowerCase() === String(WALLET || '').toLowerCase()) {
-            if (error) error.textContent = 'You cannot send to your own wallet address.';
-            if (recipientInput && recipientInput.focus) recipientInput.focus();
-            return false;
-        }
-        if (error) error.textContent = '';
-        var labels = { CELO: 'CELO', GD: 'G$', CUSD: 'cUSD', USDT: 'USDT', USDC: 'USDC', PHPM: 'PHPm' };
-        var tokenNode = $('cfWalletReviewToken');
-        var amountNode = $('cfWalletReviewAmount');
-        var recipientNode = $('cfWalletReviewRecipient');
-        if (tokenNode) tokenNode.textContent = labels[_communityWalletSelectedToken];
-        if (amountNode) amountNode.textContent = amount + ' ' + labels[_communityWalletSelectedToken];
-        if (recipientNode) recipientNode.textContent = recipient;
-        var sendAlert = $('sendAlert');
-        if (sendAlert) { sendAlert.textContent = ''; sendAlert.className = 'cf-wallet-send-alert'; }
-        setCommunityWalletPanel('review');
-        var confirmButton = $('sendBtn');
-        if (confirmButton) confirmButton.textContent = 'Confirm send';
-        if (confirmButton && confirmButton.focus) confirmButton.focus();
-        return true;
-    }
-
-    function confirmWalletSend() {
-        if (_communityWalletPanel !== 'review' || _communitySendInFlight) return false;
-        var bridge = window.GMWalletCommunitySend;
-        if (!bridge || typeof bridge.submit !== 'function') {
-            var alert = $('sendAlert');
-            if (alert) {
-                alert.className = 'cf-wallet-send-alert alert-error';
-                alert.textContent = 'The Celo send tool is unavailable. Please reload and try again.';
-            }
-            return false;
-        }
-        _communitySendInFlight = true;
-        var button = $('sendBtn');
-        if (button) {
-            button.disabled = true;
-            button.setAttribute('aria-busy', 'true');
-            button.textContent = 'Sending…';
-        }
-        var result;
-        try {
-            result = bridge.submit();
-        } catch (error) {
-            result = Promise.reject(error);
-        }
-        return Promise.resolve(result).catch(function (error) {
-            var alert = $('sendAlert');
-            if (alert) {
-                alert.className = 'cf-wallet-send-alert alert-error';
-                alert.textContent = (error && error.message)
-                    ? error.message : 'The transfer could not be started. Please try again.';
-            }
-            return false;
-        }).finally(function () {
-            _communitySendInFlight = false;
-            if (button) {
-                button.disabled = false;
-                button.removeAttribute('aria-busy');
-                button.textContent = 'Confirm send';
-            }
-        });
-    }
-
     /* ── Face-verification gate for the rewarded flows ──────────────────────
        Garden and Daily Task are verified-only, like Swap and Reloadly. The
        server refuses the Daily Task payment endpoints for an unverified wallet
@@ -4868,7 +4555,7 @@
         if (trigger && trigger.focus) trigger.focus();
     }
 
-    function communityWalletModalKeydown(event) {
+    function communityDailyTaskKeydown(event) {
         var dailyTask = $('dailyTaskModal');
         if (dailyTask && dailyTask.classList.contains('open') && event) {
             if (event.key === 'Escape') {
@@ -4891,39 +4578,21 @@
                 return;
             }
         }
-        var modal = $('cfCommunityWalletModal');
-        if (!modal || modal.hidden || !event) return;
-        if (event.key === 'Escape') {
-            if (event.preventDefault) event.preventDefault();
-            closeWalletModal();
-            return;
-        }
-        if (event.key !== 'Tab') return;
-        var focusable = Array.prototype.slice.call(modal.querySelectorAll(
-            'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-        )).filter(function (node) { return !node.hidden && !node.closest('[hidden]'); });
-        if (!focusable.length) return;
-        var first = focusable[0], last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault(); last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault(); first.focus();
-        }
     }
 
-    function setupCommunityWalletModal() {
-        if (_communityWalletModalBound || !$('cfCommunityWalletModal')) return;
-        document.addEventListener('keydown', communityWalletModalKeydown);
+    function setupCommunityDailyTaskModal() {
+        if (_communityDailyTaskModalBound) return;
+        document.addEventListener('keydown', communityDailyTaskKeydown);
         var dailyTask = $('dailyTaskModal');
         if (dailyTask) {
             dailyTask.addEventListener('click', function (event) {
                 if (event.target === dailyTask) closeDailyTask();
             });
         }
-        _communityWalletModalBound = true;
+        _communityDailyTaskModalBound = true;
     }
 
-    function setupCommunityWalletActions() {
+    function setupCommunityMenuActions() {
         var dailyTaskButton = $('cfMenuDailyTask');
         if (dailyTaskButton && !dailyTaskButton._cfDailyTaskClickBound
                 && typeof dailyTaskButton.addEventListener === 'function') {
@@ -4931,15 +4600,6 @@
             dailyTaskButton.addEventListener('click', function (event) {
                 event.preventDefault();
                 openDailyTask();
-            });
-        }
-        var confirmButton = $('sendBtn');
-        if (confirmButton && !confirmButton._cfConfirmSendClickBound
-                && typeof confirmButton.addEventListener === 'function') {
-            confirmButton._cfConfirmSendClickBound = true;
-            confirmButton.addEventListener('click', function (event) {
-                event.preventDefault();
-                confirmWalletSend();
             });
         }
     }
@@ -5698,8 +5358,8 @@
             discoverMore._discoverBound = true;
             discoverMore.addEventListener('click', function () { loadDiscover(false); });
         }
-        setupCommunityWalletActions();
-        setupCommunityWalletModal();
+        setupCommunityMenuActions();
+        setupCommunityDailyTaskModal();
         bindReactionUsersModal();
         bind();
         renderNav();
@@ -5821,16 +5481,6 @@
         openSettings: openSettings,
         openEarnPage: openEarnPage,
         closeEarnPage: closeEarnPage,
-        openWalletModal: openWalletModal,
-        closeWalletModal: closeWalletModal,
-        refreshWalletBalances: refreshWalletBalances,
-        openWalletSend: openWalletSend,
-        selectWalletSendToken: selectWalletSendToken,
-        backToWalletOverview: backToWalletOverview,
-        backToWalletTokenPicker: backToWalletTokenPicker,
-        backToWalletSendForm: backToWalletSendForm,
-        reviewWalletSend: reviewWalletSend,
-        confirmWalletSend: confirmWalletSend,
         openDailyTask: openDailyTask,
         closeDailyTask: closeDailyTask,
         openAirtime: openAirtime,
