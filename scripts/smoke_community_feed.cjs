@@ -9,8 +9,7 @@
    - the client-side media type allow-list,
    - the guest guard (a guest can never post or queue an upload),
    - buildCard: caption as TEXT (no HTML injection) and a hidden reaction picker,
-   - the Community Menu Wallet modal's Celo-only read/refresh, token picker,
-     review/confirmation, and guest guard;
+   - the Community Menu's direct Wallet link and absence of an in-place Wallet modal;
    - the authenticated Daily Task menu action opening the shared modal in place.
 
    Run: node scripts/smoke_community_feed.cjs
@@ -166,15 +165,7 @@ function run(opts) {
    'cfMenuEarnMoreToggle', 'cfMenuEarnMore', 'cfMenuWallet',
    'cfAirtimeModal', 'cfAirtimeFrame',
    'cfEarnPageModal', 'cfEarnPageFrame', 'cfEarnPageTitle', 'cfEarnPageClose',
-   'cfCommunityWalletModal', 'cfCommunityWalletAddress', 'cfCommunityWalletStatus',
-   'cfCommunityWalletRefresh', 'cfCommunityWalletClose', 'cfCommunityWalletSendOpen',
-   'cfWalletOverview', 'cfWalletSendTokenPicker', 'cfWalletSendForm', 'cfWalletSendReview',
-   'cfWalletSendError', 'cfWalletReviewToken', 'cfWalletReviewAmount', 'cfWalletReviewRecipient',
-   'cfWalletSendBalanceCelo', 'cfWalletSendBalanceGd', 'cfWalletSendBalanceCusd',
-   'cfWalletSendBalanceUsdt', 'cfWalletSendBalanceUsdc', 'cfWalletSendBalancePhpm',
-   'sendTo', 'sendAmount', 'sendTokenLabel', 'sendAlert', 'sendBtn', 'dailyTaskModal',
-   'cfWalletBalanceCelo', 'cfWalletBalanceGd', 'cfWalletBalanceCusd',
-   'cfWalletBalanceUsdt', 'cfWalletBalanceUsdc', 'cfWalletBalancePhpm',
+   'dailyTaskModal',
    'cfMessagePushPrompt', 'cfMessagePushStatus', 'cfMessagePushCopy',
    'cfMessagePushEnable', 'cfMessagePushLater',
    'claimModal',
@@ -187,10 +178,11 @@ function run(opts) {
    'cfEarnBalance', 'cfEarnLead'
   ].forEach(id => {
     const node = dom.mk(
-      id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
+      id === 'cfMenuWallet' ? 'a' : id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
         || id === 'cfSearchInput'
         ? 'textarea' : 'div');
     node.id = id;
+    if (id === 'cfMenuWallet') node.href = '/wallet';
     registry[id] = node;
   });
   registry.cfPreviews.hidden = true;
@@ -207,10 +199,6 @@ function run(opts) {
   // its src parked on data-src so the store never loads until a tap.
   registry.cfAirtimeModal.hidden = true;
   registry.cfEarnPageModal.hidden = true;
-  registry.cfCommunityWalletModal.hidden = true;
-  registry.cfWalletSendTokenPicker.hidden = true;
-  registry.cfWalletSendForm.hidden = true;
-  registry.cfWalletSendReview.hidden = true;
   registry.dailyTaskModal.className = '';
   registry.cfCommunityCardsModal.hidden = true;
   // The suggestions panel ships hidden (revealed only on a successful
@@ -1405,49 +1393,11 @@ function feedFetch(handler, feedRows) {
 
     menu.onclick({ preventDefault() {} });
     ok('Wallet is offered inside the Community Menu', !!store.cfMenuWallet);
-    api.openWalletModal(store.cfMenuWallet);
-    ok('Wallet opens a Celo wallet modal without leaving Community',
-       store.cfCommunityWalletModal.hidden === false && !sandbox.location.href);
-    await tick();
-    ok('the Wallet modal renders the Celo-native balance',
-       store.cfWalletBalanceCelo.textContent === '2.000000 CELO');
-    ok('the Wallet modal renders the PHPm balance',
-       store.cfWalletBalancePhpm.textContent === '42.000000 PHPm');
-    ok('the send token picker mirrors the live PHPm balance',
-       store.cfWalletSendBalancePhpm.textContent === '42.000000 PHPm');
-    ok('opening Wallet reads the authenticated Celo balance endpoint',
-       balanceRequests.length === 1 && balanceRequests[0] === '/api/wallet/balances');
-    api.refreshWalletBalances();
-    await tick();
-    ok('manual refresh requests a fresh Celo balance read',
-       balanceRequests[1] === '/api/wallet/balances?force=1');
-    api.openWalletSend();
-    ok('Send opens the token picker inside the wallet modal',
-       store.cfWalletSendTokenPicker.hidden === false && store.cfWalletOverview.hidden === true);
-    const phpButton = store.cfWalletSendTokenPicker.querySelector('.cf-wallet-send-token') || {
-      className: '', classList: { add(c) { this.owner.className += ' ' + c; }, owner: null },
-      setAttribute() {}, focus() {},
-    };
-    phpButton.classList.owner = phpButton;
-    ok('PHPm can be selected for a Community send', api.selectWalletSendToken('PHPM', phpButton));
-    ok('selecting a token opens the recipient and amount form',
-       store.cfWalletSendForm.hidden === false && store.cfWalletSendTokenPicker.hidden === true
-         && store.sendTokenLabel.textContent === 'PHPm');
-    store.sendTo.value = '0x1111111111111111111111111111111111111111';
-    store.sendAmount.value = '1.25';
-    ok('valid recipient and amount advance to transfer review', api.reviewWalletSend()
-       && store.cfWalletSendReview.hidden === false
-       && store.cfWalletReviewAmount.textContent === '1.25 PHPm'
-       && store.sendBtn.textContent === 'Confirm send');
-    await api.confirmWalletSend();
-    ok('the review confirmation invokes the established wallet signing bridge',
-       sandbox.GMWalletCommunitySend.selected === 'PHPM');
-    api.backToWalletOverview();
-    ok('Back to wallet returns to the balance overview', store.cfWalletOverview.hidden === false);
-    api.closeWalletModal();
-    ok('closing the Wallet modal restores page scrolling',
-       store.cfCommunityWalletModal.hidden === true
-         && !sandbox.document.body.classList.contains('cf-modal-open'));
+    ok('Wallet menu item does not invoke an in-page Wallet modal',
+       !!store.cfMenuWallet && typeof api.openWalletModal === 'undefined');
+    ok('Community does not render or expose a Wallet modal',
+       !store.cfCommunityWalletModal && typeof api.openWalletModal === 'undefined',
+       String(!!store.cfCommunityWalletModal) + ' ' + typeof api.openWalletModal);
     api.openDailyTask();
     ok('Daily Task opens the shared modal inside Community for members',
        store.dailyTaskModal.classList.contains('open')
@@ -1530,11 +1480,12 @@ function feedFetch(handler, feedRows) {
        store.cfCommunityCardsModal.hidden === true
          && !sandbox.document.body.classList.contains('cf-modal-open'));
 
-    api.openWalletModal(store.cfMenuWallet);
-    ok('a guest opening Wallet gets the connect card',
-       connectCalls === 2, String(connectCalls));
-    ok('a guest cannot fetch private wallet balances',
-       store.cfCommunityWalletModal.hidden === true);
+    ok('guest Wallet menu item does not open an in-page modal',
+       !!store.cfMenuWallet && typeof api.openWalletModal === 'undefined');
+    ok('Wallet does not open a modal or trigger an in-place balance request',
+       !store.cfCommunityWalletModal && typeof api.openWalletModal === 'undefined'
+         && connectCalls === 1,
+       String(!!store.cfCommunityWalletModal) + ' ' + typeof api.openWalletModal + ' ' + String(connectCalls));
 
     // Buy Airtime is also signed-in only: the tap is swallowed and the card
     // shows, so the guest is never dropped on a page they cannot use — and the
@@ -1543,7 +1494,7 @@ function feedFetch(handler, feedRows) {
     api.closeAirtime();
     airtime.onclick({ preventDefault() { airtimeNavigated = true; } });
     ok('a guest tapping Buy Airtime opens the connect card',
-       connectCalls === 3, String(connectCalls));
+       connectCalls === 2, String(connectCalls));
     ok('a guest tapping Buy Airtime is not navigated away', airtimeNavigated);
     ok('a guest tapping Buy Airtime never opens the store modal',
        store.cfAirtimeModal.hidden === true);
@@ -1555,7 +1506,7 @@ function feedFetch(handler, feedRows) {
     let claimNavigated = false;
     claim.onclick({ preventDefault() { claimNavigated = true; } });
     ok('a guest tapping Claim Free G$ opens the connect card',
-       connectCalls === 4, String(connectCalls));
+       connectCalls === 3, String(connectCalls));
     ok('a guest tapping Claim Free G$ is not navigated away', claimNavigated);
     ok('a guest tapping Claim Free G$ never opens the claim modal',
        !store.claimModal.className.includes('open'));
@@ -1566,7 +1517,7 @@ function feedFetch(handler, feedRows) {
     api.closeSearch();
     search.onclick({ preventDefault() {} });
     ok('a guest may open the member search', store.cfSearchBar.hidden === false);
-    ok('the read-only Search tap raised no connect card', connectCalls === 4,
+    ok('the read-only Search tap raised no connect card', connectCalls === 3,
        String(connectCalls));
   }
 
