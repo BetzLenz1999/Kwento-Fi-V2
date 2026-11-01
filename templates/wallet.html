@@ -139,7 +139,10 @@
         .join-community-banner .jcb-btn:hover { transform: translateY(-2px); }
         .join-community-banner .jcb-btn:focus-visible { outline: 2px solid #c4b5fd; outline-offset: 2px; }
         @media (max-width: 560px) {
-            .join-community-banner { margin-left: 0.9rem; margin-right: 0.9rem; }
+            .join-community-banner { margin: 0.35rem 0.9rem 0.55rem; padding: 0.65rem 0.8rem; }
+            .join-community-banner .jcb-title { font-size: 0.82rem; margin-bottom: 0.2rem; }
+            .join-community-banner .jcb-copy { font-size: 0.68rem; line-height: 1.35; margin-bottom: 0.5rem; }
+            .join-community-banner .jcb-btn { padding: 0.52rem 1rem; font-size: 0.78rem; }
         }
 
         .top-bar-title {
@@ -1336,9 +1339,15 @@
                 top: 64px;
             }
             .wallet-hero-grid {
+                position: sticky;
+                top: calc(64px + 4.25rem + env(safe-area-inset-top, 0px));
+                z-index: 48;
                 display: block;
                 margin-left: 0.9rem;
                 margin-right: 0.9rem;
+                padding: 0.25rem 0;
+                background: rgba(255,255,255,0.96);
+                box-shadow: 0 6px 18px rgba(67,56,43,0.10);
             }
             .balance-card {
                 margin-left: 0;
@@ -2292,7 +2301,7 @@
          the flag is checked. -->
     <div id="joinCommunityBanner" class="join-community-banner" role="region" aria-label="Join the KwentoFi community">
         <div class="jcb-title">🤝 Join the KwentoFi Community</div>
-        <div class="jcb-copy">Connect with fellow G$ earners in our Telegram discussion group — community updates, tips, and support.</div>
+        <div class="jcb-copy">Chat with G$ earners on Telegram for updates, tips, and support.</div>
         <button type="button" id="joinCommunityJoinBtn" class="jcb-btn" onclick="joinGoodMarketCommunity()">✈️ Join KwentoFi Community</button>
     </div>
 
@@ -3429,33 +3438,6 @@
         </div>
     </div>
 
-    <div class="bn-sheet" id="bnSheetWallet" role="dialog" aria-label="KwentoFi Wallet">
-        <div class="bn-sheet-handle"></div>
-        <div class="bn-sheet-title">👛 KwentoFi Wallet</div>
-        <div class="bn-sheet-grid">
-            <div class="bn-sheet-item" onclick="bnGo(function(){ openModal('sendModal'); })">
-                <div class="bn-sheet-circle">↑</div>
-                <div class="bn-sheet-name">Send</div>
-            </div>
-            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/swap?tab=goodswap', 'Opening Swap…'); })">
-                <div class="bn-sheet-circle">⇌</div>
-                <div class="bn-sheet-name">Swap</div>
-            </div>
-            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/swap?tab=bridge', 'Opening Bridge…'); })">
-                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;">🌉</div>
-                <div class="bn-sheet-name">Bridge</div>
-            </div>
-            <div class="bn-sheet-item" onclick="bnGo(function(){ openModal('streamModal'); })">
-                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;">💸</div>
-                <div class="bn-sheet-name">Stream G$</div>
-            </div>
-            <div class="bn-sheet-item" onclick="bnGo(function(){ navigateWithFeedback('/xdc-wallet', 'Opening XSwap…'); })">
-                <div class="bn-sheet-circle">💠</div>
-                <div class="bn-sheet-name">XSwap</div>
-            </div>
-        </div>
-    </div>
-
     <div class="bn-sheet" id="bnSheetServices" role="dialog" aria-label="Services">
         <div class="bn-sheet-handle"></div>
         <div class="bn-sheet-title">🛠️ Services</div>
@@ -3515,18 +3497,16 @@
     </div>
 
     <!-- ── Wallet Side Navigation ──
-         Primary destinations stay one tap away. The Wallet chip is the money
-         hub (Send / GoodSwap / Bridge / Stream / XSwap) and deliberately opens
-         a sheet rather than linking to /wallet — we are already here, so a
-         self-link was a dead tap. Secondary actions remain in their sheets. -->
+         The former Wallet launcher now opens the standalone Send dialog. The
+         swap, bridge, stream and XSwap options are removed from its old sheet. -->
     <nav class="wallet-bottom-nav wallet-side-nav" aria-label="Wallet navigation">
         <a class="bn-item bn-desktop-only bn-profile" href="/profile" aria-label="Profile" title="Profile">
             <span class="bn-icon" aria-hidden="true">👤</span>
             <span class="bn-label">Profile</span>
         </a>
-        <button type="button" class="bn-item bn-wallet" onclick="openBottomSheet('bnSheetWallet')" aria-haspopup="dialog" aria-controls="bnSheetWallet" aria-label="Wallet" title="Wallet">
-            <span class="bn-icon" aria-hidden="true">👛</span>
-            <span class="bn-label">Wallet</span>
+        <button type="button" class="bn-item bn-wallet bn-send" onclick="openModal('sendModal')" aria-haspopup="dialog" aria-controls="sendModal" aria-label="Send" title="Send">
+            <span class="bn-icon" aria-hidden="true">↑</span>
+            <span class="bn-label">Send</span>
         </button>
         <button type="button" class="bn-item bn-claim" onclick="openClaimOrVerify()" aria-haspopup="dialog" aria-controls="claimModal" aria-label="Claim Free G$" title="Claim Free G$">
             <span class="bn-icon" aria-hidden="true">🪙</span>
@@ -3552,10 +3532,6 @@
             <span class="bn-icon" aria-hidden="true">📸</span>
             <span class="bn-label">Social Feed</span>
         </a>
-        <button type="button" class="bn-item bn-desktop-only bn-send" onclick="openModal('sendModal')" aria-haspopup="dialog" aria-controls="sendModal" aria-label="Send" title="Send">
-            <span class="bn-icon" aria-hidden="true">↑</span>
-            <span class="bn-label">Send</span>
-        </button>
         <button type="button" class="bn-item bn-desktop-only bn-receive" onclick="openModal('receiveModal')" aria-haspopup="dialog" aria-controls="receiveModal" aria-label="Receive" title="Receive">
             <span class="bn-icon" aria-hidden="true">↓</span>
             <span class="bn-label">Receive</span>
