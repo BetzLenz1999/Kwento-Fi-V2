@@ -3354,6 +3354,7 @@
          unavailable" and never prompted a signature. Community loads the same
          bundle; keep the two pages in step. Loaded before wallet-main.js so the
          global exists when the bundle wires its Daily Task handler. -->
+    <script src="{{ url_for('static', filename='js/community-wallet-detection.js', v=ASSET_VERSION) }}"></script>
     <script src="{{ url_for('static', filename='js/p2p/p2p-wallet.js', v=ASSET_VERSION) }}"></script>
     <script src="{{ url_for('static', filename='js/wallet-main.js', v=ASSET_VERSION) }}"></script>
 
