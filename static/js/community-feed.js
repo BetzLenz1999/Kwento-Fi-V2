@@ -40,7 +40,7 @@
     var LONG_EDGE = 2048;      // downscale target for images
     var JPEG_QUALITY = 0.85;
 
-    // Remembers whether the member expanded the pinned donor acknowledgments,
+    // Remembers whether a visitor expanded the pinned donor acknowledgments,
     // for the session only (a fresh visit starts collapsed again).
     var PINNED_DONATIONS_OPEN_KEY = 'gmPinnedDonationsOpen_v1';
 
@@ -57,9 +57,9 @@
     var _pinnedDonationCursor = null;
     var _pinnedDonationLoading = false;
     // Collapsed by default: the acknowledgments are a reference list, not the
-    // reason a member opens the feed, and while expanded they sit ABOVE the
+    // reason a visitor opens the feed, and while expanded they sit ABOVE the
     // real posts and push them down. The choice is remembered for the session
-    // so a member who wants them does not re-open them on every visit.
+    // so a visitor who wants them does not re-open them on every visit.
     var _pinnedDonationsOpen = false;
     var _vaultDonationConfig = null;
     var _vaultDonationIntent = null;
@@ -1257,6 +1257,29 @@
         _pinnedDonationsOpen = !_pinnedDonationsOpen;
         _writePinnedDonationsOpen(_pinnedDonationsOpen);
         applyPinnedDonationsOpen();
+    }
+
+    function maybeRevealFocusedPinnedDonation() {
+        var id = String(FOCUS_POST_ID || '');
+        var hash = window.location && String(window.location.hash || '');
+        if (!id && /^#post-\d+$/.test(hash)) id = hash.replace('#post-', '');
+        if (!id) return false;
+
+        var focused = _pinnedDonations.find(function (post) {
+            return String(post.id) === id;
+        });
+        if (!focused && FOCUS_POST && String(FOCUS_POST.id) === id) focused = FOCUS_POST;
+        if (!focused || focused.is_pinned !== true
+                || ['system_support', 'system_vault_donation'].indexOf(focused.post_type) < 0) {
+            return false;
+        }
+        if (!_pinnedDonations.some(function (post) { return String(post.id) === id; })) {
+            _pinnedDonations.unshift(focused);
+        }
+        // A shared canonical link temporarily overrides the collapsed default;
+        // do not persist this as the visitor's preference for later feed visits.
+        _pinnedDonationsOpen = true;
+        return true;
     }
 
     // Session-scoped and fail-closed: a blocked store (hardened private mode)
@@ -3645,6 +3668,7 @@
                 _pinnedDonations = Array.isArray(result.data.pinned_posts)
                     ? result.data.pinned_posts : [];
                 _pinnedDonationCursor = result.data.pinned_next_cursor || null;
+                maybeRevealFocusedPinnedDonation();
             }
             // Guard a malformed payload: a server bug must not break the page.
             var rows = result.data.posts || [];
