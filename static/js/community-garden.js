@@ -99,9 +99,29 @@
     }
     function setStatus(message, isError) {
         var node = el("cfGardenStatus");
-        if (!node) return;
-        node.textContent = String(message || "");
-        node.classList.toggle("is-error", !!isError);
+        if (node) {
+            node.textContent = String(message || "");
+            node.classList.toggle("is-error", !!isError);
+        }
+        var processing = el("cfGardenProcessing");
+        var processingMessage = el("cfGardenProcessingMessage");
+        if (processing && !processing.hidden && processingMessage) {
+            processingMessage.textContent = String(message || "");
+        }
+    }
+    function showGardenProcessing(title, message) {
+        var processing = el("cfGardenProcessing");
+        if (!processing) return;
+        setText("cfGardenProcessingTitle", title || "Preparing your Garden");
+        processing.hidden = false;
+        processing.setAttribute("aria-hidden", "false");
+        setStatus(message || "Processing Garden gas support…");
+    }
+    function hideGardenProcessing() {
+        var processing = el("cfGardenProcessing");
+        if (!processing) return;
+        processing.hidden = true;
+        processing.setAttribute("aria-hidden", "true");
     }
     function walletAddress() {
         var address = window.GM_WALLET_BOOT && window.GM_WALLET_BOOT.wallet;
@@ -369,7 +389,7 @@
         var result = await response.json().catch(function () { return {}; });
         if (!response.ok || !result.success) throw new Error(result.error || "Garden gas support could not be prepared.");
         if (result.sponsored && result.sponsor_tx_hash) {
-            setStatus("The app is sponsoring an estimated " + result.estimated_fee_celo + " CELO of gas. Waiting for the top-up to confirm before opening your wallet…");
+            showGardenProcessing("Confirming your gas top-up", "The app is sponsoring an estimated " + result.estimated_fee_celo + " CELO of gas. Waiting for the top-up to confirm before opening your wallet…");
             var provider = loaded.v2 && loaded.v2.runner && loaded.v2.runner.provider;
             if (!provider || typeof provider.waitForTransaction !== "function") {
                 throw new Error("Could not monitor the app gas top-up. No Garden purchase was submitted; retry using the same request.");
@@ -379,6 +399,7 @@
                 throw new Error("The app gas top-up did not confirm. No G$ purchase was made; retry later.");
             }
             await waitForSponsoredBalance(provider, wallet, result);
+            hideGardenProcessing();
             return result;
         }
         setStatus("Your wallet will pay the estimated Celo network fee (" + result.estimated_fee_celo + " CELO). Confirm the seed purchase in your wallet.");
@@ -423,6 +444,7 @@
         } catch (error) {
             setStatus((error && error.message) || "Garden purchase failed or was cancelled.", true);
         } finally {
+            hideGardenProcessing();
             setBusy(false);
         }
     }
@@ -487,6 +509,7 @@
         _returnFocus = trigger || document.getElementById("cfMenuGarden") || null;
         modal.hidden = false;
         modal.setAttribute("aria-hidden", "false");
+        hideGardenProcessing();
         document.body.classList.add("cf-modal-open");
         var card = modal.querySelector(".cf-garden-card");
         if (card && card.focus) card.focus();
@@ -497,6 +520,8 @@
 
     function close() {
         if (modal.hidden) return;
+        var processing = el("cfGardenProcessing");
+        if (processing && !processing.hidden) return;
         stopGrowthTicker();
         modal.hidden = true;
         modal.setAttribute("aria-hidden", "true");
