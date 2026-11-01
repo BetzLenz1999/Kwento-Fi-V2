@@ -292,6 +292,14 @@
         // ("No active WalletConnect session."). A legacy "injected" login with
         // no matching provider still reaches WC via resolveSigner's fallback.
         if (isWcFamilyLogin() || isLocal()) return Promise.resolve([]);
+        var shared = window.GMCommunityWalletDetection;
+        if (shared && typeof shared.resolveInjectedProvider === "function") {
+            return shared.resolveInjectedProvider({
+                wallet: WALLET,
+                loginMethod: LOGIN_METHOD,
+                timeoutMs: timeoutMs
+            }).then(function (provider) { return provider ? [provider] : []; });
+        }
         var budget = typeof timeoutMs === "number" ? timeoutMs : (_isMobile() ? 3000 : 900);
         var start = Date.now();
         var providers = _collectProviders();
