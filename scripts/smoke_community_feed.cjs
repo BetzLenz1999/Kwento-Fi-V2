@@ -21,6 +21,12 @@ const vm = require('vm');
 
 const SRC = fs.readFileSync(
   path.join(__dirname, '..', 'static', 'js', 'community-feed.js'), 'utf8');
+// The shared transaction-error formatter is a real dependency of the page
+// (tx-error.js loads before community-feed.js), so the harness loads it too.
+// That way the withdrawal error path is exercised against the REAL formatter
+// instead of a stub.
+const TX_ERROR_SRC = fs.readFileSync(
+  path.join(__dirname, '..', 'static', 'js', 'tx-error.js'), 'utf8');
 
 function makeDom() {
   function matches(node, sel) {
@@ -175,7 +181,9 @@ function run(opts) {
    'cfPinnedDonationBody', 'cfPinnedDonationsToggle',
    'cfEarn', 'cfEarnChip', 'cfEarnAmount', 'cfEarnGoal', 'cfEarnBar',
    'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates', 'cfEarnRatesToggle',
-   'cfEarnBalance', 'cfEarnLead'
+   'cfEarnBalance', 'cfEarnLead',
+   'cfEarnOverview', 'cfEarnActions', 'cfEarnWithdrawRow', 'cfEarnWithdrawBtn',
+   'cfEarnWithdrawStatus', 'cfEarnHistoryToggle', 'cfEarnReconcile'
   ].forEach(id => {
     const node = dom.mk(
       id === 'cfMenuWallet' ? 'a' : id === 'cfCaption' || id === 'cfEditCaption' || id === 'cfUsernameInput'
@@ -193,6 +201,13 @@ function run(opts) {
   registry.cfEarnRates.hidden = true;
   registry.cfEarnRatesToggle.hidden = true;
   registry.cfEarnRatesToggle.setAttribute('aria-expanded', 'false');
+  // Mirror the member-only withdrawal markup, which ships hidden until the
+  // server-derived status reveals it.
+  registry.cfEarnActions.hidden = true;
+  registry.cfEarnWithdrawRow.hidden = true;
+  registry.cfEarnWithdrawStatus.hidden = true;
+  registry.cfEarnHistoryToggle.hidden = true;
+  registry.cfEarnReconcile.hidden = true;
   registry.cfUsernameInput.value = '';
   registry.cfSearchInput.value = '';
   // The Buy Airtime iframe ships with the modal: `hidden` until opened, and
@@ -301,6 +316,13 @@ function run(opts) {
   // Task face-verification gates, so the harness must set it exactly like the
   // server-rendered templates do. Default: a verified member.
   sandbox.GM_WALLET_BOOT = opts.walletBoot || { fvVerified: true };
+  // The withdrawal flow reads window.ethers, window.P2PWallet and (for
+  // MiniPay) window.GMMinipayFeeCurrencies. Tests that only render the card
+  // leave these unset — the gas preflight then fails open, exactly as it does
+  // in a browser before the loaders resolve.
+  if (opts.ethers) sandbox.ethers = opts.ethers;
+  if (opts.p2pWallet) sandbox.P2PWallet = opts.p2pWallet;
+  if (opts.feeCurrencies) sandbox.GMMinipayFeeCurrencies = opts.feeCurrencies;
   sandbox.GMWalletCommunitySend = opts.communitySend || {
     selected: null,
     selectToken(token, button) {
@@ -330,6 +352,7 @@ function run(opts) {
   if (opts.XMLHttpRequest) sandbox.XMLHttpRequest = opts.XMLHttpRequest;
 
   vm.createContext(sandbox);
+  vm.runInContext(TX_ERROR_SRC, sandbox);
   vm.runInContext(SRC, sandbox);
   return { api: sandbox.GMCommunity, store: registry, sandbox, document: doc };
 }
@@ -2586,6 +2609,129 @@ function feedFetch(handler, feedRows) {
     const text = store.cfEarn.textContent;
     ok('no wallet address reaches the earn card',
        !/0x/i.test(text), text);
+  }
+
+  // ── 20d-ii. The withdrawal gas preflight names the real reason ───────────
+  //
+  // A Community withdrawal is signed by the member's wallet, so the wallet —
+  // not the app — pays the Celo fee. A wallet with no CELO used to fail INSIDE
+  // the wallet with an opaque "insufficient funds" error after the member
+  // approved, which reads as "the withdrawal is broken" even though the vault
+  // holds the balance. The preflight must estimate the fee, read the balance,
+  // and explain the shortfall before the wallet opens.
+  {
+    // A fake ethers.Interface that returns fixed calldata — enough for the
+    // preflight, which only needs *some* encoded bytes.
+    const fakeEthers = {
+      Interface: function () {
+        this.encodeFunctionData = () => '0xdeadbeef';
+      },
+    };
+    const AUTH = {
+      recipient: MEMBER.wallet,
+      amount: '512000000000000000000',
+      withdrawalId: '0x' + '11'.repeat(32),
+      nonce: '0',
+      deadline: '9999999999',
+      projectId: '0x' + '22'.repeat(32),
+    };
+    function providerStub({ nativeWei, estimateGas, feeData }) {
+      return {
+        getReadProvider() {
+          return {
+            estimateGas: estimateGas || (() => Promise.resolve(210000n)),
+            getFeeData: feeData || (() => Promise.resolve({ maxFeePerGas: 500000000000n })),
+            getBalance: () => Promise.resolve(nativeWei),
+          };
+        },
+        isMiniPay: () => false,
+      };
+    }
+
+    // Enough CELO -> no shortfall, so a real withdrawal is never blocked.
+    {
+      const { api } = run({
+        boot: MEMBER, ethers: fakeEthers,
+        p2pWallet: providerStub({ nativeWei: 10n ** 18n }),
+      });
+      const shortfall = await api._internals.withdrawalGasShortfall(
+        '0x4c0d1f17e83776aa696848b870444e54ec3a2203', AUTH);
+      ok('a funded wallet passes the gas preflight', shortfall === null, String(shortfall));
+    }
+
+    // Empty wallet -> a shortfall object with the numbers to show.
+    {
+      const { api } = run({
+        boot: MEMBER, ethers: fakeEthers,
+        p2pWallet: providerStub({ nativeWei: 0n }),
+      });
+      const shortfall = await api._internals.withdrawalGasShortfall(
+        '0x4c0d1f17e83776aa696848b870444e54ec3a2203', AUTH);
+      ok('an empty wallet is caught before the wallet opens', !!shortfall);
+      ok('the shortfall carries the required and held CELO amounts',
+         shortfall && shortfall.required > 0n && shortfall.balance === 0n,
+         shortfall ? ('required=' + shortfall.required + ' balance=' + shortfall.balance) : 'null');
+      const message = api._internals.withdrawalGasMessage(shortfall);
+      ok('the message names CELO as the gas token', /CELO/.test(message), message);
+      ok('the message says the Community balance itself is ready',
+         /Community balance is ready/i.test(message), message);
+      ok('the message tells the member to top up',
+         /top up/i.test(message), message);
+    }
+
+    // MiniPay pays the fee in a stablecoin fee-currency, so native CELO is not
+    // the only option and the warning must not fire when stablecoin is held.
+    {
+      const { api } = run({
+        boot: MEMBER, ethers: fakeEthers,
+        p2pWallet: Object.assign(providerStub({ nativeWei: 0n }), { isMiniPay: () => true }),
+        feeCurrencies: { getBalances: () => Promise.resolve({ cusd: 5, usdt: 0, usdc: 0 }) },
+      });
+      const shortfall = await api._internals.withdrawalGasShortfall(
+        '0x4c0d1f17e83776aa696848b870444e54ec3a2203', AUTH);
+      ok('MiniPay with stablecoin for gas is not warned', shortfall === null, String(shortfall));
+
+      const message = api._internals.withdrawalGasMessage({ required: 10n ** 15n, balance: 0n, miniPay: true });
+      ok('the MiniPay message offers the stablecoin fee option',
+         /stablecoin/i.test(message), message);
+    }
+
+    // An estimate revert is not a funding problem: the preflight must not
+    // block a real withdrawal on it.
+    {
+      const { api } = run({
+        boot: MEMBER, ethers: fakeEthers,
+        p2pWallet: providerStub({
+          nativeWei: 10n ** 18n,
+          estimateGas: () => Promise.reject(new Error('execution reverted')),
+        }),
+      });
+      const shortfall = await api._internals.withdrawalGasShortfall(
+        '0x4c0d1f17e83776aa696848b870444e54ec3a2203', AUTH);
+      ok('a reverted estimate does not block a funded withdrawal', shortfall === null, String(shortfall));
+    }
+
+    // No ethers/P2PWallet yet -> fail open, never block.
+    {
+      const { api } = run({ boot: MEMBER });
+      const shortfall = await api._internals.withdrawalGasShortfall(
+        '0x4c0d1f17e83776aa696848b870444e54ec3a2203', AUTH);
+      ok('a missing provider fails open instead of blocking', shortfall === null, String(shortfall));
+    }
+
+    // The raw wallet string must never reach the member: the catch path routes
+    // an insufficient-funds failure through the real shared formatter.
+    {
+      const { api } = run({ boot: MEMBER });
+      const raw = new Error('insufficient funds for gas * price + value');
+      const friendly = api._internals.describeWithdrawalError(raw);
+      ok('a raw insufficient-funds error becomes CELO guidance',
+         /CELO/.test(friendly) && !/insufficient funds for gas/i.test(friendly), friendly);
+
+      const generic = api._internals.describeWithdrawalError(new Error('execution reverted'));
+      ok('a non-gas failure still gets a human sentence',
+         !!generic && !/^Error:/.test(generic), generic);
+    }
   }
 
   // ── 20e. A refresh during an in-flight fetch is not dropped ──────────────
