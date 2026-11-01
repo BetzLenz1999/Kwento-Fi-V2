@@ -23,7 +23,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
 
 from flask import Blueprint, Response, jsonify, redirect, render_template, request, session
@@ -1303,6 +1303,43 @@ def api_withdrawal_eligibility():
             return jsonify({"success": True, "threshold_met": True,
                             "can_request": False,
                             "message": "Community withdrawals are temporarily paused."})
+        # The vault accepts any amount between its immutable minimum and
+        # maximum, so a balance above the maximum is withdrawable in parts. The
+        # ceiling is the largest single payout the vault and the remaining daily
+        # capacity can pay right now; the member picks any amount up to it.
+        vault_minimum = withdrawal_vault.base_units_to_gd(runtime.min_amount, runtime.decimals)
+        vault_maximum = withdrawal_vault.base_units_to_gd(runtime.max_amount, runtime.decimals)
+        daily_remaining = withdrawal_vault.base_units_to_gd(
+            int(runtime.vault.functions.currentUtcDayRemaining().call()), runtime.decimals)
+        required_minimum = max(rewards.MIN_PAYOUT_GD, vault_minimum)
+        ceiling = min(balance, vault_maximum, daily_remaining)
+        bounds = {
+            "balance_gd": str(balance),
+            "min_withdrawable_gd": str(required_minimum),
+            "max_withdrawable_gd": str(max(Decimal("0"), ceiling)),
+            "daily_remaining_gd": str(daily_remaining),
+        }
+        if ceiling < required_minimum:
+            # The vault maximum or the remaining daily capacity is below the
+            # minimum, so no single withdrawal can be signed at all. Say which
+            # one, because the fix differs (wait for the UTC reset vs. nothing
+            # the member can do).
+            exhausted = daily_remaining <= vault_maximum
+            return jsonify({
+                "success": True, "threshold_met": True, "can_request": False, **bounds,
+                "message": ("The vault's remaining daily payout capacity is below the minimum right now. "
+                            "Please retry after the UTC daily limit resets.")
+                if exhausted else
+                ("This vault's per-withdrawal maximum is below the minimum, so no withdrawal can be "
+                 "signed. Contact support."),
+            })
+        return jsonify({
+            "success": True, "threshold_met": True, "can_request": True, **bounds,
+            "amount_gd": str(ceiling),
+            "message": ("Your Community balance is ready for a direct wallet withdrawal. Choose any amount "
+                        "from " + f"{required_minimum:g}" + " to " + f"{ceiling:g}" +
+                        " G$. You will pay Celo gas."),
+        })
     except withdrawal_vault.WithdrawalConfigError as exc:
         logger.warning("community withdrawal readiness check failed: %s",
                        withdrawal_vault.operator_detail(exc))
@@ -1314,11 +1351,6 @@ def api_withdrawal_eligibility():
         return jsonify({"success": True, "threshold_met": True,
                         "can_request": False,
                         "message": "Withdrawal readiness could not be verified. Please retry shortly."})
-    return jsonify({
-        "success": True, "threshold_met": True, "can_request": True,
-        "amount_gd": str(balance),
-        "message": "Your full available Community balance is ready for a direct wallet withdrawal. You will pay Celo gas.",
-    })
 
 
 @community_feed_bp.route("/api/rewards/withdrawals/authorize", methods=["POST"])
@@ -1398,13 +1430,41 @@ def api_withdrawal_authorize():
             return jsonify({"success": False, "error": "The full Community ledger could not be read. No authorization was issued."}), 503
         if balance <= 0:
             return jsonify({"success": False, "error": "There is no available Community G$ balance to withdraw."}), 409
-        amount_base = withdrawal_vault.amount_to_base_units(balance, runtime.decimals)
         min_gd = withdrawal_vault.base_units_to_gd(runtime.min_amount, runtime.decimals)
+        max_gd = withdrawal_vault.base_units_to_gd(runtime.max_amount, runtime.decimals)
         required_minimum = max(rewards.MIN_PAYOUT_GD, min_gd)
-        if balance < required_minimum or amount_base < runtime.min_amount:
+        requested = str(_json_body().get("amount_gd") or "").strip()
+        if requested:
+            try:
+                amount_gd = Decimal(requested)
+            except (InvalidOperation, ValueError):
+                return jsonify({"success": False, "error": "Enter a valid G$ amount to withdraw."}), 400
+            if not amount_gd.is_finite() or amount_gd <= 0:
+                return jsonify({"success": False, "error": "Enter a valid G$ amount to withdraw."}), 400
+        else:
+            # No amount means "as much as I can take right now": the whole
+            # balance, trimmed to what the vault and the daily cap allow.
+            amount_gd = min(balance, max_gd)
+        try:
+            amount_base = withdrawal_vault.amount_to_base_units(amount_gd, runtime.decimals)
+        except withdrawal_vault.WithdrawalPolicyError:
+            return jsonify({"success": False,
+                            "error": "That amount cannot be sent exactly in GoodDollar token units. Use at most 18 decimal places."}), 409
+        if amount_gd > balance:
+            return jsonify({"success": False, "error": "That is more than your available Community balance."}), 409
+        if amount_gd < required_minimum or amount_base < runtime.min_amount:
             return jsonify({"success": False, "error": f"At least {required_minimum:g} G$ is required to withdraw."}), 409
         if amount_base > runtime.max_amount:
-            return jsonify({"success": False, "error": "Your full balance exceeds this vault's per-withdrawal limit. Partial withdrawals are not enabled."}), 409
+            return jsonify({"success": False, "error": f"A single withdrawal is limited to {max_gd:g} G$ by the vault contract. Withdraw {max_gd:g} G$ now and the rest afterwards."}), 409
+        # A leftover below the minimum could never be withdrawn on its own, so
+        # it would silently strand the member's G$. Require either the full
+        # balance or a remainder the member can still take out later.
+        remainder = balance - amount_gd
+        if remainder > 0 and remainder < required_minimum:
+            return jsonify({"success": False,
+                            "error": (f"Leaving {remainder:g} G$ behind is below the {required_minimum:g} G$ minimum "
+                                      f"and could not be withdrawn later. Withdraw your full {balance:g} G$ balance, "
+                                      f"or leave at least {required_minimum:g} G$.")}), 409
         db_row = _open_withdrawal(db, member)
         latest = runtime.web3.eth.get_block("latest")
         chain_now = int(latest["timestamp"])
@@ -1447,11 +1507,11 @@ def api_withdrawal_authorize():
                 db_row = None
             elif not has_signature and (
                 int(db_row.get("amount_base_units") or 0) != amount_base
-                or Decimal(str(db_row.get("amount_gd") or "0")) != balance
+                or Decimal(str(db_row.get("amount_gd") or "0")) != amount_gd
             ):
                 _withdrawal_rpc(db, "community_reward_withdrawal_fail", {
                     "p_withdrawal_id": db_row["withdrawal_id"],
-                    "p_reason": "Community ledger balance changed before authorization",
+                    "p_reason": "Community withdrawal request changed before authorization",
                     "p_tx_hash": None,
                 })
                 db_row = None
@@ -1464,14 +1524,18 @@ def api_withdrawal_authorize():
             return jsonify({"success": False, "error": "Community withdrawals are temporarily paused."}), 409
         daily_remaining = int(runtime.vault.functions.currentUtcDayRemaining().call())
         if amount_base > daily_remaining:
-            return jsonify({"success": False, "error": "The vault's remaining daily limit is below your full Community balance. Please retry after the UTC daily limit resets."}), 409
+            affordable = withdrawal_vault.base_units_to_gd(daily_remaining, runtime.decimals)
+            if daily_remaining < runtime.min_amount:
+                return jsonify({"success": False, "error": "The vault's remaining daily payout capacity is below the minimum right now. Please retry after the UTC daily limit resets."}), 409
+            return jsonify({"success": False,
+                            "error": f"The vault can pay {affordable:g} G$ more today. Withdraw that amount now and the rest after the UTC daily limit resets."}), 409
         nonce = int(runtime.vault.functions.nonces(member).call())
         deadline = min(chain_now + 10 * 60,
                        chain_now + withdrawal_vault.MAX_AUTHORIZATION_LIFETIME_SECONDS)
         withdrawal_id = "0x" + secrets.token_hex(32)
         prepared = _withdrawal_rpc(db, "community_reward_withdrawal_prepare", {
             "p_wallet_address": member.lower(),
-            "p_amount_gd": str(balance),
+            "p_amount_gd": str(amount_gd),
             "p_amount_base_units": str(amount_base),
             "p_withdrawal_id": withdrawal_id,
             "p_idempotency_key": "community_withdrawal:" + withdrawal_id.lower(),
