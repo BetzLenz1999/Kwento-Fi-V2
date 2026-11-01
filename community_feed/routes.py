@@ -36,6 +36,7 @@ from . import vault_donations
 from . import notifications as community_notifications
 from . import withdrawals as withdrawal_vault
 from . import post_support
+from . import garden_sponsors
 
 logger = logging.getLogger(__name__)
 
@@ -1748,6 +1749,26 @@ def api_vault_donation_cancel():
         return _private_withdrawal_json({"success": False, "error": "Not authenticated"}, 401)
     result = vault_donations.cancel_intent(wallet, _json_body().get("donation_id"))
     return _private_withdrawal_json(result, 200 if result.get("success") else 400)
+
+
+@community_feed_bp.route("/api/garden/sponsor-acknowledgement", methods=["POST"])
+def api_garden_sponsor_acknowledgement():
+    """Verify a confirmed Garden contribution and publish its pinned acknowledgement."""
+    if not svc.is_enabled():
+        return _disabled_response()
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "Cross-origin Garden acknowledgement rejected"}, 403)
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Not authenticated"}, 401)
+    wait = _throttle(f"garden-sponsor-ack:{wallet}", 5)
+    if wait:
+        return _private_withdrawal_json({"success": False, "error": "Please wait before verifying another Garden contribution.", "retry_after": wait}, 429)
+    result = garden_sponsors.acknowledge(wallet, _json_body().get("tx_hash"))
+    if result.get("status") == "confirming":
+        return _private_withdrawal_json(result, 202)
+    status = 200 if result.get("success") else (503 if result.get("code") == "retryable" else 400)
+    return _private_withdrawal_json(result, status)
 
 
 @community_feed_bp.route("/api/daily-learn", methods=["GET"])
