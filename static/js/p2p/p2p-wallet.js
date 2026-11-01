@@ -223,6 +223,15 @@ window.P2PWallet = (function () {
     // browser, while Claim (wallet-main.js `_awaitEthProvider`) already waited.
     // Poll for a bounded window instead, mirroring that helper.
     async function _awaitInjected(timeoutMs) {
+        var shared = window.GMCommunityWalletDetection;
+        if (shared && typeof shared.resolveInjectedProvider === "function") {
+            if (_wcFamilyLogin() || _isPrivyLogin() || _isLocalLogin()) return null;
+            return shared.resolveInjectedProvider({
+                wallet: cfg.wallet,
+                loginMethod: cfg.loginMethod,
+                timeoutMs: timeoutMs
+            });
+        }
         var immediate = _getInjected();
         if (immediate) return immediate;
         // Only the injected path waits; WC/Privy/local have their own signer and
@@ -260,6 +269,10 @@ window.P2PWallet = (function () {
     // WalletConnect/Privy login must never prompt a stray extension.
     async function _injectedMatchingWallet() {
         if (_wcFamilyLogin() || _isPrivyLogin() || _isLocalLogin()) return null;
+        var shared = window.GMCommunityWalletDetection;
+        if (shared && typeof shared.resolveInjectedProvider === "function") {
+            return shared.resolveInjectedProvider({ wallet: cfg.wallet, loginMethod: cfg.loginMethod, timeoutMs: 0 });
+        }
         var candidates = _collectInjected();
         if (!candidates.length) return null;
         var want = String(cfg.wallet || "").toLowerCase();
@@ -342,10 +355,11 @@ window.P2PWallet = (function () {
         // Wallet especially) may publish it only a few hundred ms after the tap.
         var ep = await _awaitInjected();
         if (ep) {
-            // Then prefer the provider that actually holds the session wallet, so
-            // a multi-extension phone cannot sign from an unrelated account. Runs
-            // on the now-populated candidate list, so late injections get the same
-            // account binding as an immediate one.
+            // The canonical resolver has already matched the session account.
+            // Keep the legacy per-provider matcher only as a fallback for pages
+            // where the shared helper is not loaded (e.g. older cached markup).
+            var shared = window.GMCommunityWalletDetection;
+            if (shared && typeof shared.resolveInjectedProvider === "function") return ep;
             var matched = await _injectedMatchingWallet();
             return matched || ep;
         }
