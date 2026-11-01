@@ -33,6 +33,21 @@ notification_service = NotificationService()
 # Logger for this module
 logger = logging.getLogger(__name__)
 
+# Keep this import at module scope so Vercel's Python bundler traces and ships
+# the helper even though it is used by a single request handler. Retain the
+# app-level fallback so a missing helper only disables Garden gas sponsorship.
+try:
+    from community_garden_gas_sponsor import (
+        GardenGasSponsorError as _GardenGasSponsorError,
+        sponsor_for_purchase as _garden_gas_sponsor_for_purchase,
+    )
+except Exception as exc:
+    _garden_gas_sponsor_import_error = exc
+    _GardenGasSponsorError = None
+    _garden_gas_sponsor_for_purchase = None
+else:
+    _garden_gas_sponsor_import_error = None
+
 # Simple TTL caches for high-frequency public endpoints
 _price_visibility_cache: dict = {"data": None, "expires": 0}
 _feature_visibility_cache: dict = {"data": None, "expires": 0}
@@ -752,17 +767,20 @@ def sponsor_community_garden_gas():
     if fv_gate:
         return fv_gate
     data = request.get_json(silent=True) or {}
-    try:
-        from community_garden_gas_sponsor import sponsor_for_purchase, GardenGasSponsorError
-    except Exception:
-        logger.exception('Community Garden gas sponsorship module could not be loaded')
+    if _garden_gas_sponsor_import_error is not None:
+        logger.error(
+            'Community Garden gas sponsorship module could not be loaded: %s',
+            _garden_gas_sponsor_import_error,
+            exc_info=(type(_garden_gas_sponsor_import_error), _garden_gas_sponsor_import_error,
+                      _garden_gas_sponsor_import_error.__traceback__),
+        )
         return jsonify({'success': False, 'error': 'Garden gas support is temporarily unavailable.'}), 503
     try:
-        result = sponsor_for_purchase(
+        result = _garden_gas_sponsor_for_purchase(
             session.get('wallet'), data.get('seed_count'), str(data.get('request_id') or '').strip()
         )
         return jsonify(result), 200
-    except GardenGasSponsorError as exc:
+    except _GardenGasSponsorError as exc:
         return jsonify({'success': False, 'error': str(exc), **exc.detail}), exc.status_code
     except Exception:
         logger.exception('Community Garden gas sponsorship failed')
