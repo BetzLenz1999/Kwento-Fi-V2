@@ -6,6 +6,7 @@
 
     var BOOT = window.GM_COMMUNITY_BOOT || {};
     var WALLET = BOOT.wallet || '';
+    var FV_VERIFIED = BOOT.fvVerified === true;
     var prompt = null;
     var learn = null;
     var selectedAnswer = null;
@@ -17,6 +18,7 @@
     var _advanceTimer = null;
     var _questionDeadline = 0;
     var _activeQuestion = null;
+    var _quizStarted = false;
     var DAILY_QUESTION_SECONDS = 20;
     var ANSWER_FEEDBACK_DELAY_MS = 1000;
 
@@ -79,6 +81,7 @@
     function renderLearnMessage(message, actionLabel, action) {
         stopQuestionTimer();
         clearAdvanceTimer();
+        _quizStarted = false;
         var root = $('cfDailyLearnContent');
         if (!root) return;
         root.textContent = '';
@@ -210,7 +213,7 @@
     function startQuestionTimer(question) {
         stopQuestionTimer();
         _activeQuestion = question || null;
-        if (!WALLET || !_activeQuestion) return;
+        if (!WALLET || !FV_VERIFIED || !_quizStarted || !_activeQuestion) return;
         _questionDeadline = Date.now() + DAILY_QUESTION_SECONDS * 1000;
         updateQuestionTimer();
         _questionTimer = window.setInterval(updateQuestionTimer, 250);
@@ -224,6 +227,7 @@
     function renderCompleted(data) {
         stopQuestionTimer();
         clearAdvanceTimer();
+        _quizStarted = false;
         var score = Number(data.score) || 0;
         var total = Number(data.total_questions) || 2;
         var root = $('cfDailyLearnContent');
@@ -287,6 +291,12 @@
         if (_busy || (!skipped && answer === null)) return;
         if (!WALLET) {
             renderLearnMessage('Connect a verified wallet to submit your Daily Learn answers.', 'Sign in', connect);
+            return;
+        }
+        if (!FV_VERIFIED) {
+            renderLearnMessage('Complete face verification in Wallet before starting Daily Learn.', 'Open Wallet', function () {
+                window.location.href = '/wallet';
+            });
             return;
         }
         _busy = true;
@@ -362,6 +372,7 @@
         if (WALLET) {
             var timer = el('div', 'cf-daily-learn-timer');
             timer.id = 'cfDailyLearnTimer';
+            timer.hidden = !_quizStarted;
             timer.setAttribute('role', 'timer');
             timer.setAttribute('aria-label', 'Time remaining for this question');
             timer.setAttribute('aria-live', 'off');
@@ -391,6 +402,7 @@
         (question.options || []).forEach(function (label, index) {
             var choice = el('button', 'cf-daily-learn-option', String.fromCharCode(65 + index) + '. ' + label);
             choice.type = 'button';
+            choice.disabled = !!WALLET && (!FV_VERIFIED || !_quizStarted);
             choice.setAttribute('aria-pressed', 'false');
             choice.onclick = function () {
                 if (_busy) return;
@@ -420,8 +432,35 @@
             answerStatus.setAttribute('role', 'status');
             answerStatus.setAttribute('aria-live', 'polite');
             root.appendChild(answerStatus);
+            var startButton = el('button', 'cf-daily-learn-next', 'Start Quiz');
+            startButton.type = 'button';
+            startButton.disabled = !FV_VERIFIED;
+            if (!FV_VERIFIED) {
+                answerStatus.textContent = 'Face verification is required before you can start.';
+                var verifyButton = el('button', 'cf-daily-learn-next', 'Verify in Wallet');
+                verifyButton.type = 'button';
+                verifyButton.onclick = function () { window.location.href = '/wallet'; };
+                root.appendChild(startButton);
+                root.appendChild(verifyButton);
+            } else if (!_quizStarted) {
+                answerStatus.textContent = 'The timer will begin when you start the quiz.';
+                startButton.onclick = function () {
+                    if (_busy || _quizStarted || !FV_VERIFIED) return;
+                    _quizStarted = true;
+                    Array.prototype.forEach.call(options.children, function (choice) {
+                        choice.disabled = false;
+                    });
+                    startButton.remove();
+                    var timer = $('cfDailyLearnTimer');
+                    if (timer) timer.hidden = false;
+                    answerStatus.textContent = 'Quiz started. Choose an answer before time runs out.';
+                    startQuestionTimer(question);
+                };
+                root.appendChild(startButton);
+            } else {
+                startQuestionTimer(question);
+            }
         }
-        if (WALLET) startQuestionTimer(question);
     }
 
     function loadLearn(notice) {
