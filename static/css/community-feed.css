@@ -2100,6 +2100,7 @@ body.cf-modal-open { overflow: hidden; }
     font-size: 0.78rem;
     font-weight: 800;
 }
+.cf-daily-learn-timer[hidden] { display: none; }
 .cf-daily-learn-timer-value { font-variant-numeric: tabular-nums; }
 .cf-daily-learn-timer-track {
     grid-column: 1 / -1;
@@ -2157,6 +2158,7 @@ body.cf-modal-open { overflow: hidden; }
 }
 .cf-daily-learn-connect { background: var(--cf-accent); color: #fff; border-color: var(--cf-accent); }
 .cf-daily-learn-connect:disabled { opacity: 0.55; cursor: not-allowed; }
+.cf-daily-learn-next:disabled { opacity: 0.55; cursor: not-allowed; }
 .cf-daily-learn-result { margin-top: 0.7rem; line-height: 1.5; }
 .cf-daily-learn-reset { margin-top: 0.7rem; }
 .cf-daily-learn-answer-status { min-height: 1.2em; margin-top: 0.6rem; color: var(--cf-dim); font-size: 0.82rem; }
