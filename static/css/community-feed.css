@@ -2166,6 +2166,15 @@ body.cf-modal-open { overflow: hidden; }
 .cf-earn-withdraw { background: var(--cf-earn-accent); color: #fff; }
 .cf-earn-withdraw:disabled { opacity: 0.65; cursor: wait; }
 .cf-earn-withdraw-status { align-self: center; color: var(--cf-earn-ink); font-size: 0.88rem; line-height: 1.45; }
+.cf-earn-withdraw-field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 160px; min-width: 0; }
+.cf-earn-withdraw-field > span { color: var(--cf-dim); font-size: 0.78rem; font-weight: 600; }
+.cf-earn-withdraw-field input {
+    width: 100%; min-height: 44px; padding: 0.5rem 0.75rem;
+    border: 1px solid var(--cf-hairline); border-radius: 10px;
+    background: var(--cf-surface, #fff); color: var(--cf-earn-ink);
+    font-size: 1rem; font-variant-numeric: tabular-nums;
+}
+.cf-earn-withdraw-bounds { flex: 1 0 100%; color: var(--cf-dim); font-size: 0.76rem; line-height: 1.4; }
 
 /* Larger targets and a readable tooltip/title on every reaction option. */
 .cf-chip { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
