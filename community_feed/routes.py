@@ -248,16 +248,29 @@ def _community_garden_boot() -> dict[str, object]:
     ) or "").strip()
     token_address = (os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A") or "").strip()
     valid_address = lambda value: bool(re.fullmatch(r"0x[a-fA-F0-9]{40}", value))
-    configured = valid_address(garden_address) and valid_address(token_address)
-    legacy_configured = valid_address(legacy_garden_address)
-    if requested and not configured:
-        logger.warning("Community Garden was requested but contract/token address configuration is invalid; keeping it hidden")
+    token_configured = valid_address(token_address)
+    v2_configured = valid_address(garden_address) and token_configured
+    legacy_address_valid = valid_address(legacy_garden_address)
+    if legacy_address_valid and valid_address(garden_address) and legacy_garden_address.lower() == garden_address.lower():
+        logger.warning("Community Garden V1 and V2 addresses are identical; disabling the legacy contract path")
+        legacy_address_valid = False
+    legacy_configured = legacy_address_valid and token_configured
+    # Keep the V1 lookup configured while V1 positions may still exist. If this
+    # address is absent/invalid, do not allow new V2 planting to bypass the
+    # duplicate-position guard.
+    v2_enabled = bool(requested and v2_configured and legacy_address_valid)
+    legacy_enabled = bool(requested and legacy_configured)
+    enabled = bool(v2_enabled or legacy_enabled)
+    if requested and not enabled:
+        logger.warning("Community Garden was requested but neither a valid Garden contract nor token configuration is available; keeping it hidden")
     return {
-        "enabled": bool(requested and configured),
-        "contractAddress": garden_address if configured else "",
+        "enabled": enabled,
+        "v2Enabled": v2_enabled,
+        "legacyEnabled": legacy_enabled,
+        "contractAddress": garden_address if v2_enabled else "",
         "legacyContractAddress": legacy_garden_address if legacy_configured else "",
         "legacyContractVersion": "v1" if legacy_configured else "",
-        "tokenAddress": token_address if valid_address(token_address) else "",
+        "tokenAddress": token_address if token_configured else "",
         "chainId": 42220,
         "growthPeriodSeconds": 86400,
         "maxSeeds": 100,
