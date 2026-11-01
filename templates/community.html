@@ -592,10 +592,9 @@
                         <h2 id="cfPinnedDonationsTitle">Pinned donor acknowledgments</h2>
                         <span>Confirmed post-support and Community Vault donation posts stay pinned.</span>
                     </div>
-                    {# Collapsed by default: donor acknowledgments are not the reason
-                       a member opens the feed, and while they render at the top of
-                       the stream they push the real posts down. The toggle reveals
-                       them in place (no request — the posts are already loaded). #}
+                    {# Collapsed by default in the regular feed so donor cards do not
+                       push member posts down. A canonical link to a pinned donor
+                       post automatically expands this panel and reveals that post. #}
                     <button type="button" class="cf-pinned-donations-toggle"
                             id="cfPinnedDonationsToggle"
                             onclick="GMCommunity.togglePinnedDonations()"
@@ -1015,6 +1014,7 @@ window.GM_COMMUNITY_BOOT = {
     messagesEnabled: {{ 'true' if messages_enabled else 'false' }},
     postSupport: {{ post_support_config|default({'enabled': false}, true)|tojson }},
     wallet: {{ (wallet or '')|tojson }},
+    fvVerified: {{ 'true' if fv_verified|default(false, true) else 'false' }},
     username: {{ (username or '')|tojson }},
     avatarUrl: {{ (avatar_url or '')|tojson }},
     usernameRequired: {{ 'true' if username_required else 'false' }},
