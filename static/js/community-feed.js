@@ -1686,10 +1686,15 @@
         var body = el('div', 'cf-card-body');
         var donor = String(post.donor_name || '').trim() || 'A Community member';
         var amount = String(post.amount_gd || '').trim() || '0';
+        var isGardenSponsor = post.donation_type === 'garden_sponsor';
         body.appendChild(el('p', 'cf-donation-card-copy',
-            donor + ' donated ' + amount + ' G$ to the Community Withdrawal Vault.'));
+            isGardenSponsor
+                ? donor + ' contributed ' + amount + ' G$ to the KwentoFi Garden sponsor pool.'
+                : donor + ' donated ' + amount + ' G$ to the Community Withdrawal Vault.'));
         body.appendChild(el('small', 'cf-donation-card-meta',
-            'Thank you for supporting the Community.'));
+            isGardenSponsor
+                ? 'Thank you for helping fund optional Garden bonuses.'
+                : 'Thank you for supporting the Community.'));
 
         var links = el('div', 'cf-donation-card-links');
         var linkedIn = String(post.linkedin_url || '');
