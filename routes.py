@@ -754,6 +754,10 @@ def sponsor_community_garden_gas():
     data = request.get_json(silent=True) or {}
     try:
         from community_garden_gas_sponsor import sponsor_for_purchase, GardenGasSponsorError
+    except Exception:
+        logger.exception('Community Garden gas sponsorship module could not be loaded')
+        return jsonify({'success': False, 'error': 'Garden gas support is temporarily unavailable.'}), 503
+    try:
         result = sponsor_for_purchase(
             session.get('wallet'), data.get('seed_count'), str(data.get('request_id') or '').strip()
         )
@@ -7002,6 +7006,7 @@ def admin_dashboard():
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
+        garden_v2_admin_contract_address=os.environ.get("COMMUNITY_GARDEN_CONTRACT_ADDRESS", ""),
     ))
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
