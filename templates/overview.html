@@ -722,22 +722,21 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         </div>
 
-        <!-- GoodDollar Balance (always visible, never inside a submenu) -->
+        <!-- Balance is intentionally not fetched on Overview; use Wallet for a live balance. -->
         <div class="balance-card">
             <div class="balance-card-title">💰 GoodDollar Balance</div>
             <div class="balance-grid">
                 <div class="balance-item">
                     <div class="balance-item-label">Your G$ Balance</div>
                     {% if wallet and wallet != 'None' %}
-                    <div class="balance-item-value" id="user-balance">Loading...</div>
-                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 0.2rem;" id="user-balance-usd"></div>
+                    <a class="balance-item-value" href="/wallet">Open Wallet to view balance</a>
                     {% else %}
                     <div class="balance-item-value" style="color: rgba(255,255,255,0.35);">Login to view</div>
                     {% endif %}
                 </div>
                 <div class="balance-item">
                     <div class="balance-item-label">Contract Address</div>
-                    <div class="balance-item-value" style="font-size: 0.85rem;" id="contract-address">Loading...</div>
+                    <a class="balance-item-value" href="/wallet">View Wallet details</a>
                 </div>
                 <div class="balance-item">
                     <div class="balance-item-label">Network</div>
@@ -1483,169 +1482,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return true;
         }
 
-        let _overviewGdBalance = 0;
-
-        function updateBalanceDisplay(data) {
-            const userBalanceEl = document.getElementById('user-balance');
-            const contractEl    = document.getElementById('contract-address');
-            if (data && data.success) {
-                if (userBalanceEl) userBalanceEl.textContent = data.balance_formatted || 'Error';
-                _overviewGdBalance = parseFloat(data.balance) || 0;
-                if (contractEl) {
-                    const addr = data.contract || 'Unknown';
-                    contractEl.textContent = addr.substring(0, 6) + '...' + addr.substring(addr.length - 4);
-                    contractEl.title = addr;
-                }
-                updateOverviewFiatDisplay();
-            } else {
-                if (userBalanceEl) userBalanceEl.textContent = 'Error loading';
-                if (contractEl)    contractEl.textContent    = 'Error loading';
-            }
-        }
-
-        async function loadGdPriceOverview() {
-            try {
-                const visRes = await fetch('/api/price-visibility');
-                const visData = await visRes.json();
-                if (visData.show_price === false) {
-                    const usdEl = document.getElementById('user-balance-usd');
-                    if (usdEl) usdEl.style.display = 'none';
-                    return;
-                }
-                const res = await fetch('/api/gd-price');
-                const data = await res.json();
-                if (data.success && data.prices) {
-                    window._overviewGdPrices = data.prices;
-                    updateOverviewFiatDisplay();
-                }
-            } catch(e) { console.warn('Overview price fetch failed:', e); }
-        }
-
-        function updateOverviewFiatDisplay() {
-            const usdEl = document.getElementById('user-balance-usd');
-            if (!usdEl) return;
-            const prices = window._overviewGdPrices || {};
-            const usdPrice = prices['usd'];
-            if (usdPrice != null && _overviewGdBalance > 0) {
-                const usdValue = _overviewGdBalance * usdPrice;
-                usdEl.textContent = `≈ $${usdValue.toFixed(4)} USD (live)`;
-                usdEl.style.display = 'block';
-            } else {
-                usdEl.style.display = 'none';
-            }
-        }
-
-        async function fetchWithRetry(url, maxRetries = 3) {
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    const response = await fetch(url);
-                    if (!response.ok) {
-                        if (i === maxRetries - 1) throw new Error(`HTTP error! status: ${response.status}`);
-                        await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
-                        continue;
-                    }
-                    const ct = response.headers.get("content-type");
-                    if (!ct || !ct.includes("application/json")) {
-                        if (i === maxRetries - 1) throw new Error('Non-JSON response');
-                        await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
-                        continue;
-                    }
-                    return await response.json();
-                } catch (error) {
-                    if (i === maxRetries - 1) throw error;
-                    await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
-                }
-            }
-        }
-
-        async function loadAnalyticsData() {
-            const walletAddress = "{{ wallet }}";
-            if (walletAddress && walletAddress !== 'None' && walletAddress !== '') {
-                try {
-                    const data = await fetchWithRetry(`/api/balance/${encodeURIComponent(walletAddress)}`);
-                    if (!data || typeof data !== 'object') {
-                        updateBalanceDisplay({ success: false });
-                        return;
-                    }
-                    updateBalanceDisplay(data);
-                } catch (error) {
-                    console.error('Balance API Error:', error.message || error);
-                    updateBalanceDisplay({ success: false });
-                }
-            }
-        }
-
-        async function loadUbiPoolBalance() {
-            const el = document.getElementById('ubiPoolBalance');
-            if (!el) return;
-            try {
-                const res = await fetch('/api/ubi-pool-balance');
-                const data = await res.json();
-                if (data && data.success) {
-                    const num = parseFloat(data.balance) || 0;
-                    const formatted = num.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' G$';
-                    el.textContent = formatted;
-                } else {
-                    el.textContent = '—';
-                }
-            } catch(e) {
-                el.textContent = '—';
-            }
-        }
-
-        const OVERVIEW_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-
         document.addEventListener('DOMContentLoaded', function() {
-            const wallet = '{{ wallet if wallet else "" }}';
-            const hasWallet = wallet && wallet !== 'None' && wallet !== '';
-            let balanceRefreshTimer = null;
-            let poolRefreshTimer = null;
-
-            function refreshVisibleOverviewData() {
-                if (document.visibilityState !== 'visible') return;
-                if (hasWallet) {
-                    loadAnalyticsData();
-                    loadGdPriceOverview();
-                }
-                loadUbiPoolBalance();
-            }
-
-            function stopOverviewRefreshTimers() {
-                if (balanceRefreshTimer !== null) {
-                    clearInterval(balanceRefreshTimer);
-                    balanceRefreshTimer = null;
-                }
-                if (poolRefreshTimer !== null) {
-                    clearInterval(poolRefreshTimer);
-                    poolRefreshTimer = null;
-                }
-            }
-
-            function startOverviewRefreshTimers() {
-                if (document.visibilityState !== 'visible') return;
-                if (hasWallet && balanceRefreshTimer === null) {
-                    balanceRefreshTimer = setInterval(loadAnalyticsData, OVERVIEW_REFRESH_INTERVAL_MS);
-                }
-                if (poolRefreshTimer === null) {
-                    poolRefreshTimer = setInterval(loadUbiPoolBalance, OVERVIEW_REFRESH_INTERVAL_MS);
-                }
-            }
-
-            function handleOverviewVisibilityChange() {
-                if (document.visibilityState === 'visible') {
-                    refreshVisibleOverviewData();
-                    startOverviewRefreshTimers();
-                } else {
-                    stopOverviewRefreshTimers();
-                }
-            }
-
-            document.addEventListener('visibilitychange', handleOverviewVisibilityChange);
-            if (document.visibilityState === 'visible') {
-                refreshVisibleOverviewData();
-                startOverviewRefreshTimers();
-            }
-
             const today = new Date();
             const yyyy  = today.getFullYear();
             const mm    = String(today.getMonth() + 1).padStart(2, '0');
