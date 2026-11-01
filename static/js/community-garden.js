@@ -325,7 +325,37 @@
         return "0x" + Array.from(bytes, function (value) { return value.toString(16).padStart(2, "0"); }).join("");
     }
 
-    async function requestGardenGas(seeds, loaded) {
+    async function waitForSponsoredBalance(provider, wallet, result) {
+        var requiredWei = BigInt(result.estimated_fee_wei || result.amount_wei || "0");
+        if (requiredWei <= 0n || typeof provider.getBalance !== "function") {
+            throw new Error("Could not verify the sponsored CELO balance. No Garden approval or purchase was submitted.");
+        }
+        var waitSeconds = Number(result.post_topup_wait_seconds);
+        if (!Number.isFinite(waitSeconds) || waitSeconds < 30) waitSeconds = 30;
+        var minimumWaitMs = Math.ceil(waitSeconds) * 1000;
+        var timeoutMs = Math.max(120000, minimumWaitMs + 90000);
+        var startedAt = Date.now();
+        while (true) {
+            var balanceReady = false;
+            try { balanceReady = BigInt(await provider.getBalance(wallet)) >= requiredWei; } catch (_) {}
+            var elapsed = Date.now() - startedAt;
+            if (elapsed >= minimumWaitMs && balanceReady) return;
+            if (elapsed >= timeoutMs) {
+                throw new Error("The app gas top-up was confirmed, but the required CELO balance did not appear within 2 minutes. No Garden approval or purchase was submitted; check your wallet balance and retry.");
+            }
+            var remainingSeconds = Math.max(0, Math.ceil((minimumWaitMs - elapsed) / 1000));
+            if (remainingSeconds > 0) {
+                setStatus("Gas top-up confirmed. Waiting " + remainingSeconds + " more seconds and checking your CELO balance before opening your wallet…");
+            } else {
+                setStatus("The 30-second wait is complete. Waiting for enough CELO to appear in your wallet before opening your wallet…");
+            }
+            await new Promise(function (resolve) {
+                window.setTimeout(resolve, Math.min(2000, timeoutMs - elapsed));
+            });
+        }
+    }
+
+    async function requestGardenGas(seeds, loaded, wallet) {
         if (!_gasRequestId || _gasRequestSeeds !== seeds) {
             _gasRequestId = newGasRequestId();
             _gasRequestSeeds = seeds;
@@ -348,6 +378,7 @@
             if (!receipt || Number(receipt.status) !== 1) {
                 throw new Error("The app gas top-up did not confirm. No G$ purchase was made; retry later.");
             }
+            await waitForSponsoredBalance(provider, wallet, result);
             return result;
         }
         setStatus("Your wallet will pay the estimated Celo network fee (" + result.estimated_fee_celo + " CELO). Confirm the seed purchase in your wallet.");
@@ -378,7 +409,7 @@
             var balance = await loaded.token.balanceOf(address);
             if (balance < amount) throw new Error("Insufficient G$ balance for " + seeds + (seeds === 1 ? " seed." : " seeds."));
             var allowance = await loaded.token.allowance(address, boot.contractAddress);
-            await requestGardenGas(seeds, loaded);
+            await requestGardenGas(seeds, loaded, address);
             if (allowance < amount) {
                 setStatus("Approve exactly " + money(amount) + " for this purchase in your Celo wallet.");
                 await send("function approve(address spender,uint256 amount) returns (bool)", [boot.contractAddress, amount], boot.tokenAddress);
