@@ -2872,7 +2872,7 @@ body.cf-push-optin-open { overflow: hidden; }
     padding: 0.7rem 0.8rem;
     border: 1px solid var(--cf-border); border-radius: 15px;
     background: #fff; color: var(--cf-ink); text-align: left;
-    font-family: inherit; cursor: pointer;
+    font-family: inherit; cursor: pointer; text-decoration: none;
     transition: border-color 0.18s ease, background 0.18s ease, transform 0.15s ease;
 }
 .cf-menu-row:hover { border-color: #a5b4fc; background: #f8faff; }
@@ -3434,6 +3434,15 @@ body.cf-page .btn-secondary:hover { background: var(--cf-field); }
 .cf-garden-notice { margin: .9rem 0 .45rem; color: #64748b; font-size: .75rem; line-height: 1.55; }
 .cf-garden-status { min-height: 1.4rem; margin: .4rem 0 0; color: #334155; font-size: .8rem; line-height: 1.5; }
 .cf-garden-status.is-error { color: #b91c1c; font-weight: 700; }
+.cf-garden-processing { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 1.25rem; background: rgba(11, 16, 36, .64); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.cf-garden-processing[hidden] { display: none !important; }
+.cf-garden-processing-card { width: min(420px, calc(100vw - 2.5rem)); box-sizing: border-box; padding: 1.6rem 1.35rem; border: 1px solid rgba(255,255,255,.75); border-radius: 22px; background: #fff; color: #172554; box-shadow: 0 24px 72px rgba(7,12,36,.36); text-align: center; }
+.cf-garden-processing-spinner { display: block; width: 46px; height: 46px; margin: 0 auto 1rem; border: 4px solid #e0e7ff; border-top-color: #4f46e5; border-radius: 50%; animation: cfGardenProcessingSpin .85s linear infinite; }
+.cf-garden-processing-card strong { display: block; color: #1e1b4b; font-size: 1.08rem; font-weight: 900; }
+.cf-garden-processing-card p { margin: .65rem 0; color: #334155; font-size: .9rem; line-height: 1.55; }
+.cf-garden-processing-card small { display: block; color: #64748b; font-size: .75rem; line-height: 1.5; }
+@keyframes cfGardenProcessingSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cf-garden-processing-spinner { animation-duration: 2.5s; } }
 .cf-garden-intro-premium { align-items: center; border-color: #c7d2fe; background: radial-gradient(circle at top right, rgba(99,102,241,.12), transparent 42%), linear-gradient(135deg, #f5f3ff 0%, #eff6ff 52%, #f0fdf4 100%); }
 .cf-garden-eyebrow { display: block; margin-bottom: .25rem; color: #4f46e5; font-size: .62rem; font-weight: 900; letter-spacing: .14em; }
 .cf-garden-intro-premium > div > strong { display: block; color: #172554; font-size: 1.08rem; font-weight: 900; }
