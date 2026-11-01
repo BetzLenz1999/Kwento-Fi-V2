@@ -861,6 +861,14 @@
             <p class="cf-garden-status" id="cfGardenStatus" role="status" aria-live="polite">Connect your Celo wallet to load Garden details.</p>
         </div>
     </section>
+    <div class="cf-garden-processing" id="cfGardenProcessing" hidden aria-hidden="true">
+        <div class="cf-garden-processing-card" role="status" aria-live="polite" aria-atomic="true">
+            <span class="cf-garden-processing-spinner" aria-hidden="true"></span>
+            <strong id="cfGardenProcessingTitle">Preparing your Garden</strong>
+            <p id="cfGardenProcessingMessage"></p>
+            <small>Keep this page open. Your wallet will ask you to approve the transactions after the gas top-up is confirmed.</small>
+        </div>
+    </div>
 </div>
 {% endif %}
 
