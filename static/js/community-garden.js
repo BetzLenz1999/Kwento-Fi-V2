@@ -336,6 +336,10 @@
         return loaded.provider.sendTx(to, abi, methodArgs, "0x0", { waitForReceipt: true });
     }
 
+    function showWalletProcessing(title, message) {
+        showGardenProcessing(title || "Waiting for wallet confirmation", message || "Confirm the transaction in your wallet. Keep this page open while it is processed on Celo…");
+    }
+
     function newGasRequestId() {
         var bytes = new Uint8Array(32);
         if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
@@ -432,15 +436,15 @@
             var allowance = await loaded.token.allowance(address, boot.contractAddress);
             await requestGardenGas(seeds, loaded, address);
             if (allowance < amount) {
-                setStatus("Approve exactly " + money(amount) + " for this purchase in your Celo wallet.");
+                showWalletProcessing("Approve your G$ purchase", "Approve exactly " + money(amount) + " in your wallet. The Garden purchase will continue after this approval is confirmed.");
                 await send("function approve(address spender,uint256 amount) returns (bool)", [boot.contractAddress, amount], boot.tokenAddress);
             }
-            setStatus("Confirm the Garden purchase in your wallet. Your seeds will be planted after the transaction confirms.");
+            showWalletProcessing("Confirm your Garden purchase", "Confirm the seed purchase in your wallet. Your seeds will be planted after the transaction is confirmed on Celo…");
             await send("function buyAndPlant(uint256 seedCount)", [BigInt(seeds)], boot.contractAddress);
             _gasRequestId = null;
             _gasRequestSeeds = null;
             await refresh();
-            setStatus("Garden purchase submitted. Your 24-hour cycle begins when the transaction confirms on Celo.");
+            setStatus("Garden purchase confirmed. Your 24-hour growth cycle has started.");
         } catch (error) {
             setStatus((error && error.message) || "Garden purchase failed or was cancelled.", true);
         } finally {
@@ -451,13 +455,13 @@
 
     async function harvest() {
         if (_busy) return; if (fvBlocked("harvest")) return;
-        try { if (!_selectedGarden || !_selectedGarden.active) throw new Error("Select an active Garden position first."); setBusy(true); setStatus("Confirm harvest from the selected " + _selectedGarden.version.toUpperCase() + " Garden in your wallet."); await send("function harvestAndWithdraw() returns (uint256 principalReturned,uint256 sponsorBonus)", [], _selectedGarden.address); await refresh(); setStatus("Harvest transaction submitted; both Garden deployments have been refreshed."); }
-        catch (error) { setStatus(error.message || "Harvest failed or was cancelled.", true); } finally { setBusy(false); }
+        try { if (!_selectedGarden || !_selectedGarden.active) throw new Error("Select an active Garden position first."); setBusy(true); showWalletProcessing("Confirm your Garden harvest", "Confirm the harvest from the selected " + _selectedGarden.version.toUpperCase() + " Garden in your wallet. Waiting for Celo confirmation…"); await send("function harvestAndWithdraw() returns (uint256 principalReturned,uint256 sponsorBonus)", [], _selectedGarden.address); await refresh(); setStatus("Harvest confirmed. Your Garden principal and any available bonus were withdrawn."); }
+        catch (error) { setStatus(error.message || "Harvest failed or was cancelled.", true); } finally { hideGardenProcessing(); setBusy(false); }
     }
     async function exit() {
         if (_busy) return; if (fvBlocked("exit the Garden")) return;
-        try { if (!_selectedGarden || !_selectedGarden.active) throw new Error("Select an active Garden position first."); setBusy(true); setStatus("Confirm early exit from the selected " + _selectedGarden.version.toUpperCase() + " Garden."); await send("function exitGarden() returns (uint256 principalReturned)", [], _selectedGarden.address); await refresh(); setStatus("Exit submitted; both Garden deployments have been refreshed."); }
-        catch (error) { setStatus(error.message || "Garden exit failed or was cancelled.", true); } finally { setBusy(false); }
+        try { if (!_selectedGarden || !_selectedGarden.active) throw new Error("Select an active Garden position first."); setBusy(true); showWalletProcessing("Confirm your Garden exit", "Confirm the early exit from the selected " + _selectedGarden.version.toUpperCase() + " Garden in your wallet. Waiting for Celo confirmation…"); await send("function exitGarden() returns (uint256 principalReturned)", [], _selectedGarden.address); await refresh(); setStatus("Garden exit confirmed. Your principal was returned."); }
+        catch (error) { setStatus(error.message || "Garden exit failed or was cancelled.", true); } finally { hideGardenProcessing(); setBusy(false); }
     }
 
     async function sponsor() {
@@ -484,19 +488,20 @@
             if (balance < amount) throw new Error("Insufficient G$ balance for this contribution.");
             var allowance = await loaded.token.allowance(wallet, boot.contractAddress);
             if (allowance < amount) {
-                setStatus("Approve exactly " + amountText + " G$ for the sponsor contribution in your Celo wallet.");
+                showWalletProcessing("Approve your sponsor contribution", "Approve exactly " + amountText + " G$ in your wallet. The contribution will continue after this approval is confirmed.");
                 await send("function approve(address spender,uint256 amount) returns (bool)", [boot.contractAddress, amount], boot.tokenAddress);
             }
-            setStatus("Confirm the irrevocable sponsor contribution in your Celo wallet.");
+            showWalletProcessing("Confirm sponsor contribution", "Confirm the irreversible " + amountText + " G$ contribution in your wallet. Waiting for Celo confirmation…");
             await send("function fundSponsorPool(uint256 amount)", [amount], boot.contractAddress);
             if (el("cfGardenSponsorAmount")) el("cfGardenSponsorAmount").value = "";
             if (acknowledgement) acknowledgement.checked = false;
             updateSponsorButton();
             await refresh();
-            setStatus("Sponsor contribution submitted. Thank you for helping fund optional Garden bonuses.");
+            setStatus("Sponsor contribution confirmed. Thank you for helping fund optional Garden bonuses.");
         } catch (error) {
             setStatus((error && error.message) || "Sponsor contribution failed or was cancelled.", true);
         } finally {
+            hideGardenProcessing();
             setBusy(false);
         }
     }
