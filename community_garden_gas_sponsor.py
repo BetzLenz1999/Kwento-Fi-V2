@@ -19,6 +19,7 @@ GAS_PRICE_BUFFER_BPS = 13_000
 SPONSOR_TX_GAS = 21_000
 APPROVAL_GAS_FALLBACK = 100_000
 PURCHASE_GAS_FALLBACK = 300_000
+POST_TOPUP_WAIT_SECONDS = 30
 TOKEN_ABI = [
     {"inputs": [{"name": "account", "type": "address"}], "name": "balanceOf", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"},
     {"inputs": [{"name": "owner", "type": "address"}, {"name": "spender", "type": "address"}], "name": "allowance", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"},
@@ -228,7 +229,8 @@ def sponsor_for_purchase(wallet: str, seed_count: int, request_id: str) -> dict:
             amount_prior = int(prior.get("amount_wei") or 0)
             if prior.get("status") == "sent" and tx_hash:
                 return {"success": True, "sponsored": True, "payer": "app", "sponsor_tx_hash": tx_hash,
-                        "amount_wei": str(amount_prior), "amount_celo": f"{amount_prior / WEI_PER_CELO:.8f}", **estimated}
+                        "amount_wei": str(amount_prior), "amount_celo": f"{amount_prior / WEI_PER_CELO:.8f}",
+                        "post_topup_wait_seconds": POST_TOPUP_WAIT_SECONDS, **estimated}
             if prior.get("status") == "reserved" and tx_hash and raw_hex:
                 raw = Web3.to_bytes(hexstr=raw_hex)
                 if Web3.to_hex(Web3.keccak(raw)).lower() != tx_hash.lower():
@@ -239,7 +241,8 @@ def sponsor_for_purchase(wallet: str, seed_count: int, request_id: str) -> dict:
                     context.w3.eth.send_raw_transaction(raw)
                 _update(db, request_id, {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat()})
                 return {"success": True, "sponsored": True, "payer": "app", "sponsor_tx_hash": tx_hash,
-                        "amount_wei": str(amount_prior), "amount_celo": f"{amount_prior / WEI_PER_CELO:.8f}", **estimated}
+                        "amount_wei": str(amount_prior), "amount_celo": f"{amount_prior / WEI_PER_CELO:.8f}",
+                        "post_topup_wait_seconds": POST_TOPUP_WAIT_SECONDS, **estimated}
             raise GardenGasSponsorError("A gas-support transaction is being reconciled. Retry shortly.", status_code=409)
 
         if balance > threshold:
@@ -295,7 +298,8 @@ def sponsor_for_purchase(wallet: str, seed_count: int, request_id: str) -> dict:
                                             status_code=503, detail={"sponsored": False, "sponsor_tx_hash": tx_hash}) from exc
         _update(db, request_id, {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat()})
         return {"success": True, "sponsored": True, "payer": "app", "sponsor_tx_hash": tx_hash,
-                "amount_wei": str(required), "amount_celo": f"{required / WEI_PER_CELO:.8f}", **estimated}
+                "amount_wei": str(required), "amount_celo": f"{required / WEI_PER_CELO:.8f}",
+                "post_topup_wait_seconds": POST_TOPUP_WAIT_SECONDS, **estimated}
     except GardenGasSponsorError:
         raise
     except Exception as exc:
