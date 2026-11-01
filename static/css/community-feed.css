@@ -202,7 +202,7 @@ body {
 }
 .cf-notification-badge[hidden] { display: none; }
 .cf-notification-panel {
-    position: absolute; top: calc(100% + 5px); right: 12px; z-index: 1300;
+    position: fixed; top: 64px; right: 12px; z-index: 1301;
     display: flex; flex-direction: column;
     width: min(370px, calc(100vw - 24px));
     max-height: min(70vh, 620px); overflow: hidden;
@@ -230,7 +230,9 @@ body {
 .cf-notification-close:hover,
 .cf-notification-mark-all:not(:disabled):hover,
 .cf-notification-more:hover { background: var(--cf-field); }
-.cf-notification-list { overflow-y: auto; overscroll-behavior: contain; }
+.cf-notification-list {
+    min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain;
+}
 .cf-notification-empty {
     margin: 0; padding: 1.3rem 1rem; color: var(--cf-dim);
     font-size: 0.84rem; text-align: center;
