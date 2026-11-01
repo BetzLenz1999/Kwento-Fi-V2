@@ -3247,7 +3247,7 @@
             } else if (data.eligible === false) {
                 leadEl.textContent = 'Verify your identity to start earning G$.';
             } else if (showBalance && minimum > 0 && amount >= minimum) {
-                leadEl.textContent = 'Your full balance may be ready to withdraw. The vault and identity checks run before signing.';
+                leadEl.textContent = 'Your Community balance is ready to withdraw. The vault and identity checks run before signing.';
             } else {
                 leadEl.textContent = 'Earn G$ from reactions, comments and the '
                     + 'daily quiz.';
@@ -3372,7 +3372,7 @@
                 ? 'Only currently verified wallets earn Community G$. You can still post, comment and react.'
                 : (showBalance && minimum > 0 && amount >= minimum
                     ? 'Withdraw sends G$ directly to your logged-in wallet. You pay Celo gas, so keep a little CELO in your wallet; the ledger is debited only after the vault payout is confirmed.'
-                    : 'Your Community G$ accrues in the ledger. The full balance becomes withdrawable after the minimum is reached and the vault is enabled.');
+                    : 'Your Community G$ accrues in the ledger. You can withdraw once the minimum is reached and the vault is enabled.');
         }
         var withdrawRow = $('cfEarnWithdrawRow');
         var withdrawStatus = $('cfEarnWithdrawStatus');
@@ -3383,6 +3383,10 @@
                 || !_reconciliation.statusLoaded || !!_reconciliation.withdrawalId;
         }
         if (withdrawStatus) withdrawStatus.hidden = true;
+        // The amount field is left blank on purpose: blank means "the most I
+        // can take right now", which the eligibility endpoint resolves to the
+        // vault ceiling. Prefilling the raw balance would seed a number above
+        // the per-withdrawal maximum and fail its own bound check.
         syncWithdrawalActionVisibility();
         var history = $('cfEarnHistory');
         var historyToggle = $('cfEarnHistoryToggle');
@@ -3465,12 +3469,51 @@
                 setStatus(ready.message || 'This wallet is not ready to withdraw yet.');
                 return;
             }
-            var amount = String(ready.amount_gd || 'your full available balance');
-            if (!window.confirm('Withdraw ' + amount + ' G$ to your logged-in wallet? You will pay Celo gas. Confirm the recipient, vault address and network in your wallet before signing.')) return;
+            var resuming = ready.status === 'resume' || ready.status === 'transaction_submitted';
+            var minWithdrawable = Number(ready.min_withdrawable_gd);
+            var maxWithdrawable = Number(ready.max_withdrawable_gd);
+            var boundsEl = $('cfEarnWithdrawBounds');
+            if (boundsEl && !resuming && Number.isFinite(minWithdrawable) && Number.isFinite(maxWithdrawable)) {
+                boundsEl.textContent = 'You can withdraw from ' + formatGd(minWithdrawable)
+                    + ' G$ up to ' + formatGd(maxWithdrawable) + ' G$ right now.';
+            } else if (boundsEl) {
+                boundsEl.textContent = '';
+            }
+            var amountInput = $('cfEarnWithdrawAmount');
+            var typed = amountInput ? String(amountInput.value || '').trim() : '';
+            var amountGd = typed;
+            if (resuming) {
+                // A reservation already exists; the server re-signs that exact
+                // stored amount, so the input must not change or block it.
+                amountGd = String(ready.amount_gd || '');
+            } else if (typed) {
+                var parsed = Number(typed);
+                if (!Number.isFinite(parsed) || parsed <= 0) {
+                    setStatus('Enter a valid G$ amount to withdraw.');
+                    return;
+                }
+                // Mirror the server's bounds before it signs anything, so the
+                // member sees the reason instead of a rejected authorization.
+                if (Number.isFinite(minWithdrawable) && parsed < minWithdrawable) {
+                    setStatus('The minimum withdrawal is ' + formatGd(minWithdrawable) + ' G$.');
+                    return;
+                }
+                if (Number.isFinite(maxWithdrawable) && parsed > maxWithdrawable) {
+                    setStatus('You can withdraw up to ' + formatGd(maxWithdrawable) + ' G$ right now.');
+                    return;
+                }
+                amountGd = typed;
+            } else if (Number.isFinite(maxWithdrawable) && maxWithdrawable > 0) {
+                // Blank means "the most I can take right now", which is the
+                // whole balance unless the vault or the daily cap trims it.
+                amountGd = String(ready.max_withdrawable_gd);
+            }
+            var amountLabel = amountGd || String(ready.amount_gd || 'your available balance');
+            if (!window.confirm('Withdraw ' + amountLabel + ' G$ to your logged-in wallet? You will pay Celo gas. Confirm the recipient, vault address and network in your wallet before signing.')) return;
 
             if (button) button.textContent = 'Preparing…';
             var authResult = await api('/community/api/rewards/withdrawals/authorize', {
-                method: 'POST', body: '{}'
+                method: 'POST', body: JSON.stringify(resuming ? {} : { amount_gd: amountGd })
             });
             var authData = authResult && authResult.data;
             var withdrawalId = authData && authData.withdrawal_id;
