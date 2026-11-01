@@ -1421,7 +1421,7 @@
         video.controls = true;
         video.preload = 'metadata';
         video.playsInline = true;
-        video.muted = true;
+        video.muted = false;
         video.setAttribute('aria-label', videoLabel);
         if (item.poster) video.poster = item.poster;
         video.src = item.url;
@@ -2464,6 +2464,7 @@
             video.controls = true;
             video.autoplay = true;
             video.playsInline = true;
+            video.muted = false;
             video.src = url;
             body.appendChild(video);
         } else {
@@ -4172,6 +4173,20 @@
         });
     }
 
+    function positionNotificationPanel() {
+        if (!_notificationPanelOpen) return;
+        var panel = $('cfNotificationPanel');
+        var button = $('cfNotificationButton');
+        if (!panel || !button) return;
+        // Escape the sticky header's stacking context so header controls cannot
+        // cover the first notification. Keep the panel anchored to the bell.
+        if (panel.parentElement !== document.body) document.body.appendChild(panel);
+        var rect = button.getBoundingClientRect();
+        var top = Math.max(8, rect.bottom + 8);
+        panel.style.top = top + 'px';
+        panel.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
+        panel.style.maxHeight = Math.max(160, window.innerHeight - top - 12) + 'px';
+    }
     function openNotifications() {
         if (!WALLET) { requiresLogin(); return; }
         var panel = $('cfNotificationPanel');
@@ -4179,6 +4194,7 @@
         if (!panel || !button) return;
         _notificationPanelOpen = true;
         panel.hidden = false;
+        positionNotificationPanel();
         button.setAttribute('aria-expanded', 'true');
         loadNotifications(false);
         var close = panel.querySelector('.cf-notification-close');
@@ -4254,6 +4270,8 @@
     function initNotifications() {
         if (!WALLET || !$('cfNotificationButton')) return;
         loadNotifications(false);
+        window.addEventListener('resize', positionNotificationPanel);
+        window.addEventListener('scroll', positionNotificationPanel, true);
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape' && _notificationPanelOpen) closeNotifications(true);
         });
