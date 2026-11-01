@@ -2872,7 +2872,7 @@ body.cf-push-optin-open { overflow: hidden; }
     padding: 0.7rem 0.8rem;
     border: 1px solid var(--cf-border); border-radius: 15px;
     background: #fff; color: var(--cf-ink); text-align: left;
-    font-family: inherit; cursor: pointer;
+    font-family: inherit; cursor: pointer; text-decoration: none;
     transition: border-color 0.18s ease, background 0.18s ease, transform 0.15s ease;
 }
 .cf-menu-row:hover { border-color: #a5b4fc; background: #f8faff; }
