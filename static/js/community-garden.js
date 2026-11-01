@@ -91,6 +91,7 @@
     var _maturityAt = 0;
     var _chainTimeOffset = 0;
     var _plantingPaused = false;
+    var _pendingSponsorTxHash = null;
 
     function el(id) { return document.getElementById(id); }
     function setText(id, value) {
@@ -340,6 +341,20 @@
         showGardenProcessing(title || "Waiting for wallet confirmation", message || "Confirm the transaction in your wallet. Keep this page open while it is processed on Celo…");
     }
 
+    async function publishGardenSponsorAcknowledgement(txHash) {
+        var response = await fetch("/community/api/garden/sponsor-acknowledgement", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tx_hash: txHash })
+        });
+        var result = await response.json().catch(function () { return {}; });
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || "The contribution was confirmed, but its acknowledgement is still processing. Retry this confirmation later; do not contribute again.");
+        }
+        return result;
+    }
+
     function newGasRequestId() {
         var bytes = new Uint8Array(32);
         if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
@@ -467,6 +482,26 @@
     async function sponsor() {
         if (_busy) return;
         if (fvBlocked("sponsor the reward pool")) return;
+        if (_pendingSponsorTxHash) {
+            try {
+                setBusy(true);
+                showGardenProcessing("Retrying Garden acknowledgement", "Your contribution is already confirmed on Celo. Verifying it and restoring the pinned acknowledgement…");
+                await publishGardenSponsorAcknowledgement(_pendingSponsorTxHash);
+                _pendingSponsorTxHash = null;
+                if (el("cfGardenSponsorAmount")) el("cfGardenSponsorAmount").value = "";
+                var pendingAck = el("cfGardenSponsorAck");
+                if (pendingAck) pendingAck.checked = false;
+                updateSponsorButton();
+                await refresh();
+                setStatus("Sponsor contribution confirmed. Your pinned Garden acknowledgement is now visible in the Community Feed.");
+            } catch (retryError) {
+                setStatus("The contribution is confirmed, but the pinned acknowledgement is still processing. Tap contribute again to retry the same confirmation; do not contribute again.", true);
+            } finally {
+                hideGardenProcessing();
+                setBusy(false);
+            }
+            return;
+        }
         var amountText = String((el("cfGardenSponsorAmount") || {}).value || "").trim();
         var acknowledgement = el("cfGardenSponsorAck");
         if (!acknowledgement || !acknowledgement.checked) {
@@ -492,12 +527,22 @@
                 await send("function approve(address spender,uint256 amount) returns (bool)", [boot.contractAddress, amount], boot.tokenAddress);
             }
             showWalletProcessing("Confirm sponsor contribution", "Confirm the irreversible " + amountText + " G$ contribution in your wallet. Waiting for Celo confirmation…");
-            await send("function fundSponsorPool(uint256 amount)", [amount], boot.contractAddress);
+            var sponsorTxHash = await send("function fundSponsorPool(uint256 amount)", [amount], boot.contractAddress);
+            _pendingSponsorTxHash = sponsorTxHash;
+            showGardenProcessing("Publishing your Garden acknowledgement", "Your contribution is confirmed on Celo. Verifying it and adding your pinned acknowledgement to the Community Feed…");
+            try {
+                await publishGardenSponsorAcknowledgement(sponsorTxHash);
+                _pendingSponsorTxHash = null;
+            } catch (ackError) {
+                await refresh();
+                setStatus("Sponsor contribution confirmed, but the pinned acknowledgement is still processing. Retry the same confirmation if needed; do not contribute again.", true);
+                return;
+            }
             if (el("cfGardenSponsorAmount")) el("cfGardenSponsorAmount").value = "";
             if (acknowledgement) acknowledgement.checked = false;
             updateSponsorButton();
             await refresh();
-            setStatus("Sponsor contribution confirmed. Thank you for helping fund optional Garden bonuses.");
+            setStatus("Sponsor contribution confirmed. Your pinned Garden acknowledgement is now visible in the Community Feed.");
         } catch (error) {
             setStatus((error && error.message) || "Sponsor contribution failed or was cancelled.", true);
         } finally {
