@@ -3,7 +3,7 @@
 
     var boot = window.GM_GARDEN_BOOT || {};
     var modal = document.getElementById("cfGardenModal");
-    if (!modal || !boot.enabled || !boot.contractAddress || !boot.tokenAddress) return;
+    if (!modal || !boot.enabled || !boot.tokenAddress || (!boot.v2Enabled && !boot.legacyEnabled)) return;
 
     /* Garden is verified-only, like Swap and Reloadly: buying seeds spends G$
        and earns a share of the reward pool, so an unverified (sybil) wallet
@@ -44,17 +44,26 @@
         return true;
     }
 
-    var GARDEN_ABI = [
+    var V2_GARDEN_ABI = [
         "function goodDollarToken() view returns (address)",
         "function SEED_PRICE() view returns (uint256)",
         "function seedPrice() view returns (uint256)",
         "function MAX_SEEDS() view returns (uint256)",
         "function maxSeeds() view returns (uint16)",
-        "function gardens(address) view returns (uint256 principal,uint64 plantedAt,uint16 seedCount,bool active)",
+        "function gardens(address) view returns (uint256 principal,uint16 bonusBpsAtPlant,uint64 plantedAt,uint16 seedCount,bool active)",
         "function maturityAt(address) view returns (uint256)",
         "function maximumBonus(address) view returns (uint256)",
         "function sponsorRewardPool() view returns (uint256)",
         "function buyAndPlant(uint256 seedCount)",
+        "function harvestAndWithdraw() returns (uint256 principalReturned,uint256 sponsorBonus)",
+        "function exitGarden() returns (uint256 principalReturned)"
+    ];
+    var V1_GARDEN_ABI = [
+        "function goodDollarToken() view returns (address)",
+        "function gardens(address) view returns (uint256 principal,uint64 plantedAt,uint16 seedCount,bool active)",
+        "function maturityAt(address) view returns (uint256)",
+        "function maximumBonus(address) view returns (uint256)",
+        "function sponsorRewardPool() view returns (uint256)",
         "function harvestAndWithdraw() returns (uint256 principalReturned,uint256 sponsorBonus)",
         "function exitGarden() returns (uint256 principalReturned)"
     ];
@@ -63,8 +72,11 @@
         "function allowance(address owner,address spender) view returns (uint256)",
         "function approve(address spender,uint256 amount) returns (bool)"
     ];
-    var _garden = null;
+    var _v2 = null;
+    var _v1 = null;
     var _token = null;
+    var _positions = {};
+    var _selectedVersion = "v1";
     var _ethers = null;
     var _seedPrice = 0n;
     var _maxSeeds = Number(boot.maxSeeds) || 100;
@@ -74,6 +86,7 @@
     var _returnFocus = null;
     var _growthInterval = null;
     var _plantedAt = 0;
+    var _selectedGarden = null;
     var _maturityAt = 0;
     var _chainTimeOffset = 0;
 
@@ -162,7 +175,7 @@
     }
     function setBusy(value) {
         _busy = !!value;
-        ["cfGardenPlantButton", "cfGardenHarvestButton", "cfGardenExitButton", "cfGardenRefresh"].forEach(function (id) {
+        ["cfGardenPlantButton", "cfGardenHarvestButton", "cfGardenExitButton", "cfGardenRefresh", "cfGardenPositionSelect"].forEach(function (id) {
             var button = el(id);
             if (button) button.disabled = _busy;
         });
@@ -193,118 +206,98 @@
     async function contracts() {
         if (Number(boot.chainId) !== 42220) throw new Error("KwentoFi Garden is available on Celo Mainnet only.");
         if (!_ethers) {
-            if (window.GMEthersLoader && typeof window.GMEthersLoader.load === "function") {
-                _ethers = await window.GMEthersLoader.load();
-            } else if (window.ethers) {
-                _ethers = window.ethers;
-            } else {
-                throw new Error("Wallet tools are still loading. Please try again.");
-            }
+            if (window.GMEthersLoader && typeof window.GMEthersLoader.load === "function") _ethers = await window.GMEthersLoader.load();
+            else if (window.ethers) _ethers = window.ethers;
+            else throw new Error("Wallet tools are still loading. Please try again.");
         }
-        if (!window.P2PWallet || typeof window.P2PWallet.getReadProvider !== "function" || typeof window.P2PWallet.sendTx !== "function") {
-            throw new Error("Celo wallet support is not ready. Please reload the Community page.");
+        if (!window.P2PWallet || typeof window.P2PWallet.getReadProvider !== "function" || typeof window.P2PWallet.sendTx !== "function") throw new Error("Celo wallet support is not ready. Please reload the Community page.");
+        window.P2PWallet.configure({ wallet: walletAddress(), chainId: Number(boot.chainId) || 42220, loginMethod: (window.GM_WALLET_BOOT && window.GM_WALLET_BOOT.loginMethod) || "" });
+        var provider = window.P2PWallet.getReadProvider();
+        var configuredTokenAddress = _ethers.getAddress(boot.tokenAddress);
+        async function checkedContract(address, abi) {
+            var c = new _ethers.Contract(_ethers.getAddress(address), abi, provider);
+            var deployedTokenAddress = _ethers.getAddress(await c.goodDollarToken());
+            if (deployedTokenAddress.toLowerCase() !== configuredTokenAddress.toLowerCase()) throw new Error("Garden token configuration does not match the deployed contract. Please contact support.");
+            return c;
         }
-        // Tell the shared signing helper who is logged in. Without this the Garden
-        // signed with empty defaults: a local (in-app) wallet fell through to the
-        // WalletConnect bridge ("No active WalletConnect session.") and an
-        // installed MetaMask extension could sign for an in-app account.
-        window.P2PWallet.configure({
-            wallet: walletAddress(),
-            chainId: Number(boot.chainId) || 42220,
-            loginMethod: (window.GM_WALLET_BOOT && window.GM_WALLET_BOOT.loginMethod) || "",
-        });
-        if (!_garden || !_token) {
-            var provider = window.P2PWallet.getReadProvider();
-            var gardenAddress = _ethers.getAddress(boot.contractAddress);
-            var configuredTokenAddress = _ethers.getAddress(boot.tokenAddress);
-            _garden = new _ethers.Contract(gardenAddress, GARDEN_ABI, provider);
-            var deployedTokenAddress = _ethers.getAddress(await _garden.goodDollarToken());
-            if (deployedTokenAddress.toLowerCase() !== configuredTokenAddress.toLowerCase()) {
-                _garden = null;
-                throw new Error("Garden token configuration does not match the deployed contract. Please contact support.");
-            }
-            try {
-                _seedPrice = BigInt(await _garden.seedPrice());
-            } catch (_) {
-                _seedPrice = BigInt(await _garden.SEED_PRICE());
-            }
-            try {
-                _maxSeeds = Number(await _garden.maxSeeds());
-            } catch (_) {
-                _maxSeeds = Number(await _garden.MAX_SEEDS());
-            }
-            if (!Number.isInteger(_maxSeeds) || _maxSeeds < 1 || _maxSeeds > 1000) {
-                _garden = null;
-                throw new Error("The Garden contract returned an invalid seed limit.");
-            }
-            var seedInput = el("cfGardenSeedCount");
-            if (seedInput) seedInput.max = String(_maxSeeds);
-            var limitLabel = modal.querySelector(".cf-garden-limit");
-            if (limitLabel) limitLabel.textContent = "1–" + _maxSeeds + " seeds";
-            if (_seedPrice <= 0n) {
-                _garden = null;
-                _seedPrice = 0n;
-                throw new Error("The Garden contract returned an invalid seed price.");
-            }
-            _token = new _ethers.Contract(deployedTokenAddress, TOKEN_ABI, provider);
+        if (boot.v2Enabled && !_v2) {
+            if (!boot.contractAddress) throw new Error("Garden V2 is enabled but its contract address is missing.");
+            _v2 = await checkedContract(boot.contractAddress, V2_GARDEN_ABI);
+            try { _seedPrice = BigInt(await _v2.seedPrice()); } catch (_) { _seedPrice = BigInt(await _v2.SEED_PRICE()); }
+            try { _maxSeeds = Number(await _v2.maxSeeds()); } catch (_) { _maxSeeds = Number(await _v2.MAX_SEEDS()); }
+            if (!Number.isInteger(_maxSeeds) || _maxSeeds < 1 || _maxSeeds > 1000 || _seedPrice <= 0n) { _v2 = null; throw new Error("The Garden V2 contract returned invalid planting settings."); }
+            var input = el("cfGardenSeedCount"); if (input) input.max = String(_maxSeeds);
+            var limit = modal.querySelector(".cf-garden-limit"); if (limit) limit.textContent = "1–" + _maxSeeds + " seeds";
+            _token = new _ethers.Contract(configuredTokenAddress, TOKEN_ABI, provider);
         }
-        return { garden: _garden, token: _token, provider: window.P2PWallet };
+        if (boot.legacyEnabled && !_v1) {
+            if (!boot.legacyContractAddress) throw new Error("Legacy Garden is enabled but its contract address is missing.");
+            _v1 = await checkedContract(boot.legacyContractAddress, V1_GARDEN_ABI);
+        }
+        if (!_token) _token = new _ethers.Contract(configuredTokenAddress, TOKEN_ABI, provider);
+        return { v2: _v2, v1: _v1, token: _token, provider: window.P2PWallet };
     }
 
     async function refresh() {
         try {
             var wallet = walletAddress();
             var loaded = await contracts();
-            setText("cfGardenSeedUnitPrice", money(_seedPrice));
-            updateTotal();
-            var values = await Promise.all([
-                loaded.token.balanceOf(wallet),
-                loaded.garden.sponsorRewardPool(),
-                loaded.garden.gardens(wallet),
-                loaded.garden.maturityAt(wallet),
-                loaded.garden.maximumBonus(wallet)
-            ]);
-            setText("cfGardenBalance", money(values[0]));
-            setText("cfGardenPool", money(values[1]));
-            var record = values[2];
-            var active = isActive(record);
-            var plantPanel = el("cfGardenPlantPanel");
-            var activePanel = el("cfGardenActivePanel");
-            if (plantPanel) plantPanel.hidden = active;
-            if (activePanel) activePanel.hidden = !active;
-            if (!active) {
-                _plantedAt = 0;
-                _maturityAt = 0;
-                _chainTimeOffset = 0;
-                stopGrowthTicker();
-                setStatus("Choose 1–" + _maxSeeds + " seeds. Each seed costs " + money(_seedPrice) + ". The app may cover estimated Celo gas for wallets with 0.3 CELO or less, subject to limits.");
-                return;
+            var balance = await loaded.token.balanceOf(wallet);
+            setText("cfGardenBalance", money(balance));
+            _positions = {};
+            async function readPosition(version, contract) {
+                if (!contract) return;
+                var vals = await Promise.all([contract.gardens(wallet), contract.maturityAt(wallet), contract.maximumBonus(wallet), contract.sponsorRewardPool()]);
+                var r = vals[0];
+                _positions[version] = { version: version, contract: contract, address: version === "v1" ? boot.legacyContractAddress : boot.contractAddress, record: r, maturity: Number(vals[1]), bonus: vals[2], pool: vals[3], active: isActive(r) };
             }
-            _plantedAt = Number(record.plantedAt);
-            _maturityAt = Number(values[3]);
-            setText("cfGardenPrincipal", money(record.principal));
-            setText("cfGardenSeedCountValue", String(record.seedCount));
-            setText("cfGardenMaturity", maturityDate(values[3]));
-            setText("cfGardenBonus", money(values[4]) + " max, if pool remains");
-            var chainTimestamp = Math.floor(Date.now() / 1000);
-            try {
-                var latestBlock = await loaded.garden.runner.provider.getBlock("latest");
-                if (latestBlock && Number(latestBlock.timestamp)) chainTimestamp = Number(latestBlock.timestamp);
-            } catch (_) { /* Display can fall back to the device clock if the public RPC is temporarily unavailable. */ }
-            _chainTimeOffset = chainTimestamp - Math.floor(Date.now() / 1000);
-            renderGrowth(_plantedAt, _maturityAt, chainTimestamp);
-            startGrowthTicker();
-            var mature = Number(values[3]) <= chainTimestamp;
-            var harvestButton = el("cfGardenHarvestButton");
-            var exitButton = el("cfGardenExitButton");
-            if (harvestButton) harvestButton.hidden = !mature;
-            if (exitButton) exitButton.hidden = mature;
-            setStatus(mature
-                ? "Your Garden is mature. Harvest returns principal; the optional bonus is limited to the available sponsor pool."
-                : "Your Garden is growing. You may exit early to receive principal only, or wait until maturity to become eligible for an optional sponsor bonus.");
-        } catch (error) {
-            setStatus((error && error.message) || "Could not read Garden details. Check your connection and try again.", true);
-        }
+            // Read each deployment independently; failure of a configured legacy deployment fails closed.
+            if (boot.legacyEnabled) await readPosition("v1", loaded.v1);
+            if (boot.v2Enabled) await readPosition("v2", loaded.v2);
+            var v1 = _positions.v1, v2 = _positions.v2;
+            var choices = [v1, v2].filter(function (x) { return x && x.active; });
+            var selector = el("cfGardenPositionSelect");
+            if (selector) {
+                selector.hidden = choices.length < 2;
+                selector.innerHTML = "";
+                choices.forEach(function (x) { var o = document.createElement("option"); o.value = x.version; o.textContent = x.version === "v1" ? "Legacy Garden (V1)" : "Current Garden (V2)"; selector.appendChild(o); });
+                if (choices.some(function (x) { return x.version === _selectedVersion; })) selector.value = _selectedVersion;
+                else { _selectedVersion = choices[0] ? choices[0].version : "v1"; selector.value = _selectedVersion; }
+            }
+            var position = choices.find(function (x) { return x.version === _selectedVersion; }) || choices[0];
+            var activePanel = el("cfGardenActivePanel"), plantPanel = el("cfGardenPlantPanel");
+            if (activePanel) activePanel.hidden = !position;
+            var legacyUnreadable = !!(boot.legacyEnabled && !v1);
+            var canPlant = !!(boot.v2Enabled && v2 && !legacyUnreadable && !choices.length);
+            if (plantPanel) plantPanel.hidden = !canPlant;
+            var sponsorPanel = modal.querySelector(".cf-garden-sponsor-panel"); if (sponsorPanel) sponsorPanel.hidden = !boot.v2Enabled;
+            if (position) {
+                _selectedVersion = position.version; _selectedGarden = position;
+                setText("cfGardenTitle", position.version === "v1" ? "Your Legacy Garden" : "Your Garden");
+                setText("cfGardenPositionVersion", position.version === "v1" ? "Legacy deployment · V1" : "Current deployment · V2");
+                setText("cfGardenPoolLabel", position.version === "v1" ? "V1 optional sponsor pool" : "V2 optional sponsor pool");
+                setText("cfGardenPool", money(position.pool));
+                var r = position.record; _plantedAt = Number(r.plantedAt); _maturityAt = position.maturity;
+                setText("cfGardenPrincipal", money(r.principal)); setText("cfGardenSeedCountValue", String(r.seedCount));
+                setText("cfGardenMaturity", maturityDate(position.maturity)); setText("cfGardenBonus", money(position.bonus) + " max, if pool remains");
+                var timestamp = Math.floor(Date.now()/1000);
+                try { var block = await position.contract.runner.provider.getBlock("latest"); if (block && Number(block.timestamp)) timestamp = Number(block.timestamp); } catch (_) {}
+                _chainTimeOffset = timestamp - Math.floor(Date.now()/1000); renderGrowth(_plantedAt, _maturityAt, timestamp); startGrowthTicker();
+                var mature = position.maturity <= timestamp;
+                if (el("cfGardenHarvestButton")) el("cfGardenHarvestButton").hidden = !mature;
+                if (el("cfGardenExitButton")) el("cfGardenExitButton").hidden = mature;
+                setStatus("Viewing " + (position.version === "v1" ? "legacy V1" : "current V2") + " Garden. Harvest/exit targets this deployment only.");
+            } else {
+                _selectedGarden = null; _plantedAt = _maturityAt = _chainTimeOffset = 0; stopGrowthTicker();
+                setText("cfGardenTitle", boot.v2Enabled ? "Plant a Garden" : "Your Garden");
+                setText("cfGardenPoolLabel", v2 ? "V2 optional sponsor pool" : (v1 ? "V1 optional sponsor pool" : "Optional sponsor pool"));
+                setText("cfGardenPool", v2 ? money(v2.pool) : (v1 ? money(v1.pool) : "—"));
+                if (legacyUnreadable) setStatus("Legacy Garden could not be read. Planting is disabled to avoid creating a duplicate position.", true);
+                else if (!boot.v2Enabled) setStatus("Your legacy Garden is clear. V2 planting and sponsorship are not available.");
+                else if (v1 && !v1.active && !v2.active) setStatus("Choose 1–" + _maxSeeds + " seeds. Each seed costs " + money(_seedPrice) + ". The app may cover estimated Celo gas for wallets with 0.3 CELO or less, subject to limits.");
+                else setStatus("No active Garden found.");
+            }
+        } catch (error) { setStatus((error && error.message) || "Could not read Garden details. Check your connection and try again.", true); }
     }
 
     async function send(abi, methodArgs, to) {
@@ -336,7 +329,7 @@
         if (!response.ok || !result.success) throw new Error(result.error || "Garden gas support could not be prepared.");
         if (result.sponsored && result.sponsor_tx_hash) {
             setStatus("The app is sponsoring an estimated " + result.estimated_fee_celo + " CELO of gas. Waiting for the top-up to confirm before opening your wallet…");
-            var provider = loaded.garden.runner && loaded.garden.runner.provider;
+            var provider = loaded.v2 && loaded.v2.runner && loaded.v2.runner.provider;
             if (!provider || typeof provider.waitForTransaction !== "function") {
                 throw new Error("Could not monitor the app gas top-up. No Garden purchase was submitted; retry using the same request.");
             }
@@ -352,6 +345,7 @@
 
     async function plant() {
         if (_busy) return;
+        if (!boot.v2Enabled || !_v2) { setStatus("Planting is available only on Garden V2.", true); return; }
         if (fvBlocked("plant seeds")) return;
         var input = el("cfGardenSeedCount");
         var seeds = Number(input && input.value);
@@ -366,6 +360,8 @@
             address = walletAddress();
             setBusy(true);
             var loaded = await contracts();
+            var positions = await Promise.all([boot.legacyEnabled ? _v1.gardens(address) : Promise.resolve(null), _v2.gardens(address)]);
+            if ((positions[0] && isActive(positions[0])) || isActive(positions[1])) throw new Error("An active V1 or V2 Garden already exists. Harvest or exit it before planting again.");
             amount = BigInt(seeds) * _seedPrice;
             var balance = await loaded.token.balanceOf(address);
             if (balance < amount) throw new Error("Insufficient G$ balance for " + seeds + (seeds === 1 ? " seed." : " seeds."));
@@ -389,35 +385,14 @@
     }
 
     async function harvest() {
-        if (_busy) return;
-        if (fvBlocked("harvest")) return;
-        try {
-            setBusy(true);
-            setStatus("Confirm harvest in your Celo wallet. The contract returns principal and any available sponsor-funded bonus.");
-            await send("function harvestAndWithdraw() returns (uint256 principalReturned,uint256 sponsorBonus)", [], boot.contractAddress);
-            await refresh();
-            setStatus("Harvest transaction submitted. Check the wallet and refresh if the on-chain state takes a moment to update.");
-        } catch (error) {
-            setStatus((error && error.message) || "Harvest failed or was cancelled.", true);
-        } finally {
-            setBusy(false);
-        }
+        if (_busy) return; if (fvBlocked("harvest")) return;
+        try { if (!_selectedGarden || !_selectedGarden.active) throw new Error("Select an active Garden position first."); setBusy(true); setStatus("Confirm harvest from the selected " + _selectedGarden.version.toUpperCase() + " Garden in your wallet."); await send("function harvestAndWithdraw() returns (uint256 principalReturned,uint256 sponsorBonus)", [], _selectedGarden.address); await refresh(); setStatus("Harvest transaction submitted; both Garden deployments have been refreshed."); }
+        catch (error) { setStatus(error.message || "Harvest failed or was cancelled.", true); } finally { setBusy(false); }
     }
-
     async function exit() {
-        if (_busy) return;
-        if (fvBlocked("exit the Garden")) return;
-        try {
-            setBusy(true);
-            setStatus("Confirm early exit in your Celo wallet. This returns principal only; no bonus is paid.");
-            await send("function exitGarden() returns (uint256 principalReturned)", [], boot.contractAddress);
-            await refresh();
-            setStatus("Exit transaction submitted. Your principal is returned when the transaction confirms; no bonus is paid on early exit.");
-        } catch (error) {
-            setStatus((error && error.message) || "Garden exit failed or was cancelled.", true);
-        } finally {
-            setBusy(false);
-        }
+        if (_busy) return; if (fvBlocked("exit the Garden")) return;
+        try { if (!_selectedGarden || !_selectedGarden.active) throw new Error("Select an active Garden position first."); setBusy(true); setStatus("Confirm early exit from the selected " + _selectedGarden.version.toUpperCase() + " Garden."); await send("function exitGarden() returns (uint256 principalReturned)", [], _selectedGarden.address); await refresh(); setStatus("Exit submitted; both Garden deployments have been refreshed."); }
+        catch (error) { setStatus(error.message || "Garden exit failed or was cancelled.", true); } finally { setBusy(false); }
     }
 
     async function sponsor() {
@@ -434,6 +409,7 @@
             return;
         }
         try {
+            if (!boot.v2Enabled || !_v2) throw new Error("Sponsorship is available only on Garden V2.");
             var loaded = await contracts();
             var amount = _ethers.parseUnits(amountText, 18);
             if (!amount || amount <= 0n) throw new Error("Contribution must be greater than zero.");
@@ -495,6 +471,8 @@
     var sponsorAcknowledgement = el("cfGardenSponsorAck");
     if (sponsorAcknowledgement) sponsorAcknowledgement.addEventListener("change", updateSponsorButton);
     updateSponsorButton();
+    var positionSelect = el("cfGardenPositionSelect");
+    if (positionSelect) positionSelect.addEventListener("change", function () { _selectedVersion = positionSelect.value; refresh(); });
     document.addEventListener("keydown", function (event) {
         if (!modal.hidden && event.key === "Escape") close();
     });
