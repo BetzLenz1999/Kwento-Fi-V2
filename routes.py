@@ -9306,11 +9306,29 @@ def wallet_prepare_send():
 
 @routes.route("/bridge/")
 @routes.route("/bridge")
+def bridge_page():
+    """Redirect standalone Bridge-page visits into the Community app."""
+    return redirect("/community")
+
+
 @routes.route("/xdc-wallet/")
 @routes.route("/xdc-wallet")
 def xdc_wallet_page():
-    """Redirect standalone Bridge-page visits into the Community app."""
-    return redirect("/community")
+    """XDC Network wallet page"""
+    wallet = session.get("wallet")
+    if not wallet or not session.get("verified"):
+        return redirect(url_for("routes.index"))
+    login_method = session.get("login_method", "")
+    xdc_bridge_contract = os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5")
+    xdc_gd_token_contract = os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c")
+    celo_chain_id = get_env_int("CELO_MAINNET_CHAIN_ID", 42220)
+    return render_template("xdc_wallet.html", wallet=wallet,
+                           login_method=login_method,
+                           xdc_bridge_contract=xdc_bridge_contract,
+                           xdc_gd_token_contract=xdc_gd_token_contract,
+                           celo_chain_id=celo_chain_id,
+                           walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
+                           walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled())
 
 
 @routes.route("/api/xdc/balances", methods=["GET"])
