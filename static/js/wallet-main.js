@@ -1120,39 +1120,45 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             return await _walletGetPrivyProviderIfPreferred({ promptLogin: true, timeoutMs: 10000 });
         }
 
-        // Keep the longer wait for mobile dApp browsers. Trust Wallet is the
-        // most variable, but any mobile wallet can inject late — including
-        // Trust builds that ship a generic UA and so do NOT match
-        // _isTrustWalletMobileContext(). Desktop extensions inject
-        // synchronously, so they keep the short budget.
-        const mobileContext = _isLikelyMobileWalletContext();
-        const trustBudget = _isTrustWalletMobileContext()
-            ? 4200
-            : (mobileContext ? 2500 : 800);
-        const budget = typeof timeoutMs === 'number' ? timeoutMs : trustBudget;
-        const stepMs = 120;
-        const start = Date.now();
-
-        let first = _getEthProvider();
-        // Mobile dApp browsers may expose a temporary window.ethereum shim
-        // before the real Trust provider announces through EIP-6963. Allow the
-        // branded provider to arrive instead of returning the shim immediately.
-        if (first && !mobileContext) return first;
-        while (Date.now() - start < budget) {
-            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
-            await new Promise(r => setTimeout(r, stepMs));
-            const p = _getEthProvider();
-            if (p && (!mobileContext || _isTrustWalletProvider(p) || _isMiniPayProvider(p) ||
-                p.isMetaMask || p.isBraveWallet || p.isCoinbaseWallet)) return p;
-            if (p) first = p;
+        // Use the same bounded, Trust-aware and session-account-bound resolver
+        // as Garden, Daily Task and farming. Keep this call user-initiated: the
+        // shared helper may request account access after passive discovery.
+        const sharedDetection = window.GMCommunityWalletDetection;
+        const loginMethod = (LOGIN_METHOD || '').toLowerCase();
+        let first = null;
+        if (sharedDetection && typeof sharedDetection.resolveInjectedProvider === 'function') {
+            if (loginMethod === 'local') return null;
+            if (!_gmWcLoginMethod()) {
+                const sharedProvider = await sharedDetection.resolveInjectedProvider({
+                    wallet: WALLET,
+                    loginMethod: LOGIN_METHOD,
+                    timeoutMs: timeoutMs
+                });
+                if (sharedProvider) return sharedProvider;
+            }
+        } else if (loginMethod !== 'local' && !_gmWcLoginMethod()) {
+            // Backward-compatible fallback for pages that have not loaded the
+            // shared resolver (e.g. older cached templates during rollout).
+            const mobileContext = _isLikelyMobileWalletContext();
+            const budget = typeof timeoutMs === 'number' ? timeoutMs
+                : (_isTrustWalletMobileContext() ? 4200 : (mobileContext ? 2500 : 800));
+            const start = Date.now();
+            first = _getEthProvider();
+            if (first && !mobileContext) return first;
+            while (Date.now() - start < budget) {
+                try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+                await new Promise(r => setTimeout(r, 120));
+                const p = _getEthProvider();
+                if (p && (!mobileContext || _isTrustWalletProvider(p) || _isMiniPayProvider(p) ||
+                    p.isMetaMask || p.isBraveWallet || p.isCoinbaseWallet)) return p;
+                if (p) first = p;
+            }
+            if (first && mobileContext && _isTrustWalletUA()) return first;
         }
-        // Some Trust dApp browsers expose only an unbranded generic provider.
-        // Accept that candidate only after the full mobile discovery window.
-        if (first && mobileContext && _isTrustWalletUA()) return first;
         // WalletConnect fallback: if no injected provider was found, try the
         // existing WC session so users who logged in via WalletConnect can
         // still sign transactions.
-        if (!first) {
+        if (loginMethod !== 'local' && !first) {
             const wcPreferred = typeof GMWalletConnect !== 'undefined' && GMWalletConnect.isPreferred();
             if (wcPreferred) {
                 const wcProvider = await _walletGetWcProviderIfPreferred();
