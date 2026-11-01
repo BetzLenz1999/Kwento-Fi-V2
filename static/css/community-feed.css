@@ -2872,7 +2872,7 @@ body.cf-push-optin-open { overflow: hidden; }
     padding: 0.7rem 0.8rem;
     border: 1px solid var(--cf-border); border-radius: 15px;
     background: #fff; color: var(--cf-ink); text-align: left;
-    font-family: inherit; cursor: pointer; text-decoration: none;
+    font-family: inherit; cursor: pointer;
     transition: border-color 0.18s ease, background 0.18s ease, transform 0.15s ease;
 }
 .cf-menu-row:hover { border-color: #a5b4fc; background: #f8faff; }
@@ -3375,6 +3375,8 @@ body.cf-page .btn-secondary:hover { background: var(--cf-field); }
 .cf-garden-panel label span { color: #64748b; font-size: .75rem; font-weight: 700; }
 .cf-garden-panel input { width: 100%; box-sizing: border-box; margin-top: .55rem; padding: .8rem .85rem; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #0f172a; font: inherit; font-size: 1rem; font-weight: 750; }
 .cf-garden-panel input:focus { border-color: #4f46e5; outline: 3px solid rgba(99,102,241,.18); }
+.cf-garden-panel select { width: 100%; box-sizing: border-box; margin-top: .55rem; padding: .8rem .85rem; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #0f172a; font: inherit; font-size: 1rem; font-weight: 750; }
+.cf-garden-panel select:focus { border-color: #4f46e5; outline: 3px solid rgba(99,102,241,.18); }
 .cf-garden-total { display: flex; justify-content: space-between; align-items: center; gap: .8rem; margin: .75rem 0; color: #64748b; font-size: .82rem; }
 .cf-garden-total strong { color: #1e1b4b; font-size: 1rem; }
 .cf-garden-primary, .cf-garden-secondary { min-height: 47px; padding: .7rem 1rem; border-radius: 13px; font: inherit; font-size: .88rem; font-weight: 850; cursor: pointer; }
