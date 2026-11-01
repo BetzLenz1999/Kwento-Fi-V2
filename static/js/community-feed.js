@@ -3371,7 +3371,7 @@
             note.textContent = data.eligible === false
                 ? 'Only currently verified wallets earn Community G$. You can still post, comment and react.'
                 : (showBalance && minimum > 0 && amount >= minimum
-                    ? 'Withdraw sends G$ directly to your logged-in wallet. You pay Celo gas; the ledger is debited only after the vault payout is confirmed.'
+                    ? 'Withdraw sends G$ directly to your logged-in wallet. You pay Celo gas, so keep a little CELO in your wallet; the ledger is debited only after the vault payout is confirmed.'
                     : 'Your Community G$ accrues in the ledger. The full balance becomes withdrawable after the minimum is reached and the vault is enabled.');
         }
         var withdrawRow = $('cfEarnWithdrawRow');
@@ -3511,6 +3511,14 @@
             var authWhole = (authUnits / authScale).toString();
             var authFraction = (authUnits % authScale).toString().padStart(authDecimals, '0').replace(/0+$/, '');
             var authAmountGd = authWhole + (authFraction ? '.' + authFraction : '');
+            // The member's wallet pays the Celo fee, so confirm it can before
+            // opening the wallet — otherwise the failure only surfaces as an
+            // opaque "insufficient funds" inside the wallet after approval.
+            var gasShortfall = await withdrawalGasShortfall(authData.vault_address, auth);
+            if (gasShortfall) {
+                setStatus(withdrawalGasMessage(gasShortfall));
+                return;
+            }
             if (!window.confirm('Final review before your wallet opens:\n\n'
                     + 'Amount: ' + authAmountGd + ' G$\n'
                     + 'Recipient (your wallet): ' + auth.recipient + '\n'
@@ -3528,11 +3536,115 @@
                 setStatus(message);
             });
         } catch (error) {
-            setStatus((error && error.message) || 'Withdrawal could not be completed. Check your wallet activity before retrying.');
+            setStatus(describeWithdrawalError(error));
         } finally {
             if (button) { button.disabled = false; button.textContent = 'Withdraw'; }
             if (submissionAttempted) await loadReconciliationStatus();
         }
+    }
+
+    // A Community withdrawal is signed and broadcast by the member's own
+    // wallet, so the wallet — not the app — pays the Celo network fee. A wallet
+    // with no CELO fails INSIDE the wallet with an opaque "insufficient funds"
+    // error after the member already approved, which reads as "the withdrawal
+    // is broken" even though the vault has the balance. Estimate the fee and
+    // read the balance first so the real reason is shown before the wallet
+    // opens. Values mirror P2PWallet so the two never disagree.
+    var WITHDRAWAL_GAS_FALLBACK = 500000n;      // P2PWallet's 0x7A120 fallback
+    var WITHDRAWAL_GAS_BUFFER_BPS = 13000n;     // +30%, P2PWallet's estimate buffer
+    var CELO_FALLBACK_GAS_PRICE_WEI = 500000000000n;
+
+    var WITHDRAWAL_WITHDRAW_ABI = 'function withdraw((address recipient,uint256 amount,bytes32 withdrawalId,uint256 nonce,uint256 deadline,bytes32 projectId) authorization,bytes issuerAuthorization)';
+
+    function formatCeloAmount(wei) {
+        var value = Number(wei) / 1e18;
+        if (!Number.isFinite(value)) return '0';
+        return value.toFixed(value < 0.001 ? 6 : 4).replace(/0+$/, '').replace(/\.$/, '');
+    }
+
+    function isMiniPayWallet() {
+        return !!(window.P2PWallet && typeof window.P2PWallet.isMiniPay === 'function'
+            && window.P2PWallet.isMiniPay());
+    }
+
+    // Returns null when the wallet can pay (or when we cannot tell, so a real
+    // withdrawal is never blocked on a failed probe), else the shortfall.
+    async function withdrawalGasShortfall(vaultAddress, authorization) {
+        if (!vaultAddress || !authorization || typeof window.ethers === 'undefined') return null;
+        if (!window.P2PWallet || typeof window.P2PWallet.getReadProvider !== 'function') return null;
+        var provider;
+        try { provider = window.P2PWallet.getReadProvider(); } catch (_) { return null; }
+        if (!provider || typeof provider.getBalance !== 'function') return null;
+
+        var calldata;
+        try {
+            var iface = new window.ethers.Interface([WITHDRAWAL_WITHDRAW_ABI]);
+            calldata = iface.encodeFunctionData('withdraw', [[
+                authorization.recipient,
+                String(authorization.amount),
+                authorization.withdrawalId,
+                String(authorization.nonce),
+                String(authorization.deadline),
+                authorization.projectId,
+            ], '0x']);
+        } catch (_) { return null; }
+
+        var gasLimit = WITHDRAWAL_GAS_FALLBACK;
+        try {
+            var estimate = await provider.estimateGas({ from: WALLET, to: vaultAddress, data: calldata });
+            if (estimate > 0n) gasLimit = (BigInt(estimate) * WITHDRAWAL_GAS_BUFFER_BPS) / 10000n;
+        } catch (_) { /* an estimate revert is not a gas-funding problem */ }
+
+        var gasPrice = CELO_FALLBACK_GAS_PRICE_WEI;
+        try {
+            var fee = await provider.getFeeData();
+            var quoted = fee && (fee.maxFeePerGas || fee.gasPrice);
+            if (quoted && BigInt(quoted) > 0n) gasPrice = BigInt(quoted);
+        } catch (_) { /* keep the proven Celo fallback */ }
+
+        var required = gasLimit * gasPrice;
+        var native = 0n;
+        try { native = BigInt(await provider.getBalance(WALLET)); } catch (_) { return null; }
+        if (native >= required) return null;
+
+        var miniPay = isMiniPayWallet();
+        if (miniPay && window.GMMinipayFeeCurrencies
+                && typeof window.GMMinipayFeeCurrencies.getBalances === 'function') {
+            // MiniPay settles the fee in a stablecoin fee-currency, so native
+            // CELO is not the only way to pay. Only warn when both are empty.
+            try {
+                var balances = await window.GMMinipayFeeCurrencies.getBalances(provider, WALLET);
+                var stable = Number(balances.cusd || 0) + Number(balances.usdt || 0) + Number(balances.usdc || 0);
+                if (stable > 0) return null;
+            } catch (_) { /* fall through to the warning */ }
+        }
+
+        return { required: required, balance: native, miniPay: miniPay };
+    }
+
+    function withdrawalGasMessage(shortfall) {
+        var needed = formatCeloAmount(shortfall.required);
+        var have = formatCeloAmount(shortfall.balance);
+        var gasOption = shortfall.miniPay
+            ? 'CELO — or a stablecoin (cUSD/USDT/USDC) —'
+            : 'CELO';
+        return 'Your Community balance is ready, but this withdrawal needs a little '
+            + gasOption + ' in your wallet to pay the Celo network fee. You have '
+            + have + ' CELO and need about ' + needed + ' CELO. Top up and try again.';
+    }
+
+    function describeWithdrawalError(error) {
+        var TxError = window.GMTxError;
+        if (TxError && typeof TxError.isInsufficientFunds === 'function' && TxError.isInsufficientFunds(error)) {
+            return isMiniPayWallet()
+                ? 'This withdrawal needs a little CELO or stablecoin (cUSD/USDT/USDC) in your MiniPay wallet to pay the Celo network fee. Top up and try again.'
+                : 'This withdrawal needs a little CELO in your wallet to pay the Celo network fee. Top up CELO and try again.';
+        }
+        if (TxError && typeof TxError.format === 'function') {
+            var friendly = TxError.format(error, { nativeSymbol: 'CELO' });
+            if (friendly) return friendly;
+        }
+        return (error && error.message) || 'Withdrawal could not be completed. Check your wallet activity before retrying.';
     }
 
     function formatGd(value) {
@@ -5608,6 +5720,10 @@
             loadReconciliationStatus: loadReconciliationStatus,
             reconcilePreviousWithdrawal: reconcilePreviousWithdrawal,
             confirmWithdrawalTransaction: confirmWithdrawalTransaction,
+            checkWithdrawalEligibility: checkWithdrawalEligibility,
+            withdrawalGasShortfall: withdrawalGasShortfall,
+            withdrawalGasMessage: withdrawalGasMessage,
+            describeWithdrawalError: describeWithdrawalError,
             formatGd: formatGd,
             getFeed: function () { return _feed; },
             setFeed: function (rows) { _feed = rows; },
