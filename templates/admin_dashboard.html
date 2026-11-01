@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link rel="icon" type="image/svg+xml" href="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - GoodDollar Analytics</title>
@@ -755,6 +756,12 @@
                     <a class="menu-link" onclick="showSection('reward-config-section')">
                         <span class="menu-icon">💰</span>
                         <span>Reward Config</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a class="menu-link" onclick="showSection('garden-v2-admin-section')">
+                        <span class="menu-icon">🌱</span>
+                        <span>Garden V2</span>
                     </a>
                 </li>
                 <li class="menu-item">
@@ -2053,6 +2060,58 @@ OR manually enter HTML content here...
                 </div>
             </div>
 
+            <div class="admin-section" id="garden-v2-admin-section" style="display: none;">
+                <h2>🌱 Community Garden V2</h2>
+                <p>Read live V2 contract settings and submit bounded changes directly from the verified contract owner wallet. V1 positions remain separate and are not managed here.</p>
+                <div class="content-box">
+                    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;">
+                        <strong>V2 Contract:</strong>
+                        <code id="garden-v2-admin-address" style="word-break:break-all;">Loading…</code>
+                        <button class="btn btn-primary" type="button" onclick="loadGardenV2Admin()">Refresh on-chain status</button>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1rem;">
+                        <div><strong>Owner</strong><p id="garden-v2-admin-owner" style="word-break:break-all;">—</p></div>
+                        <div><strong>Seed price</strong><p id="garden-v2-admin-price">—</p></div>
+                        <div><strong>Maximum seeds</strong><p id="garden-v2-admin-max-seeds">—</p></div>
+                        <div><strong>Maximum bonus</strong><p id="garden-v2-admin-bonus">—</p></div>
+                        <div><strong>Planting</strong><p id="garden-v2-admin-pause">—</p></div>
+                        <div><strong>Sponsor pool</strong><p id="garden-v2-admin-pool">—</p></div>
+                        <div><strong>Principal liability</strong><p id="garden-v2-admin-liability">—</p></div>
+                        <div><strong>Solvency</strong><p id="garden-v2-admin-solvent">—</p></div>
+                    </div>
+                    <p id="garden-v2-admin-status" role="status" style="margin-top:1rem;color:rgba(241,245,249,0.75);">Loading Garden V2 configuration…</p>
+                </div>
+                <div class="content-box">
+                    <h3>Update future Garden settings</h3>
+                    <p>Transactions are signed by the V2 contract owner. Contract bounds apply: seed price 1–1,000 G$, max seeds 1–1,000, and bonus 0–50%. Changes affect new plantings only; existing Gardens keep their snapshotted bonus rate.</p>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;">
+                        <div>
+                            <label class="form-label" for="garden-v2-admin-price-input">Seed price (G$)</label>
+                            <input id="garden-v2-admin-price-input" class="form-control" type="number" min="1" max="1000" step="0.000000000000000001" placeholder="10">
+                            <button class="btn btn-primary" type="button" onclick="setGardenV2SeedPrice()" style="margin-top:.75rem;">Update seed price</button>
+                        </div>
+                        <div>
+                            <label class="form-label" for="garden-v2-admin-max-seeds-input">Maximum seeds per Garden</label>
+                            <input id="garden-v2-admin-max-seeds-input" class="form-control" type="number" min="1" max="1000" step="1" placeholder="100">
+                            <button class="btn btn-primary" type="button" onclick="setGardenV2MaxSeeds()" style="margin-top:.75rem;">Update seed limit</button>
+                        </div>
+                        <div>
+                            <label class="form-label" for="garden-v2-admin-bonus-input">Maximum bonus rate (%)</label>
+                            <input id="garden-v2-admin-bonus-input" class="form-control" type="number" min="0" max="50" step="0.01" placeholder="5">
+                            <button class="btn btn-primary" type="button" onclick="setGardenV2Bonus()" style="margin-top:.75rem;">Update bonus cap</button>
+                        </div>
+                        <div>
+                            <strong>New planting</strong>
+                            <p>Pausing planting does not disable harvest or early exit.</p>
+                            <button class="btn btn-danger" id="garden-v2-admin-pause-button" type="button" onclick="toggleGardenV2Planting()" style="margin-top:.75rem;">Pause planting</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="content-box" style="border:1px solid rgba(251,191,36,.35);">
+                    <strong>Safety note</strong>
+                    <p>Garden V1 is not changed. Sponsor contributions remain irrevocable and bonuses depend on available V2 sponsor-pool funds. This dashboard cannot withdraw the sponsor pool or user principal.</p>
+                </div>
+            </div>
             <!-- Reward Configuration Section (NEW) -->
             <div class="admin-section" id="reward-config-section" style="display: none;">
                 <h2>💰 Reward Configuration</h2>
@@ -10182,6 +10241,135 @@ async function loadMinigamesMaintenance() {
                 el.textContent = '✅ Copied!';
                 setTimeout(() => { el.textContent = original; }, 1200);
             });
+        }
+    </script>
+    <script>
+        const GARDEN_V2_ADMIN_ADDRESS = {{ garden_v2_admin_contract_address|default('', true)|tojson }};
+        const GARDEN_V2_ADMIN_ABI = [
+            'function owner() view returns (address)',
+            'function goodDollarToken() view returns (address)',
+            'function seedPrice() view returns (uint256)',
+            'function maxSeeds() view returns (uint16)',
+            'function maxBonusBps() view returns (uint16)',
+            'function plantingPaused() view returns (bool)',
+            'function sponsorRewardPool() view returns (uint256)',
+            'function totalPrincipalLiability() view returns (uint256)',
+            'function isSolvent() view returns (bool)',
+            'function setSeedPrice(uint256)',
+            'function setMaxSeeds(uint16)',
+            'function setMaxBonusBps(uint16)',
+            'function setPlantingPaused(bool)'
+        ];
+        function gardenAdminStatus(message, isError) {
+            const node = document.getElementById('garden-v2-admin-status');
+            if (node) { node.textContent = message; node.style.color = isError ? '#fecaca' : 'rgba(241,245,249,0.75)'; }
+        }
+        function gardenAdminProvider() {
+            if (Array.isArray(window.ethereum && window.ethereum.providers)) {
+                return window.ethereum.providers.find((provider) => provider && provider.isMiniPay) || window.ethereum.providers[0];
+            }
+            return window.ethereum || null;
+        }
+        function gardenAdminFormat(value, decimals) {
+            return window.ethers.formatUnits(value, decimals || 18);
+        }
+        async function gardenAdminContract(write) {
+            if (!/^0x[a-fA-F0-9]{40}$/.test(String(GARDEN_V2_ADMIN_ADDRESS || ''))) {
+                throw new Error('COMMUNITY_GARDEN_CONTRACT_ADDRESS is not configured with a valid V2 address.');
+            }
+            const injected = gardenAdminProvider();
+            if (!injected) throw new Error('Connect the Garden V2 owner wallet in a supported browser wallet to read or update contract settings.');
+            if (window.GMEthersLoader && typeof window.GMEthersLoader.load === 'function') await window.GMEthersLoader.load();
+            if (!window.ethers) throw new Error('Wallet tools are still loading. Refresh the dashboard and retry.');
+            const provider = new window.ethers.BrowserProvider(injected);
+            const network = await provider.getNetwork();
+            if (Number(network.chainId) !== 42220) throw new Error('Switch the connected wallet to Celo Mainnet (chain ID 42220).');
+            const readContract = new window.ethers.Contract(GARDEN_V2_ADMIN_ADDRESS, GARDEN_V2_ADMIN_ABI, provider);
+            if (!write) return { contract: readContract, account: '' };
+            const accounts = await injected.request({ method: 'eth_requestAccounts' });
+            const signer = await provider.getSigner(accounts[0]);
+            const account = await signer.getAddress();
+            const owner = await readContract.owner();
+            if (account.toLowerCase() !== owner.toLowerCase()) throw new Error('Connected wallet is not the current owner of the Garden V2 contract. Settings can only be changed by its owner.');
+            return { contract: readContract.connect(signer), account: account };
+        }
+        async function loadGardenV2Admin() {
+            const addressNode = document.getElementById('garden-v2-admin-address');
+            if (addressNode) addressNode.textContent = GARDEN_V2_ADMIN_ADDRESS || 'Not configured';
+            try {
+                const ctx = await gardenAdminContract(false);
+                const c = ctx.contract;
+                const values = await Promise.all([c.owner(), c.seedPrice(), c.maxSeeds(), c.maxBonusBps(), c.plantingPaused(), c.sponsorRewardPool(), c.totalPrincipalLiability(), c.isSolvent()]);
+                const price = gardenAdminFormat(values[1]);
+                const maxSeeds = Number(values[2]);
+                const bonusBps = Number(values[3]);
+                document.getElementById('garden-v2-admin-owner').textContent = values[0];
+                document.getElementById('garden-v2-admin-price').textContent = `${price} G$ per seed`;
+                document.getElementById('garden-v2-admin-max-seeds').textContent = String(maxSeeds);
+                document.getElementById('garden-v2-admin-bonus').textContent = `${(bonusBps / 100).toFixed(2).replace(/\.00$/, '')}%`;
+                document.getElementById('garden-v2-admin-pause').textContent = values[4] ? 'Paused for new planting' : 'Open for new planting';
+                document.getElementById('garden-v2-admin-pool').textContent = `${gardenAdminFormat(values[5])} G$`;
+                document.getElementById('garden-v2-admin-liability').textContent = `${gardenAdminFormat(values[6])} G$`;
+                document.getElementById('garden-v2-admin-solvent').textContent = values[7] ? 'Solvent' : 'WARNING — accounting invariant failed';
+                document.getElementById('garden-v2-admin-solvent').style.color = values[7] ? '#86efac' : '#fca5a5';
+                document.getElementById('garden-v2-admin-price-input').value = price;
+                document.getElementById('garden-v2-admin-max-seeds-input').value = String(maxSeeds);
+                document.getElementById('garden-v2-admin-bonus-input').value = String(bonusBps / 100);
+                const pauseButton = document.getElementById('garden-v2-admin-pause-button');
+                pauseButton.textContent = values[4] ? 'Resume planting' : 'Pause planting';
+                pauseButton.className = values[4] ? 'btn btn-primary' : 'btn btn-danger';
+                gardenAdminStatus('Garden V2 settings loaded from Celo Mainnet. Verify the owner wallet before submitting any changes.');
+            } catch (error) {
+                gardenAdminStatus(error.message || 'Unable to read the Garden V2 contract.', true);
+            }
+        }
+        async function submitGardenV2AdminChange(method, args, confirmMessage, successMessage) {
+            try {
+                const ctx = await gardenAdminContract(true);
+                if (!window.confirm(confirmMessage)) return;
+                gardenAdminStatus('Please confirm the Garden V2 settings transaction in the contract owner wallet…');
+                const tx = await ctx.contract[method](...args);
+                gardenAdminStatus(`Transaction submitted: ${tx.hash}. Waiting for Celo Mainnet confirmation…`);
+                await tx.wait();
+                gardenAdminStatus(successMessage);
+                await loadGardenV2Admin();
+            } catch (error) {
+                gardenAdminStatus(error.message || 'Garden V2 settings update failed.', true);
+            }
+        }
+        async function setGardenV2SeedPrice() {
+            try {
+                const value = String(document.getElementById('garden-v2-admin-price-input').value || '').trim();
+                const wei = window.ethers.parseUnits(value, 18);
+                if (wei < window.ethers.parseUnits('1', 18) || wei > window.ethers.parseUnits('1000', 18)) throw new Error('Seed price must be between 1 and 1,000 G$.');
+                await submitGardenV2AdminChange('setSeedPrice', [wei], `Set the V2 seed price to ${value} G$ per seed? This affects new Gardens only.`, 'Seed price updated on Garden V2.');
+            } catch (error) { gardenAdminStatus(error.message || 'Enter a valid G$ seed price.', true); }
+        }
+        async function setGardenV2MaxSeeds() {
+            const value = Number(document.getElementById('garden-v2-admin-max-seeds-input').value);
+            if (!Number.isInteger(value) || value < 1 || value > 1000) { gardenAdminStatus('Maximum seeds must be an integer from 1 to 1,000.', true); return; }
+            await submitGardenV2AdminChange('setMaxSeeds', [value], `Set the maximum seeds per new Garden to ${value}?`, 'Maximum seed count updated on Garden V2.');
+        }
+        async function setGardenV2Bonus() {
+            const value = Number(document.getElementById('garden-v2-admin-bonus-input').value);
+            if (!Number.isFinite(value) || value < 0 || value > 50 || Math.round(value * 100) !== value * 100) { gardenAdminStatus('Bonus cap must be 0–50%, in increments of 0.01%.', true); return; }
+            const bps = Math.round(value * 100);
+            await submitGardenV2AdminChange('setMaxBonusBps', [bps], `Set the maximum bonus cap to ${value}% for new Gardens? Existing Gardens retain their snapshotted rate. Bonuses remain limited by sponsor-pool funds.`, 'Maximum bonus rate updated on Garden V2.');
+        }
+        async function toggleGardenV2Planting() {
+            try {
+                const ctx = await gardenAdminContract(false);
+                const paused = await ctx.contract.plantingPaused();
+                const nextPaused = !paused;
+                await submitGardenV2AdminChange('setPlantingPaused', [nextPaused], `${nextPaused ? 'Pause' : 'Resume'} new Garden V2 planting? Existing users can still harvest or exit.`, `New Garden V2 planting ${nextPaused ? 'paused' : 'resumed'}.`);
+            } catch (error) { gardenAdminStatus(error.message || 'Unable to update planting pause.', true); }
+        }
+        const gardenOriginalShowSection = window.showSection;
+        if (typeof gardenOriginalShowSection === 'function') {
+            window.showSection = function(sectionId) {
+                gardenOriginalShowSection.apply(this, arguments);
+                if (sectionId === 'garden-v2-admin-section') loadGardenV2Admin();
+            };
         }
     </script>
 </body>
