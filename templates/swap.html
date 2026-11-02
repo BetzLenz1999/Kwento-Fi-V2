@@ -1,6 +1,6 @@
 {% set brand_display_name = 'KwentoFi' %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if community_embed|default(false) %} class="community-embedded"{% endif %}>
 <head>
     <script>window.GM_DISPLAY_BRAND = {{ brand_display_name|tojson }};</script>
     <meta charset="UTF-8">
@@ -11,9 +11,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="KwentoFi">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/svg+xml" href="/static/branding/goodmarket/goodmarket-icon.svg?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
-    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
@@ -1099,8 +1099,23 @@
             color: var(--text-dim);
         }
         .token-picker-close:hover { background: #faf7f2; }
+        {% if community_embed|default(false) %}
+        html.community-embedded { zoom: 1; }
+        body.community-embedded { min-height: 0; }
+        body.community-embedded .navbar,
+        body.community-embedded .page-header,
+        body.community-embedded #swapTabSwitcher,
+        body.community-embedded #goodswapSubTabSwitcher,
+        body.community-embedded #swapPaneReserve,
+        body.community-embedded #swapPaneBridge { display: none !important; }
+        body.community-embedded .container { width: 100%; max-width: 560px; padding: .75rem; }
+        @supports not (zoom: 1) {
+            html.community-embedded body { transform: none; transform-origin: initial; width: 100%; margin-left: 0; }
+        }
+        {% endif %}
     </style>
     <!-- WalletConnect bridge for users without injected wallet -->
+    {% if not is_guest %}{% include "_reown_appkit_loader.html" %}{% endif %}
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <div id="privyWalletMount" style="display:none"></div>
     <script type="module">
@@ -1222,7 +1237,7 @@
     <!-- Shared Get Started modal styles (guest connect flow). -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
 </head>
-<body>
+<body{% if community_embed|default(false) %} class="community-embedded"{% endif %}>
 
     <!-- Navbar -->
     <nav class="navbar">
@@ -2016,8 +2031,10 @@
         };
     </script>
     <script src="{{ url_for('static', filename='js/swap-core.js', v=ASSET_VERSION) }}"></script>
+    {% if not community_embed|default(false) %}
     <script src="{{ url_for('static', filename='js/swap-reserve.js', v=ASSET_VERSION) }}"></script>
     <script src="{{ url_for('static', filename='js/swap-bridge.js', v=ASSET_VERSION) }}"></script>
+    {% endif %}
     <script src="{{ url_for('static', filename='js/minipay-nav.js') }}"></script>
 
     {% if is_guest %}
