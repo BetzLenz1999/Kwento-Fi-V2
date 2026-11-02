@@ -55,6 +55,7 @@
     var _nextCursor = null;
     var _pinnedDonations = [];
     var _pinnedDonationCursor = null;
+    var _pinnedMemberPosts = [];
     var _pinnedDonationLoading = false;
     // Collapsed by default: the acknowledgments are a reference list, not the
     // reason a visitor opens the feed, and while expanded they sit ABOVE the
@@ -531,6 +532,99 @@
         }
     }
 
+    // Split a caption into plain-text, **bold** and *italic* runs.
+    //
+    // A delimiter only opens emphasis when a non-space follows it, and only
+    // closes it when a non-space precedes it, so "2 * 3" and a trailing "*"
+    // stay literal. An intraword "_" is never emphasis either, otherwise
+    // snake_case identifiers would render slanted.
+    var EMPHASIS_RE = /(\*\*|__)(?=\S)([\s\S]*?\S)\1|(\*|_)(?=\S)([\s\S]*?\S)\3/g;
+
+    function emphasisSegments(text) {
+        var source = String(text === undefined || text === null ? '' : text);
+        var segments = [];
+        var last = 0;
+        var match;
+        EMPHASIS_RE.lastIndex = 0;
+        while ((match = EMPHASIS_RE.exec(source)) !== null) {
+            if (match[3] === '_' && match.index > 0
+                    && /[A-Za-z0-9]/.test(source.charAt(match.index - 1))) {
+                continue;
+            }
+            if (match.index > last) {
+                segments.push({ type: 'text', value: source.slice(last, match.index) });
+            }
+            segments.push(match[1]
+                ? { type: 'bold', value: match[2] }
+                : { type: 'italic', value: match[4] });
+            last = match.index + match[0].length;
+        }
+        if (last < source.length) segments.push({ type: 'text', value: source.slice(last) });
+        return segments;
+    }
+
+    // Render a caption with bold and italic, still DOM nodes only — never
+    // innerHTML. Links keep working inside an emphasized run.
+    function formatInlineInto(node, text) {
+        if (!node) return;
+        emphasisSegments(text).forEach(function (segment) {
+            if (segment.type === 'text') {
+                linkifyInto(node, segment.value);
+                return;
+            }
+            var bold = segment.type === 'bold';
+            var wrap = el(bold ? 'strong' : 'em', bold ? 'cf-fmt-bold' : 'cf-fmt-italic');
+            linkifyInto(wrap, segment.value);
+            node.appendChild(wrap);
+        });
+    }
+
+    // The share text is plain text, so the markup characters are stripped
+    // rather than published as literal asterisks.
+    function stripFormatting(text) {
+        var source = String(text === undefined || text === null ? '' : text);
+        return source.replace(EMPHASIS_RE, function () {
+            var args = Array.prototype.slice.call(arguments);
+            return args[2] !== undefined ? args[2] : args[4];
+        });
+    }
+
+    // Wrap the current selection in a delimiter pair. With nothing selected the
+    // pair is inserted and the caret lands between the markers, so the member
+    // types straight into the emphasis instead of retyping the word.
+    function applyFormat(input, marker) {
+        if (!input) return;
+        var start = input.selectionStart;
+        var end = input.selectionEnd;
+        if (start === undefined || end === undefined) {
+            input.value = String(input.value || '') + marker + marker;
+            return;
+        }
+        var value = String(input.value || '');
+        var selected = value.slice(start, end);
+        input.value = value.slice(0, start) + marker + selected + marker + value.slice(end);
+        var caret = start + marker.length;
+        input.setSelectionRange(caret, caret + selected.length);
+        input.focus();
+        if (typeof input.oninput === 'function') input.oninput();
+    }
+
+    // A live preview under the composer: the member sees the real weight and
+    // slant while typing, which is what makes the markup worth using.
+    function updateFormatPreview(inputId, previewId) {
+        var input = $(inputId);
+        var preview = $(previewId);
+        if (!input || !preview) return;
+        preview.textContent = '';
+        var value = String(input.value || '');
+        if (!value.trim()) {
+            preview.hidden = true;
+            return;
+        }
+        preview.hidden = false;
+        formatInlineInto(preview, value);
+    }
+
     function api(path, options) {
         var opts = options || {};
         opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
@@ -879,6 +973,7 @@
         node.textContent = length + ' / ' + MAX_CAPTION;
         node.className = 'cf-counter'
             + (length > MAX_CAPTION ? ' is-over' : (length > MAX_CAPTION * 0.9 ? ' is-near' : ''));
+        updateFormatPreview('cfCaption', 'cfCaptionPreview');
     }
 
     // A username is required before posting: a post without one renders as a
@@ -1223,6 +1318,17 @@
         });
     }
 
+    function renderPinnedMembers() {
+        var section = $('cfPinnedMembers');
+        var container = $('cfPinnedMemberFeed');
+        if (!section || !container) return;
+        container.textContent = '';
+        section.hidden = !_pinnedMemberPosts.length;
+        _pinnedMemberPosts.forEach(function (post) {
+            container.appendChild(buildCard(post));
+        });
+    }
+
     function renderPinnedDonations() {
         var section = $('cfPinnedDonations');
         var container = $('cfPinnedDonationFeed');
@@ -1309,6 +1415,7 @@
         container.setAttribute('aria-busy', 'false');
         buildRail();
         renderPinnedDonations();
+        renderPinnedMembers();
 
         if (!_feed.length) {
             var empty = $('cfEmpty');
@@ -1859,13 +1966,13 @@
         if (!post.is_mine && post.username) {
             head.appendChild(buildFollowButton(post.username, post.is_following));
         }
-        if (post.is_mine) {
-            var menu = el('button', 'cf-menu-btn', '⋯');
-            menu.type = 'button';
-            menu.setAttribute('aria-label', 'Post options');
-            menu.onclick = function () { openPostMenu(post, menu); };
-            head.appendChild(menu);
-        }
+        // `⋯` is on every post: your own offers edit / pin / delete, another
+        // member's offers support / report.
+        var menu = el('button', 'cf-menu-btn', '⋯');
+        menu.type = 'button';
+        menu.setAttribute('aria-label', 'Post options');
+        menu.onclick = function () { openPostMenu(post, menu); };
+        head.appendChild(menu);
         card.appendChild(head);
 
         // Media. The wrap is kept in scope: the double-tap burst is appended to
@@ -1927,7 +2034,7 @@
                 String(post.username || '').replace(/^@/, ''));
             author.setAttribute('aria-label', 'View @' + post.username + "'s profile");
             caption.appendChild(author);
-            linkifyInto(caption, post.body);
+            formatInlineInto(caption, post.body);
             body.appendChild(caption);
             requestAnimationFrame(function () {
                 // Clamp only when it actually overflows, and always leave a way
@@ -2315,24 +2422,72 @@
 
     // ── Post menu / edit / delete / report ─────────────────────────────────
 
+    function togglePin(post) {
+        var pinning = !post.is_pinned;
+        api('/community/api/posts/' + post.id + '/pin', {
+            method: pinning ? 'POST' : 'DELETE',
+        }).then(function (result) {
+            if (!result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error)
+                    || 'Could not update the pin.');
+            }
+            post.is_pinned = !!result.data.is_pinned;
+            // Only one post per member is pinned, so a new pin releases the
+            // previous one; mirror that locally instead of refetching.
+            if (post.is_pinned) {
+                _pinnedMemberPosts = _pinnedMemberPosts.filter(function (row) {
+                    return String(row.id) !== String(post.id);
+                });
+                _pinnedMemberPosts = [post].concat(_pinnedMemberPosts);
+                _feed = _feed.filter(function (row) {
+                    return String(row.id) !== String(post.id);
+                });
+            } else {
+                _pinnedMemberPosts = _pinnedMemberPosts.filter(function (row) {
+                    return String(row.id) !== String(post.id);
+                });
+                if (!_feed.some(function (row) {
+                        return String(row.id) === String(post.id);
+                    })) {
+                    _feed = [post].concat(_feed);
+                }
+            }
+            renderFeed();
+            toast(post.is_pinned ? 'Post pinned. Pinning is free.' : 'Pin removed.', 'ok');
+        }).catch(function (error) {
+            toast((error && error.message) || 'Could not update the pin.', 'error');
+        });
+    }
+
     function openPostMenu(post, anchor) {
         closePostMenu();
         var menu = el('div', 'cf-menu');
         menu.id = 'cfPostMenu';
         menu.setAttribute('role', 'menu');
 
-        var edit = el('button', 'cf-menu-item', '✏️ Edit caption');
-        edit.type = 'button';
-        edit.setAttribute('role', 'menuitem');
-        edit.onclick = function () { closePostMenu(); openEdit(post); };
-        menu.appendChild(edit);
+        function item(label, icon, onClick, danger) {
+            var button = el('button', 'cf-menu-item' + (danger ? ' is-danger' : ''));
+            button.type = 'button';
+            button.setAttribute('role', 'menuitem');
+            button.appendChild(el('span', 'cf-menu-icon', icon));
+            button.appendChild(el('span', 'cf-menu-label', label));
+            button.onclick = function () { closePostMenu(); onClick(); };
+            menu.appendChild(button);
+        }
 
-        var remove = el('button', 'cf-menu-item is-danger', '🗑 Delete post');
-        remove.type = 'button';
-        remove.setAttribute('role', 'menuitem');
-        remove.onclick = function () { closePostMenu(); deletePost(post); };
-        menu.appendChild(remove);
-
+        if (post.is_mine) {
+            item('Edit caption', '✏️', function () { openEdit(post); });
+            item(post.is_pinned ? 'Unpin from top' : 'Pin to top (free)',
+                post.is_pinned ? '📌' : '📍',
+                function () { togglePin(post); });
+            item('Delete post', '🗑', function () { deletePost(post); }, true);
+        } else if (post.post_type === 'user' && BOOT.postSupport
+                && BOOT.postSupport.enabled) {
+            item('Support with G$', '♥', function () {
+                if (!WALLET) { requiresLogin(); return; }
+                if (window.GMCommunitySupport) window.GMCommunitySupport.open(post);
+            });
+        }
         document.body.appendChild(menu);
         var rect = anchor.getBoundingClientRect();
         menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
@@ -2363,6 +2518,7 @@
         if (!modal || !input) return;
         input.value = post.body || '';
         modal.hidden = false;
+        updateFormatPreview('cfEditCaption', 'cfEditCaptionPreview');
         input.focus();
     }
 
@@ -2430,7 +2586,9 @@
 
     function sharePost(post) {
         var url = window.location.origin + '/community/p/' + encodeURIComponent(post.id);
-        var text = post.body ? post.body.slice(0, 120) : 'Check out this post on ' + DISPLAY_BRAND + ' Community';
+        var text = post.body
+            ? stripFormatting(post.body).slice(0, 120)
+            : 'Check out this post on ' + DISPLAY_BRAND + ' Community';
         var title = post.post_type === 'system_vault_donation'
             ? 'Community Vault donation · ' + DISPLAY_BRAND
             : '@' + (post.username || 'member') + ' on ' + DISPLAY_BRAND + ' Community';
@@ -3829,6 +3987,8 @@
                 _pinnedDonations = Array.isArray(result.data.pinned_posts)
                     ? result.data.pinned_posts : [];
                 _pinnedDonationCursor = result.data.pinned_next_cursor || null;
+                _pinnedMemberPosts = Array.isArray(result.data.pinned_member_posts)
+                    ? result.data.pinned_member_posts : [];
                 maybeRevealFocusedPinnedDonation();
             }
             // Guard a malformed payload: a server bug must not break the page.
@@ -3919,6 +4079,22 @@
     var _communityCardsOpen = false;
     var _communityCardsReturnFocus = null;
     var _communityCardsBodyWasLocked = false;
+    var _messagesPagePrefetched = false;
+
+    function prefetchMessagesPage() {
+        // Opening Messages is a full navigation, so warm the document while the
+        // member is still deciding. It is a hint, never a fetch we await, and it
+        // runs at most once.
+        if (_messagesPagePrefetched || !WALLET) return;
+        _messagesPagePrefetched = true;
+        try {
+            var link = document.createElement('link');
+            link.rel = 'prefetch';
+            link.href = '/messages';
+            link.as = 'document';
+            document.head.appendChild(link);
+        } catch (error) { /* a prefetch hint is never worth failing a tap */ }
+    }
 
     function buildNavItem(item) {
         var isLink = !!item.href;
@@ -3943,6 +4119,13 @@
         icon.setAttribute('aria-hidden', 'true');
         node.appendChild(icon);
         node.appendChild(el('span', 'cf-nav-label', item.label || ''));
+        if (item.action === 'messages') {
+            // Warm the destination on intent so the tap feels instant; the
+            // prefetch is a hint, so a pointer that never lands costs nothing.
+            node.addEventListener('mouseenter', prefetchMessagesPage, { once: true });
+            node.addEventListener('touchstart', prefetchMessagesPage, { once: true, passive: true });
+            node.addEventListener('focus', prefetchMessagesPage, { once: true });
+        }
         node.onclick = function (event) {
             if (item.action === 'menu') {
                 if (event && event.preventDefault) event.preventDefault();
@@ -4018,7 +4201,10 @@
         if (!WALLET || !NAV.some(function (item) { return item.action === 'messages'; })
                 || _messageUnreadLoading) return Promise.resolve(false);
         _messageUnreadLoading = true;
-        return api('/api/messages/conversations').then(function (result) {
+        // The badge is the only thing the feed needs, so it asks the summary
+        // route: a fixed three queries, versus the inbox's per-conversation
+        // lookups. The full list is loaded on /messages, when it is opened.
+        return api('/api/messages/summary').then(function (result) {
             var data = result && result.data;
             var count = data && Number(data.unread_conversation_count);
             if (!result.ok || !data || data.success !== true || !isFinite(count) || count < 0) {
@@ -4912,6 +5098,25 @@
 
     function bind() {
         bindAirtimeVerificationBridge();
+        // The B / I buttons write into whichever caption field is on screen;
+        // the toolbar markup carries the target ids, so the same handler serves
+        // the composer and the edit modal.
+        document.querySelectorAll('.cf-fmt-btn').forEach(function (button) {
+            button.addEventListener('click', function (event) {
+                if (event && event.preventDefault) event.preventDefault();
+                var target = $(button.getAttribute('data-target') || '');
+                var marker = button.getAttribute('data-marker') || '';
+                var previewId = button.getAttribute('data-preview') || '';
+                applyFormat(target, marker);
+                if (previewId) updateFormatPreview(button.getAttribute('data-target'), previewId);
+            });
+        });
+        var editInput = $('cfEditCaption');
+        if (editInput) {
+            editInput.addEventListener('input', function () {
+                updateFormatPreview('cfEditCaption', 'cfEditCaptionPreview');
+            });
+        }
         var input = $('cfCaption');
         if (input) {
             input.addEventListener('input', function () {
@@ -5702,6 +5907,13 @@
             timeAgo: timeAgo,
             countLabel: countLabel,
             linkifyInto: linkifyInto,
+            formatInlineInto: formatInlineInto,
+            emphasisSegments: emphasisSegments,
+            stripFormatting: stripFormatting,
+            applyFormat: applyFormat,
+            togglePin: togglePin,
+            openPostMenu: openPostMenu,
+            renderPinnedMembers: renderPinnedMembers,
             buildCard: buildCard,
             buildNavItem: buildNavItem,
             buildFollowButton: buildFollowButton,
