@@ -319,8 +319,8 @@ body {
     font-family: inherit; font-size: 0.95rem; line-height: 1.5;
     color: var(--cf-ink); background: var(--cf-field);
     border: 1.5px solid var(--cf-accent-border); border-radius: 12px;
-    padding: 0.7rem 0.8rem; width: 100%; resize: vertical;
-    min-height: 62px; max-height: 220px;
+    padding: 0.7rem 0.8rem; width: 100%; resize: none; overflow-y: hidden;
+    min-height: 62px; max-height: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 /* The placeholder is the invitation, so it carries the emphasis. Weight 700 is
@@ -760,6 +760,30 @@ body {
     font-size: 0.92rem; line-height: 1.55; white-space: pre-wrap;
     overflow-wrap: anywhere; color: var(--cf-ink);
 }
+/* Bold and italic must read as clearly different weights, not one slant. */
+.cf-fmt-bold { font-weight: 800; }
+.cf-fmt-italic { font-style: italic; color: var(--cf-ink-2); }
+.cf-fmt-toolbar {
+    display: flex; align-items: center; gap: 0.35rem;
+    margin: 0.15rem 0 0.4rem;
+}
+.cf-fmt-btn {
+    font-family: inherit; font-size: 0.9rem; line-height: 1;
+    width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center;
+    color: var(--cf-ink); background: var(--cf-field);
+    border: 1px solid var(--cf-hairline); border-radius: 10px; cursor: pointer;
+}
+.cf-fmt-btn:hover { background: var(--cf-card); border-color: var(--cf-ink-2); }
+.cf-fmt-btn:active { transform: scale(0.96); }
+.cf-fmt-btn:focus-visible { outline: 2px solid var(--cf-accent, #6366f1); outline-offset: 1px; }
+.cf-fmt-hint { color: var(--cf-dim); font-size: 0.74rem; }
+.cf-caption-preview {
+    margin-top: 0.4rem; padding: 0.55rem 0.7rem;
+    background: var(--cf-field); border: 1px dashed var(--cf-hairline);
+    border-radius: 10px; font-size: 0.9rem; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: anywhere; color: var(--cf-ink);
+}
+.cf-caption-preview[hidden] { display: none !important; }
 .cf-caption-author {
     font-weight: 800; color: var(--cf-ink); text-decoration: none;
     margin-right: 0.35rem;
@@ -966,9 +990,25 @@ body {
     font-family: inherit; font-size: 0.85rem; text-align: left;
     color: var(--cf-ink); background: transparent; border: none;
     border-radius: 8px; padding: 0.55rem 0.7rem; cursor: pointer;
+    display: flex; align-items: center; gap: 0.6rem; min-height: 40px;
 }
 .cf-menu-item:hover { background: var(--cf-card); }
 .cf-menu-item.is-danger { color: var(--cf-danger); }
+.cf-menu-icon { width: 1.15rem; text-align: center; flex: none; }
+.cf-menu-label { flex: 1; }
+/* The member pins sit above the chronological list, so they need the same
+   card width as the stream and a little separation from it. */
+.cf-pinned-member-feed {
+    display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 0.9rem;
+}
+.cf-pinned-members .cf-card { position: relative; }
+.cf-pinned-members .cf-card::after {
+    content: 'Pinned'; position: absolute; top: 0.6rem; right: 2.6rem;
+    font-size: 0.66rem; font-weight: 700; letter-spacing: 0.02em;
+    color: var(--cf-ink-2); background: var(--cf-field);
+    border: 1px solid var(--cf-hairline); border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+}
 
 /* ── Toast ────────────────────────────────────────────────────────────────── */
 .cf-toast {
@@ -2338,6 +2378,18 @@ body.cf-modal-open { overflow: hidden; }
         align-items: start;
         gap: 0.45rem;
     }
+    /* The toolbar appears before the caption in the DOM, but it belongs below
+       the compact avatar / caption / media row. Without an explicit placement,
+       CSS Grid auto-placement puts it in the first 44px column, where the hint
+       wraps over the B/I controls on phones. Give it the full composer width so
+       both controls remain visible and easy to tap. */
+    .cf-layout .cf-composer-entry-row .cf-fmt-toolbar {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        width: 100%;
+        margin: 0;
+        flex-wrap: wrap;
+    }
     .cf-layout .cf-composer-head { min-width: 0; }
     .cf-layout .cf-composer-who { display: none; }
     .cf-layout .cf-composer-entry-row .cf-avatar-btn {
@@ -2350,10 +2402,11 @@ body.cf-modal-open { overflow: hidden; }
     .cf-layout .cf-caption-wrap { grid-column: 2; grid-row: 1; }
     .cf-layout .cf-caption-wrap .cf-caption-input {
         min-height: 48px;
-        height: 48px;
-        max-height: 9rem;
+        height: auto;
+        max-height: none;
         padding: 0.55rem 0.62rem;
-        resize: vertical;
+        resize: none;
+        overflow-y: hidden;
     }
     .cf-layout .cf-composer-entry-row .cf-composer-actions {
         grid-column: 3;
