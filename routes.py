@@ -8608,6 +8608,68 @@ def swap_page():
     return redirect("/community")
 
 
+@routes.route("/community/embed/uniswap-v3")
+def community_uniswap_v3_embed():
+    """Render the shared Uniswap V3 pane for the Community iframe modal."""
+    wallet = session.get("wallet")
+    is_guest = not (wallet and session.get("verified"))
+    if is_guest:
+        wallet = ""
+
+    # Preserve the Swap maintenance gate for the embedded entry point.
+    try:
+        supabase = get_supabase_client()
+        if supabase:
+            result = safe_supabase_operation(
+                lambda: supabase.table("maintenance_settings")
+                    .select("feature_name,is_maintenance")
+                    .eq("feature_name", "swap_feature")
+                    .execute(),
+                operation_name="check embedded Uniswap V3 visibility",
+            )
+            if result and result.data and any(
+                row.get("feature_name") == "swap_feature" and row.get("is_maintenance", False)
+                for row in result.data
+            ):
+                return render_template("feature_unavailable.html", feature_name="Swap", wallet=wallet)
+    except Exception:
+        pass
+
+    ua = (request.headers.get("User-Agent") or "").lower()
+    return render_template(
+        "swap.html",
+        wallet=wallet,
+        login_method=session.get("login_method", ""),
+        walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
+        walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
+        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
+        privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
+        reserve_swap_visible=False,
+        is_minipay="minipay" in ua,
+        bridge_contract=os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5"),
+        celo_gd_token_contract=os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+        xdc_gd_token_contract=os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c"),
+        xdc_chain_id=get_env_int("XDC_MAINNET_CHAIN_ID", 50),
+        celo_chain_id=get_env_int("CELO_MAINNET_CHAIN_ID", 42220),
+        fuse_chain_id=get_env_int("FUSE_CHAIN_ID", 122),
+        fuse_rpc_url=os.getenv("FUSE_RPC_URL", "https://rpc.fuse.io"),
+        fuse_gd_token_contract=os.getenv("FUSE_GD_TOKEN", "0x495d133B938596C9984d462F007B676bDc57eCEC"),
+        fuse_gd_decimals=get_env_int("FUSE_GD_DECIMALS", 2),
+        fuse_wfuse_contract=os.getenv("FUSE_WFUSE_TOKEN", "0x0BE9e53fd7EDaC9F859882AfdDa116645287C629"),
+        voltage_router_contract=os.getenv("VOLTAGE_ROUTER", "0xE3F85aAd0c8DD7337427B9dF5d0fB741d65EEEB5"),
+        lifi_bridge_enabled=_lifi_bridge_enabled(),
+        lifi_base_chain_id=get_env_int("BASE_CHAIN_ID", 8453),
+        lifi_celo_erc20=os.getenv("CELO_ERC20_TOKEN", "0x471EcE3750Da237f93B8E339c536989b8978a438"),
+        lifi_source_tokens=[],
+        swap_tab="goodswap",
+        swap_goodswap_pane="dex",
+        swap_bridge_dir=None,
+        swap_focused=True,
+        community_embed=True,
+        is_guest=is_guest,
+    )
+
+
 def _lifi_source_tokens():
     """Source-token registry for the Celo → Base pane (CELO/USDC/USDT/cUSD).
 
