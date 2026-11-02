@@ -46,7 +46,7 @@
                 <button class="close-modal" onclick="closeWalletModal()">×</button>
             </div>
 
-            <!-- Step 1: injected-wallet-first login -->
+            <!-- Wallet login choices; external wallets use the Reown picker. -->
             <div class="wallet-options" id="walletOptions">
                 <!-- Shown only when a wallet is detected in the current browser
                      (e.g. the user opened the app inside MiniPay). Nudges them
@@ -85,14 +85,6 @@
                     </div>
                     <span class="option-arrow">→</span>
                 </button>
-                <button id="injectedWalletBtn" class="wallet-option-card injected" type="button" onclick="connectInjectedWallet()" style="display:none">
-                    <div class="option-icon" id="injectedWalletIcon">👛</div>
-                    <div class="option-text">
-                        <div class="option-title" id="injectedWalletTitle">Injected Wallet</div>
-                        <p class="option-desc" id="injectedWalletDesc">Connect with MiniPay, Trust Wallet, MetaMask, or another injected wallet</p>
-                    </div>
-                    <span class="option-arrow">→</span>
-                </button>
                 {% if enable_privy_login %}
                 <button id="privyPrimaryButton" class="wallet-option-card wc-option" type="button" onclick="beginPrivyLogin(true)" aria-live="polite">
                     <div class="option-icon">✨</div>
@@ -120,7 +112,7 @@
                     <span class="option-arrow">→</span>
                 </button>
                 <div id="privyLoginMount" style="display:none"></div>
-                <div id="walletConnectStatus" class="status-message" style="margin-top:0.85rem;"></div>
+                <div id="walletConnectStatus" class="status-message" role="status" aria-live="polite" aria-atomic="true" style="margin-top:0.85rem;"></div>
             </div>
 
             <!-- Local self-custodial account: email + PIN. The private key is
@@ -308,6 +300,31 @@
     };
 </script>
 {% include "_reown_appkit_loader.html" %}
+{% if _gs_boot.homepage_intro|default(false) %}
+<script>
+    (function () {
+        function preloadReownWhenIdle() {
+            if (document.visibilityState === 'hidden') return;
+            if (typeof window.GM_LOAD_REOWN_APPKIT !== 'function') return;
+            window.GM_LOAD_REOWN_APPKIT().catch(function (err) {
+                console.warn('[Reown AppKit] idle preload failed:', err && err.message ? err.message : err);
+            });
+        }
+        function scheduleReownPreload() {
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(preloadReownWhenIdle, { timeout: 2500 });
+            } else {
+                window.setTimeout(preloadReownWhenIdle, 1200);
+            }
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', scheduleReownPreload, { once: true });
+        } else {
+            scheduleReownPreload();
+        }
+    })();
+</script>
+{% endif %}
 
     <script>
         window.GM_PRIVY_CONFIG = {
