@@ -1354,12 +1354,99 @@
     }
 
     var _provider = null;
+    var _reownProviderProxy = null;
+    var _reownRawProvider = null;
+    var _reownWrappedProvider = null;
+    function _isReownWalletConnectSession() {
+        if (_normLogin(_config.loginMethod) !== 'walletconnect') return false;
+        var wallet = String(_config.walletAddress || '').trim().toLowerCase();
+        if (!wallet) return false;
+        try {
+            return localStorage.getItem('gm_reown_appkit_walletconnect_address') === wallet;
+        } catch (_) {
+            return false;
+        }
+    }
+    function _loadReownProvider() {
+        var load = window.GMReownAppKit
+            ? Promise.resolve(window.GMReownAppKit)
+            : (typeof window.GM_LOAD_REOWN_APPKIT === 'function'
+                ? window.GM_LOAD_REOWN_APPKIT()
+                : Promise.reject(new Error('Reown AppKit loader is unavailable.')));
+        return load.then(function (appKit) {
+            if (!appKit || typeof appKit.waitForProvider !== 'function') {
+                throw new Error('Reown AppKit provider recovery is unavailable.');
+            }
+            return appKit.waitForProvider();
+        });
+    }
+    function _getReownProviderProxy() {
+        if (!_reownProviderProxy) {
+            _reownProviderProxy = {
+                isWalletConnect: true,
+                isGoodMarketWcBridge: true,
+                isReownAppKitProvider: true,
+                request: function (args) {
+                    if (!args || !args.method) return Promise.reject(new Error('Missing method'));
+                    return _loadReownProvider().then(function (provider) {
+                        return provider.request(args);
+                    });
+                },
+                on: function (event, listener) {
+                    _loadReownProvider().then(function (provider) {
+                        if (typeof provider.on === 'function') provider.on(event, listener);
+                    }).catch(function () {});
+                    return this;
+                },
+                removeListener: function (event, listener) {
+                    var provider = window.GMReownAppKit && window.GMReownAppKit.getProvider();
+                    if (provider && typeof provider.removeListener === 'function') provider.removeListener(event, listener);
+                    return this;
+                },
+                removeAllListeners: function (event) {
+                    var provider = window.GMReownAppKit && window.GMReownAppKit.getProvider();
+                    if (provider && typeof provider.removeAllListeners === 'function') provider.removeAllListeners(event);
+                    return this;
+                }
+            };
+        }
+        return _reownProviderProxy;
+    }
+    function _wrapReownProvider(provider) {
+        if (_reownRawProvider === provider && _reownWrappedProvider) return _reownWrappedProvider;
+        _reownRawProvider = provider;
+        _reownWrappedProvider = {
+            isWalletConnect: true,
+            isGoodMarketWcBridge: true,
+            isReownAppKitProvider: true,
+            request: function (args) { return provider.request(args); },
+            on: function () {
+                if (typeof provider.on === 'function') provider.on.apply(provider, arguments);
+                return this;
+            },
+            removeListener: function () {
+                if (typeof provider.removeListener === 'function') provider.removeListener.apply(provider, arguments);
+                return this;
+            },
+            removeAllListeners: function () {
+                if (typeof provider.removeAllListeners === 'function') provider.removeAllListeners.apply(provider, arguments);
+                return this;
+            }
+        };
+        return _reownWrappedProvider;
+    }
     // NOTE: this returns the EIP-1193 provider SYNCHRONOUSLY (no Promise).
     // Callers that want a promise must wrap it — `getProvider().then(...)` is a
     // TypeError ("getProvider(...).then is not a function") and it silently
     // broke every WalletConnect action on the farming page. Prefer
     // `Promise.resolve().then(function () { return GMWalletConnect.getProvider(); })`.
     function getProvider() {
+        if (_isReownWalletConnectSession()) {
+            var reown = window.GMReownAppKit;
+            var active = reown && reown.getIsConnected() ? reown.getProvider() : null;
+            if (active && typeof active.request === 'function') return _wrapReownProvider(active);
+            return _getReownProviderProxy();
+        }
         if (!_provider) {
             _provider = {
                 isWalletConnect: true,
