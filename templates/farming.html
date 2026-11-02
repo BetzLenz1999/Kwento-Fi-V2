@@ -353,6 +353,7 @@
             <div class="mini-stat"><span class="label">Chickens</span><strong id="chickenCount">—</strong></div>
             <div class="mini-stat"><span class="label">Eggs ready</span><strong id="eggsReady">—</strong></div>
             <div class="mini-stat"><span class="label">Egg value</span><strong id="eggValue">—</strong></div>
+            <div class="mini-stat"><span class="label">Reward pool</span><strong id="rewardPoolValue">—</strong></div>
         </div>
         <div class="mini-stats" style="grid-template-columns:repeat(2,1fr);">
             <div class="mini-stat"><span class="label">Your capital</span><strong id="principalValue">—</strong></div>
@@ -384,7 +385,7 @@
             <div class="step"><span class="badge">2</span><span>Each chicken produces 1 egg per day during the farming cycle. Egg reward value follows the live contract configuration.</span></div>
             <div class="step"><span class="badge">3</span><span>Sell eggs during the cycle, or wait until maturity. Closing the farm returns principal plus any remaining egg rewards.</span></div>
             <div class="step"><span class="badge">4</span><span>Minimum final withdrawal is hardcoded at {{ farming_config.min_withdraw_gd }} G$ in the smart contract.</span></div>
-            <div class="step"><span class="badge">5</span><span>Rewards are calculated by the farming contract. Gas is estimated by the Celo network and your wallet — it is not a hardcoded farming fee.</span></div>
+            <div class="step"><span class="badge">5</span><span>Rewards come from the contract reward pool, funded by admins from the Admin Dashboard. Gas is estimated by the Celo network and your wallet — it is not a hardcoded farming fee.</span></div>
         </div>
         <p class="notice">Contract address: <code>{{ farming_contract or 'Not deployed yet — set FARMING_CONTRACT_ADDRESS after deployment' }}</code></p>
     </section>
