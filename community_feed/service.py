@@ -1231,23 +1231,6 @@ def get_pinned_donation_feed(viewer: str | None = None,
     }
 
 
-def _missing_feed_filter_columns(exc: Exception) -> set[str]:
-    """Return feed filter columns explicitly reported missing by PostgREST.
-
-    Older deployments may still have the base ``community_feed_posts`` table
-    without the optional pinning/type migration. Do not hide arbitrary query
-    failures: only recognize an undefined-column/schema-cache error naming one
-    of the filters that this function can safely omit for legacy user posts.
-    """
-    message = str(exc).lower()
-    if not any(marker in message for marker in (
-            "42703", "pgrst204", "does not exist", "could not find",
-            "schema cache", "undefined column")):
-        return set()
-    return {column for column in ("post_type", "is_pinned")
-            if column in message}
-
-
 def get_feed(viewer: str | None = None, cursor: int | None = None,
              limit: int | None = None, author: str | None = None,
              prompt_id: str | None = None) -> dict:
@@ -1266,45 +1249,32 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
         size = DEFAULT_PAGE_SIZE
     size = max(1, min(MAX_PAGE_SIZE, size))
 
-    use_post_type_filter = True
-    use_pin_filter = not author
-    while True:
-        try:
-            query = supabase.table("community_feed_posts").select("*")
-            if use_post_type_filter:
-                query = query.in_(
-                    "post_type", ["user", "system_support", "system_vault_donation"])
-            query = query.eq("is_deleted", False).eq("is_hidden", False)
-            # Keep pinned posts out of the main stream when the pin migration
-            # is present. NULL means an ordinary legacy post, not a pinned one.
-            if use_pin_filter:
-                query = query.or_("is_pinned.eq.false,is_pinned.is.null")
-            if author:
-                query = query.ilike("wallet_address", author)
-            if prompt_id:
-                from .daily_prompts import filter_prompt_posts
-                query = filter_prompt_posts(query, prompt_id)
-            if cursor:
-                query = query.lt("id", int(cursor))
-            # Fetch one extra row to know whether another page exists.
-            result = query.order("id", desc=True).limit(size + 1).execute()
-            rows = _rows(result)
-            break
-        except Exception as exc:  # noqa: BLE001
-            missing = _missing_feed_filter_columns(exc)
-            dropped = set()
-            if use_post_type_filter and "post_type" in missing:
-                use_post_type_filter = False
-                dropped.add("post_type")
-            if use_pin_filter and "is_pinned" in missing:
-                use_pin_filter = False
-                dropped.add("is_pinned")
-            if not dropped:
-                logger.error("community_feed: feed query failed: %s", exc)
-                return {"success": False, "error": "Could not load the feed", "posts": []}
-            logger.warning(
-                "community_feed: retrying feed without unavailable legacy columns: %s",
-                ", ".join(sorted(dropped)))
+    try:
+        query = (
+            supabase.table("community_feed_posts")
+            .select("*")
+            .in_("post_type", ["user", "system_support", "system_vault_donation"])
+            .eq("is_deleted", False)
+            .eq("is_hidden", False)
+        )
+        # The main stream renders every pinned post in its own pinned area above
+        # the list, so leaving it in here as well would show it twice. A
+        # profile feed has no pinned area, so its own pins stay in place.
+        if not author:
+            query = query.eq("is_pinned", False)
+        if author:
+            query = query.ilike("wallet_address", author)
+        if prompt_id:
+            from .daily_prompts import filter_prompt_posts
+            query = filter_prompt_posts(query, prompt_id)
+        if cursor:
+            query = query.lt("id", int(cursor))
+        # Fetch one extra row to know whether another page exists.
+        result = query.order("id", desc=True).limit(size + 1).execute()
+        rows = _rows(result)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: feed query failed: %s", exc)
+        return {"success": False, "error": "Could not load the feed", "posts": []}
 
     has_more = len(rows) > size
     rows = rows[:size]
