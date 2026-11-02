@@ -1261,7 +1261,10 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
         # the list, so leaving it in here as well would show it twice. A
         # profile feed has no pinned area, so its own pins stay in place.
         if not author:
-            query = query.eq("is_pinned", False)
+            # Older rows may predate the pinning migration and therefore have a
+            # NULL value. They are still ordinary, visible posts and must not
+            # disappear from the feed just because the field was added later.
+            query = query.or_("is_pinned.eq.false,is_pinned.is.null")
         if author:
             query = query.ilike("wallet_address", author)
         if prompt_id:
