@@ -3195,6 +3195,7 @@
     <script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
     <script>window.GMEthersLoader.load().catch(function () {});</script>
     <!-- Shared WalletConnect bridge (claim / send / FV signing fallback for WC users). -->
+    {% include "_reown_appkit_loader.html" %}
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/logout.js', v=ASSET_VERSION) }}"></script>
     <script src="{{ url_for('static', filename='js/local-wallet.js', v=ASSET_VERSION) }}"></script>
