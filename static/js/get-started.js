@@ -915,7 +915,13 @@ async function openWalletConnectAppKit() {
     _appKitLoginInProgress = true;
     const connectBtn = document.getElementById('walletConnectPrimaryButton');
     if (connectBtn) connectBtn.disabled = true;
-    showWalletStatus('walletConnectStatus', 'Opening WalletConnect…', 'info');
+    showWalletStatus(
+        'walletConnectStatus',
+        window.GMReownAppKit
+            ? '⏳ Opening the wallet picker… please wait.'
+            : '⏳ Preparing the wallet picker… this may take a few seconds.',
+        'info'
+    );
     try {
         if (typeof window.GM_LOAD_REOWN_APPKIT !== 'function') {
             throw new Error('Reown AppKit is unavailable. Please refresh and try again.');
@@ -924,7 +930,12 @@ async function openWalletConnectAppKit() {
         if (!appKit || typeof appKit.connect !== 'function') {
             throw new Error('Reown AppKit is not ready to connect a wallet.');
         }
-        const connection = await appKit.connect();
+        showWalletStatus('walletConnectStatus', '⏳ Opening the secure wallet picker…', 'info');
+        const connection = await appKit.connect({
+            onModalOpen: function () {
+                showWalletStatus('walletConnectStatus', 'Choose a wallet in the picker to continue.', 'info');
+            }
+        });
         if (!connection || !connection.provider || typeof connection.provider.request !== 'function') {
             throw new Error('Reown AppKit did not return a usable EIP-1193 wallet provider.');
         }
