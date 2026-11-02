@@ -4079,22 +4079,6 @@
     var _communityCardsOpen = false;
     var _communityCardsReturnFocus = null;
     var _communityCardsBodyWasLocked = false;
-    var _messagesPagePrefetched = false;
-
-    function prefetchMessagesPage() {
-        // Opening Messages is a full navigation, so warm the document while the
-        // member is still deciding. It is a hint, never a fetch we await, and it
-        // runs at most once.
-        if (_messagesPagePrefetched || !WALLET) return;
-        _messagesPagePrefetched = true;
-        try {
-            var link = document.createElement('link');
-            link.rel = 'prefetch';
-            link.href = '/messages';
-            link.as = 'document';
-            document.head.appendChild(link);
-        } catch (error) { /* a prefetch hint is never worth failing a tap */ }
-    }
 
     function buildNavItem(item) {
         var isLink = !!item.href;
@@ -4119,13 +4103,6 @@
         icon.setAttribute('aria-hidden', 'true');
         node.appendChild(icon);
         node.appendChild(el('span', 'cf-nav-label', item.label || ''));
-        if (item.action === 'messages') {
-            // Warm the destination on intent so the tap feels instant; the
-            // prefetch is a hint, so a pointer that never lands costs nothing.
-            node.addEventListener('mouseenter', prefetchMessagesPage, { once: true });
-            node.addEventListener('touchstart', prefetchMessagesPage, { once: true, passive: true });
-            node.addEventListener('focus', prefetchMessagesPage, { once: true });
-        }
         node.onclick = function (event) {
             if (item.action === 'menu') {
                 if (event && event.preventDefault) event.preventDefault();
@@ -4201,10 +4178,7 @@
         if (!WALLET || !NAV.some(function (item) { return item.action === 'messages'; })
                 || _messageUnreadLoading) return Promise.resolve(false);
         _messageUnreadLoading = true;
-        // The badge is the only thing the feed needs, so it asks the summary
-        // route: a fixed three queries, versus the inbox's per-conversation
-        // lookups. The full list is loaded on /messages, when it is opened.
-        return api('/api/messages/summary').then(function (result) {
+        return api('/api/messages/conversations').then(function (result) {
             var data = result && result.data;
             var count = data && Number(data.unread_conversation_count);
             if (!result.ok || !data || data.success !== true || !isFinite(count) || count < 0) {
