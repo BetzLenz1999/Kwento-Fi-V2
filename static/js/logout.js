@@ -68,6 +68,7 @@
         "wc_session_data",
         "wc_session_timestamp",
         "wc_session_chains",
+        "gm_reown_appkit_walletconnect_address",
         "privy_wallet_address",
         "gm_pending_buy",
         "gdSelectedCurrency",
@@ -89,6 +90,16 @@
         try {
             if (global.GMWalletConnect && typeof global.GMWalletConnect.clearStoredSession === "function") {
                 global.GMWalletConnect.clearStoredSession();
+            }
+        } catch (_) {}
+        try {
+            var appKit = global.GMReownAppKit;
+            if (appKit && typeof appKit.disconnect === "function") {
+                Promise.resolve(appKit.disconnect()).catch(function () {});
+            } else if (typeof global.GM_LOAD_REOWN_APPKIT === "function") {
+                global.GM_LOAD_REOWN_APPKIT().then(function (loaded) {
+                    if (loaded && typeof loaded.disconnect === "function") return loaded.disconnect();
+                }).catch(function () {});
             }
         } catch (_) {}
         return removed;
