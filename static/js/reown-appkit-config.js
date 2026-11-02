@@ -17,6 +17,47 @@ const xdc = defineChain({
     }
 });
 
+function readEvmAccount(modal) {
+    if (!modal || typeof modal.getAccount !== 'function') return null;
+    try {
+        return modal.getAccount('eip155') || null;
+    } catch (error) {
+        console.warn('[Reown AppKit] Could not read EVM account state:', error);
+        return null;
+    }
+}
+
+function readProviderState(modal) {
+    const account = readEvmAccount(modal);
+    const rawProvider = modal && typeof modal.getWalletProvider === 'function'
+        ? modal.getWalletProvider()
+        : null;
+    return {
+        account,
+        provider: rawProvider && typeof rawProvider.request === 'function' ? rawProvider : null,
+        providerType: modal && typeof modal.getWalletProviderType === 'function'
+            ? (modal.getWalletProviderType() || '')
+            : '',
+        isConnected: !!(account && account.isConnected)
+    };
+}
+
+function subscribeProviderState(modal, callback) {
+    const subscriptions = [];
+    const publish = () => callback(readProviderState(modal));
+    if (typeof modal.subscribeAccount === 'function') {
+        subscriptions.push(modal.subscribeAccount(publish, 'eip155'));
+    }
+    if (typeof modal.subscribeProviders === 'function') {
+        subscriptions.push(modal.subscribeProviders(publish));
+    }
+    return function unsubscribe() {
+        subscriptions.forEach((unsubscribeOne) => {
+            if (typeof unsubscribeOne === 'function') unsubscribeOne();
+        });
+    };
+}
+
 const api = {
     modal: null,
     error: null,
@@ -30,35 +71,35 @@ const api = {
         if (this.modal) this.modal.close();
     },
     disconnect() {
-        const client = this.modal && this.modal.adapter && this.modal.adapter.connectionControllerClient;
-        if (client && typeof client.disconnect === 'function') return client.disconnect();
+        if (this.modal && typeof this.modal.disconnect === 'function') {
+            return this.modal.disconnect({ namespace: 'eip155' });
+        }
         return Promise.resolve();
     },
     getProvider() {
-        return this.modal ? this.modal.getWalletProvider() : null;
+        return readProviderState(this.modal).provider;
     },
     getAddress() {
-        return this.modal ? this.modal.getAddress() : undefined;
+        const account = readEvmAccount(this.modal);
+        return account && account.address ? account.address : undefined;
     },
     getWalletProviderType() {
-        return this.modal ? this.modal.getWalletProviderType() : '';
+        return readProviderState(this.modal).providerType;
     },
     getIsConnected() {
-        return this.modal ? this.modal.getIsConnected() : false;
+        return readProviderState(this.modal).isConnected;
     },
     subscribeProvider(callback) {
         if (!this.modal) return function () {};
-        return this.modal.subscribeProvider(callback);
+        return subscribeProviderState(this.modal, callback);
     },
     waitForProvider(timeoutMs = 30000) {
         if (!this.modal) {
             return Promise.reject(new Error(this.error || 'Reown AppKit is not configured.'));
         }
         const modal = this.modal;
-        const current = modal.getWalletProvider();
-        if (modal.getIsConnected() && current && typeof current.request === 'function') {
-            return Promise.resolve(current);
-        }
+        const current = readProviderState(modal);
+        if (current.isConnected && current.provider) return Promise.resolve(current.provider);
         return new Promise((resolve, reject) => {
             let settled = false;
             let unsubscribe = null;
@@ -74,17 +115,11 @@ const api = {
                 () => finish(new Error('Reown AppKit wallet session is not ready.')),
                 Math.max(1000, Number(timeoutMs) || 30000)
             );
-            unsubscribe = modal.subscribeProvider((state = {}) => {
-                const provider = state.provider || modal.getWalletProvider();
-                if (state.isConnected && provider && typeof provider.request === 'function') {
-                    finish(null, provider);
-                }
+            unsubscribe = subscribeProviderState(modal, (state) => {
+                if (state.isConnected && state.provider) finish(null, state.provider);
             });
-            if (settled && typeof unsubscribe === 'function') unsubscribe();
-            const restored = modal.getWalletProvider();
-            if (modal.getIsConnected() && restored && typeof restored.request === 'function') {
-                finish(null, restored);
-            }
+            const restored = readProviderState(modal);
+            if (restored.isConnected && restored.provider) finish(null, restored.provider);
         });
     },
     connect() {
@@ -92,19 +127,15 @@ const api = {
             throw new Error(this.error || 'Reown AppKit is not configured.');
         }
         const modal = this.modal;
-        const currentProvider = modal.getWalletProvider();
-        if (modal.getIsConnected() && currentProvider && typeof currentProvider.request === 'function') {
-            return Promise.resolve({
-                provider: currentProvider,
-                providerType: modal.getWalletProviderType() || ''
-            });
+        const current = readProviderState(modal);
+        if (current.isConnected && current.provider) {
+            return Promise.resolve({ provider: current.provider, providerType: current.providerType });
         }
         return new Promise((resolve, reject) => {
             let settled = false;
             let sawOpen = false;
             let providerUnsubscribe = null;
             let stateUnsubscribe = null;
-            const timer = window.setTimeout(() => finish(new Error('Wallet connection timed out. Please try again.')), 120000);
             const cleanup = () => {
                 window.clearTimeout(timer);
                 if (typeof providerUnsubscribe === 'function') providerUnsubscribe();
@@ -117,26 +148,23 @@ const api = {
                 if (error) reject(error);
                 else resolve(connection);
             };
-            providerUnsubscribe = modal.subscribeProvider((state = {}) => {
-                if (!state.isConnected) return;
-                const provider = state.provider || modal.getWalletProvider();
-                if (!provider || typeof provider.request !== 'function') {
-                    finish(new Error('Connected wallet did not provide an EIP-1193 provider.'));
-                    return;
+            const acceptConnection = (state) => {
+                if (state && state.isConnected && state.provider) {
+                    finish(null, { provider: state.provider, providerType: state.providerType || '' });
                 }
-                finish(null, {
-                    provider,
-                    providerType: state.providerType || modal.getWalletProviderType() || ''
-                });
-            });
-            if (settled && typeof providerUnsubscribe === 'function') providerUnsubscribe();
-            if (typeof modal.subscribeState === 'function' && !settled) {
+            };
+            const timer = window.setTimeout(
+                () => finish(new Error('Wallet connection timed out. Please try again.')),
+                120000
+            );
+            providerUnsubscribe = subscribeProviderState(modal, acceptConnection);
+            if (typeof modal.subscribeState === 'function') {
                 stateUnsubscribe = modal.subscribeState((state = {}) => {
                     if (state.open) sawOpen = true;
                     else if (sawOpen) finish(new Error('Wallet connection was cancelled.'));
                 });
-                if (settled && typeof stateUnsubscribe === 'function') stateUnsubscribe();
             }
+            acceptConnection(readProviderState(modal));
             if (settled) return;
             try {
                 modal.open({ view: 'Connect', namespace: 'eip155' });
