@@ -1,0 +1,37 @@
+<script>
+    window.GM_REOWN_APPKIT_BOOT = {
+        projectId: {{ walletconnect_project_id|default('', true)|tojson }},
+        bundleUrl: {{ url_for('static', filename='js/reown-appkit.bundle.js', v=ASSET_VERSION)|tojson }}
+    };
+    window.GM_LOAD_REOWN_APPKIT = function () {
+        if (window.GMReownAppKit) return Promise.resolve(window.GMReownAppKit);
+        if (window.__gmReownAppKitPromise) return window.__gmReownAppKitPromise;
+        window.__gmReownAppKitPromise = new Promise(function (resolve, reject) {
+            var script = document.createElement('script');
+            script.src = window.GM_REOWN_APPKIT_BOOT.bundleUrl;
+            script.async = true;
+            script.onload = function () {
+                if (window.GMReownAppKit) resolve(window.GMReownAppKit);
+                else reject(new Error('Reown AppKit loaded without initializing.'));
+            };
+            script.onerror = function () {
+                reject(new Error('Could not load Reown AppKit.'));
+                window.__gmReownAppKitPromise = null;
+            };
+            document.head.appendChild(script);
+        });
+        return window.__gmReownAppKitPromise;
+    };
+    window.GM_OPEN_REOWN_APPKIT = async function () {
+        var appKit = await window.GM_LOAD_REOWN_APPKIT();
+        appKit.open();
+        return appKit;
+    };
+    try {
+        if (localStorage.getItem('gm_reown_appkit_walletconnect_address')) {
+            window.GM_LOAD_REOWN_APPKIT().catch(function (err) {
+                console.warn('[Reown AppKit] session restore failed:', err && err.message ? err.message : err);
+            });
+        }
+    } catch (_) {}
+</script>
