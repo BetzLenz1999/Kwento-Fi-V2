@@ -965,20 +965,10 @@
         node.textContent = esc(message);
     }
 
-    function autoGrowCaption(input) {
-        if (!input || !input.style) return;
-        // Reset first so deleting text shrinks the field as naturally as typing
-        // grows it. The CSS min-height keeps the empty composer comfortable.
-        input.style.height = 'auto';
-        var contentHeight = Number(input.scrollHeight) || 0;
-        if (contentHeight > 0) input.style.height = contentHeight + 'px';
-    }
-
     function updateCounter() {
         var input = $('cfCaption');
         var node = $('cfCounter');
         if (!input || !node) return;
-        autoGrowCaption(input);
         var length = input.value.length;
         node.textContent = length + ' / ' + MAX_CAPTION;
         node.className = 'cf-counter'
@@ -2528,7 +2518,6 @@
         if (!modal || !input) return;
         input.value = post.body || '';
         modal.hidden = false;
-        autoGrowCaption(input);
         updateFormatPreview('cfEditCaption', 'cfEditCaptionPreview');
         input.focus();
     }
@@ -5119,14 +5108,12 @@
                 var marker = button.getAttribute('data-marker') || '';
                 var previewId = button.getAttribute('data-preview') || '';
                 applyFormat(target, marker);
-                autoGrowCaption(target);
                 if (previewId) updateFormatPreview(button.getAttribute('data-target'), previewId);
             });
         });
         var editInput = $('cfEditCaption');
         if (editInput) {
             editInput.addEventListener('input', function () {
-                autoGrowCaption(editInput);
                 updateFormatPreview('cfEditCaption', 'cfEditCaptionPreview');
             });
         }
