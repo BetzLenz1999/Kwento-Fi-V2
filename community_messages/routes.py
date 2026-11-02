@@ -129,18 +129,6 @@ def push_unsubscribe():
     return _result(web_push_service.remove_subscription(wallet, data.get("endpoint")))
 
 
-@messages_bp.route("/api/messages/summary", methods=["GET"])
-def summary():
-    """Badge numbers only. Cheap enough to run on every Community page load."""
-    if not _enabled():
-        return jsonify({"success": False, "code": "disabled",
-                        "unread_total": 0, "unread_conversation_count": 0}), 404
-    wallet = _wallet()
-    if not wallet:
-        return _auth_error()
-    return _result(svc.unread_summary(wallet))
-
-
 @messages_bp.route("/api/messages/conversations", methods=["GET"])
 def conversations():
     if not _enabled():
