@@ -75,6 +75,13 @@ function _showWalletModalNow() {
     if (homepageIntro && options) options.style.display = 'none';
     if (_wm && !_wm.classList.contains('active')) _setBodyScrollLock(true);
     _wm.classList.add('active');
+    // Warm AppKit while the Get Started sheet is visible, so a later wallet
+    // tap does not have to wait for the multi-megabyte bundle to download.
+    if (typeof window.GM_LOAD_REOWN_APPKIT === 'function') {
+        window.GM_LOAD_REOWN_APPKIT().catch((err) => {
+            console.warn('[Reown AppKit] preload failed:', err && err.message ? err.message : err);
+        });
+    }
     // Re-apply any referral code captured from the URL / sessionStorage
     // so the local-wallet create form keeps the referral context.
     try { initReferralFromUrl(); } catch (e) {}
@@ -902,6 +909,42 @@ function openGoodWalletConnect() {
     connectWalletConnect();
 }
 
+let _appKitLoginInProgress = false;
+async function openWalletConnectAppKit() {
+    if (_appKitLoginInProgress || _injectedConnecting) return;
+    _appKitLoginInProgress = true;
+    const connectBtn = document.getElementById('walletConnectPrimaryButton');
+    if (connectBtn) connectBtn.disabled = true;
+    showWalletStatus('walletConnectStatus', 'Opening WalletConnect…', 'info');
+    try {
+        if (typeof window.GM_LOAD_REOWN_APPKIT !== 'function') {
+            throw new Error('Reown AppKit is unavailable. Please refresh and try again.');
+        }
+        const appKit = await window.GM_LOAD_REOWN_APPKIT();
+        if (!appKit || typeof appKit.connect !== 'function') {
+            throw new Error('Reown AppKit is not ready to connect a wallet.');
+        }
+        const connection = await appKit.connect();
+        if (!connection || !connection.provider || typeof connection.provider.request !== 'function') {
+            throw new Error('Reown AppKit did not return a usable EIP-1193 wallet provider.');
+        }
+        const providerType = String(connection.providerType || '').toLowerCase();
+        const isWalletConnect = /wallet.?connect/.test(providerType)
+            || connection.provider.isWalletConnect === true;
+        await connectInjectedWallet(
+            connection.provider,
+            isWalletConnect ? 'walletconnect' : 'injected',
+            connectBtn
+        );
+    } catch (err) {
+        const message = err && err.message ? err.message : 'Could not open Reown AppKit.';
+        showWalletStatus('walletConnectStatus', '❌ ' + message, 'error');
+    } finally {
+        _appKitLoginInProgress = false;
+        if (connectBtn) connectBtn.disabled = false;
+    }
+}
+
 function showWalletStatus(targetId, message, type = 'info') {
     const el = document.getElementById(targetId);
     if (el) {
@@ -1585,14 +1628,14 @@ function withInjectedSignTimeout(promise, ms, message) {
 // signatures in a row, which reads as spam. connectWalletConnect() already
 // guards this way; the injected path now matches.
 let _injectedConnecting = false;
-async function connectInjectedWallet() {
+async function connectInjectedWallet(providerOverride = null, loginMethodOverride = 'injected', triggerButton = null) {
     if (_injectedConnecting) return;
     _injectedConnecting = true;
-    const connectBtn = document.getElementById('injectedWalletBtn');
+    const connectBtn = triggerButton || document.getElementById('injectedWalletBtn');
     if (connectBtn) connectBtn.disabled = true;
     try {
-        showWalletStatus('walletConnectStatus', '⏳ Detecting wallet…', 'info');
-        const provider = await awaitPreferredInjectedProvider();
+        showWalletStatus('walletConnectStatus', providerOverride ? '⏳ Preparing wallet login…' : '⏳ Detecting wallet…', 'info');
+        const provider = providerOverride || await awaitPreferredInjectedProvider();
         if (!provider) {
             if (isTrustWalletMobileContext()) {
                 showWalletStatus('walletConnectStatus', '⚠️ Trust Wallet injection not detected yet. Starting WalletConnect automatically…', 'warning');
@@ -1634,13 +1677,21 @@ async function connectInjectedWallet() {
             120000,
             'Your wallet did not respond to the signature request. Open MetaMask, make sure it is unlocked, then try again.'
         );
-        const verifyData = await postVerifyIdentity(wallet, signature, message, '', 'injected');
+        const loginMethod = loginMethodOverride === 'walletconnect' ? 'walletconnect' : 'injected';
+        const verifyData = await postVerifyIdentity(wallet, signature, message, '', loginMethod);
+        try {
+            if (providerOverride && loginMethod === 'walletconnect') {
+                localStorage.setItem('gm_reown_appkit_walletconnect_address', wallet.toLowerCase());
+            } else {
+                localStorage.removeItem('gm_reown_appkit_walletconnect_address');
+            }
+        } catch (_) {}
         // Drop any WalletConnect session left over from an earlier sign-in
         // so feature pages don't misclassify this injected login as
         // WalletConnect (which would force a QR prompt instead of MetaMask).
         // Per-wallet: a session belonging to a DIFFERENT wallet is untouched.
         try {
-            if (typeof GMWalletConnect !== 'undefined') {
+            if (loginMethod === 'injected' && typeof GMWalletConnect !== 'undefined') {
                 if (typeof GMWalletConnect.clearStoredSessionFor === 'function') {
                     GMWalletConnect.clearStoredSessionFor(wallet);
                 } else if (typeof GMWalletConnect.clearStoredSession === 'function') {
@@ -1654,7 +1705,7 @@ async function connectInjectedWallet() {
         showWalletStatus('walletConnectStatus', okMsg, verifyData && verifyData.referral_warning ? 'warning' : 'success');
         _gmAfterLoginRedirect(verifyData && verifyData.referral_warning ? 2400 : 900);
     } catch (err) {
-        const rawMsg = (err && err.message) ? err.message : 'Failed to connect injected wallet';
+        const rawMsg = (err && err.message) ? err.message : 'Failed to connect wallet';
         const code = err && (err.code
             || (err.cause && err.cause.code)
             || (err.data && err.data.originalError && err.data.originalError.code));
@@ -2340,6 +2391,7 @@ window.lwPinStrengthHint         = lwPinStrengthHint;
 window.syncReferralInputs        = syncReferralInputs;
 window.showWalletConnectOptions= showWalletConnectOptions;
 window.openGoodWalletConnect   = openGoodWalletConnect;
+window.openWalletConnectAppKit = openWalletConnectAppKit;
 window.connectInjectedWallet   = connectInjectedWallet;
 window.connectWalletConnect    = connectWalletConnect;
 window.showWalletStatus        = showWalletStatus;
