@@ -353,10 +353,9 @@ function cancelCreatePreflight() {
     showWalletOptions();
 }
 
-// Device-aware nudge: when a wallet is detected, surface it and hoist
-// the connect option above the create option. MiniPay gets the loud
-// (gold) treatment because it is the most common "already has a G$
-// wallet" case.
+// Device-aware warning: when a wallet is detected, remind the user to
+// connect it through the Reown WalletConnect picker instead of creating
+// a second wallet. There is no separate injected-wallet button in this flow.
 function _lwApplyDetectionNudge(provider) {
     _lwDetectedProvider = provider || null;
     const banner = document.getElementById('walletDetectBanner');
@@ -374,20 +373,13 @@ function _lwApplyDetectionNudge(provider) {
         ? getInjectedProviderLabel(provider) : 'Wallet';
     const isMini = !!(provider && provider.isMiniPay);
     const message = isMini
-        ? "You're in MiniPay. If you already use it for G$, connect that wallet instead of creating another one."
-        : name + ' detected. If you already use this wallet for G$, connect it instead of creating another one.';
+        ? "You're in MiniPay. Choose WalletConnect to connect this wallet instead of creating another one."
+        : name + ' detected. Choose WalletConnect to connect this wallet instead of creating another one.';
     if (text) text.textContent = message;
     if (banner) banner.classList.toggle('show', !deferReminder);
     if (preflightNotice) {
         preflightNotice.textContent = message;
         preflightNotice.hidden = !isHomepage || deferReminder;
-    }
-    const injectedBtn = document.getElementById('injectedWalletBtn');
-    if (injectedBtn) {
-        if (banner.parentElement && injectedBtn.previousElementSibling !== banner) {
-            banner.insertAdjacentElement('afterend', injectedBtn);
-        }
-        injectedBtn.classList.toggle('primary', isMini);
     }
 }
 
@@ -1145,30 +1137,6 @@ function _isTouchDesktopUa() {
     }
 }
 
-// Decide whether the Injected Wallet picker card should be shown.
-// Plain mobile Safari/Chrome users without a wallet have nothing
-// to inject — surfacing the option just confuses them. Show only
-// when (a) a provider is actually present, or (b) the UA hints a
-// known wallet's in-app dApp browser.
-function shouldShowInjectedOption() {
-    try {
-        if (typeof window !== 'undefined') {
-            if (window.ethereum) return true;
-            if (window.trustwallet || window.trustWallet) return true;
-        }
-    } catch (_) {}
-    try {
-        if (getAllInjectedProviders().length > 0) return true;
-    } catch (_) {}
-    const ua = (navigator.userAgent || '').toLowerCase();
-    // Strict UA match for known dApp wallet browsers (not generic
-    // mobile UAs). MetaMask Mobile injects "MetaMaskMobile";
-    // MiniPay injects "MiniPay"; Trust Wallet injects "Trust"
-    // or "TrustWallet" (sometimes only in custom builds).
-    if (/minipay|trustwallet|trust\/|metamask/.test(ua)) return true;
-    return false;
-}
-
 function _eip6963InfoForProvider(provider) {
     if (!provider) return null;
     const detail = _eip6963Details().find(d => d && d.provider === provider);
@@ -1209,17 +1177,6 @@ function getInjectedProviderLabel(provider) {
     if (_isOkxWalletProvider(provider)) return 'OKX Wallet';
     if (provider.isMetaMask && !provider.isBraveWallet) return 'MetaMask';
     return 'Injected Wallet';
-}
-
-function getInjectedProviderIcon(provider) {
-    if (!provider) return '👛';
-    if (provider.isMiniPay) return '📱';
-    if (_isTrustWalletProvider(provider)) return '🛡️';
-    if (_isCoinbaseWalletProvider(provider)) return '🟦';
-    if (_isBraveWalletProvider(provider)) return '🦁';
-    if (_isOkxWalletProvider(provider)) return '⭕';
-    if (provider.isMetaMask && !provider.isBraveWallet) return '🦊';
-    return '👛';
 }
 
 function _trustProviderFromEip6963() {
@@ -1331,8 +1288,8 @@ function _walletDetectionMaxDepth() {
 // and flicker the description text at different depths.
 let _detectWalletTimerId = null;
 function detectInjectedWallet(_retryDepth) {
-    // Cancel any pending retry from a previous chain so we never run
-    // two chains concurrently against the same DOM nodes.
+    // Cancel any pending retry from a previous chain so advisory checks
+    // never interleave.
     if (_detectWalletTimerId !== null) {
         clearTimeout(_detectWalletTimerId);
         _detectWalletTimerId = null;
@@ -1344,52 +1301,24 @@ function detectInjectedWallet(_retryDepth) {
     try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
 
     const provider = getPreferredInjectedProvider();
-    const title = document.getElementById('injectedWalletTitle');
-    const desc = document.getElementById('injectedWalletDesc');
-    const btn = document.getElementById('injectedWalletBtn');
-    const icon = document.getElementById('injectedWalletIcon');
-    if (!title || !desc || !btn) return;
     const depth = Number(_retryDepth || 0);
     const maxDepth = _walletDetectionMaxDepth();
-    // Hide the picker on a plain browser with no provider — but KEEP RETRYING.
-    // A Trust Wallet dApp browser frequently ships a plain Chrome/Safari UA and
-    // injects late, so returning here (the old behaviour) abandoned the retry
-    // chain and the wallet was never detected, even inside the Trust browser.
-    const showCard = shouldShowInjectedOption() || !!provider;
-    btn.style.display = showCard ? 'flex' : 'none';
-    if (!provider) {
-        if (showCard) {
-            title.textContent = 'Injected Wallet';
-            if (icon) icon.textContent = '👛';
-            if (isMobileDappContext()) {
-                desc.textContent = depth >= 2
-                    ? 'Still looking for your wallet… use WalletConnect below if it stays stuck.'
-                    : 'Detecting wallet… open in MiniPay/MetaMask/Trust Wallet dapp browser, or use WalletConnect.';
-            } else {
-                desc.textContent = 'Not detected — install MetaMask extension or use WalletConnect QR.';
-            }
-            btn.style.opacity = '0.78';
-        }
-        if (typeof _lwApplyDetectionNudge === 'function') _lwApplyDetectionNudge(null);
-        if (depth < maxDepth) {
-            _detectWalletTimerId = setTimeout(() => {
-                _detectWalletTimerId = null;
-                detectInjectedWallet(depth + 1);
-            }, 350 + depth * 250);
-        } else if (!window.__gmWalletDetectionDumped) {
-            // One-shot diagnostic on final failure: the "wallet not detected"
-            // reports are otherwise undebuggable from a screenshot.
-            window.__gmWalletDetectionDumped = true;
-            try { if (typeof window._gmDebugDumpWallets === 'function') window._gmDebugDumpWallets(); } catch (_) {}
-        }
-        return;
-    }
-    const name = getInjectedProviderLabel(provider);
-    title.textContent = name;
-    if (icon) icon.textContent = getInjectedProviderIcon(provider);
-    desc.textContent = `${name} detected — connect wallet, then approve signature to login`;
-    btn.style.opacity = '1';
+    // Detection only informs the duplicate-wallet warning; connections are
+    // initiated from the Reown picker, not a separate injected-wallet card.
     if (typeof _lwApplyDetectionNudge === 'function') _lwApplyDetectionNudge(provider);
+    if (provider) return;
+
+    // Trust Wallet's dApp browser sometimes injects late with a plain UA,
+    // so keep retrying even though there is no standalone card to reveal.
+    if (depth < maxDepth) {
+        _detectWalletTimerId = setTimeout(() => {
+            _detectWalletTimerId = null;
+            detectInjectedWallet(depth + 1);
+        }, 350 + depth * 250);
+    } else if (!window.__gmWalletDetectionDumped) {
+        window.__gmWalletDetectionDumped = true;
+        try { if (typeof window._gmDebugDumpWallets === 'function') window._gmDebugDumpWallets(); } catch (_) {}
+    }
 }
 
 // Aggressive EIP-6963 re-dispatch loop for mobile dApp contexts.
@@ -1632,17 +1561,13 @@ function withInjectedSignTimeout(promise, ms, message) {
     });
 }
 
-// Re-entrancy lock for the injected connect flow. The card is a plain
-// onclick button, so a double-tap (mobile finger bounce, or an impatient
-// second click while the provider poll / chain switch is still running) used
-// to start a SECOND concurrent chain — two chain prompts and two login
-// signatures in a row, which reads as spam. connectWalletConnect() already
-// guards this way; the injected path now matches.
+// Re-entrancy lock for wallet providers selected in Reown. It prevents a
+// double-tap from starting concurrent account, chain, or signature prompts.
 let _injectedConnecting = false;
 async function connectInjectedWallet(providerOverride = null, loginMethodOverride = 'injected', triggerButton = null) {
     if (_injectedConnecting) return;
     _injectedConnecting = true;
-    const connectBtn = triggerButton || document.getElementById('injectedWalletBtn');
+    const connectBtn = triggerButton || document.getElementById('walletConnectPrimaryButton');
     if (connectBtn) connectBtn.disabled = true;
     try {
         showWalletStatus('walletConnectStatus', providerOverride ? '⏳ Preparing wallet login…' : '⏳ Detecting wallet…', 'info');
