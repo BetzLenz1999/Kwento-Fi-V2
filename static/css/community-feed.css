@@ -319,8 +319,8 @@ body {
     font-family: inherit; font-size: 0.95rem; line-height: 1.5;
     color: var(--cf-ink); background: var(--cf-field);
     border: 1.5px solid var(--cf-accent-border); border-radius: 12px;
-    padding: 0.7rem 0.8rem; width: 100%; resize: vertical;
-    min-height: 62px; max-height: 220px;
+    padding: 0.7rem 0.8rem; width: 100%; resize: none; overflow-y: hidden;
+    min-height: 62px; max-height: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 /* The placeholder is the invitation, so it carries the emphasis. Weight 700 is
@@ -2402,10 +2402,11 @@ body.cf-modal-open { overflow: hidden; }
     .cf-layout .cf-caption-wrap { grid-column: 2; grid-row: 1; }
     .cf-layout .cf-caption-wrap .cf-caption-input {
         min-height: 48px;
-        height: 48px;
-        max-height: 9rem;
+        height: auto;
+        max-height: none;
         padding: 0.55rem 0.62rem;
-        resize: vertical;
+        resize: none;
+        overflow-y: hidden;
     }
     .cf-layout .cf-composer-entry-row .cf-composer-actions {
         grid-column: 3;
