@@ -395,15 +395,14 @@ def list_conversations(viewer_wallet: str) -> dict:
     if not db or not viewer:
         return {"success": False, "code": "db_unavailable", "error": "Messaging is temporarily unavailable.", "conversations": []}
     try:
-        links = _rows(db.table("community_dm_participants").select("conversation_id")
-                      .eq("wallet_address", viewer).execute())
-        ids = [row.get("conversation_id") for row in links if row.get("conversation_id")]
-        if not ids:
+        rows, _ = _conversations_for_viewer(db, viewer)
+        if not rows:
             return {"success": True, "conversations": [], "unread_total": 0,
                     "unread_conversation_count": 0}
-        rows = _rows(db.table("community_dm_conversations").select("id,pair_key,status,created_at,last_message_at,last_message_preview")
-                     .in_("id", ids).eq("status", "active").order("last_message_at", desc=True).execute())
-        conversations = [_public_conversation(db, row, viewer) for row in rows]
+        # Participants and unread counts are batched for the whole page, not
+        # fetched per conversation: the inbox used to cost two requests per
+        # thread, which is what made opening Messages feel slow.
+        conversations = _batched_public_conversations(db, rows, viewer)
         return {"success": True, "conversations": conversations,
                 "unread_total": sum(item["unread_count"] for item in conversations),
                 "unread_conversation_count": sum(1 for item in conversations
@@ -411,6 +410,112 @@ def list_conversations(viewer_wallet: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         logger.warning("community_messages: list failed: %s", exc)
         return {"success": False, "code": "db_error", "error": "Could not load messages.", "conversations": []}
+
+
+def _batched_public_conversations(db, rows: list[dict], viewer: str) -> list[dict]:
+    """The inbox rows, with participants and unread counts read in bulk."""
+    ids = [str(row.get("id")) for row in rows if row.get("id")]
+    people: dict[str, list[dict]] = {}
+    for participant in _rows(db.table("community_dm_participants")
+                             .select("conversation_id,wallet_address,username_snapshot")
+                             .in_("conversation_id", ids).execute()):
+        people.setdefault(str(participant.get("conversation_id")), []).append(participant)
+    unread, _ = _unread_counts(db, viewer, ids)
+    conversations = []
+    for row in rows:
+        cid = str(row.get("id"))
+        participants = people.get(cid, [])
+        other = next((p for p in participants if _wallet(p.get("wallet_address")) != viewer), None)
+        person = (_person(_wallet(other.get("wallet_address")), other.get("username_snapshot"))
+                  if other else {"username": "Community member", "avatar_url": None})
+        conversations.append({
+            "id": row.get("id"), "username": person["username"], "avatar_url": person["avatar_url"],
+            "last_message": row.get("last_message_preview") or "", "last_message_at": row.get("last_message_at"),
+            "unread_count": unread.get(cid, 0)})
+    return conversations
+
+
+
+def unread_summary(viewer_wallet: str) -> dict:
+    """Just the badge numbers, at a query count that does not grow with threads.
+
+    The Community badge is the only consumer, and it runs on every page load
+    and on every focus, so it must not pay for the inbox's per-conversation
+    lookups. This walks the viewer's conversations without resolving a person,
+    an avatar or a preview: three queries regardless of how many threads exist.
+    """
+    db = _db()
+    viewer = _wallet(viewer_wallet)
+    if not db or not viewer:
+        return {"success": False, "code": "db_unavailable", "error": "Messaging is temporarily unavailable.",
+                "unread_total": 0, "unread_conversation_count": 0}
+    try:
+        rows, _ = _conversations_for_viewer(db, viewer)
+        if not rows:
+            return {"success": True, "unread_total": 0, "unread_conversation_count": 0}
+        by_id = {str(row.get("id")): row for row in rows if row.get("id")}
+        unread, unread_total = _unread_counts(db, viewer, list(by_id))
+        return {"success": True, "unread_total": unread_total,
+                "unread_conversation_count": sum(1 for count in unread.values() if count > 0)}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_messages: unread summary failed: %s", exc)
+        return {"success": False, "code": "db_error", "error": "Could not load messages.",
+                "unread_total": 0, "unread_conversation_count": 0}
+
+
+def _conversations_for_viewer(db, viewer: str):
+    """The viewer's active conversations, newest first. One query per table."""
+    links = _rows(db.table("community_dm_participants").select("conversation_id")
+                  .eq("wallet_address", viewer).execute())
+    ids = [row.get("conversation_id") for row in links if row.get("conversation_id")]
+    if not ids:
+        return [], []
+    rows = _rows(db.table("community_dm_conversations").select("id,pair_key,status,created_at,last_message_at,last_message_preview")
+                 .in_("id", ids).eq("status", "active").order("last_message_at", desc=True).execute())
+    return rows, ids
+
+
+def _unread_counts(db, viewer: str, conversation_ids: list[str]) -> tuple[dict, int]:
+    """Incoming, undeleted messages per conversation, in batched reads only.
+
+    ``last_read_at`` arrives with the participant rows, so nothing has to be
+    asked per conversation. Threads that were never opened carry no marker and
+    are counted by one unfiltered scan; the opened ones are bounded by the
+    OLDEST marker (nothing newer than that can be unread) and then compared in
+    Python against their own boundary. The query count is fixed — three — no
+    matter how many conversations the viewer has, which is what the badge
+    needs, since it runs on every page load and every focus.
+    """
+    unread: dict[str, int] = {}
+    if not conversation_ids:
+        return unread, 0
+    rows = _rows(db.table("community_dm_participants").select("conversation_id,last_read_at")
+                 .eq("wallet_address", viewer).in_("conversation_id", conversation_ids).execute())
+    seen_at: dict[str, str | None] = {}
+    for row in rows:
+        cid = str(row.get("conversation_id"))
+        if cid:
+            seen_at[cid] = row.get("last_read_at")
+    for cid in conversation_ids:
+        seen_at.setdefault(cid, None)
+    never_read = [cid for cid, marker in seen_at.items() if not marker]
+    read_ids = [cid for cid, marker in seen_at.items() if marker]
+    if never_read:
+        for row in _rows(db.table("community_dm_messages").select("conversation_id")
+                         .in_("conversation_id", never_read).neq("sender_wallet", viewer)
+                         .is_("deleted_at", "null").execute()):
+            cid = str(row.get("conversation_id"))
+            unread[cid] = unread.get(cid, 0) + 1
+    if read_ids:
+        oldest = min(seen_at[cid] for cid in read_ids)
+        for row in _rows(db.table("community_dm_messages").select("conversation_id,created_at")
+                         .in_("conversation_id", read_ids).neq("sender_wallet", viewer)
+                         .is_("deleted_at", "null").gt("created_at", oldest).execute()):
+            cid = str(row.get("conversation_id"))
+            if str(row.get("created_at") or "") > str(seen_at.get(cid) or ""):
+                unread[cid] = unread.get(cid, 0) + 1
+    return unread, sum(unread.values())
+
 
 
 def get_thread(viewer_wallet: str, conversation_id: str, limit: int | None = None) -> dict:
