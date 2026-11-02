@@ -133,6 +133,9 @@
         statusNode.textContent = message || '';
         statusNode.classList.toggle('is-error', kind === 'error');
         statusNode.classList.toggle('is-success', kind === 'success');
+        var processing = !!busy && kind !== 'error' && kind !== 'success';
+        statusNode.classList.toggle('is-processing', processing);
+        statusNode.setAttribute('aria-busy', processing ? 'true' : 'false');
     }
     function parseAmount(raw) {
         var text = String(raw || '').trim();
@@ -405,6 +408,8 @@
         link.textContent = 'View Celo transaction';
         statusNode.textContent = 'Support confirmed: ' + (confirmed.amount || requestedAmount) + ' G$ sent. The thank-you post is in the feed and is not pinned. ';
         statusNode.appendChild(link);
+        statusNode.classList.remove('is-processing');
+        statusNode.setAttribute('aria-busy', 'false');
         statusNode.classList.add('is-success');
         if (window.GMCommunity && typeof window.GMCommunity.refresh === 'function') {
             window.setTimeout(function () { window.GMCommunity.refresh(); }, 1200);
