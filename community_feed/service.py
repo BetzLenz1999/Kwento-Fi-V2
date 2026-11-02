@@ -2583,7 +2583,7 @@ def get_pinned_member_posts(viewer: str | None = None,
             row, media.get(row.get("id"), []), viewer,
             my_reaction=reactions.get(row.get("id")),
             reactions=breakdowns.get(row.get("id")),
-            is_following=followed.get((row.get("wallet_address") or "").lower()),
+            is_following=(row.get("wallet_address") or "").lower() in followed,
             avatar_url=avatars.get((row.get("wallet_address") or "").lower()),
             earned_badges=badges_by_wallet.get((row.get("wallet_address") or "").lower()),
         )
