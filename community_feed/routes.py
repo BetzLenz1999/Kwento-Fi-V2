@@ -2063,6 +2063,9 @@ def api_feed():
         pinned = svc.get_pinned_donation_feed(viewer=viewer, limit=10)
         result["pinned_posts"] = pinned.get("posts", []) if pinned.get("success") else []
         result["pinned_next_cursor"] = pinned.get("next_cursor") if pinned.get("success") else None
+        member_pins = svc.get_pinned_member_posts(viewer=viewer, limit=10)
+        result["pinned_member_posts"] = (
+            member_pins.get("posts", []) if member_pins.get("success") else [])
     return jsonify(result)
 
 
@@ -2468,6 +2471,34 @@ def api_delete_post(post_id: int):
     if not wallet:
         return jsonify({"success": False, "error": "Not authenticated"}), 401
     result = svc.delete_post(wallet, post_id)
+    if result.get("success"):
+        return jsonify(result)
+    status = {"not_found": 404, "forbidden": 403}.get(result.get("code"), 400)
+    return jsonify(result), status
+
+
+@community_feed_bp.route("/api/posts/<int:post_id>/pin", methods=["POST"])
+def api_pin_post(post_id: int):
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    result = svc.pin_post(wallet, post_id)
+    if result.get("success"):
+        return jsonify(result)
+    status = {"not_found": 404, "forbidden": 403}.get(result.get("code"), 400)
+    return jsonify(result), status
+
+
+@community_feed_bp.route("/api/posts/<int:post_id>/pin", methods=["DELETE"])
+def api_unpin_post(post_id: int):
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "Not authenticated"}), 401
+    result = svc.unpin_post(wallet, post_id)
     if result.get("success"):
         return jsonify(result)
     status = {"not_found": 404, "forbidden": 403}.get(result.get("code"), 400)
