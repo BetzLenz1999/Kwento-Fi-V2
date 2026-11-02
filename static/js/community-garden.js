@@ -54,7 +54,6 @@
         "function gardens(address) view returns (uint256 principal,uint16 bonusBpsAtPlant,uint64 plantedAt,uint16 seedCount,bool active)",
         "function maturityAt(address) view returns (uint256)",
         "function maximumBonus(address) view returns (uint256)",
-        "function sponsorRewardPool() view returns (uint256)",
         "function buyAndPlant(uint256 seedCount)",
         "function harvestAndWithdraw() returns (uint256 principalReturned,uint256 sponsorBonus)",
         "function exitGarden() returns (uint256 principalReturned)"
@@ -64,7 +63,6 @@
         "function gardens(address) view returns (uint256 principal,uint64 plantedAt,uint16 seedCount,bool active)",
         "function maturityAt(address) view returns (uint256)",
         "function maximumBonus(address) view returns (uint256)",
-        "function sponsorRewardPool() view returns (uint256)",
         "function harvestAndWithdraw() returns (uint256 principalReturned,uint256 sponsorBonus)",
         "function exitGarden() returns (uint256 principalReturned)"
     ];
@@ -275,9 +273,9 @@
             _positions = {};
             async function readPosition(version, contract) {
                 if (!contract) return;
-                var vals = await Promise.all([contract.gardens(wallet), contract.maturityAt(wallet), contract.maximumBonus(wallet), contract.sponsorRewardPool()]);
+                var vals = await Promise.all([contract.gardens(wallet), contract.maturityAt(wallet), contract.maximumBonus(wallet)]);
                 var r = vals[0];
-                _positions[version] = { version: version, contract: contract, address: version === "v1" ? boot.legacyContractAddress : boot.contractAddress, record: r, maturity: Number(vals[1]), bonus: vals[2], pool: vals[3], active: isActive(r) };
+                _positions[version] = { version: version, contract: contract, address: version === "v1" ? boot.legacyContractAddress : boot.contractAddress, record: r, maturity: Number(vals[1]), bonus: vals[2], active: isActive(r) };
             }
             // Read each deployment independently; failure of a configured legacy deployment fails closed.
             if (boot.legacyEnabled) await readPosition("v1", loaded.v1);
@@ -303,11 +301,9 @@
                 _selectedVersion = position.version; _selectedGarden = position;
                 setText("cfGardenTitle", position.version === "v1" ? "Your Legacy Garden" : "Your Garden");
                 setText("cfGardenPositionVersion", position.version === "v1" ? "Legacy deployment · V1" : "Current deployment · V2");
-                setText("cfGardenPoolLabel", position.version === "v1" ? "V1 optional sponsor pool" : "V2 optional sponsor pool");
-                setText("cfGardenPool", money(position.pool));
                 var r = position.record; _plantedAt = Number(r.plantedAt); _maturityAt = position.maturity;
                 setText("cfGardenPrincipal", money(r.principal)); setText("cfGardenSeedCountValue", String(r.seedCount));
-                setText("cfGardenMaturity", maturityDate(position.maturity)); setText("cfGardenBonus", money(position.bonus) + " max, if pool remains");
+                setText("cfGardenMaturity", maturityDate(position.maturity)); setText("cfGardenBonus", money(position.bonus) + " maximum, subject to available funding");
                 var timestamp = Math.floor(Date.now()/1000);
                 try { var block = await position.contract.runner.provider.getBlock("latest"); if (block && Number(block.timestamp)) timestamp = Number(block.timestamp); } catch (_) {}
                 _chainTimeOffset = timestamp - Math.floor(Date.now()/1000); renderGrowth(_plantedAt, _maturityAt, timestamp); startGrowthTicker();
@@ -318,11 +314,9 @@
             } else {
                 _selectedGarden = null; _plantedAt = _maturityAt = _chainTimeOffset = 0; stopGrowthTicker();
                 setText("cfGardenTitle", boot.v2Enabled ? "Plant a Garden" : "Your Garden");
-                setText("cfGardenPoolLabel", v2 ? "V2 optional sponsor pool" : (v1 ? "V1 optional sponsor pool" : "Optional sponsor pool"));
-                setText("cfGardenPool", v2 ? money(v2.pool) : (v1 ? money(v1.pool) : "—"));
                 if (legacyUnreadable) setStatus("Legacy Garden could not be read. Planting is disabled to avoid creating a duplicate position.", true);
                 else if (!boot.v2Enabled) setStatus("Your legacy Garden is clear. V2 planting and sponsorship are not available.");
-                else if (_plantingPaused) setStatus("New Garden planting is temporarily paused by the contract owner. You can still contribute to the V2 sponsor pool.");
+                else if (_plantingPaused) setStatus("New Garden planting is temporarily paused by the contract owner. You can still support optional Garden bonuses.");
                 else if (v1 && !v1.active && !v2.active) setStatus("Choose 1–" + _maxSeeds + " seeds. Each seed costs " + money(_seedPrice) + ". The app may cover estimated Celo gas for wallets with 0.3 CELO or less, subject to limits.");
                 else setStatus("No active Garden found.");
             }
