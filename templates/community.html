@@ -1148,6 +1148,7 @@ window.GM_WALLET_BOOT = {
 };
 window.GM_GARDEN_BOOT = {{ garden_boot|tojson }};
 </script>
+{% include "_reown_appkit_loader.html" %}
 <script src="{{ url_for('static', filename='js/ethers-loader.js', v=ASSET_VERSION) }}"></script>
 <script>window.GMEthersLoader.load().catch(function () {});</script>
 <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
