@@ -518,6 +518,7 @@
         .net-btn:not(.active):hover { color: var(--text); background: rgba(var(--accent-rgb),0.10); }
     </style>
     <!-- WalletConnect bridge for users without injected wallet -->
+    {% include "_reown_appkit_loader.html" %}
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <!-- In-app self-custodial wallet for local logins (ethers is loaded in
          <head>, which local-wallet.js requires for PIN decrypt + signing). -->
