@@ -1862,6 +1862,8 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         if (status) {
             status.textContent = message || '';
             status.style.color = isError ? 'var(--red)' : 'var(--text-dim)';
+            if (status.classList) status.classList.toggle('is-processing', !isError);
+            if (status.setAttribute) status.setAttribute('aria-busy', isError ? 'false' : 'true');
         }
         if (actions) actions.hidden = !isError;
         if (btn) btn.disabled = true;
@@ -4858,9 +4860,17 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             setTimeout(evaluate, 1500);
         })();
 
+        function updateClaimStatusProgress(msg) {
+            const text = String(msg || '').replace(/<[^>]*>/g, ' ').toLowerCase();
+            const processing = /\b(loading|checking|claiming|waiting|confirming|submitted|processing|preparing|unlocking|retrying)\b/.test(text);
+            if (status.classList) status.classList.toggle('is-processing', processing);
+            if (status.setAttribute) status.setAttribute('aria-busy', processing ? 'true' : 'false');
+        }
+
         function setStatus(msg, color) {
             status.innerHTML = msg;
             status.style.color = color || 'var(--text-dim)';
+            updateClaimStatusProgress(msg);
         }
 
         function appendStatusLine(msg, color) {
@@ -4868,6 +4878,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             const current = status.innerHTML || '';
             status.innerHTML = current ? `${current}<br>${safeMsg}` : safeMsg;
             if (color) status.style.color = color;
+            updateClaimStatusProgress(safeMsg);
         }
 
         // Public XDC RPCs. Wallets that respect the rpcUrls list pick the
