@@ -111,11 +111,11 @@
                     <span class="option-arrow">→</span>
                 </button>
                 {% endif %}
-                <button id="walletConnectPrimaryButton" class="wallet-option-card" type="button" onclick="openGoodWalletConnect()">
-                    <div class="option-icon">💚</div>
+                <button id="walletConnectPrimaryButton" class="wallet-option-card" type="button" onclick="openWalletConnectAppKit()">
+                    <div class="option-icon">🔗</div>
                     <div class="option-text">
-                        <div class="option-title">Connect GoodWallet</div>
-                        <p class="option-desc">Already using GoodWallet for G$? Scan the QR or copy the URI link to connect it</p>
+                        <div class="option-title">WalletConnect</div>
+                        <p class="option-desc">Connect an existing wallet using WalletConnect or your wallet app’s browser</p>
                     </div>
                     <span class="option-arrow">→</span>
                 </button>
@@ -307,6 +307,7 @@
         assetVersion: {{ ASSET_VERSION|tojson }}
     };
 </script>
+{% include "_reown_appkit_loader.html" %}
 
     <script>
         window.GM_PRIVY_CONFIG = {
