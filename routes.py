@@ -2671,6 +2671,7 @@ LOGOUT_CLIENT_KEYS = (
     "wc_session_data",
     "wc_session_timestamp",
     "wc_session_chains",
+    "gm_reown_appkit_walletconnect_address",
     # Privy address, written by _get_started_modal.html. Never read today, but
     # it is an account identifier left on a shared device.
     "privy_wallet_address",
