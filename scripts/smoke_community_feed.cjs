@@ -731,7 +731,7 @@ function feedFetch(handler, feedRows) {
     let connectCalls = 0;
     // A bespoke fetchImpl (not feedFetch) so EVERY url is recorded — feedFetch
     // answers the feed internally and would never surface it in `seen`.
-    const { api, store, sandbox } = run({
+    const { api, store, sandbox, document: doc } = run({
       // storageReady: true so addFiles reaches the WALLET gate rather than
       // stopping at the (unrelated) "uploads not configured" guard.
       boot: { isGuest: true, wallet: '', storageReady: true, reactions: {} },
@@ -775,14 +775,20 @@ function feedFetch(handler, feedRows) {
     gate('reacting as a guest opens the connect card', function () {
       api.react(makePost({ id: 7 }), 'like');
     });
-    // Report is driven through the real card button (the user's actual path)
+    // Report is driven through the real ⋯ button (the user's actual path)
     // rather than an internal export, so the test cannot drift from the UI.
-    const reportCard = api._internals.buildCard(makePost({ id: 9 }));
-    const reportBtn = reportCard.querySelector('.cf-card-actions').children
-      .filter(b => /Report/.test(b.textContent))[0];
+    const reportCard = api._internals.buildCard(makePost({ id: 9, post_type: 'user' }));
+    const reportBtn = reportCard.querySelector('.cf-menu-btn');
+    reportBtn.onclick();
+    const reportMenus = doc.body.querySelectorAll('#cfPostMenu');
+    const reportMenu = reportMenus[reportMenus.length - 1];
+    const reportItem = reportMenu.querySelectorAll('.cf-menu-item')
+      .filter(item => /Report post/.test(item.textContent))[0];
     gate('reporting as a guest opens the connect card', function () {
-      reportBtn.onclick();
+      reportItem.onclick();
     });
+    ok('the three-dot click opens a menu with Report post',
+       !!reportMenu && /Report post/.test(reportMenu.textContent));
     ok('a gated report posts nothing',
        !seen.some(u => /\/api\/report/.test(u)), JSON.stringify(seen));
 
@@ -2231,16 +2237,27 @@ function feedFetch(handler, feedRows) {
     ok('leaving the heart cancels a pending hold', picker.hidden);
   }
 
-  // ── 16c. The report control stays in the row for another member ──────────
+  // ── 16c. Report and Support live in the ⋯ menu, not the action row ───────
   {
-    const { api } = run({ boot: MEMBER });
-    const mine = api._internals.buildCard(makePost({ is_mine: true }));
-    ok('your own post has no Report in the action row',
-       !/Report/.test(mine.querySelector('.cf-card-actions').textContent));
-    const theirs = api._internals.buildCard(makePost({ is_mine: false }));
-    ok('another member\'s post keeps a Report control',
-       /Report/.test(theirs.querySelector('.cf-card-actions').textContent),
-       theirs.querySelector('.cf-card-actions').textContent);
+    const { api, document: doc } = run({
+      boot: Object.assign({}, MEMBER, { postSupport: { enabled: false } }),
+    });
+    const mine = api._internals.buildCard(makePost({ is_mine: true, post_type: 'user' }));
+    ok('heart, comment and share stay in the action row',
+       /Comment/.test(mine.querySelector('.cf-card-actions').textContent)
+         && /Share/.test(mine.querySelector('.cf-card-actions').textContent)
+         && !/Report|Support with G\$/.test(mine.querySelector('.cf-card-actions').textContent));
+    const theirs = api._internals.buildCard(makePost({ is_mine: false, post_type: 'user' }));
+    ok('Support and Report are removed from another member\'s action row',
+       !/Report|Support with G\$/.test(theirs.querySelector('.cf-card-actions').textContent));
+    const menuButton = theirs.querySelector('.cf-menu-btn');
+    menuButton.onclick();
+    const menus = doc.body.querySelectorAll('#cfPostMenu');
+    const menu = menus[menus.length - 1];
+    ok('clicking ⋯ opens a nonempty menu even when Support is disabled',
+       !!menu && /Report post/.test(menu.textContent));
+    ok('the menu trigger exposes its expanded state',
+       menuButton.getAttribute('aria-expanded') === 'true');
   }
 
   // ── 17. Double-tap the photo to like (with the heart burst) ──────────────
@@ -3181,8 +3198,8 @@ function feedFetch(handler, feedRows) {
     api._internals.openPostMenu(
       makePost({ id: 6, is_mine: false, post_type: 'user' }), store.cfCaption);
     const theirLabels = lastMenu().textContent;
-    ok('another member\'s menu offers Support',
-       /Support with G\$/.test(theirLabels), theirLabels);
+    ok('another member\'s menu offers Support and Report',
+       /Support with G\$/.test(theirLabels) && /Report post/.test(theirLabels), theirLabels);
     ok('another member\'s menu never offers Delete',
        !/Delete post/.test(theirLabels));
   }
