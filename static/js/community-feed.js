@@ -1752,20 +1752,6 @@
         };
         actions.appendChild(commentBtn);
 
-        if (BOOT.postSupport && BOOT.postSupport.enabled
-                && post.post_type === 'user' && !post.is_mine) {
-            var supportBtn = el('button', 'cf-action-btn cf-support-action');
-            supportBtn.type = 'button';
-            supportBtn.appendChild(el('span', 'cf-act-icon', '♥'));
-            supportBtn.appendChild(el('span', null, 'Support with G$'));
-            supportBtn.setAttribute('aria-label', 'Support @' + post.username + ' with G$ (minimum 20 G$)');
-            supportBtn.onclick = function () {
-                if (!WALLET) { requiresLogin(); return; }
-                if (window.GMCommunitySupport) window.GMCommunitySupport.open(post);
-            };
-            actions.appendChild(supportBtn);
-        }
-
         var shareBtn = el('button', 'cf-action-btn');
         shareBtn.type = 'button';
         shareBtn.classList.add('cf-share-action');
@@ -1775,17 +1761,6 @@
         shareBtn.onclick = function () { sharePost(post); };
         actions.appendChild(shareBtn);
 
-        // Report stays in the row rather than moving behind `⋯`: it is the
-        // moderation path the guest-gate harness drives through this exact
-        // button, and it is the only report affordance a visitor has.
-        if (!post.is_mine) {
-            var reportBtn = el('button', 'cf-action-btn');
-            reportBtn.type = 'button';
-            reportBtn.appendChild(el('span', 'cf-act-icon', '⚑'));
-            reportBtn.appendChild(el('span', null, 'Report'));
-            reportBtn.onclick = function () { reportPost(post); };
-            actions.appendChild(reportBtn);
-        }
         return actions;
     }
 
@@ -1981,6 +1956,8 @@
         var menu = el('button', 'cf-menu-btn', '⋯');
         menu.type = 'button';
         menu.setAttribute('aria-label', 'Post options');
+        menu.setAttribute('aria-haspopup', 'menu');
+        menu.setAttribute('aria-expanded', 'false');
         menu.onclick = function () { openPostMenu(post, menu); };
         head.appendChild(menu);
         card.appendChild(head);
@@ -2432,6 +2409,8 @@
 
     // ── Post menu / edit / delete / report ─────────────────────────────────
 
+    var _openPostMenuAnchor = null;
+
     function togglePin(post) {
         var pinning = !post.is_pinned;
         api('/community/api/posts/' + post.id + '/pin', {
@@ -2491,14 +2470,18 @@
                 post.is_pinned ? '📌' : '📍',
                 function () { togglePin(post); });
             item('Delete post', '🗑', function () { deletePost(post); }, true);
-        } else if (post.post_type === 'user' && BOOT.postSupport
-                && BOOT.postSupport.enabled) {
-            item('Support with G$', '♥', function () {
-                if (!WALLET) { requiresLogin(); return; }
-                if (window.GMCommunitySupport) window.GMCommunitySupport.open(post);
-            });
+        } else if (post.post_type === 'user') {
+            if (BOOT.postSupport && BOOT.postSupport.enabled) {
+                item('Support with G$', '♥', function () {
+                    if (!WALLET) { requiresLogin(); return; }
+                    if (window.GMCommunitySupport) window.GMCommunitySupport.open(post);
+                });
+            }
+            item('Report post', '⚑', function () { reportPost(post); });
         }
         document.body.appendChild(menu);
+        anchor.setAttribute('aria-expanded', 'true');
+        _openPostMenuAnchor = anchor;
         var rect = anchor.getBoundingClientRect();
         menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
         menu.style.left = Math.max(8, rect.right + window.scrollX - 180) + 'px';
@@ -2517,6 +2500,8 @@
     function closePostMenu() {
         var menu = $('cfPostMenu');
         if (menu) menu.remove();
+        if (_openPostMenuAnchor) _openPostMenuAnchor.setAttribute('aria-expanded', 'false');
+        _openPostMenuAnchor = null;
     }
 
     var _editing = null;
