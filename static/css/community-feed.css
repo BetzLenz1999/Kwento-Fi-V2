@@ -2378,6 +2378,18 @@ body.cf-modal-open { overflow: hidden; }
         align-items: start;
         gap: 0.45rem;
     }
+    /* The toolbar appears before the caption in the DOM, but it belongs below
+       the compact avatar / caption / media row. Without an explicit placement,
+       CSS Grid auto-placement puts it in the first 44px column, where the hint
+       wraps over the B/I controls on phones. Give it the full composer width so
+       both controls remain visible and easy to tap. */
+    .cf-layout .cf-composer-entry-row .cf-fmt-toolbar {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        width: 100%;
+        margin: 0;
+        flex-wrap: wrap;
+    }
     .cf-layout .cf-composer-head { min-width: 0; }
     .cf-layout .cf-composer-who { display: none; }
     .cf-layout .cf-composer-entry-row .cf-avatar-btn {
