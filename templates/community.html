@@ -770,10 +770,13 @@
                 aria-expanded="false" aria-controls="cfMenuEarnMore"
                 onclick="GMCommunity.toggleMenuEarnMore(this)">
             <span class="cf-menu-row-icon" aria-hidden="true">✨</span>
-            <span class="cf-menu-row-copy"><strong>Earn More</strong><small>Explore Farming, Savings, Daily Task{% if not is_guest and garden_boot.enabled %}, and Garden{% endif %} inside Community.</small></span>
+            <span class="cf-menu-row-copy"><strong>Earn More</strong><small>Explore Uniswap V3, Farming, Savings, Daily Task{% if not is_guest and garden_boot.enabled %}, and Garden{% endif %} inside Community.</small></span>
             <span class="cf-menu-row-arrow" aria-hidden="true">⌄</span>
         </button>
         <div class="cf-menu-submenu" id="cfMenuEarnMore" hidden>
+            <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openEarnPage('uniswap-v3')">
+                <span aria-hidden="true">🔄</span><span>Uniswap V3</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+            </button>
             <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openEarnPage('farming')">
                 <span aria-hidden="true">🐔</span><span>Farming</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
             </button>
@@ -878,6 +881,16 @@
                     <button type="button" class="cf-garden-secondary" id="cfGardenExitButton" onclick="GMCommunityGarden.exit()">Exit &amp; return principal</button>
                 </div>
             </section>
+            {% if garden_boot.v2Enabled %}
+            <section class="cf-garden-panel cf-garden-sponsor-panel" hidden aria-labelledby="cfGardenSponsorTitle">
+                <div class="cf-garden-sponsor-title"><strong id="cfGardenSponsorTitle">Support optional Garden bonuses</strong><span>Sponsor-powered</span></div>
+                <p>Contribute G$ to the shared Garden bonus pool. Contributions are irreversible and do not give the sponsor a claim on Garden principal or future rewards.</p>
+                <label for="cfGardenSponsorAmount">Contribution amount <span>G$</span></label>
+                <input id="cfGardenSponsorAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="e.g. 10">
+                <label class="cf-garden-ack"><input id="cfGardenSponsorAck" type="checkbox"> <span>I understand this contribution is irrevocable and only funds optional bonuses.</span></label>
+                <button type="button" class="cf-garden-secondary cf-garden-sponsor-button" id="cfGardenSponsorButton" onclick="GMCommunityGarden.sponsor()" disabled>Contribute to Garden</button>
+            </section>
+            {% endif %}
             <p class="cf-garden-notice">Bonus is optional and may be zero. Any gas support applies only to eligible new V2 seed purchases; your wallet signs the transaction and pays gas if support is unavailable. V1 harvest and early exit remain separate user-signed transactions on the original V1 contract. G$ prices can change and the displayed USD reference is not a peg.</p>
             <p class="cf-garden-status" id="cfGardenStatus" role="status" aria-live="polite">Connect your Celo wallet to load Garden details.</p>
         </div>
@@ -938,6 +951,7 @@
                     aria-label="Close earning page" onclick="GMCommunity.closeEarnPage()">×</button>
         </header>
         <iframe id="cfEarnPageFrame" title="KwentoFi earning page" loading="lazy"
+                data-uniswap-v3-src="/community/embed/uniswap-v3"
                 data-farming-src="/farming/?embed=1"
                 data-savings-src="/savings/?embed=1"
                 referrerpolicy="same-origin"></iframe>
