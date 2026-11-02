@@ -4,9 +4,13 @@
   "type": "module",
   "description": "GoodMarket Web3 Learn & Earn platform",
   "private": true,
-  "scripts": {},
+  "scripts": {
+    "build:appkit": "esbuild static/js/reown-appkit-config.js --bundle --minify --format=iife --global-name=GMReownAppKitBundle --outfile=static/js/reown-appkit.bundle.js --target=es2020"
+  },
   "dependencies": {
     "@privy-io/react-auth": "^3.29.2",
+    "@reown/appkit": "1.8.24",
+    "@reown/appkit-adapter-ethers": "1.8.24",
     "@turnkey/core": "^2.2.0",
     "esbuild": "^0.28.1",
     "react": "^19.2.7",
