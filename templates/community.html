@@ -399,11 +399,21 @@
         </div>
 
         <label class="cf-sr-only" for="cfCaption">Caption</label>
+        <div class="cf-fmt-toolbar" role="toolbar" aria-label="Text formatting">
+            <button type="button" class="cf-fmt-btn cf-fmt-bold" data-target="cfCaption"
+                    data-preview="cfCaptionPreview" data-marker="**"
+                    aria-label="Bold selected text"><strong>B</strong></button>
+            <button type="button" class="cf-fmt-btn cf-fmt-italic" data-target="cfCaption"
+                    data-preview="cfCaptionPreview" data-marker="*"
+                    aria-label="Italic selected text"><em>I</em></button>
+            <span class="cf-fmt-hint">Select text, then tap B or I</span>
+        </div>
         <div class="cf-caption-wrap">
             <textarea id="cfCaption" class="cf-caption-input" rows="2"
                       placeholder="What happened today?"
                       maxlength="{{ max_caption }}"></textarea>
         </div>
+        <div class="cf-caption-preview" id="cfCaptionPreview" hidden aria-live="polite"></div>
 
         <div class="cf-composer-actions">
             <label class="cf-file-btn" for="cfFileInput" aria-label="Add photos or videos">
@@ -617,6 +627,16 @@
                     </div>
                 </div>
             </section>
+            <section class="cf-pinned-members" id="cfPinnedMembers"
+                     aria-labelledby="cfPinnedMembersTitle" hidden>
+                <div class="cf-feed-section-head">
+                    <div>
+                        <h2 id="cfPinnedMembersTitle">Pinned</h2>
+                        <span>Posts their authors keep at the top. Pinning is free.</span>
+                    </div>
+                </div>
+                <div id="cfPinnedMemberFeed" class="cf-pinned-member-feed" aria-live="polite"></div>
+            </section>
             <div class="cf-feed-section-head">
                 <h2 id="cfPostsTitle" tabindex="-1">Recent posts</h2>
             </div>
@@ -790,7 +810,7 @@
                 <div>
                     <span class="cf-garden-eyebrow">PLANT · GROW · WITHDRAW</span>
                     <strong>A small seed. A shared Garden.</strong>
-                    <p>Each seed starts a 24-hour Garden. Your principal is held by the contract and can be returned through early exit or harvest. Any harvest bonus is optional and depends on sponsor funding.</p>
+                    <p>Each seed starts a 24-hour Garden. Your principal is held by the contract and can be returned through early exit or harvest. Any harvest bonus is optional and depends on available funding.</p>
                 </div>
             </div>
             {% if garden_boot.legacyEnabled %}
@@ -798,7 +818,6 @@
             {% endif %}
             <div class="cf-garden-stats">
                 <div><small>Your G$ balance</small><strong id="cfGardenBalance">Checking…</strong></div>
-                <div><small id="cfGardenPoolLabel">Optional sponsor pool</small><strong id="cfGardenPool">Checking…</strong></div>
             </div>
             {% if garden_boot.v2Enabled %}
             <section id="cfGardenPlantPanel" class="cf-garden-panel cf-garden-plant-panel" hidden>
@@ -817,7 +836,7 @@
                 </div>
                 <p class="cf-garden-price-note" id="cfGardenPriceNote">Price is read from the Garden contract. The USD value of G$ can change and is not guaranteed.</p>
                 <button type="button" class="cf-garden-primary cf-garden-plant-cta" id="cfGardenPlantButton" onclick="GMCommunityGarden.plant()">Plant my Garden</button>
-                <p class="cf-garden-transaction-note">Your wallet signs the exact G$ approval and seed purchase. If your CELO balance is 0.3 CELO or less, the app may send a limited gas top-up first; sponsorship is subject to per-purchase and daily caps.</p>
+                <p class="cf-garden-transaction-note">Your wallet signs the exact G$ approval and seed purchase. If your CELO balance is 0.3 CELO or less, the app may send a limited gas top-up first; gas support is subject to per-purchase and daily caps.</p>
             </section>
             {% endif %}
             <section id="cfGardenActivePanel" class="cf-garden-panel" hidden>
@@ -859,17 +878,7 @@
                     <button type="button" class="cf-garden-secondary" id="cfGardenExitButton" onclick="GMCommunityGarden.exit()">Exit &amp; return principal</button>
                 </div>
             </section>
-            {% if garden_boot.v2Enabled %}
-            <section class="cf-garden-panel cf-garden-sponsor-panel" hidden>
-                <div class="cf-garden-sponsor-title"><strong>Support optional Garden bonuses</strong><span>Sponsor-powered</span></div>
-                <p>Contribute G$ to the shared bonus pool. Contributions are irreversible and do not give the sponsor a claim on Garden principal or future rewards.</p>
-                <label for="cfGardenSponsorAmount">Contribution amount <span>G$</span></label>
-                <input id="cfGardenSponsorAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="e.g. 10">
-                <label class="cf-garden-ack"><input id="cfGardenSponsorAck" type="checkbox"> <span>I understand this contribution is irrevocable and only funds optional bonuses.</span></label>
-                <button type="button" class="cf-garden-secondary cf-garden-sponsor-button" id="cfGardenSponsorButton" onclick="GMCommunityGarden.sponsor()" disabled>Contribute to sponsor pool</button>
-            </section>
-            {% endif %}
-            <p class="cf-garden-notice">Bonus is optional, sponsor-funded, and may be zero. Any gas support applies only to eligible new V2 seed purchases; your wallet signs the transaction and pays gas if sponsorship is unavailable. V1 harvest and early exit remain separate user-signed transactions on the original V1 contract. G$ prices can change and the displayed USD reference is not a peg.</p>
+            <p class="cf-garden-notice">Bonus is optional and may be zero. Any gas support applies only to eligible new V2 seed purchases; your wallet signs the transaction and pays gas if support is unavailable. V1 harvest and early exit remain separate user-signed transactions on the original V1 contract. G$ prices can change and the displayed USD reference is not a peg.</p>
             <p class="cf-garden-status" id="cfGardenStatus" role="status" aria-live="polite">Connect your Celo wallet to load Garden details.</p>
         </div>
     </section>
@@ -999,8 +1008,18 @@
     <div class="cf-modal-card">
         <h3 id="cfEditTitle">Edit caption</h3>
         <label class="cf-sr-only" for="cfEditCaption">Caption</label>
+        <div class="cf-fmt-toolbar" role="toolbar" aria-label="Text formatting">
+            <button type="button" class="cf-fmt-btn cf-fmt-bold" data-target="cfEditCaption"
+                    data-preview="cfEditCaptionPreview" data-marker="**"
+                    aria-label="Bold selected text"><strong>B</strong></button>
+            <button type="button" class="cf-fmt-btn cf-fmt-italic" data-target="cfEditCaption"
+                    data-preview="cfEditCaptionPreview" data-marker="*"
+                    aria-label="Italic selected text"><em>I</em></button>
+            <span class="cf-fmt-hint">Select text, then tap B or I</span>
+        </div>
         <textarea id="cfEditCaption" class="cf-caption-input" rows="3"
                   maxlength="{{ max_caption }}"></textarea>
+        <div class="cf-caption-preview" id="cfEditCaptionPreview" hidden aria-live="polite"></div>
         <div class="cf-modal-foot">
             <button type="button" class="cf-btn-ghost" onclick="GMCommunity.closeEdit()">Cancel</button>
             <button type="button" class="cf-post-btn" id="cfEditSaveBtn"
