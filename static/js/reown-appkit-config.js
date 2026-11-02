@@ -122,7 +122,7 @@ const api = {
             if (restored.isConnected && restored.provider) finish(null, restored.provider);
         });
     },
-    connect() {
+    connect({ onModalOpen } = {}) {
         if (!this.modal) {
             throw new Error(this.error || 'Reown AppKit is not configured.');
         }
@@ -168,6 +168,9 @@ const api = {
             if (settled) return;
             try {
                 Promise.resolve(modal.open({ view: 'Connect', namespace: 'eip155' }))
+                    .then(() => {
+                        if (!settled && typeof onModalOpen === 'function') onModalOpen();
+                    })
                     .catch((error) => finish(error));
             } catch (error) {
                 finish(error);
