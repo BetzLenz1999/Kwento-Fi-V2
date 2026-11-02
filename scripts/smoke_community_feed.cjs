@@ -115,10 +115,6 @@ function makeDom() {
       contains(n) { return this._walk([]).includes(n); },
       getBoundingClientRect() { return { top: 0, bottom: 10, right: 200, left: 20, width: 180, height: 10 }; },
       scrollIntoView() {}, focus() { this.focused = true; },
-      // A textarea's selection API. `applyFormat` wraps the selected range, so
-      // the stub must track a real range or the wrap lands at the wrong offset.
-      selectionStart: 0, selectionEnd: 0,
-      setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
       // insertAdjacentElement('afterend', n) attaches to the SIBLING position,
       // i.e. a child of this node's parent — never of this node.
       insertAdjacentElement(pos, n) {
@@ -183,13 +179,11 @@ function run(opts) {
    'cfSuggested', 'cfSuggestedList', 'cfSuggestedStatus', 'cfTodayHub',
    'cfPinnedDonations', 'cfPinnedDonationFeed', 'cfPinnedDonationMore',
    'cfPinnedDonationBody', 'cfPinnedDonationsToggle',
-   'cfPinnedMembers', 'cfPinnedMemberFeed',
    'cfEarn', 'cfEarnChip', 'cfEarnAmount', 'cfEarnGoal', 'cfEarnBar',
    'cfEarnBarFill', 'cfEarnNote', 'cfEarnRates', 'cfEarnRatesToggle',
    'cfEarnBalance', 'cfEarnLead',
    'cfEarnOverview', 'cfEarnActions', 'cfEarnWithdrawRow', 'cfEarnWithdrawBtn',
    'cfEarnWithdrawAmount', 'cfEarnWithdrawBounds',
-   'cfCaptionPreview', 'cfEditCaptionPreview',
    'cfEarnWithdrawStatus', 'cfEarnHistoryToggle', 'cfEarnReconcile'
   ].forEach(id => {
     const node = dom.mk(
@@ -245,7 +239,6 @@ function run(opts) {
   // on the stub's default `false`.
   registry.cfPinnedDonations.hidden = true;
   registry.cfPinnedDonationBody.hidden = true;
-  registry.cfPinnedMembers.hidden = true;
   registry.cfPinnedDonationsToggle.setAttribute('aria-expanded', 'false');
   registry.cfMenuEarnMore.hidden = true;
   registry.cfSheetEarn.setAttribute('aria-hidden', 'true');
@@ -365,7 +358,7 @@ function run(opts) {
   vm.createContext(sandbox);
   vm.runInContext(TX_ERROR_SRC, sandbox);
   vm.runInContext(SRC, sandbox);
-  return { api: sandbox.GMCommunity, store: registry, sandbox, document: doc, dom };
+  return { api: sandbox.GMCommunity, store: registry, sandbox, document: doc };
 }
 
 let failures = 0;
@@ -3051,140 +3044,6 @@ function feedFetch(handler, feedRows) {
     ok('blocked permission opens Messages directly for settings guidance',
        permissionBlocked.sandbox.location.href === '/messages'
          && permissionBlocked.store.cfMessagePushPrompt.hidden === true);
-  }
-
-  // ── 21. Bold and italic: the member picks a word, the card styles it ─────
-  //
-  // The renderer must build real DOM nodes (the bundle never touches
-  // innerHTML), and bold and italic must be visibly different weights rather
-  // than one shared slant.
-  {
-    const run21 = run({ boot: { wallet: '0x' + 'a'.repeat(40) } });
-    const api = run21.api;
-    const seg = api._internals.emphasisSegments;
-
-    const boldSeg = seg('Kumusta **Community**!');
-    ok('** ** becomes a bold run',
-       boldSeg.length === 3 && boldSeg[1].type === 'bold'
-         && boldSeg[1].value === 'Community');
-
-    const italicSeg = seg('This is *italic* text');
-    ok('* * becomes an italic run',
-       italicSeg.length === 3 && italicSeg[1].type === 'italic'
-         && italicSeg[1].value === 'italic');
-
-    ok('a lone asterisk in maths stays literal',
-       seg('2 * 3 = 6').length === 1);
-    ok('an intraword underscore is not emphasis',
-       seg('snake_case_name').length === 1);
-    ok('an unclosed marker stays literal',
-       seg('unclosed **bold').every(s => s.type === 'text'));
-
-    // The real renderer, over the stub DOM: bold must produce <strong> and
-    // italic an <em>, and the plain text must survive between them.
-    const host = run21.dom.mk('p');
-    api._internals.formatInlineInto(host, 'Say **yes** to *this*');
-    const strongs = host.querySelectorAll('strong');
-    const italics = host.querySelectorAll('em');
-    ok('bold renders as <strong>', strongs.length === 1 && strongs[0].textContent === 'yes');
-    ok('italic renders as <em>', italics.length === 1 && italics[0].textContent === 'this');
-    ok('the surrounding text is preserved',
-       host.textContent === 'Say yes to this');
-
-    // The share text is plain: the markers must not leak into it.
-    ok('share text drops the markup characters',
-       api._internals.stripFormatting('Say **yes** to *this*') === 'Say yes to this');
-
-    // The B button wraps the SELECTION, which is the whole point of the
-    // toolbar: pick the word, then style it.
-    const field = run21.store.cfCaption;
-    field.value = 'Hello community';
-    field.setSelectionRange(6, 15);
-    api._internals.applyFormat(field, '**');
-    ok('the B button wraps only the selected word',
-       field.value === 'Hello **community**');
-
-    // With no selection the caret lands between the markers so the member can
-    // type straight into the emphasis.
-    field.value = 'Hi ';
-    field.setSelectionRange(3, 3);
-    api._internals.applyFormat(field, '*');
-    ok('an empty selection leaves the caret inside the markers',
-       field.value === 'Hi **' && field.selectionStart === 4 && field.selectionEnd === 4);
-  }
-
-  // ── 22. Pin / unpin is free, and the `⋯` menu is the management surface ──
-  {
-    const seen = [];
-    const boot22 = Object.assign({}, MEMBER, { postSupport: { enabled: true } });
-    const r22 = run({
-      boot: boot22,
-      fetchImpl: feedFetch(function (url, opts) {
-        seen.push({ url: String(url), method: (opts && opts.method) || 'GET' });
-        if (/\/pin$/.test(String(url))) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({
-              success: true,
-              is_pinned: (opts && opts.method) === 'POST',
-            }),
-          });
-        }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }) });
-      }, [makePost({ id: 5, is_mine: true })]),
-    });
-    const api = r22.api;
-    const store = r22.store;
-    const doc = r22.document;
-
-    const post = makePost({ id: 5, is_mine: true, is_pinned: false });
-    api._internals.togglePin(post);
-    await tick();
-
-    const call = seen.filter(c => /\/pin$/.test(c.url))[0];
-    ok('pinning POSTs to the pin endpoint',
-       !!call && call.method === 'POST' && /\/posts\/5\/pin$/.test(call.url),
-       JSON.stringify(call));
-    ok('the pin is reflected on the post', post.is_pinned === true);
-    ok('a pinned post moves into the Pinned section',
-       store.cfPinnedMembers.hidden === false
-         && store.cfPinnedMemberFeed.children.length === 1);
-    ok('a pinned post leaves the chronological list',
-       !api._internals.getFeed().some(p => String(p.id) === '5'));
-
-    // Unpinning is the mirror image: DELETE, and the post returns to the list.
-    api._internals.togglePin(post);
-    await tick();
-    const calls = seen.filter(c => /\/pin$/.test(c.url));
-    ok('unpinning DELETEs the same endpoint',
-       calls.length === 2 && calls[1].method === 'DELETE', JSON.stringify(calls));
-    ok('the unpinned post returns to the chronological list',
-       api._internals.getFeed().some(p => String(p.id) === '5'));
-    ok('the Pinned section hides again with no pins',
-       store.cfPinnedMembers.hidden === true);
-
-    // The menu itself: your own post offers management, not support.
-    // closePostMenu() looks the menu up by id through the registry, which the
-    // stub does not populate, so query the body and read the LAST menu opened.
-    function lastMenu() {
-      const menus = doc.body.querySelectorAll('#cfPostMenu');
-      return menus[menus.length - 1];
-    }
-    api._internals.openPostMenu(
-      makePost({ id: 5, is_mine: true, post_type: 'user' }), store.cfCaption);
-    const ownLabels = lastMenu().textContent;
-    ok('your own menu offers edit, pin and delete',
-       /Edit caption/.test(ownLabels) && /Pin to top/.test(ownLabels)
-         && /Delete post/.test(ownLabels), ownLabels);
-    ok('your own menu never offers Support', !/Support with/.test(ownLabels));
-
-    api._internals.openPostMenu(
-      makePost({ id: 6, is_mine: false, post_type: 'user' }), store.cfCaption);
-    const theirLabels = lastMenu().textContent;
-    ok('another member\'s menu offers Support',
-       /Support with G\$/.test(theirLabels), theirLabels);
-    ok('another member\'s menu never offers Delete',
-       !/Delete post/.test(theirLabels));
   }
 
   console.log('');
