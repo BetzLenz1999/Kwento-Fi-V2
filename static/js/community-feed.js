@@ -4827,6 +4827,7 @@
 
     function openEarnPage(page) {
         var config = {
+            'uniswap-v3': { title: 'Uniswap V3', source: 'data-uniswap-v3-src' },
             farming: { title: 'Farming', source: 'data-farming-src' },
             savings: { title: 'Savings', source: 'data-savings-src' }
         }[String(page || '').toLowerCase()];
@@ -4844,6 +4845,7 @@
             frame.setAttribute('data-loaded-page', String(page).toLowerCase());
         }
         if (title) title.textContent = config.title;
+        frame.title = 'KwentoFi ' + config.title + ' page';
         _earnPageReturnFocus = trigger || null;
         modal.hidden = false;
         modal.setAttribute('aria-hidden', 'false');
