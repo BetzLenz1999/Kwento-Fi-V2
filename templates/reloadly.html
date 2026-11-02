@@ -611,6 +611,7 @@
         }
     </script>
     <!-- WalletConnect bridge for users without injected wallet -->
+    {% if not is_guest %}{% include "_reown_appkit_loader.html" %}{% endif %}
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script>
         if (typeof GMWalletConnect !== "undefined") {
