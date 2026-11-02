@@ -600,8 +600,10 @@
             return { text: "No active farm yet. Start one above to begin earning egg rewards.", type: "" };
         }
         if (farmState.pool < farmState.eggValue) {
+            var shortage = farmState.eggValue - farmState.pool;
             return {
-                text: "Active farm (" + HISTORY.formatWei(farmState.principal) + " G$). Rewards are temporarily unavailable — please try again later.",
+                text: "Active farm (" + HISTORY.formatWei(farmState.principal) + " G$). The reward pool is short by " +
+                    HISTORY.formatWei(shortage) + " G$ — sell/close is disabled until an admin funds it.",
                 type: "error",
             };
         }
@@ -679,7 +681,9 @@
             return "There are no egg rewards ready yet. Chickens produce 1 egg per day.";
         }
         if (farmState.pool < farmState.eggValue) {
-            return "This action is temporarily unavailable. Please try again later.";
+            var shortage = farmState.eggValue - farmState.pool;
+            return "Not opened because it would fail: the reward pool needs " +
+                HISTORY.formatWei(shortage) + " more G$. Please ask an admin to fund the pool, then refresh.";
         }
         return "";
     }
@@ -1036,6 +1040,7 @@
         var chickenEl = $("chickenCount");
         var eggsEl = $("eggsReady");
         var eggValueEl = $("eggValue");
+        var poolEl = $("rewardPoolValue");
         var statusEl = $("farmPhaseValue");
         var progressFill = $("cycleProgressFill");
         var progressLabel = $("cycleProgressLabel");
@@ -1044,6 +1049,7 @@
         if (principalEl) principalEl.textContent = active ? HISTORY.formatWei(farmState.principal) + " G$" : "—";
         if (eggsEl) eggsEl.textContent = active ? farmState.eggs.toString() : "—";
         if (eggValueEl) eggValueEl.textContent = active ? eggValueLabel(farmState.eggValue) : "—";
+        if (poolEl) poolEl.textContent = HISTORY.formatWei(farmState.pool) + " G$";
 
         if (statusEl) {
             if (!active) statusEl.textContent = "No farm";
