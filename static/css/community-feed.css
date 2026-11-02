@@ -2615,6 +2615,9 @@ body.cf-modal-open { overflow: hidden; }
     background: var(--cf-soft); color: var(--cf-ink-2); font-size: 0.82rem; line-height: 1.5;
 }
 .cf-support-status { min-height: 1.4em; margin: 0.8rem 0 0; color: var(--cf-ink-2); font-size: 0.84rem; line-height: 1.45; overflow-wrap: anywhere; }
+.cf-support-status.is-processing::before { content: ""; display: inline-block; width: .72em; height: .72em; margin-right: .45em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -.08em; animation: cfSupportSpin .8s linear infinite; }
+@keyframes cfSupportSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cf-support-status.is-processing::before { animation: none; } }
 .cf-support-status.is-error { color: var(--cf-danger); }
 .cf-support-status.is-success { color: var(--cf-ok-ink); }
 .cf-support-status a { color: var(--cf-accent-ink); font-weight: 800; }
@@ -2925,44 +2928,56 @@ body.cf-push-optin-open { overflow: hidden; }
 
 
 /* ── Community Menu and nested Earn More actions ──────────────────────────── */
-.cf-menu-list { display: grid; gap: 0.55rem; }
+.cf-menu-list {
+    --cf-menu-ink: #20294a;
+    --cf-menu-accent: #4338a8;
+    --cf-menu-muted: #64708a;
+    --cf-menu-border: #e2e6f1;
+    display: grid; gap: 0.55rem;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
 .cf-menu-row {
     width: 100%; min-width: 0; display: grid;
     grid-template-columns: 2.65rem minmax(0, 1fr) auto;
     align-items: center; gap: 0.7rem;
     padding: 0.7rem 0.8rem;
-    border: 1px solid var(--cf-border); border-radius: 15px;
-    background: #fff; color: var(--cf-ink); text-align: left;
+    border: 1px solid var(--cf-menu-border); border-radius: 15px;
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%);
+    color: var(--cf-menu-ink); text-align: left;
     font-family: inherit; cursor: pointer; text-decoration: none;
-    transition: border-color 0.18s ease, background 0.18s ease, transform 0.15s ease;
+    box-shadow: 0 2px 8px rgba(39, 49, 91, 0.045);
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
 }
-.cf-menu-row:hover { border-color: #a5b4fc; background: #f8faff; }
+.cf-menu-row:hover { border-color: #b8b9ed; background: linear-gradient(135deg, #fff 0%, #f1f2ff 100%); box-shadow: 0 5px 14px rgba(67, 56, 168, 0.09); }
 .cf-menu-row:active, .cf-menu-subitem:active { transform: scale(0.99); }
 .cf-menu-row:focus-visible, .cf-menu-subitem:focus-visible {
-    outline: 2px solid var(--cf-accent-2); outline-offset: 2px;
+    outline: 2px solid #7772d6; outline-offset: 2px;
 }
 .cf-menu-row-icon {
     width: 2.5rem; height: 2.5rem; display: grid; place-items: center;
-    border-radius: 13px; background: #eef2ff; font-size: 1.15rem;
+    border: 1px solid #e0e3fb; border-radius: 13px;
+    background: linear-gradient(145deg, #f0f1ff, #e8edff); font-size: 1.15rem;
 }
 .cf-menu-row-copy { min-width: 0; display: grid; gap: 0.15rem; }
-.cf-menu-row-copy strong { font-size: 0.86rem; line-height: 1.2; }
-.cf-menu-row-copy small { color: var(--cf-dim); font-size: 0.7rem; line-height: 1.35; }
-.cf-menu-row-arrow { color: #6366f1; font-size: 1.35rem; font-weight: 800; line-height: 1; }
+.cf-menu-row-copy strong { color: var(--cf-menu-ink); font-size: 0.9rem; font-weight: 850; letter-spacing: -0.012em; line-height: 1.25; }
+.cf-menu-row-copy small { color: var(--cf-menu-muted); font-size: 0.73rem; line-height: 1.42; }
+.cf-menu-row-arrow { color: var(--cf-menu-accent); font-size: 1.35rem; font-weight: 800; line-height: 1; }
 .cf-menu-submenu { display: grid; gap: 0.45rem; padding: 0.1rem 0 0 1rem; }
 .cf-menu-submenu[hidden] { display: none !important; }
 .cf-menu-subitem {
     min-height: 46px; display: grid;
     grid-template-columns: 2rem minmax(0, 1fr) auto;
     align-items: center; gap: 0.55rem;
-    padding: 0.55rem 0.75rem; border: 1px solid #e6e8f0;
-    border-radius: 13px; background: #f8f9fc; color: #0369a1;
-    text-align: left; font-family: inherit; font-size: 0.82rem;
-    font-weight: 800; cursor: pointer;
+    padding: 0.58rem 0.75rem; border: 1px solid var(--cf-menu-border);
+    border-radius: 13px; background: linear-gradient(135deg, #fbfbff 0%, #f2f4ff 100%);
+    color: var(--cf-menu-ink); text-align: left; font-family: inherit;
+    font-size: 0.84rem; font-weight: 750; cursor: pointer;
+    box-shadow: 0 1px 5px rgba(39, 49, 91, 0.035);
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
 }
-.cf-menu-subitem > span:nth-child(2) { color: #2563eb; font-weight: 850; }
-.cf-menu-subitem:hover { border-color: #c7d2fe; background: #eef2ff; }
-.cf-menu-subitem > span:first-child { font-size: 1.15rem; text-align: center; }
+.cf-menu-subitem > span:nth-child(2) { color: var(--cf-menu-accent); font-weight: 800; letter-spacing: -0.008em; }
+.cf-menu-subitem:hover { border-color: #b8b9ed; background: linear-gradient(135deg, #fff 0%, #ebedff 100%); box-shadow: 0 4px 12px rgba(67, 56, 168, 0.08); }
+.cf-menu-subitem > span:first-child { display: grid; place-items: center; width: 1.85rem; height: 1.85rem; border: 1px solid #e1e4fb; border-radius: 10px; background: #eceeff; font-size: 1.08rem; text-align: center; }
 
 /* ── Farming/Savings iframe modal (same-origin, lazy-mounted on first open) ── */
 .cf-earn-page-modal {
