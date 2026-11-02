@@ -1256,10 +1256,12 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
             .in_("post_type", ["user", "system_support", "system_vault_donation"])
             .eq("is_deleted", False)
             .eq("is_hidden", False)
-            # Donor announcements are rendered in the dedicated pinned area,
-            # not duplicated in the chronological member-post stream.
-            .or_("post_type.eq.user,is_pinned.eq.false")
         )
+        # The main stream renders every pinned post in its own pinned area above
+        # the list, so leaving it in here as well would show it twice. A
+        # profile feed has no pinned area, so its own pins stay in place.
+        if not author:
+            query = query.eq("is_pinned", False)
         if author:
             query = query.ilike("wallet_address", author)
         if prompt_id:
@@ -2410,6 +2412,154 @@ def update_caption(wallet: str, post_id: int, caption: str | None) -> dict:
         logger.error("community_feed: caption update failed: %s", exc)
         return {"success": False, "error": "Could not update the post", "code": "db"}
     return {"success": True, "body": clean}
+
+
+def _pin_target(supabase, wallet: str, post_id) -> tuple[dict | None, dict | None]:
+    """Load a post for pinning, enforcing ownership. Returns (row, error)."""
+    try:
+        result = (
+            supabase.table("community_feed_posts")
+            .select("id,wallet_address,post_type,is_deleted,is_hidden,is_pinned")
+            .eq("id", int(post_id))
+            .limit(1)
+            .execute()
+        )
+        rows = _rows(result)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: pin lookup failed: %s", exc)
+        return None, {"success": False, "error": "Could not update the pin", "code": "db"}
+    if not rows or rows[0].get("is_deleted"):
+        return None, {"success": False, "error": "Post not found", "code": "not_found"}
+    row = rows[0]
+    if row.get("post_type") != "user":
+        return None, {"success": False, "error": "Only your own posts can be pinned.",
+                      "code": "forbidden"}
+    if (row.get("wallet_address") or "").lower() != wallet.lower():
+        return None, {"success": False, "error": "You can only pin your own post.",
+                      "code": "forbidden"}
+    return row, None
+
+
+def pin_post(wallet: str, post_id) -> dict:
+    """Pin one of the member's own posts to the top of the Community feed.
+
+    Free and off-chain. A member may hold ONE pinned post at a time: pinning a
+    second post releases the first, so the top of the feed can never be filled
+    by a single author.
+    """
+    if not wallet:
+        return {"success": False, "error": "Not authenticated", "code": "auth"}
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "code": "db"}
+
+    row, error = _pin_target(supabase, wallet, post_id)
+    if error:
+        return error
+    if row.get("is_hidden"):
+        return {"success": False, "error": "A hidden post cannot be pinned.",
+                "code": "hidden"}
+
+    now = _now().isoformat()
+    try:
+        # Release any other pin this member holds first, so the "one pin per
+        # member" rule holds even if an older row was pinned before this rule.
+        (
+            supabase.table("community_feed_posts")
+            .update({"is_pinned": False, "pinned_at": None})
+            .ilike("wallet_address", wallet)
+            .eq("post_type", "user")
+            .eq("is_pinned", True)
+            .execute()
+        )
+        (
+            supabase.table("community_feed_posts")
+            .update({"is_pinned": True, "pinned_at": now})
+            .eq("id", int(post_id))
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: pin failed: %s", exc)
+        return {"success": False, "error": "Could not pin the post", "code": "db"}
+    return {"success": True, "is_pinned": True}
+
+
+def unpin_post(wallet: str, post_id) -> dict:
+    """Release the member's pin. Free and off-chain."""
+    if not wallet:
+        return {"success": False, "error": "Not authenticated", "code": "auth"}
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "code": "db"}
+
+    _row, error = _pin_target(supabase, wallet, post_id)
+    if error:
+        return error
+    try:
+        (
+            supabase.table("community_feed_posts")
+            .update({"is_pinned": False, "pinned_at": None})
+            .eq("id", int(post_id))
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: unpin failed: %s", exc)
+        return {"success": False, "error": "Could not unpin the post", "code": "db"}
+    return {"success": True, "is_pinned": False}
+
+
+def get_pinned_member_posts(viewer: str | None = None,
+                            limit: int | None = None) -> dict:
+    """The member pins shown above the chronological feed.
+
+    Donor acknowledgments have their own pinned area, so this query is limited
+    to ``user`` posts to keep the two surfaces from overlapping.
+    """
+    supabase = _get_supabase()
+    if not supabase:
+        return {"success": False, "error": "Database unavailable", "posts": []}
+    try:
+        size = int(limit or DEFAULT_PAGE_SIZE)
+    except (TypeError, ValueError):
+        size = DEFAULT_PAGE_SIZE
+    size = max(1, min(MAX_PAGE_SIZE, size))
+    try:
+        query = (
+            supabase.table("community_feed_posts").select("*")
+            .eq("post_type", "user")
+            .eq("is_pinned", True)
+            .eq("is_hidden", False)
+            .eq("is_deleted", False)
+        )
+        rows = _rows(query.order("id", desc=True).limit(size).execute())
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: pinned member query failed: %s", exc)
+        return {"success": False, "error": "Could not load pinned posts", "posts": []}
+
+    post_ids = [row.get("id") for row in rows if row.get("id") is not None]
+    media = _media_for_posts(supabase, post_ids)
+    reactions = _reactions_for_posts(supabase, post_ids, viewer)
+    followed = _follow_states(
+        supabase, [row.get("wallet_address") for row in rows], viewer)
+    avatars = _avatars_for_wallets(
+        supabase, [row.get("wallet_address") for row in rows])
+    breakdowns = _reaction_breakdowns_for_posts(supabase, post_ids)
+    from . import badges as community_badges
+    badges_by_wallet = community_badges.public_badges_for_wallets(
+        [row.get("wallet_address") for row in rows], client=supabase)
+
+    posts = [
+        _public_post(
+            row, media.get(row.get("id"), []), viewer,
+            my_reaction=reactions.get(row.get("id")),
+            reactions=breakdowns.get(row.get("id")),
+            is_following=followed.get((row.get("wallet_address") or "").lower()),
+            avatar_url=avatars.get((row.get("wallet_address") or "").lower()),
+            earned_badges=badges_by_wallet.get((row.get("wallet_address") or "").lower()),
+        )
+        for row in rows
+    ]
+    return {"success": True, "posts": posts}
 
 
 def delete_post(wallet: str, post_id: int) -> dict:
