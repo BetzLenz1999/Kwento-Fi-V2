@@ -31,6 +31,9 @@
 .claim-card-btn { grid-column: 1 / -1; width: 100%; padding: .55rem .7rem; border: 0; border-radius: 10px; background: linear-gradient(135deg, var(--accent, #ea580c), #0d9488); color: #fff; font-weight: 900; cursor: pointer; }
 .gm-claim-sheet > #ubiClaimBtn { width: 100%; margin-top: .7rem; }
 .gm-claim-sheet .claim-status { min-height: 1.2rem; margin-top: .55rem; color: var(--text-muted, #64748b); font-size: .75rem; line-height: 1.4; }
+.gm-claim-sheet .claim-status.is-processing::before { content: ""; display: inline-block; width: .75em; height: .75em; margin-right: .45em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -.08em; animation: gmClaimSpin .8s linear infinite; }
+@keyframes gmClaimSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .gm-claim-sheet .claim-status.is-processing::before { animation: none; } }
 .gm-claim-warning { margin-top: .65rem; padding: .55rem .7rem; border: 1px solid rgba(217, 119, 6, .35); border-radius: 10px; color: #92400e; font-size: .75rem; line-height: 1.4; }
 .gm-reverify-hint { margin-top: .6rem; padding: .55rem .7rem; border: 1px solid rgba(124, 58, 237, .25); border-radius: 10px; text-align: center; color: #7c3aed; font-size: .75rem; }
 .gm-reverify-hint button { margin-top: .35rem; padding: .35rem .75rem; border: 0; border-radius: 8px; background: #7c3aed; color: #fff; font-size: .72rem; font-weight: 700; cursor: pointer; }
