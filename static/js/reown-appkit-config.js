@@ -167,7 +167,8 @@ const api = {
             acceptConnection(readProviderState(modal));
             if (settled) return;
             try {
-                modal.open({ view: 'Connect', namespace: 'eip155' });
+                Promise.resolve(modal.open({ view: 'Connect', namespace: 'eip155' }))
+                    .catch((error) => finish(error));
             } catch (error) {
                 finish(error);
             }
@@ -199,6 +200,10 @@ if (!projectId) {
         enableWalletGuide: false,
         enableReconnect: true,
         allWallets: 'SHOW',
+        // The homepage Get Started overlay is at z-index 10000. AppKit's
+        // default 9999 would leave its picker hidden behind that full-screen
+        // overlay, so keep the actual wallet picker above it.
+        themeVariables: { '--apkt-z-index': 10001 },
         themeMode: 'dark'
     });
 }
