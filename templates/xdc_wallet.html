@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if embed_mode|default(false) %} class="xdc-wallet-embed"{% endif %}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -516,6 +516,15 @@
         .net-btn { color: var(--text-muted); }
         .net-btn.active { background: linear-gradient(135deg, #f97316, #ea580c); box-shadow: 0 2px 10px rgba(var(--accent-rgb),0.3); }
         .net-btn:not(.active):hover { color: var(--text); background: rgba(var(--accent-rgb),0.10); }
+        /* The Community modal provides its own header and close action. Keep
+           wallet controls full-size and hide standalone page navigation. */
+        html.xdc-wallet-embed { zoom: 1 !important; }
+        html.xdc-wallet-embed body { min-height: 100dvh; }
+        html.xdc-wallet-embed .navbar { display: none; }
+        html.xdc-wallet-embed .container { max-width: 900px; padding-top: 0.75rem; }
+        @supports not (zoom: 1) {
+            html.xdc-wallet-embed body { transform: none; transform-origin: initial; width: auto; margin: 0; }
+        }
     </style>
     <!-- WalletConnect bridge for users without injected wallet -->
     {% include "_reown_appkit_loader.html" %}
