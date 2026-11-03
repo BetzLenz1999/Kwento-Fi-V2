@@ -926,6 +926,13 @@ async function openWalletConnectAppKit() {
         const connection = await appKit.connect({
             onModalOpen: function () {
                 showWalletStatus('walletConnectStatus', 'Choose a wallet in the picker to continue.', 'info');
+            },
+            onModalClose: function () {
+                showWalletStatus(
+                    'walletConnectStatus',
+                    'The wallet picker closed. If Trust Wallet or MiniPay opened, approve the connection there and return here — waiting for the wallet…',
+                    'info'
+                );
             }
         });
         if (!connection || !connection.provider || typeof connection.provider.request !== 'function') {
@@ -953,7 +960,14 @@ async function openWalletConnectAppKit() {
         );
     } catch (err) {
         const message = err && err.message ? err.message : 'Could not open Reown AppKit.';
-        showWalletStatus('walletConnectStatus', '❌ ' + message, 'error');
+        const wasCancelled = /cancel|closed/i.test(message);
+        showWalletStatus(
+            'walletConnectStatus',
+            wasCancelled
+                ? 'The wallet picker closed before a connection was confirmed. If Trust Wallet or MiniPay opened, approve there and return to this page; otherwise try connecting again.'
+                : '❌ ' + message,
+            wasCancelled ? 'warning' : 'error'
+        );
     } finally {
         _appKitLoginInProgress = false;
         if (connectBtn) connectBtn.disabled = false;
