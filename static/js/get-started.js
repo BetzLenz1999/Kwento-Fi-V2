@@ -1859,7 +1859,13 @@ const WC_FALLBACK_TIMEOUT_MS = Object.freeze({
     // start the handshake cost landed INSIDE the connect budget — competing
     // with the SDK's own budgets and producing a false timeout. Warming it
     // here (never rejecting) takes that cost off the connect budget.
-    relay_open: 15000,
+    //
+    // On weak mobile data the handshake itself fails ("WebSocket connection
+    // failed for host: wss://relay.walletconnect.org") and the SDK retries on
+    // a backoff, so the socket can take far longer than the old 15s to come
+    // up. Give it a full extra 60s (15s + 60s = 75s) so a marginal link can
+    // still reach the relay before we fall through to the connect stage.
+    relay_open: 75000,
     // MUST stay above the SDK's OWN internal budgets. In the shipped
     // sign-client@2.17.0 bundle subscribeTimeout and publishTimeout are both
     // ONE_MINUTE (60s), and publishing the session proposal retries until
