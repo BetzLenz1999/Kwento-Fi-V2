@@ -19,6 +19,9 @@
     var _questionDeadline = 0;
     var _activeQuestion = null;
     var _quizStarted = false;
+    var _congratsShown = false;
+    var _congratsBodyWasLocked = false;
+    var _congratsResult = null;
     var DAILY_QUESTION_SECONDS = 20;
     var ANSWER_FEEDBACK_DELAY_MS = 1000;
 
@@ -142,6 +145,7 @@
     function renderRewardStatus() {
         var note = $('cfDailyLearnRewardStatus');
         if (note) note.textContent = rewardStatusMessage();
+        renderCongratsReward();
     }
 
     function refreshCompletionEarnings(data) {
@@ -172,6 +176,77 @@
             syncLearnDoneDetail();
             return false;
         });
+    }
+
+    function formatUnlockTime(value) {
+        if (!value) return '';
+        var date = new Date(value);
+        if (isNaN(date.getTime())) return '';
+        return date.toLocaleString(undefined, {
+            weekday: 'short', month: 'short', day: 'numeric',
+            hour: 'numeric', minute: '2-digit'
+        });
+    }
+
+    function rewardAmountText() {
+        var reward = lastReward || {};
+        var amount = Number(reward.credited_gd);
+        if ((reward.status === 'credited' || reward.status === 'already_credited') &&
+            Number.isFinite(amount) && amount > 0) {
+            return 'G$ ' + amount.toLocaleString(undefined, { maximumFractionDigits: 4 }) +
+                (lastEarningsRefresh === true ? ' added to your Community G$ ledger.' : ' credited to your Community G$ ledger.');
+        }
+        return rewardStatusMessage();
+    }
+
+    function renderCongratsReward() {
+        var reward = $('cfDailyLearnCongratsReward');
+        if (reward) reward.textContent = _congratsResult ? rewardAmountText() : '';
+    }
+
+    function closeCongrats(restoreFocus) {
+        var modal = $('cfDailyLearnCongrats');
+        if (!modal || modal.hidden) return;
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        if (!_congratsBodyWasLocked) document.body.classList.remove('cf-modal-open');
+        _congratsBodyWasLocked = false;
+        if (restoreFocus && restoreFocus.focus) restoreFocus.focus();
+        _congratsResult = null;
+    }
+
+    function showCongrats(data) {
+        if (_congratsShown) return;
+        var modal = $('cfDailyLearnCongrats');
+        if (!modal) return;
+        _congratsShown = true;
+        _congratsResult = data || {};
+        _congratsBodyWasLocked = document.body.classList.contains('cf-modal-open');
+        var score = Number(data && data.score) || 0;
+        var total = Number(data && data.total_questions) || 2;
+        var scoreNode = $('cfDailyLearnCongratsScore');
+        var unlockNode = $('cfDailyLearnCongratsUnlock');
+        if (scoreNode) scoreNode.textContent = score + ' / ' + total + ' correct';
+        if (unlockNode) {
+            var unlock = formatUnlockTime(data && data.next_available_at);
+            unlockNode.textContent = unlock
+                ? 'Your next quiz unlocks in 24 hours, on ' + unlock + '.'
+                : 'You can take another quiz 24 hours after this completion.';
+        }
+        renderCongratsReward();
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cf-modal-open');
+        var closeButton = $('cfDailyLearnCongratsClose');
+        if (closeButton && closeButton.focus) closeButton.focus();
+    }
+
+    function viewCommunityGd() {
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        closeCongrats(false);
+        if (window.GMCommunity && typeof window.GMCommunity.openCommunityCards === 'function') {
+            window.GMCommunity.openCommunityCards();
+        }
     }
 
     function clearAdvanceTimer() {
@@ -224,7 +299,7 @@
         if (detail) detail.textContent = learnDoneDetailText();
     }
 
-    function renderCompleted(data) {
+    function renderCompleted(data, celebrate) {
         stopQuestionTimer();
         clearAdvanceTimer();
         _quizStarted = false;
@@ -235,8 +310,10 @@
         root.textContent = '';
         root.appendChild(el('p', 'cf-daily-learn-result',
             'You completed today’s Daily Learn: ' + score + '/' + total + '.'));
-        var note = el('p', 'cf-daily-learn-result',
-            'Your completion is saved. Daily Learn resets at 00:00 UTC.');
+        var unlock = formatUnlockTime(data && data.next_available_at);
+        var note = el('p', 'cf-daily-learn-result', unlock
+            ? 'Your completion is saved. Your next quiz unlocks in 24 hours, on ' + unlock + '.'
+            : 'Your completion is saved. You can take another quiz 24 hours after this completion.');
         root.appendChild(note);
         var rewardNote = el('p', 'cf-daily-learn-result', rewardStatusMessage());
         rewardNote.id = 'cfDailyLearnRewardStatus';
@@ -258,6 +335,7 @@
             };
             root.appendChild(answerPrompt);
         }
+        if (celebrate) showCongrats(data);
     }
 
     function renderAnswerFeedback(result) {
@@ -282,7 +360,7 @@
         clearAdvanceTimer();
         _advanceTimer = window.setTimeout(function () {
             _advanceTimer = null;
-            if (result.status === 'completed') renderCompleted(result);
+            if (result.status === 'completed') renderCompleted(result, result.completed_new === true);
             else loadLearn();
         }, ANSWER_FEEDBACK_DELAY_MS);
     }
@@ -329,6 +407,9 @@
                 if (response.status === 401) {
                     renderLearnMessage('Connect a verified wallet to submit your answers.', 'Sign in', connect);
                     return;
+                }
+                if (result.code === 'quiz_cooldown') {
+                    return loadLearn();
                 }
                 throw new Error(result.message || result.error || 'Your answer could not be saved. Please try again.');
             }
@@ -475,13 +556,8 @@
             }
             learn = data;
             if (data.status === 'completed') {
-                // Done for today, so the card goes away instead of sitting on
-                // the feed all day. It comes back on its own when the UTC day
-                // rolls over: the snapshot is keyed on `day_utc`, so tomorrow's
-                // attempt is a fresh, incomplete one and this branch is skipped.
-                // Deliberately NOT reopened if an admin republishes the quiz
-                // mid-day — re-asking a member a quiz they already finished is a
-                // worse experience than waiting for the reset.
+                // Keep the feed uncluttered after completion. The next quiz is
+                // available only after the server-confirmed 24-hour cooldown.
                 card.hidden = true;
                 showLearnDone(data);
                 // Still refreshes the Community G$ card and still dispatches
@@ -490,10 +566,17 @@
                 refreshCompletionEarnings(data);
                 return;
             }
+            if (data.status === 'cooldown') {
+                card.hidden = true;
+                showLearnDone(data);
+                return;
+            }
             hideLearnDone();
             card.hidden = false;
             var title = $('cfDailyLearnTitle');
             if (title) title.textContent = 'Answer today’s 2 questions';
+            var reset = $('cfDailyLearnReset');
+            if (reset) reset.textContent = 'One quiz every 24 hours after completion.';
             renderQuestion(data, notice);
         }).catch(function () {
             card.hidden = true;
@@ -507,6 +590,11 @@
        (daily allowance used, no correct answers, wallet not verified, rewards
        off). Collapsed by default so the composer stays clean. */
     function learnDoneDetailText() {
+        if (learn && (learn.status === 'cooldown' || learn.cooldown_active)) {
+            var unlock = formatUnlockTime(learn.next_available_at);
+            return 'Your next Daily Learn quiz will be available 24 hours after your last completion' +
+                (unlock ? ' — ' + unlock + '.' : '.') + ' Check Community G$ Earnings for the ledger entry.';
+        }
         var score = learn && learn.score != null ? learn.score : null;
         var total = learn && learn.total_questions ? learn.total_questions : 2;
         var head = score != null
@@ -522,9 +610,14 @@
         if (text) {
             var score = data && data.score != null ? data.score : null;
             var total = data && data.total_questions ? data.total_questions : 2;
-            text.textContent = score != null
-                ? 'Daily Learn done today · ' + score + '/' + total
-                : 'Daily Learn done today';
+            if (data && data.status === 'cooldown') {
+                var unlock = formatUnlockTime(data.next_available_at);
+                text.textContent = unlock ? 'Next quiz unlocks ' + unlock : 'Next quiz unlocks in 24 hours';
+            } else {
+                text.textContent = score != null
+                    ? 'Daily Learn complete · ' + score + '/' + total
+                    : 'Daily Learn complete';
+            }
         }
         strip.hidden = false;
         var detail = $('cfLearnDoneDetail');
@@ -558,6 +651,19 @@
 
     function init() {
         window.addEventListener('gm:community-post-created', loadPrompt);
+        var modal = $('cfDailyLearnCongrats');
+        var closeButton = $('cfDailyLearnCongratsClose');
+        var cardsButton = $('cfDailyLearnCongratsCards');
+        if (closeButton) closeButton.addEventListener('click', function () { closeCongrats(); });
+        if (cardsButton) cardsButton.addEventListener('click', viewCommunityGd);
+        if (modal) {
+            modal.addEventListener('click', function (event) {
+                if (event.target === modal) closeCongrats();
+            });
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && !modal.hidden) closeCongrats();
+            });
+        }
         loadPrompt();
         loadLearn();
     }
