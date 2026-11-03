@@ -4082,9 +4082,8 @@
     var _messagesPagePrefetched = false;
 
     function prefetchMessagesPage() {
-        // Opening Messages is a full navigation, so warm the document while the
-        // member is still deciding. It is a hint, never a fetch we await, and it
-        // runs at most once.
+        // Warm the full-page fallback only when the in-page modal controller is
+        // unavailable. It is a hint, never a fetch we await, and runs at most once.
         if (_messagesPagePrefetched || !WALLET) return;
         _messagesPagePrefetched = true;
         try {
@@ -4119,9 +4118,9 @@
         icon.setAttribute('aria-hidden', 'true');
         node.appendChild(icon);
         node.appendChild(el('span', 'cf-nav-label', item.label || ''));
-        if (item.action === 'messages') {
-            // Warm the destination on intent so the tap feels instant; the
-            // prefetch is a hint, so a pointer that never lands costs nothing.
+        if (item.action === 'messages' && !window.GMCommunityMessageModal) {
+            // Only warm the full-page fallback when the in-page modal script
+            // did not load. The normal Messages action stays on this page.
             node.addEventListener('mouseenter', prefetchMessagesPage, { once: true });
             node.addEventListener('touchstart', prefetchMessagesPage, { once: true, passive: true });
             node.addEventListener('focus', prefetchMessagesPage, { once: true });
@@ -4146,7 +4145,7 @@
             if (item.action === 'messages') {
                 if (event && event.preventDefault) event.preventDefault();
                 if (!WALLET) { requiresLogin(); return; }
-                openMessages();
+                openMessages(node);
                 return;
             }
             if (item.action === 'airtime') {
@@ -4203,7 +4202,7 @@
         _messageUnreadLoading = true;
         // The badge is the only thing the feed needs, so it asks the summary
         // route: a fixed three queries, versus the inbox's per-conversation
-        // lookups. The full list is loaded on /messages, when it is opened.
+        // lookups. The full list is loaded inside the in-page modal when opened.
         return api('/api/messages/summary').then(function (result) {
             var data = result && result.data;
             var count = data && Number(data.unread_conversation_count);
@@ -4259,69 +4258,14 @@
             && !!window.PushManager;
     }
 
-    function openMessages() {
+    function openMessages(opener) {
         if (!WALLET) { requiresLogin(); return; }
-        var prompt = $('cfMessagePushPrompt');
-        if (!BOOT.messagesEnabled || !prompt || !window.GMCommunityPush
-                || messagePromptWasDismissed()
-                || !browserCanRequestMessageNotifications()) {
-            window.location.href = '/messages';
+        if (window.GMCommunityMessageModal
+                && typeof window.GMCommunityMessageModal.open === 'function') {
+            window.GMCommunityMessageModal.open(opener || document.activeElement);
             return;
         }
-        _messagePushPromptOpen = true;
-        _messagePushPromptBusy = false;
-        _messagePushPromptReady = false;
-        prompt.hidden = false;
-        document.body.classList.add('cf-push-optin-open');
-        var enable = $('cfMessagePushEnable');
-        var later = $('cfMessagePushLater');
-        var copy = $('cfMessagePushCopy');
-        if (copy) copy.textContent = 'Enable notifications on this device so you’ll know when someone sends you a Community message. You can change this later.';
-        if (enable) { enable.hidden = false; enable.disabled = true; enable.textContent = 'Checking…'; }
-        if (later) { later.disabled = false; later.textContent = 'Not now'; }
-        messagePromptStatus('Checking notification permission and device setup…', false);
-        if (later && later.focus) later.focus();
-
-        window.GMCommunityPush.inspect().then(function (result) {
-            if (!_messagePushPromptOpen) return;
-            result = result || { state: 'unavailable' };
-            if (result.state === 'enabled') {
-                window.location.href = '/messages';
-                return;
-            }
-            if (result.state === 'needs-setup') {
-                _messagePushPromptReady = true;
-                if (enable) {
-                    enable.disabled = false;
-                    enable.textContent = window.Notification && window.Notification.permission === 'granted'
-                        ? 'Finish setup' : 'Enable notifications';
-                    enable.focus();
-                }
-                messagePromptStatus('', false);
-                return;
-            }
-
-            _messagePushPromptReady = false;
-            if (enable) { enable.hidden = true; enable.disabled = true; }
-            if (later) later.textContent = 'Continue to Messages';
-            var message = result.message || 'You can still open Messages without notifications.';
-            if (result.state === 'permission-blocked') {
-                message = 'Notifications are blocked for this site. Allow them in your browser settings, then retry from Messages. You can continue without enabling them.';
-            } else if (result.state === 'unsupported') {
-                message = 'This browser or connection does not support push notifications. You can still open Messages.';
-            } else if (result.state === 'unconfigured') {
-                message = 'Message notifications are not available right now. You can still open Messages.';
-            }
-            messagePromptStatus(message, result.state === 'storage-unavailable');
-            if (later && later.focus) later.focus();
-        }).catch(function (error) {
-            if (!_messagePushPromptOpen) return;
-            _messagePushPromptReady = false;
-            if (enable) { enable.hidden = true; enable.disabled = true; }
-            if (later) { later.textContent = 'Continue to Messages'; if (later.focus) later.focus(); }
-            messagePromptStatus((error && error.message)
-                || 'Notification setup could not be checked. You can still open Messages.', true);
-        });
+        toast('Messages could not open. Refresh the Community page and try again.', 'error');
     }
 
     function declineMessageNotifications() {
