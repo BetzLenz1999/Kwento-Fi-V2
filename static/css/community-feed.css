@@ -3658,3 +3658,115 @@ body.cf-page .btn-secondary:hover { background: var(--cf-field); }
 .cf-suggested-empty {
     margin: 0; color: var(--cf-ink-2); font-size: 0.8rem;
 }
+
+
+/* ── Daily Learn completion celebration ─────────────────────────────────── */
+.cf-daily-learn-congrats {
+    position: fixed; inset: 0; z-index: 6200;
+    display: grid; place-items: center; padding: 1rem;
+    background: rgba(31, 24, 17, 0.62);
+    -webkit-backdrop-filter: blur(7px); backdrop-filter: blur(7px);
+    animation: cfCongratsFade 180ms ease-out;
+}
+.cf-daily-learn-congrats[hidden] { display: none !important; }
+.cf-daily-learn-congrats-card {
+    position: relative; isolation: isolate; overflow: hidden;
+    width: min(100%, 430px); padding: 1.8rem 1.45rem 1.35rem;
+    border: 1px solid rgba(255, 255, 255, 0.78); border-radius: 24px;
+    background: #fffdf8; color: #302419; text-align: center;
+    box-shadow: 0 28px 90px rgba(25, 16, 5, 0.32);
+    animation: cfCongratsPop 260ms cubic-bezier(.2,.8,.2,1);
+}
+.cf-daily-learn-congrats-card::before,
+.cf-daily-learn-congrats-card::after {
+    position: absolute; z-index: -1; content: ''; pointer-events: none;
+    width: 210px; height: 210px; border-radius: 50%; filter: blur(1px);
+}
+.cf-daily-learn-congrats-card::before {
+    top: -122px; left: -66px;
+    background: radial-gradient(circle, rgba(255, 208, 112, .46), rgba(255, 208, 112, 0));
+}
+.cf-daily-learn-congrats-card::after {
+    right: -112px; bottom: -125px;
+    background: radial-gradient(circle, rgba(252, 177, 139, .28), rgba(252, 177, 139, 0));
+}
+.cf-daily-learn-congrats-close {
+    position: absolute; top: .7rem; right: .7rem; z-index: 2;
+    display: grid; place-items: center; width: 40px; height: 40px;
+    border: 1px solid #eee2d3; border-radius: 50%; background: rgba(255,255,255,.82);
+    color: #75624e; font: inherit; font-size: 1.45rem; cursor: pointer;
+}
+.cf-daily-learn-congrats-close:hover { background: #fff2da; color: #573b17; }
+.cf-daily-learn-celebration-art {
+    display: flex; align-items: center; justify-content: center; gap: .75rem;
+    height: 104px; margin: -.3rem auto .65rem;
+    color: #d88b1d;
+}
+.cf-daily-learn-celebration-art strong {
+    display: grid; place-items: center; width: 76px; height: 76px;
+    border: 5px solid #fff; border-radius: 26px; transform: rotate(-7deg);
+    background: linear-gradient(145deg, #ffe29a, #ffbe61);
+    color: #70450c; font-size: 2.25rem; line-height: 1;
+    box-shadow: 0 8px 24px rgba(191, 117, 25, .24);
+}
+.cf-daily-learn-celebration-art span:first-child { align-self: flex-start; margin-top: .2rem; font-size: 1.35rem; }
+.cf-daily-learn-celebration-art span:last-child { align-self: flex-end; margin-bottom: .5rem; font-size: 1.1rem; }
+.cf-daily-learn-congrats-kicker {
+    margin: 0 0 .28rem; color: #a16611; font-size: .72rem;
+    font-weight: 900; letter-spacing: .12em; text-transform: uppercase;
+}
+.cf-daily-learn-congrats-card h2 {
+    margin: 0; color: #382716; font: 700 clamp(1.7rem, 7vw, 2.15rem)/1.12 'Fraunces', Georgia, serif;
+}
+.cf-daily-learn-congrats-score {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 35px; margin: .8rem 0 .9rem; padding: .35rem .8rem;
+    border: 1px solid #f1dcad; border-radius: 999px;
+    background: #fff6df; color: #735017; font-size: .86rem; font-weight: 900;
+    font-variant-numeric: tabular-nums;
+}
+.cf-daily-learn-congrats-reward {
+    display: flex; align-items: center; justify-content: center; gap: .65rem;
+    max-width: 340px; min-height: 58px; margin: 0 auto;
+    padding: .65rem .8rem; border: 1px solid #e6ebd5; border-radius: 15px;
+    background: linear-gradient(120deg, #f5f8e9, #fbfdf5); text-align: left;
+}
+.cf-daily-learn-congrats-coin {
+    display: grid; place-items: center; flex: 0 0 39px; height: 39px;
+    border-radius: 50%; background: #e7f1c9; color: #55702c;
+    font-size: .76rem; font-weight: 1000;
+}
+.cf-daily-learn-congrats-reward p { margin: 0; color: #435032; font-size: .88rem; font-weight: 800; line-height: 1.4; }
+.cf-daily-learn-congrats-unlock {
+    max-width: 340px; margin: .9rem auto 0; color: #6c6256;
+    font-size: .82rem; line-height: 1.55;
+}
+.cf-daily-learn-congrats-actions {
+    display: flex; gap: .6rem; justify-content: center; flex-wrap: wrap; margin-top: 1.1rem;
+}
+.cf-daily-learn-congrats-primary,
+.cf-daily-learn-congrats-secondary {
+    min-height: 44px; padding: .65rem 1rem; border-radius: 12px;
+    font: inherit; font-size: .86rem; font-weight: 900; cursor: pointer;
+}
+.cf-daily-learn-congrats-primary {
+    border: 1px solid #4b5f2b; background: #4b5f2b; color: #fff;
+    box-shadow: 0 5px 12px rgba(73, 91, 40, .16);
+}
+.cf-daily-learn-congrats-primary:hover { background: #394b20; }
+.cf-daily-learn-congrats-secondary { border: 1px solid #e6ddcf; background: #fff; color: #605447; }
+.cf-daily-learn-congrats-primary:focus-visible,
+.cf-daily-learn-congrats-secondary:focus-visible,
+.cf-daily-learn-congrats-close:focus-visible { outline: 3px solid #d99a34; outline-offset: 2px; }
+@keyframes cfCongratsFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cfCongratsPop { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 480px) {
+    .cf-daily-learn-congrats { padding: .65rem; }
+    .cf-daily-learn-congrats-card { padding: 1.5rem 1rem 1rem; border-radius: 20px; }
+    .cf-daily-learn-congrats-actions { flex-direction: column; }
+    .cf-daily-learn-congrats-actions button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .cf-daily-learn-congrats,
+    .cf-daily-learn-congrats-card { animation: none; }
+}
