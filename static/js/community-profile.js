@@ -30,6 +30,9 @@
     var _albumsLoading = false;
     var _albumLoaded = false;
     var _lightboxOpener = null;
+    var _messageReturnFocus = null;
+    var _messageConversationId = '';
+    var _messageModalBound = false;
 
     // ── Small helpers ──────────────────────────────────────────────────────
 
@@ -93,8 +96,211 @@
         }
         if (!BOOT.messageTarget) return true;
         if (event && event.preventDefault) event.preventDefault();
-        window.location.href = '/messages?with=' + encodeURIComponent(BOOT.messageTarget);
+        var modal = $('cpMessageModal');
+        if (!modal || !FEED_ENABLED) {
+            window.location.href = '/messages?with=' + encodeURIComponent(BOOT.messageTarget);
+            return false;
+        }
+        openDirectMessageModal(event && event.currentTarget ? event.currentTarget : $('cpMessageBtn'));
         return false;
+    }
+
+    function messageModalStatus(text, isError) {
+        var status = $('cpMessageModalStatus');
+        if (!status) return;
+        status.textContent = text || '';
+        status.className = 'cp-message-modal-status' + (isError ? ' is-error' : '');
+    }
+
+    function closeDirectMessageModal() {
+        var modal = $('cpMessageModal');
+        if (!modal || modal.hidden) return;
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('cp-message-modal-open');
+        var opener = _messageReturnFocus;
+        _messageReturnFocus = null;
+        _messageConversationId = '';
+        if (opener && opener.focus) opener.focus();
+    }
+
+    function renderDirectMessageThread(messages) {
+        var thread = $('cpMessageThread');
+        if (!thread) return;
+        thread.textContent = '';
+        if (!messages.length) {
+            thread.appendChild(el('p', 'cp-message-thread-state', 'This is a private conversation. Say hello.'));
+            return;
+        }
+        messages.forEach(function (message) {
+            var bubble = el('article', 'cp-dm-bubble ' + (message.is_me ? 'is-mine' : 'is-theirs'));
+            if (message.transfer) {
+                var transfer = message.transfer;
+                bubble.appendChild(el('p', 'cp-dm-bubble-text',
+                    (transfer.amount || '') + ' ' + (transfer.token_label || transfer.token || '') +
+                    ' sent to @' + (transfer.recipient_username || 'member')));
+                if (transfer.explorer_url && /^https:\/\/celoscan\.io\/tx\//.test(transfer.explorer_url)) {
+                    var txLink = el('a', 'cp-dm-attachment-link', 'View transaction');
+                    txLink.href = transfer.explorer_url;
+                    txLink.target = '_blank';
+                    txLink.rel = 'noopener noreferrer';
+                    bubble.appendChild(txLink);
+                }
+            } else if (message.body) {
+                bubble.appendChild(el('p', 'cp-dm-bubble-text', message.body));
+            }
+            if (message.attachment && message.attachment.download_url &&
+                /^\/api\/messages\/attachments\/[A-Za-z0-9_-]+\/download$/.test(message.attachment.download_url)) {
+                var file = el('a', 'cp-dm-attachment-link', '📎 ' + (message.attachment.name || 'Attachment'));
+                file.href = message.attachment.download_url;
+                file.rel = 'nofollow';
+                bubble.appendChild(file);
+            }
+            if (message.created_at) {
+                var when = new Date(message.created_at);
+                bubble.appendChild(el('time', 'cp-dm-bubble-time',
+                    isNaN(when.getTime()) ? '' : when.toLocaleString(undefined, { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })));
+            }
+            thread.appendChild(bubble);
+        });
+        thread.scrollTop = thread.scrollHeight;
+    }
+
+    function loadDirectMessageThread(conversationId) {
+        var thread = $('cpMessageThread');
+        if (thread) {
+            thread.textContent = '';
+            thread.appendChild(el('p', 'cp-message-thread-state', 'Loading conversation…'));
+        }
+        return api('/api/messages/conversations/' + encodeURIComponent(conversationId)).then(function (result) {
+            if (!result.ok || !result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Could not load this conversation.');
+            }
+            renderDirectMessageThread(result.data.messages || []);
+            var send = $('cpMessageSend');
+            if (send) send.disabled = false;
+            messageModalStatus('Messages are private between you and this member.');
+            api('/api/messages/conversations/' + encodeURIComponent(conversationId) + '/read', {
+                method: 'POST', body: '{}'
+            }).catch(function () {});
+            var input = $('cpMessageInput');
+            if (input && input.focus) input.focus();
+        });
+    }
+
+    function openDirectMessageModal(trigger) {
+        var modal = $('cpMessageModal');
+        if (!modal) return false;
+        _messageReturnFocus = trigger || document.activeElement;
+        _messageConversationId = '';
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cp-message-modal-open');
+        var closeButton = $('cpMessageModalClose');
+        if (closeButton && closeButton.focus) closeButton.focus();
+        var title = $('cpMessageModalTitle');
+        var subtitle = $('cpMessageModalSubtitle');
+        var avatar = $('cpMessageModalAvatar');
+        var input = $('cpMessageInput');
+        var send = $('cpMessageSend');
+        var thread = $('cpMessageThread');
+        if (title) title.textContent = '@' + (BOOT.messageTarget || USERNAME);
+        if (subtitle) subtitle.textContent = 'Private conversation';
+        if (avatar) avatar.textContent = String(BOOT.messageTarget || USERNAME || 'M').charAt(0).toUpperCase();
+        if (input) input.value = '';
+        if (send) send.disabled = true;
+        if (thread) {
+            thread.textContent = '';
+            thread.appendChild(el('p', 'cp-message-thread-state', 'Opening your private conversation…'));
+        }
+        messageModalStatus('Loading conversation…');
+        api('/api/messages/start', {
+            method: 'POST',
+            body: JSON.stringify({ username: BOOT.messageTarget })
+        }).then(function (result) {
+            var conversation = result.data && result.data.conversation;
+            if (!result.ok || !result.data || !result.data.success || !conversation || !conversation.id) {
+                throw new Error((result.data && result.data.error) || 'Messaging is temporarily unavailable.');
+            }
+            _messageConversationId = conversation.id;
+            if (title) title.textContent = '@' + (conversation.username || BOOT.messageTarget || USERNAME);
+            if (avatar) avatar.textContent = String(conversation.username || BOOT.messageTarget || 'M').charAt(0).toUpperCase();
+            return loadDirectMessageThread(conversation.id);
+        }).catch(function (error) {
+            if (thread) {
+                thread.textContent = '';
+                thread.appendChild(el('p', 'cp-message-thread-state is-error', error.message || 'Could not open this conversation.'));
+            }
+            messageModalStatus('You can close this window and try again.', true);
+        });
+        return true;
+    }
+
+    function sendDirectMessage(event) {
+        if (event && event.preventDefault) event.preventDefault();
+        var input = $('cpMessageInput');
+        var send = $('cpMessageSend');
+        var body = input ? input.value.trim() : '';
+        if (!body || !_messageConversationId || (send && send.disabled)) return false;
+        if (send) send.disabled = true;
+        messageModalStatus('Sending…');
+        var clientId = (window.crypto && window.crypto.randomUUID)
+            ? window.crypto.randomUUID() : ('profile-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+        api('/api/messages/conversations/' + encodeURIComponent(_messageConversationId) + '/messages', {
+            method: 'POST',
+            body: JSON.stringify({ body: body, client_message_id: clientId })
+        }).then(function (result) {
+            if (!result.ok || !result.data || !result.data.success) {
+                throw new Error((result.data && result.data.error) || 'Message was not sent.');
+            }
+            if (input) input.value = '';
+            messageModalStatus('Message sent.');
+            return loadDirectMessageThread(_messageConversationId);
+        }).catch(function (error) {
+            messageModalStatus(error.message || 'Message was not sent. Please try again.', true);
+            if (send) send.disabled = false;
+        });
+        return false;
+    }
+
+    function bindDirectMessageModal() {
+        var modal = $('cpMessageModal');
+        if (!modal || _messageModalBound) return;
+        _messageModalBound = true;
+        var close = $('cpMessageModalClose');
+        var form = $('cpMessageComposer');
+        var input = $('cpMessageInput');
+        if (close) close.addEventListener('click', closeDirectMessageModal);
+        if (form) form.addEventListener('submit', sendDirectMessage);
+        if (input) input.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendDirectMessage(event);
+            }
+        });
+        modal.addEventListener('click', function (event) {
+            if (event.target === modal) closeDirectMessageModal();
+        });
+        document.addEventListener('keydown', function (event) {
+            if (modal.hidden) return;
+            if (event.key === 'Escape') {
+                closeDirectMessageModal();
+                return;
+            }
+            if (event.key === 'Tab') {
+                var focusable = modal.querySelectorAll('button:not(:disabled), textarea:not(:disabled), a[href]');
+                if (!focusable.length) return;
+                var first = focusable[0];
+                var last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+            }
+        });
     }
 
     function toast(message, kind) {
@@ -959,6 +1165,7 @@
             if (event.key === 'Escape') closeLightbox();
         });
         bindProfileAvatar();
+        bindDirectMessageModal();
         followButton();
         loadPosts(true);
         loadBadges();
@@ -967,6 +1174,8 @@
 
     window.GMProfile = {
         openMessage: openMessage,
+        closeMessage: closeDirectMessageModal,
+        sendDirectMessage: sendDirectMessage,
         openSendMoney: openSendMoney,
         closeSendMoney: closeSendMoney,
         sendMoney: sendMoney,
