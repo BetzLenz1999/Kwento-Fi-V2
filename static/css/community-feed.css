@@ -2306,7 +2306,11 @@ body.cf-modal-open { overflow: hidden; }
     min-width: 0;
 }
 .cf-caption-wrap { min-width: 0; }
-.cf-caption-wrap .cf-caption-input { display: block; width: 100%; min-height: 3.1rem; }
+.cf-caption-wrap .cf-caption-input {
+    display: block; width: 100%; height: 5.2rem;
+    min-height: 5.2rem; max-height: 5.2rem;
+    overflow-y: auto; resize: none;
+}
 .cf-composer-entry-row .cf-prompt-context { grid-column: 1 / -1; }
 .cf-composer-entry-row .cf-composer-actions { align-self: center; }
 
@@ -2396,12 +2400,12 @@ body.cf-modal-open { overflow: hidden; }
     }
     .cf-layout .cf-caption-wrap { grid-column: 2; grid-row: 1; }
     .cf-layout .cf-caption-wrap .cf-caption-input {
-        min-height: 48px;
-        height: auto;
-        max-height: none;
+        height: 4.6rem;
+        min-height: 4.6rem;
+        max-height: 4.6rem;
         padding: 0.55rem 0.62rem;
         resize: none;
-        overflow-y: hidden;
+        overflow-y: auto;
     }
     .cf-layout .cf-composer-entry-row .cf-composer-actions {
         grid-column: 3;
