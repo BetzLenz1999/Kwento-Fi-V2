@@ -495,6 +495,28 @@
         .wallet-option-card.wc-option .option-icon { background: #f3f0ff; }
         .wallet-option-card.wc-option .option-arrow { color: var(--primary); }
 
+        /* WalletConnect is the clear bridge for Trust Wallet and MetaMask
+           users, so give it a lively, high-contrast treatment of its own. */
+        .wallet-option-card.walletconnect-option {
+            background: linear-gradient(135deg, #2563eb 0%, #4f46e5 52%, #7c3aed 100%);
+            border-color: transparent;
+            color: #fff;
+            box-shadow: 0 8px 22px rgba(79, 70, 229, 0.25);
+        }
+        .wallet-option-card.walletconnect-option:hover {
+            background: linear-gradient(135deg, #1d4ed8 0%, #4338ca 52%, #6d28d9 100%);
+            border-color: transparent;
+            box-shadow: 0 12px 28px rgba(79, 70, 229, 0.4);
+            transform: translateY(-2px);
+        }
+        .wallet-option-card.walletconnect-option .option-title,
+        .wallet-option-card.walletconnect-option .option-desc {
+            color: #fff;
+        }
+        .wallet-option-card.walletconnect-option .option-desc { opacity: 0.94; }
+        .wallet-option-card.walletconnect-option .option-icon { background: rgba(255, 255, 255, 0.18); }
+        .wallet-option-card.walletconnect-option .option-arrow { color: #fff; opacity: 0.9; }
+
         /* Log-in card: calm by default, but carries a violet accent so it is
            visually distinct from the WalletConnect / Privy cards. It inherits
            the .primary treatment (gold) when the returning-user check hoists
