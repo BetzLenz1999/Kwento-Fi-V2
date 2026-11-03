@@ -748,6 +748,12 @@
             <span class="cf-menu-row-copy"><strong>XDC Wallet</strong><small>Open your XDC Network wallet to manage XDC and xUSDT.</small></span>
             <span class="cf-menu-row-arrow" aria-hidden="true">›</span>
         </a>
+        <button type="button" class="cf-menu-row" id="cfMenuConvertCrypto"
+                onclick="GMCommunity.openEarnPage('uniswap-v3')">
+            <span class="cf-menu-row-icon" aria-hidden="true">🔄</span>
+            <span class="cf-menu-row-copy"><strong>Convert your G$ to Crypto</strong><small>Swap G$ for supported tokens on Celo.</small></span>
+            <span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+        </button>
         <button type="button" class="cf-menu-row" id="cfMenuSettingsToggle"
                 aria-expanded="false" aria-controls="cfMenuSettings"
                 onclick="GMCommunity.toggleMenuSettings(this)">
@@ -770,13 +776,10 @@
                 aria-expanded="false" aria-controls="cfMenuEarnMore"
                 onclick="GMCommunity.toggleMenuEarnMore(this)">
             <span class="cf-menu-row-icon" aria-hidden="true">✨</span>
-            <span class="cf-menu-row-copy"><strong>Earn More</strong><small>Explore Uniswap V3, Farming, Savings, Daily Task{% if not is_guest and garden_boot.enabled %}, and Garden{% endif %} inside Community.</small></span>
+            <span class="cf-menu-row-copy"><strong>Earn More</strong><small>Explore Farming, Savings, Daily Task{% if not is_guest and garden_boot.enabled %}, and Garden{% endif %} inside Community.</small></span>
             <span class="cf-menu-row-arrow" aria-hidden="true">⌄</span>
         </button>
         <div class="cf-menu-submenu" id="cfMenuEarnMore" hidden>
-            <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openEarnPage('uniswap-v3')">
-                <span aria-hidden="true">🔄</span><span>Uniswap V3</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
-            </button>
             <button type="button" class="cf-menu-subitem" onclick="GMCommunity.openEarnPage('farming')">
                 <span aria-hidden="true">🐔</span><span>Farming</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
             </button>
