@@ -1846,7 +1846,7 @@ def api_daily_learn():
     if not svc.is_enabled():
         return _disabled_response()
     from .daily_learn import get_daily_snapshot, public_snapshot
-    from .daily_learn_attempts import get_attempt
+    from .daily_learn_attempts import get_attempt, quiz_cooldown
 
     result = public_snapshot(get_daily_snapshot())
     if not result.get("success"):
@@ -1863,15 +1863,27 @@ def api_daily_learn():
         if not attempt.get("success"):
             return jsonify({"success": False, "status": "unavailable",
                             "message": "Daily Learn is temporarily unavailable."}), 503
+        try:
+            cooldown = quiz_cooldown(wallet)
+        except Exception as exc:  # noqa: BLE001 - fail closed if the cooldown cannot be checked
+            logger.warning("Community Daily Learn cooldown check failed: %s", exc)
+            return jsonify({"success": False, "status": "unavailable",
+                            "message": "Daily Learn is temporarily unavailable."}), 503
         result.update({
             "status": attempt.get("status", "available"),
             "completed_questions": int(attempt.get("completed_questions") or 0),
             "score": int(attempt.get("score") or 0),
+            "cooldown_active": cooldown["active"],
+            "next_available_at": cooldown["next_available_at"],
+            "cooldown_remaining_seconds": cooldown["remaining_seconds"],
         })
         if result["status"] == "completed":
             # A completed GET is also a safe repair path when the answer was
             # saved but the best-effort credit hook failed or the process died.
             result["reward"] = rewards.daily_learn_completion_status(wallet, today)
+            result["questions"] = []
+        elif cooldown["active"]:
+            result["status"] = "cooldown"
             result["questions"] = []
         else:
             position = min(result["completed_questions"], 1)
@@ -1918,7 +1930,31 @@ def api_daily_learn_answer():
         return jsonify({"success": False, "error": "A verified wallet is required to submit Daily Learn answers.",
                         "code": "verified_wallet_required"}), 403
     body = _json_body()
-    from .daily_learn_attempts import submit_answer
+    from .daily_learn_attempts import get_attempt, quiz_cooldown, submit_answer
+
+    today = datetime.now(timezone.utc).date().isoformat()
+    try:
+        cooldown = quiz_cooldown(wallet)
+    except Exception as exc:  # noqa: BLE001 - fail closed if the cooldown cannot be checked
+        logger.warning("Community Daily Learn cooldown check failed: %s", exc)
+        return jsonify({"success": False, "status": "unavailable",
+                        "message": "Daily Learn is temporarily unavailable."}), 503
+    if cooldown["active"]:
+        # Preserve idempotent retries after a completed final answer. The RPC
+        # remains the authority on whether that exact answer is a valid retry.
+        current_attempt = get_attempt(wallet, today)
+        if not current_attempt.get("success"):
+            return jsonify({"success": False, "status": "unavailable",
+                            "message": "Daily Learn is temporarily unavailable."}), 503
+        if current_attempt.get("status") != "completed":
+            return jsonify({
+                "success": False,
+                "status": "cooldown",
+                "code": "quiz_cooldown",
+                "next_available_at": cooldown["next_available_at"],
+                "cooldown_remaining_seconds": cooldown["remaining_seconds"],
+                "message": "You can take another Daily Learn quiz 24 hours after your last completion.",
+            }), 429
 
     result = submit_answer(
         wallet, body.get("day_utc"), body.get("question_id"), body.get("answer"),
@@ -1928,6 +1964,12 @@ def api_daily_learn_answer():
         # safe repair path if a prior process died after saving completion.
         result["reward"] = rewards.daily_learn_completion_status(
             wallet, result.get("day_utc"))
+        try:
+            cooldown = quiz_cooldown(wallet)
+            result["next_available_at"] = cooldown["next_available_at"]
+            result["cooldown_remaining_seconds"] = cooldown["remaining_seconds"]
+        except Exception as exc:  # noqa: BLE001 - completion remains saved; report the cooldown retryably
+            logger.warning("Community Daily Learn completion cooldown lookup failed: %s", exc)
         try:
             from . import badges
             badges.on_daily_learn_completed(wallet, result.get("day_utc"))
