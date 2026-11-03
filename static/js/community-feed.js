@@ -4827,7 +4827,7 @@
 
     function openEarnPage(page) {
         var config = {
-            'uniswap-v3': { title: 'Uniswap V3', source: 'data-uniswap-v3-src' },
+            'uniswap-v3': { title: 'Convert your G$ to Crypto', source: 'data-uniswap-v3-src' },
             farming: { title: 'Farming', source: 'data-farming-src' },
             savings: { title: 'Savings', source: 'data-savings-src' }
         }[String(page || '').toLowerCase()];
