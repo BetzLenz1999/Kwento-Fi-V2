@@ -46,7 +46,7 @@
                 <button class="close-modal" onclick="closeWalletModal()">×</button>
             </div>
 
-            <!-- Wallet login choices; external wallets use the Reown picker. -->
+            <!-- Wallet login choices: MiniPay injection or WalletConnect QR/URI. -->
             <div class="wallet-options" id="walletOptions">
                 <!-- Shown only when a wallet is detected in the current browser
                      (e.g. the user opened the app inside MiniPay). Nudges them
@@ -103,11 +103,20 @@
                     <span class="option-arrow">→</span>
                 </button>
                 {% endif %}
-                <button id="walletConnectPrimaryButton" class="wallet-option-card" type="button" onclick="openWalletConnectAppKit()">
+                <button id="miniPayWalletBtn" class="wallet-option-card injected" type="button"
+                        onclick="connectMiniPayWallet()" style="display:none">
+                    <div class="option-icon">📱</div>
+                    <div class="option-text">
+                        <div class="option-title">MiniPay</div>
+                        <p class="option-desc">MiniPay detected — connect and approve the login signature in MiniPay</p>
+                    </div>
+                    <span class="option-arrow">→</span>
+                </button>
+                <button id="walletConnectPrimaryButton" class="wallet-option-card" type="button" onclick="openGoodWalletConnect()">
                     <div class="option-icon">🔗</div>
                     <div class="option-text">
                         <div class="option-title">WalletConnect</div>
-                        <p class="option-desc">Connect an existing wallet using WalletConnect or your wallet app’s browser</p>
+                        <p class="option-desc">Connect Trust Wallet or MetaMask with a QR code or wallet link</p>
                     </div>
                     <span class="option-arrow">→</span>
                 </button>
@@ -299,32 +308,6 @@
         assetVersion: {{ ASSET_VERSION|tojson }}
     };
 </script>
-{% include "_reown_appkit_loader.html" %}
-{% if _gs_boot.homepage_intro|default(false) %}
-<script>
-    (function () {
-        function preloadReownWhenIdle() {
-            if (document.visibilityState === 'hidden') return;
-            if (typeof window.GM_LOAD_REOWN_APPKIT !== 'function') return;
-            window.GM_LOAD_REOWN_APPKIT().catch(function (err) {
-                console.warn('[Reown AppKit] idle preload failed:', err && err.message ? err.message : err);
-            });
-        }
-        function scheduleReownPreload() {
-            if (typeof window.requestIdleCallback === 'function') {
-                window.requestIdleCallback(preloadReownWhenIdle, { timeout: 2500 });
-            } else {
-                window.setTimeout(preloadReownWhenIdle, 1200);
-            }
-        }
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', scheduleReownPreload, { once: true });
-        } else {
-            scheduleReownPreload();
-        }
-    })();
-</script>
-{% endif %}
 
     <script>
         window.GM_PRIVY_CONFIG = {
