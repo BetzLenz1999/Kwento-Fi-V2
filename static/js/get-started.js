@@ -893,7 +893,17 @@ let _miniPayLoginInProgress = false;
 function openGoodWalletConnect() {
     if (_miniPayLoginInProgress) return;
     showWalletConnectOptions();
-    connectWalletConnect();
+    // Keep users already inside Trust Wallet in the current dApp browser.
+    // Regular browsers fall back to the existing WalletConnect URI flow.
+    // The guard also keeps this entry point safe while the optional wallet
+    // detection bundle is still loading.
+    if (typeof connectTrustWalletIfInjected !== 'function') {
+        connectWalletConnect();
+        return;
+    }
+    connectTrustWalletIfInjected().then(function (handled) {
+        if (!handled) connectWalletConnect();
+    });
 }
 
 let _appKitLoginInProgress = false;
@@ -1584,9 +1594,68 @@ function withInjectedSignTimeout(promise, ms, message) {
     });
 }
 
-// MiniPay is exposed as a Celo-only injected EIP-1193 provider. Keep this
-// direct path limited to MiniPay; Trust Wallet and MetaMask use WalletConnect
-// QR/URI links so they cannot race AppKit or a second injected request.
+// Trust Wallet's dApp browser exposes an injected EIP-1193 provider. Prefer
+// that provider when it is already present so a user who is already inside
+// Trust never gets bounced through link.trustwallet.com (which can land on an
+// intermediate search/AI screen instead of returning to this dApp tab).
+let _trustWalletLoginInProgress = false;
+async function connectTrustWalletIfInjected() {
+    if (_trustWalletLoginInProgress || _miniPayLoginInProgress || _wcConnecting) return true;
+
+    const isTrust = (p) => p && typeof isTrustWalletProvider === 'function' && isTrustWalletProvider(p);
+    let provider = getPreferredInjectedProvider();
+    if (!isTrust(provider) && (isTrustWalletMobileContext() || isLikelyMobileWalletContext())) {
+        provider = await awaitPreferredInjectedProvider(isTrustWalletMobileContext() ? 3200 : 1200);
+        if (!isTrust(provider)) provider = null;
+    }
+    if (!provider) return false;
+
+    _trustWalletLoginInProgress = true;
+    const button = document.getElementById('walletConnectPrimaryButton');
+    if (button) button.disabled = true;
+    try {
+        showWalletStatus('walletConnectStatus', '🛡 Trust Wallet detected. Connecting in this page…', 'info');
+        const accounts = await provider.request({ method: 'eth_requestAccounts' });
+        const wallet = String(Array.isArray(accounts) ? accounts[0] || '' : '').trim();
+        if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+            throw new Error('Trust Wallet did not return a valid account. Please reconnect and try again.');
+        }
+        showWalletStatus('walletConnectStatus', '🔀 Confirming the Celo network…', 'info');
+        if (!(await ensureCeloChain(provider))) {
+            throw new Error('Please switch Trust Wallet to Celo Mainnet and try again.');
+        }
+        const message = makeLoginMessage(wallet);
+        showWalletStatus('walletConnectStatus', '✍️ Approve the KwentoFi sign-in message in Trust Wallet.', 'info');
+        const signature = await withInjectedSignTimeout(
+            provider.request({ method: 'personal_sign', params: [utf8ToHex(message), wallet] }),
+            120000,
+            'Trust Wallet did not respond. Return to Trust Wallet and approve the sign-in message.'
+        );
+        const verifyData = await postVerifyIdentity(wallet, signature, message, '', 'injected');
+        try {
+            localStorage.removeItem('gm_reown_appkit_walletconnect_address');
+            if (typeof GMWalletConnect !== 'undefined' && typeof GMWalletConnect.clearStoredSessionFor === 'function') {
+                GMWalletConnect.clearStoredSessionFor(wallet);
+            }
+        } catch (_) {}
+        const okMsg = (verifyData && verifyData.referral_warning)
+            ? ('✅ Trust Wallet login verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting…')
+            : '✅ Trust Wallet login verified. Redirecting…';
+        showWalletStatus('walletConnectStatus', okMsg, verifyData && verifyData.referral_warning ? 'warning' : 'success');
+        _gmAfterLoginRedirect(verifyData && verifyData.referral_warning ? 2400 : 900);
+    } catch (err) {
+        const rawMsg = (err && err.message) ? err.message : 'Trust Wallet connection failed.';
+        const code = err && (err.code || (err.cause && err.cause.code));
+        const rejected = code === 4001 || /reject|denied|cancel|user refused/i.test(rawMsg);
+        showWalletStatus('walletConnectStatus', (rejected ? '❌ Trust Wallet request was declined. ' : '❌ ') + rawMsg, rejected ? 'warning' : 'error');
+    } finally {
+        _trustWalletLoginInProgress = false;
+        if (button) button.disabled = false;
+    }
+    return true;
+}
+
+// MiniPay is exposed as a Celo-only injected EIP-1193 provider.
 async function connectMiniPayWallet() {
     if (_miniPayLoginInProgress || _wcConnecting) return;
     _miniPayLoginInProgress = true;
