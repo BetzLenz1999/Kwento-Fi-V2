@@ -200,6 +200,34 @@
     {% endif %}
 </main>
 
+<div class="cp-message-modal" id="cpMessageModal" role="dialog" aria-modal="true"
+     aria-labelledby="cpMessageModalTitle" aria-hidden="true" hidden>
+    <section class="cp-message-modal-card">
+        <header class="cp-message-modal-head">
+            <div class="cp-message-modal-person">
+                <span class="cp-message-modal-avatar" id="cpMessageModalAvatar" aria-hidden="true"></span>
+                <div>
+                    <h2 id="cpMessageModalTitle">Private message</h2>
+                    <p id="cpMessageModalSubtitle">A private conversation</p>
+                </div>
+            </div>
+            <button type="button" class="cp-message-modal-close" id="cpMessageModalClose"
+                    aria-label="Close conversation">×</button>
+        </header>
+        <div class="cp-message-thread" id="cpMessageThread" role="log"
+             aria-live="polite" aria-relevant="additions text">
+            <p class="cp-message-thread-state">Opening your private conversation…</p>
+        </div>
+        <form class="cp-message-composer" id="cpMessageComposer">
+            <label class="cp-sr-only" for="cpMessageInput">Write a private message</label>
+            <textarea id="cpMessageInput" rows="2" maxlength="4000"
+                      placeholder="Write a message…" autocomplete="off"></textarea>
+            <button type="submit" id="cpMessageSend" disabled>Send</button>
+            <p class="cp-message-modal-status" id="cpMessageModalStatus" role="status" aria-live="polite"></p>
+        </form>
+    </section>
+</div>
+
 {# Read-only lightbox for media. #}
 <div class="cp-lightbox" id="cpLightbox" hidden role="dialog" aria-modal="true"
      aria-label="Media viewer" onclick="GMProfile.closeLightbox()">
