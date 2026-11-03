@@ -9390,6 +9390,7 @@ def xdc_wallet_page():
                            xdc_bridge_contract=xdc_bridge_contract,
                            xdc_gd_token_contract=xdc_gd_token_contract,
                            celo_chain_id=celo_chain_id,
+                           embed_mode=request.args.get("embed") == "1",
                            walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
                            walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled())
 
