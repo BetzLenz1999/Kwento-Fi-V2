@@ -1,0 +1,84 @@
+/* Scoped styling for the Community feed's inbox/thread dialog. */
+body.cf-community-messages-open { overflow: hidden; }
+.cf-community-messages-modal {
+    position: fixed; inset: 0; z-index: 7000; display: grid; place-items: center;
+    padding: max(1rem, env(safe-area-inset-top, 0px)) 1rem max(1rem, env(safe-area-inset-bottom, 0px));
+    background: rgba(15, 24, 48, .58); backdrop-filter: blur(5px);
+}
+.cf-community-messages-modal[hidden] { display: none !important; }
+.cf-community-messages-card {
+    display: flex; flex-direction: column; width: min(100%, 760px); max-height: min(88dvh, 820px);
+    min-height: min(560px, 78dvh); overflow: hidden; border: 1px solid rgba(226, 232, 245, .95);
+    border-radius: 1.35rem; background: #fff; box-shadow: 0 28px 90px rgba(12, 22, 49, .3);
+    animation: cf-community-messages-in .2s ease-out both;
+}
+@keyframes cf-community-messages-in { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
+.cf-community-messages-head {
+    display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 1rem 1.15rem; border-bottom: 1px solid #e8ebf2;
+    background: linear-gradient(115deg, #182755, #2c478e); color: #fff;
+}
+.cf-community-messages-kicker { margin: 0 0 .16rem; color: #dce5ff; font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.cf-community-messages-head h2 { margin: 0; font-size: 1.18rem; font-weight: 900; }
+.cf-community-messages-close {
+    display: grid; place-items: center; flex: 0 0 2.3rem; width: 2.3rem; height: 2.3rem; border: 1px solid rgba(255,255,255,.28);
+    border-radius: 50%; background: rgba(255,255,255,.12); color: #fff; font-size: 1.45rem; line-height: 1; cursor: pointer;
+}
+.cf-community-messages-body { display: flex; flex: 1; min-height: 0; background: #fff; }
+.cf-community-messages-inbox { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; }
+.cf-community-messages-loading, .cf-community-messages-empty { margin: auto; padding: 2rem 1.4rem; color: #66718b; text-align: center; }
+.cf-community-messages-empty { max-width: 25rem; }
+.cf-community-messages-empty > span { display: grid; place-items: center; width: 3.3rem; height: 3.3rem; margin: 0 auto .8rem; border-radius: 1rem; background: #f0f3ff; color: #385fc5; font-size: 1.5rem; }
+.cf-community-messages-empty strong { display: block; color: #192440; font-size: 1rem; }
+.cf-community-messages-empty p { margin: .4rem 0 0; font-size: .88rem; line-height: 1.5; }
+.cf-community-messages-list { display: flex; flex-direction: column; }
+.cf-community-messages-row {
+    display: flex; align-items: center; gap: .8rem; width: 100%; min-height: 4.7rem; padding: .75rem 1rem;
+    border: 0; border-bottom: 1px solid #edf0f5; background: #fff; color: #192440; text-align: left; cursor: pointer;
+    transition: background .15s ease;
+}
+.cf-community-messages-row:hover, .cf-community-messages-row:focus-visible { background: #f5f7ff; }
+.cf-community-messages-avatar {
+    display: grid; place-items: center; flex: 0 0 2.9rem; width: 2.9rem; height: 2.9rem; overflow: hidden;
+    border: 2px solid #fff1b7; border-radius: 50%; background: linear-gradient(135deg, #ffe69a, #f1c75b);
+    color: #584300; font-weight: 900; box-shadow: 0 3px 10px rgba(196, 153, 25, .16);
+}
+.cf-community-messages-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.cf-community-messages-row-copy { display: grid; flex: 1; min-width: 0; gap: .22rem; }
+.cf-community-messages-row-copy strong { overflow: hidden; color: #18213d; font-size: .91rem; text-overflow: ellipsis; white-space: nowrap; }
+.cf-community-messages-preview { overflow: hidden; color: #69738d; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
+.cf-community-messages-meta { display: flex; flex-direction: column; align-items: flex-end; gap: .38rem; color: #7b8498; font-size: .69rem; }
+.cf-community-messages-unread { display: grid; place-items: center; min-width: 1.3rem; height: 1.3rem; padding: 0 .3rem; border-radius: 999px; background: #3568e8; color: #fff; font-size: .67rem; font-weight: 900; }
+.cf-community-messages-error, .cf-community-messages-thread-error { margin: .75rem 1rem; border: 1px solid #f0c7c1; border-radius: .8rem; background: #fff4f2; color: #a63a31; padding: .75rem .85rem; font-size: .85rem; }
+.cf-community-messages-retry { align-self: center; margin: 0 auto 1rem; border: 1px solid #d4dcf3; border-radius: 999px; background: #f5f7ff; color: #244dc0; padding: .55rem 1.1rem; font-weight: 800; cursor: pointer; }
+.cf-community-messages-thread { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; background: #f6f8fd; }
+.cf-community-messages-thread[hidden], .cf-community-messages-inbox[hidden] { display: none !important; }
+.cf-community-messages-thread-head { display: flex; flex: 0 0 auto; align-items: center; gap: .65rem; padding: .7rem 1rem; border-bottom: 1px solid #e8ebf2; background: #fff; }
+.cf-community-messages-back { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border: 0; border-radius: .7rem; background: #f1f4fb; color: #263b71; font-size: 1.4rem; cursor: pointer; }
+.cf-community-messages-thread-head .cf-community-messages-avatar { flex-basis: 2.55rem; width: 2.55rem; height: 2.55rem; }
+.cf-community-messages-person { display: grid; min-width: 0; gap: .13rem; }
+.cf-community-messages-person strong { overflow: hidden; color: #18213d; font-size: .9rem; text-overflow: ellipsis; white-space: nowrap; }
+.cf-community-messages-person small { color: #69738d; font-size: .72rem; }
+.cf-community-messages-log { display: flex; flex: 1; flex-direction: column; gap: .6rem; min-height: 0; padding: 1rem; overflow: auto; background: radial-gradient(circle at 10% 0%, #fff 0, transparent 28%), #f5f7fd; }
+.cf-community-messages-bubble { max-width: min(82%, 34rem); padding: .68rem .8rem; border: 1px solid #e1e5f0; border-radius: 1.1rem; background: #fff; box-shadow: 0 4px 13px rgba(42,58,106,.05); overflow-wrap: anywhere; }
+.cf-community-messages-bubble.is-mine { align-self: flex-end; border-color: #f0d37e; border-bottom-right-radius: .3rem; background: linear-gradient(145deg, #fff9e8, #fff0b9); }
+.cf-community-messages-bubble-text { margin: 0; color: #18213d; font-size: .87rem; line-height: 1.48; white-space: pre-wrap; }
+.cf-community-messages-time { display: block; margin-top: .3rem; color: #7b8498; font-size: .65rem; }
+.cf-community-messages-transfer { margin-top: .35rem; border-radius: .7rem; background: #eaf8ef; padding: .55rem; font-size: .78rem; }
+.cf-community-messages-transfer strong { color: #166534; }
+.cf-community-messages-transfer p { margin: .2rem 0; color: #18213d; }
+.cf-community-messages-attachment { display: inline-block; margin-top: .35rem; color: #244dc0; font-size: .8rem; font-weight: 750; }
+.cf-community-messages-thread-empty { align-self: center; margin: auto; color: #778198; font-size: .84rem; text-align: center; }
+.cf-community-messages-composer { display: flex; flex: 0 0 auto; align-items: flex-end; gap: .5rem; padding: .65rem max(1rem, env(safe-area-inset-left, 0px)) calc(.65rem + env(safe-area-inset-bottom, 0px)); border-top: 1px solid #e5e8f2; background: rgba(255,255,255,.97); }
+.cf-community-messages-composer textarea { flex: 1; min-height: 2.65rem; max-height: 7rem; resize: vertical; padding: .7rem .8rem; border: 1px solid #d5daea; border-radius: 1.1rem; outline: none; background: #fff; color: #18213d; }
+.cf-community-messages-composer textarea:focus { border-color: #3568e8; box-shadow: 0 0 0 3px rgba(53,104,232,.13); }
+.cf-community-messages-composer button { min-height: 2.65rem; border: 0; border-radius: 1.1rem; background: linear-gradient(135deg, #3568e8, #5d7eff); color: #fff; font-weight: 900; padding: 0 1rem; cursor: pointer; }
+.cf-community-messages-composer button:disabled { opacity: .5; cursor: wait; }
+.cf-community-messages-close:focus-visible, .cf-community-messages-back:focus-visible, .cf-community-messages-row:focus-visible, .cf-community-messages-retry:focus-visible, .cf-community-messages-composer button:focus-visible { outline: 3px solid rgba(241,199,91,.85); outline-offset: 2px; }
+@media (max-width: 640px) {
+    .cf-community-messages-modal { align-items: end; padding: 0; }
+    .cf-community-messages-card { width: 100%; height: min(92dvh, 850px); max-height: 94dvh; min-height: 68dvh; border-radius: 1.2rem 1.2rem 0 0; }
+    .cf-community-messages-head { padding: .8rem 1rem; }
+    .cf-community-messages-log { padding: .8rem; }
+}
+@media (prefers-reduced-motion: reduce) { .cf-community-messages-card { animation: none; } }
