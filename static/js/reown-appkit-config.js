@@ -122,7 +122,7 @@ const api = {
             if (restored.isConnected && restored.provider) finish(null, restored.provider);
         });
     },
-    connect({ onModalOpen } = {}) {
+    connect({ onModalOpen, onModalClose } = {}) {
         if (!this.modal) {
             throw new Error(this.error || 'Reown AppKit is not configured.');
         }
@@ -134,6 +134,7 @@ const api = {
         return new Promise((resolve, reject) => {
             let settled = false;
             let sawOpen = false;
+            let sawClose = false;
             let providerUnsubscribe = null;
             let stateUnsubscribe = null;
             const cleanup = () => {
@@ -154,14 +155,26 @@ const api = {
                 }
             };
             const timer = window.setTimeout(
-                () => finish(new Error('Wallet connection timed out. Please try again.')),
+                () => finish(new Error(
+                    sawClose
+                        ? 'Wallet connection timed out. If your wallet app opened, approve the request there and return to this page before trying again.'
+                        : 'Wallet connection timed out. Please try again.'
+                )),
                 120000
             );
             providerUnsubscribe = subscribeProviderState(modal, acceptConnection);
             if (typeof modal.subscribeState === 'function') {
                 stateUnsubscribe = modal.subscribeState((state = {}) => {
                     if (state.open) sawOpen = true;
-                    else if (sawOpen) finish(new Error('Wallet connection was cancelled.'));
+                    else if (sawOpen) {
+                        // WalletConnect mobile handoff can close the picker while
+                        // Trust Wallet / MiniPay is opening. Closing the picker is
+                        // not proof that the user cancelled; keep listening for the
+                        // provider/session to become ready (up to the connect timeout).
+                        sawOpen = false;
+                        sawClose = true;
+                        if (typeof onModalClose === 'function') onModalClose();
+                    }
                 });
             }
             acceptConnection(readProviderState(modal));
@@ -169,7 +182,7 @@ const api = {
             try {
                 Promise.resolve(modal.open({ view: 'Connect', namespace: 'eip155' }))
                     .then(() => {
-                        if (!settled && typeof onModalOpen === 'function') onModalOpen();
+                        if (!settled && !sawClose && typeof onModalOpen === 'function') onModalOpen();
                     })
                     .catch((error) => finish(error));
             } catch (error) {
