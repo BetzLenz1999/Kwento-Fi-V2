@@ -625,6 +625,7 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         "created_at": row.get("created_at"),
         "edited_at": row.get("edited_at"),
         "is_pinned": bool(row.get("is_pinned")),
+        "is_permanent": bool(row.get("is_permanent")),
     }
 
 
@@ -2186,7 +2187,8 @@ def _record_media(supabase, post_id: int, media_items: list[dict]) -> list[dict]
 
 
 def create_post(wallet: str, caption: str | None, media_items: list[dict],
-                prompt_id: str | None = None) -> dict:
+                prompt_id: str | None = None,
+                is_permanent: bool = False) -> dict:
     """Create a post from already-verified media descriptors.
 
     ``media_items`` must have been through ``verify_uploaded_object`` — this
@@ -2194,6 +2196,9 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict],
     """
     if not wallet:
         return {"success": False, "error": "Not authenticated", "code": "auth"}
+    if not isinstance(is_permanent, bool):
+        return {"success": False, "error": "Invalid permanent-post setting.",
+                "code": "invalid_permanent"}
     if is_banned(wallet):
         return {"success": False, "error": "You cannot post in the community.",
                 "code": "banned"}
@@ -2237,6 +2242,7 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict],
         "wallet_address": (wallet or "").lower(),
         "username": username,
         "body": clean or None,
+        "is_permanent": is_permanent,
     }
     if prompt_id:
         payload["prompt_id"] = prompt_id
@@ -2269,6 +2275,8 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict],
         earned = []
     post = _public_post(post_row, [_public_media(r) for r in inserted], wallet,
                         avatar_url=avatar, earned_badges=earned)
+    # Preserve the immediate UI state if PostgREST omits defaulted columns.
+    post["is_permanent"] = is_permanent
     return {"success": True, "post": post}
 
 
@@ -2607,7 +2615,7 @@ def delete_post(wallet: str, post_id: int) -> dict:
     try:
         result = (
             supabase.table("community_feed_posts")
-            .select("wallet_address,is_deleted")
+            .select("wallet_address,is_deleted,is_permanent")
             .eq("id", int(post_id))
             .limit(1)
             .execute()
@@ -2621,6 +2629,10 @@ def delete_post(wallet: str, post_id: int) -> dict:
     if (rows[0].get("wallet_address") or "").lower() != wallet.lower():
         return {"success": False, "error": "You can only delete your own post.",
                 "code": "forbidden"}
+    if bool(rows[0].get("is_permanent")):
+        return {"success": False,
+                "error": "This post is permanent and cannot be deleted by its author. Admins may remove it after reviewing a report.",
+                "code": "permanent"}
 
     keys = _media_keys(supabase, int(post_id))
     _mark_deleted(supabase, int(post_id), wallet, hidden=False)
