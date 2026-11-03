@@ -370,6 +370,26 @@ body {
 .cf-post-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .cf-post-btn:focus-visible { outline: 2px solid var(--cf-accent-2); outline-offset: 2px; }
 
+.cf-permanent-option {
+    display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.65rem 0.75rem;
+    border: 1px solid rgba(146, 64, 14, 0.18); border-radius: 11px;
+    background: linear-gradient(135deg, #fffaf0, #fff7e6); cursor: pointer;
+}
+.cf-permanent-option input {
+    flex: 0 0 auto; width: 18px; height: 18px; margin: 0.1rem 0 0;
+    accent-color: #b45309; cursor: pointer;
+}
+.cf-permanent-copy { display: flex; flex-direction: column; gap: 0.18rem; }
+.cf-permanent-copy strong { color: #78350f; font-size: 0.78rem; }
+.cf-permanent-copy small { color: var(--cf-dim); font-size: 0.69rem; line-height: 1.4; }
+.cf-permanent-option:focus-within { outline: 2px solid var(--cf-accent-2); outline-offset: 2px; }
+.cf-permanent-badge {
+    display: inline-flex; align-items: center; gap: 0.25rem; width: fit-content;
+    margin-top: 0.2rem; padding: 0.16rem 0.48rem; border: 1px solid rgba(146,64,14,0.2);
+    border-radius: 999px; color: #78350f; background: #fff7e6;
+    font-size: 0.62rem; font-weight: 800; line-height: 1.25;
+}
+
 .cf-composer-hint { font-size: 0.72rem; color: var(--cf-dim); line-height: 1.45; }
 
 /* ── Daily Learn "done today" strip ────────────────────────────────────────
@@ -2042,7 +2062,23 @@ body.cf-modal-open { overflow: hidden; }
     padding: 1rem 1.1rem;
     box-shadow: var(--cf-shadow);
 }
-.cf-daily-learn { max-width: 22rem; margin-inline: auto; }
+.cf-daily-learn {
+    position: relative; isolation: isolate; overflow: hidden;
+    max-width: 22rem; margin-inline: auto;
+    border-color: rgba(217, 126, 10, 0.28);
+    background:
+        radial-gradient(ellipse at 0% 0%, rgba(255, 202, 108, 0.34), transparent 44%),
+        radial-gradient(ellipse at 100% 100%, rgba(93, 190, 150, 0.22), transparent 42%),
+        linear-gradient(135deg, #fff7e6 0%, #fffaf1 46%, #eefaf3 100%);
+    box-shadow: 0 14px 34px rgba(137, 94, 34, 0.16), inset 0 1px 0 rgba(255,255,255,0.9);
+}
+.cf-daily-learn::before,
+.cf-daily-learn::after {
+    position: absolute; z-index: -1; content: ''; pointer-events: none;
+    width: 8rem; height: 8rem; border-radius: 50%; filter: blur(2px);
+}
+.cf-daily-learn::before { top: -5rem; right: -3.5rem; background: rgba(255, 188, 71, 0.2); }
+.cf-daily-learn::after { bottom: -5.5rem; left: -4rem; background: rgba(74, 174, 126, 0.16); }
 .cf-daily-prompt-kicker,
 .cf-daily-learn-kicker {
     color: var(--cf-accent-ink);
@@ -2077,6 +2113,10 @@ body.cf-modal-open { overflow: hidden; }
 .cf-daily-learn-reset {
     color: var(--cf-dim);
     font-size: 0.82rem;
+}
+.cf-daily-learn-progress {
+    flex: 0 0 auto; padding: 0.32rem 0.65rem; border: 1px solid rgba(217,126,10,0.22);
+    border-radius: 999px; background: rgba(255,255,255,0.72); color: #9a5a0b; font-weight: 850;
 }
 .cf-btn-primary,
 .cf-earn-withdraw {
@@ -2174,7 +2214,8 @@ body.cf-modal-open { overflow: hidden; }
 }
 .cf-daily-learn-option[aria-pressed="true"] {
     border-color: var(--cf-accent);
-    background: rgba(var(--cf-accent-rgb), 0.06);
+    background: rgba(255,255,255,0.98);
+    box-shadow: 0 0 0 2px rgba(217,126,10,0.1), 0 5px 14px rgba(137,94,34,0.08);
 }
 .cf-daily-learn-option:disabled { opacity: 0.62; cursor: wait; }
 .cf-daily-learn-connect,
