@@ -2291,7 +2291,11 @@ function _renderWalletConnectDeepLinks(uri) {
     box.style.cssText = 'margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;';
     const btnStyle = 'flex:1 1 0;min-width:104px;text-align:center;padding:8px 6px;border-radius:9px;text-decoration:none;font-weight:600;font-size:0.76rem;color:#fff;white-space:nowrap;';
     box.innerHTML =
-        '<a href="https://link.trustwallet.com/wc?uri=' + enc + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#3375bb;">🛡 Trust</a>' +
+        // Keep the existing KwentoFi page as the active browser entry.
+        // In Trust Wallet's in-app browser, opening the universal link in a
+        // new tab can leave the dApp tab behind when the wallet app takes
+        // focus, forcing users to reopen KwentoFi manually after approval.
+        '<a href="https://link.trustwallet.com/wc?uri=' + enc + '" style="' + btnStyle + 'background:#3375bb;">🛡 Trust</a>' +
         '<a href="https://metamask.app.link/wc?uri=' + enc + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#f6851b;">🦊 MetaMask</a>' +
         '<div style="flex:1 1 100%;text-align:center;font-size:0.72rem;color:#9ca3af;margin-top:2px;">On desktop? Scan the QR above instead.</div>';
     qrWrap.appendChild(box);
