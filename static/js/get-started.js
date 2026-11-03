@@ -75,13 +75,6 @@ function _showWalletModalNow() {
     if (homepageIntro && options) options.style.display = 'none';
     if (_wm && !_wm.classList.contains('active')) _setBodyScrollLock(true);
     _wm.classList.add('active');
-    // Warm AppKit while the Get Started sheet is visible, so a later wallet
-    // tap does not have to wait for the multi-megabyte bundle to download.
-    if (typeof window.GM_LOAD_REOWN_APPKIT === 'function') {
-        window.GM_LOAD_REOWN_APPKIT().catch((err) => {
-            console.warn('[Reown AppKit] preload failed:', err && err.message ? err.message : err);
-        });
-    }
     // Re-apply any referral code captured from the URL / sessionStorage
     // so the local-wallet create form keeps the referral context.
     try { initReferralFromUrl(); } catch (e) {}
@@ -891,12 +884,14 @@ function showWalletConnectOptions() {
     detectInjectedWallet();
 }
 
-// Tapping "Connect GoodWallet" should start the WalletConnect session
+// Tapping "WalletConnect" should start the WalletConnect session
 // straight away — the intermediate "Show WalletConnect QR / URI" button
 // was a redundant second tap. This opens the panel AND starts, while
 // showWalletConnectOptions() stays the plain reset used by the Back
 // button (it must never auto-start, or Back would launch a new session).
+let _miniPayLoginInProgress = false;
 function openGoodWalletConnect() {
+    if (_miniPayLoginInProgress) return;
     showWalletConnectOptions();
     connectWalletConnect();
 }
@@ -1329,8 +1324,10 @@ function detectInjectedWallet(_retryDepth) {
     const provider = getPreferredInjectedProvider();
     const depth = Number(_retryDepth || 0);
     const maxDepth = _walletDetectionMaxDepth();
-    // Detection only informs the duplicate-wallet warning; connections are
-    // initiated from the Reown picker, not a separate injected-wallet card.
+    // MiniPay stays on its native injected path; Trust Wallet and MetaMask
+    // are deliberately routed through WalletConnect instead.
+    const miniPayButton = document.getElementById('miniPayWalletBtn');
+    if (miniPayButton) miniPayButton.style.display = provider && provider.isMiniPay ? 'flex' : 'none';
     if (typeof _lwApplyDetectionNudge === 'function') _lwApplyDetectionNudge(provider);
     if (provider) return;
 
@@ -1585,6 +1582,61 @@ function withInjectedSignTimeout(promise, ms, message) {
             (e) => { if (!done) { done = true; clearTimeout(timer); reject(e); } }
         );
     });
+}
+
+// MiniPay is exposed as a Celo-only injected EIP-1193 provider. Keep this
+// direct path limited to MiniPay; Trust Wallet and MetaMask use WalletConnect
+// QR/URI links so they cannot race AppKit or a second injected request.
+async function connectMiniPayWallet() {
+    if (_miniPayLoginInProgress || _wcConnecting) return;
+    _miniPayLoginInProgress = true;
+    const button = document.getElementById('miniPayWalletBtn');
+    if (button) button.disabled = true;
+    try {
+        showWalletStatus('walletConnectStatus', '⏳ Connecting to MiniPay… approve the account request there.', 'info');
+        const provider = await awaitPreferredInjectedProvider();
+        if (!provider || !provider.isMiniPay || typeof provider.request !== 'function') {
+            throw new Error('MiniPay was not detected in this browser. Open KwentoFi inside MiniPay and try again.');
+        }
+        const accounts = await provider.request({ method: 'eth_requestAccounts' });
+        const wallet = String(Array.isArray(accounts) ? accounts[0] || '' : '').trim();
+        if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+            throw new Error('MiniPay did not return a valid EVM account. Please reconnect and try again.');
+        }
+        // MiniPay is Celo-only; do not issue a network-switch request that it
+        // does not need and may reject.
+        const message = makeLoginMessage(wallet);
+        showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve the login message in MiniPay.', 'info');
+        const signature = await withInjectedSignTimeout(
+            provider.request({ method: 'personal_sign', params: [utf8ToHex(message), wallet] }),
+            120000,
+            'MiniPay did not respond to the signature request. Return to MiniPay and try again.'
+        );
+        const verifyData = await postVerifyIdentity(wallet, signature, message, '', 'injected');
+        try {
+            localStorage.removeItem('gm_reown_appkit_walletconnect_address');
+            if (typeof GMWalletConnect !== 'undefined') {
+                if (typeof GMWalletConnect.clearStoredSessionFor === 'function') {
+                    GMWalletConnect.clearStoredSessionFor(wallet);
+                } else if (typeof GMWalletConnect.clearStoredSession === 'function') {
+                    GMWalletConnect.clearStoredSession();
+                }
+            }
+        } catch (_) {}
+        const okMsg = (verifyData && verifyData.referral_warning)
+            ? ('✅ Signature verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting...')
+            : '✅ Signature verified. Redirecting...';
+        showWalletStatus('walletConnectStatus', okMsg, verifyData && verifyData.referral_warning ? 'warning' : 'success');
+        _gmAfterLoginRedirect(verifyData && verifyData.referral_warning ? 2400 : 900);
+    } catch (err) {
+        const message = err && err.message ? err.message : 'Failed to connect MiniPay.';
+        const code = err && (err.code || (err.cause && err.cause.code));
+        const rejected = code === 4001 || /reject|denied|cancel|user refused/i.test(message);
+        showWalletStatus('walletConnectStatus', (rejected ? '❌ MiniPay request was declined. ' : '❌ ') + message, rejected ? 'warning' : 'error');
+    } finally {
+        _miniPayLoginInProgress = false;
+        if (button) button.disabled = false;
+    }
 }
 
 // Re-entrancy lock for wallets selected by Reown AppKit. This handler does not
@@ -1976,7 +2028,7 @@ let _wcConnecting = false;
 
 async function connectWalletConnect() {
     // Guard against a double-tap opening two concurrent sessions.
-    if (_wcConnecting) return;
+    if (_wcConnecting || _miniPayLoginInProgress) return;
     _wcConnecting = true;
     const qrWrap = document.getElementById('wcQrWrap');
     if (qrWrap) qrWrap.style.display = 'none';
@@ -2222,26 +2274,14 @@ async function connectWalletConnect() {
 // Render one-tap deep links to open the WalletConnect session in
 // the user's mobile wallet app. On Vercel the user often opens
 // goodmarket.live inside the wallet's own in-app browser and has
-// no way to scan a QR from the same phone, so surfacing a
-// deep-link button for common wallets (Trust Wallet, MetaMask,
-// plus a generic wc:// link) turns the fallback from "useless"
-// into "tap-to-approve".
+// no way to scan a QR from the same phone, so surface direct links
+// for the two supported WalletConnect destinations.
 function _renderWalletConnectDeepLinks(uri) {
     if (!uri) return;
     const qrWrap = document.getElementById('wcQrWrap');
     if (!qrWrap) return;
     const existing = document.getElementById('wcDeepLinks');
     if (existing) existing.remove();
-    // NOTE: WalletConnect v2 URIs are already prefixed with the
-    // `wc:` scheme (format: `wc:topicId@2?relay-protocol=irn&symKey=…`),
-    // so the generic "open in installed wallet" link must NOT
-    // re-prefix the URI — doing so produces a malformed
-    // `wc:wc:…` href that mobile wallets ignore. We `encodeURI`
-    // here only to defend against any exotic characters in the
-    // URI when writing it into an innerHTML-parsed href; the
-    // reserved WC-URI chars (`:`, `@`, `?`, `&`, `=`) are
-    // preserved by encodeURI.
-    const safeHref = encodeURI(uri);
     const enc = encodeURIComponent(uri);
     const box = document.createElement('div');
     box.id = 'wcDeepLinks';
@@ -2251,7 +2291,6 @@ function _renderWalletConnectDeepLinks(uri) {
     box.style.cssText = 'margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;';
     const btnStyle = 'flex:1 1 0;min-width:104px;text-align:center;padding:8px 6px;border-radius:9px;text-decoration:none;font-weight:600;font-size:0.76rem;color:#fff;white-space:nowrap;';
     box.innerHTML =
-        '<a href="' + safeHref + '" style="' + btnStyle + 'background:#6366f1;">🔗 Installed</a>' +
         '<a href="https://link.trustwallet.com/wc?uri=' + enc + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#3375bb;">🛡 Trust</a>' +
         '<a href="https://metamask.app.link/wc?uri=' + enc + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#f6851b;">🦊 MetaMask</a>' +
         '<div style="flex:1 1 100%;text-align:center;font-size:0.72rem;color:#9ca3af;margin-top:2px;">On desktop? Scan the QR above instead.</div>';
@@ -2332,7 +2371,7 @@ window.lwPinStrengthHint         = lwPinStrengthHint;
 window.syncReferralInputs        = syncReferralInputs;
 window.showWalletConnectOptions= showWalletConnectOptions;
 window.openGoodWalletConnect   = openGoodWalletConnect;
-window.openWalletConnectAppKit = openWalletConnectAppKit;
+window.connectMiniPayWallet    = connectMiniPayWallet;
 window.connectWalletConnect    = connectWalletConnect;
 window.showWalletStatus        = showWalletStatus;
 window.makeLoginMessage        = makeLoginMessage;
