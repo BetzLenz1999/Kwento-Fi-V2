@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timezone
+import math
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,48 @@ def _wallet(value: Any) -> str | None:
 
 def _today_utc() -> str:
     return datetime.now(timezone.utc).date().isoformat()
+
+
+def quiz_cooldown(wallet: str, *, now: datetime | None = None, client=None) -> dict[str, Any]:
+    """Return the rolling 24-hour lockout from the latest saved completion.
+
+    ``completed_at`` already belongs to the existing attempts table, so the
+    per-member cooldown needs no schema change or client-side source of truth.
+    A database error is raised to let API callers fail closed rather than
+    accidentally allowing a second quiz when the cooldown cannot be checked.
+    """
+    identity = _wallet(wallet)
+    if not identity:
+        raise ValueError("A wallet is required to check the Daily Learn cooldown.")
+    db = _db(client)
+    if db is None:
+        raise RuntimeError("Daily Learn cooldown storage is unavailable.")
+    result = (db.table(ATTEMPT_TABLE).select("completed_at")
+              .ilike("wallet_address", identity).eq("status", "completed")
+              .order("completed_at", desc=True).limit(1).execute())
+    rows = getattr(result, "data", None)
+    if rows is None and isinstance(result, dict):
+        rows = result.get("data")
+    row = rows[0] if isinstance(rows, list) and rows else None
+    if not row or not row.get("completed_at"):
+        return {"active": False, "next_available_at": None, "remaining_seconds": 0}
+    raw_completed_at = str(row["completed_at"])
+    completed_at = datetime.fromisoformat(raw_completed_at.replace("Z", "+00:00"))
+    if completed_at.tzinfo is None:
+        completed_at = completed_at.replace(tzinfo=timezone.utc)
+    completed_at = completed_at.astimezone(timezone.utc)
+    unlock_at = completed_at + timedelta(hours=24)
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    seconds_left = (unlock_at - current.astimezone(timezone.utc)).total_seconds()
+    remaining = max(0, math.ceil(seconds_left))
+    return {
+        "active": seconds_left > 0,
+        "completed_at": completed_at.isoformat(),
+        "next_available_at": unlock_at.isoformat(),
+        "remaining_seconds": remaining,
+    }
 
 
 def _current_day(value: Any) -> str | None:
