@@ -2487,7 +2487,12 @@ def api_create_post():
     prompt_id = body.get("prompt_id")
     if prompt_id is not None and (not isinstance(prompt_id, str) or len(prompt_id) > 64):
         return jsonify({"success": False, "error": "Invalid prompt reference."}), 400
-    result = svc.create_post(wallet, body.get("caption"), verified, prompt_id=prompt_id)
+    is_permanent = body.get("is_permanent", False)
+    if not isinstance(is_permanent, bool):
+        return jsonify({"success": False, "code": "invalid_permanent",
+                        "error": "Invalid permanent-post setting."}), 400
+    result = svc.create_post(wallet, body.get("caption"), verified,
+                             prompt_id=prompt_id, is_permanent=is_permanent)
     return jsonify(result), (200 if result.get("success") else 400)
 
 
@@ -2517,7 +2522,8 @@ def api_delete_post(post_id: int):
     result = svc.delete_post(wallet, post_id)
     if result.get("success"):
         return jsonify(result)
-    status = {"not_found": 404, "forbidden": 403}.get(result.get("code"), 400)
+    status = {"not_found": 404, "forbidden": 403, "permanent": 403}.get(
+        result.get("code"), 400)
     return jsonify(result), status
 
 
