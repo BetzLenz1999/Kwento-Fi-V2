@@ -903,7 +903,7 @@ function openGoodWalletConnect() {
 
 let _appKitLoginInProgress = false;
 async function openWalletConnectAppKit() {
-    if (_appKitLoginInProgress || _injectedConnecting) return;
+    if (_appKitLoginInProgress || _reownLoginInProgress) return;
     _appKitLoginInProgress = true;
     const connectBtn = document.getElementById('walletConnectPrimaryButton');
     if (connectBtn) connectBtn.disabled = true;
@@ -931,13 +931,25 @@ async function openWalletConnectAppKit() {
         if (!connection || !connection.provider || typeof connection.provider.request !== 'function') {
             throw new Error('Reown AppKit did not return a usable EIP-1193 wallet provider.');
         }
-        const providerType = String(connection.providerType || '').toLowerCase();
+        // AppKit owns wallet selection and account permission. Reuse its
+        // selected EVM account rather than asking the provider for accounts
+        // a second time (which can reopen or fail in mobile wallet browsers).
+        const selectedAddress = typeof appKit.getAddress === 'function' ? appKit.getAddress() : '';
+        if (!selectedAddress) {
+            throw new Error('Reown connected the wallet but did not return an EVM account. Please reconnect and try again.');
+        }
+        const providerType = String(
+            connection.providerType
+            || (typeof appKit.getWalletProviderType === 'function' ? appKit.getWalletProviderType() : '')
+            || ''
+        ).toLowerCase();
         const isWalletConnect = /wallet.?connect/.test(providerType)
             || connection.provider.isWalletConnect === true;
-        await connectInjectedWallet(
+        await completeReownLogin(
             connection.provider,
             isWalletConnect ? 'walletconnect' : 'injected',
-            connectBtn
+            connectBtn,
+            selectedAddress
         );
     } catch (err) {
         const message = err && err.message ? err.message : 'Could not open Reown AppKit.';
@@ -1561,49 +1573,28 @@ function withInjectedSignTimeout(promise, ms, message) {
     });
 }
 
-// Re-entrancy lock for wallet providers selected in Reown. It prevents a
-// double-tap from starting concurrent account, chain, or signature prompts.
-let _injectedConnecting = false;
-async function connectInjectedWallet(providerOverride = null, loginMethodOverride = 'injected', triggerButton = null) {
-    if (_injectedConnecting) return;
-    _injectedConnecting = true;
+// Re-entrancy lock for wallets selected by Reown AppKit. This handler does not
+// discover/select injected wallets or request accounts; AppKit owns both steps.
+let _reownLoginInProgress = false;
+async function completeReownLogin(provider, loginMethod, triggerButton, reownAddress) {
+    if (_reownLoginInProgress) return;
+    _reownLoginInProgress = true;
     const connectBtn = triggerButton || document.getElementById('walletConnectPrimaryButton');
     if (connectBtn) connectBtn.disabled = true;
     try {
-        showWalletStatus('walletConnectStatus', providerOverride ? '⏳ Preparing wallet login…' : '⏳ Detecting wallet…', 'info');
-        const provider = providerOverride || await awaitPreferredInjectedProvider();
-        if (!provider) {
-            if (isTrustWalletMobileContext()) {
-                showWalletStatus('walletConnectStatus', '⚠️ Trust Wallet injection not detected yet. Starting WalletConnect automatically…', 'warning');
-                await connectWalletConnect();
-                return;
-            }
-            showWalletStatus('walletConnectStatus', 'No injected wallet found. Use WalletConnect QR to connect.', 'error');
-            return;
+        showWalletStatus('walletConnectStatus', '⏳ Preparing Reown wallet login…', 'info');
+        if (!provider || typeof provider.request !== 'function') {
+            throw new Error('Reown AppKit did not return a usable wallet provider. Please reconnect and try again.');
         }
-        showWalletStatus('walletConnectStatus', '⏳ Connecting wallet… approve account access in your wallet.', 'info');
-        const accounts = await provider.request({ method: 'eth_requestAccounts' });
-        if (!accounts || !accounts.length) throw new Error('No wallet account found.');
-        const wallet = accounts[0];
-        let onCelo = false;
-        if (provider && provider.isMiniPay) {
-            // MiniPay is Celo-only. Skip any chain-switch prompts.
-            onCelo = true;
-            try {
-                const chainId = await provider.request({ method: 'eth_chainId' });
-                if (String(chainId || '').toLowerCase() !== CELO_NETWORK.chainId) {
-                    console.warn('MiniPay reported non-Celo chainId:', chainId);
-                }
-            } catch (_) {
-                // Continue login flow; MiniPay should still be Celo-only.
-            }
-        } else {
-            showWalletStatus('walletConnectStatus', '🔀 Switching your wallet to the Celo network…', 'info');
-            onCelo = await ensureCeloChain(provider);
-            if (!onCelo) {
-                showWalletStatus('walletConnectStatus', '⚠️ Could not switch to Celo automatically — please switch manually in your wallet and try again.', 'warning');
-                return;
-            }
+        const wallet = String(reownAddress || '').trim();
+        if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+            throw new Error('Reown AppKit did not provide a valid EVM account. Please reconnect and try again.');
+        }
+        showWalletStatus('walletConnectStatus', '🔀 Confirming the Celo network…', 'info');
+        const onCelo = await ensureCeloChain(provider);
+        if (!onCelo) {
+            showWalletStatus('walletConnectStatus', '⚠️ Could not switch to Celo automatically — please switch manually in your wallet and try again.', 'warning');
+            return;
         }
         const message = makeLoginMessage(wallet);
         const messageHex = utf8ToHex(message);
@@ -1611,12 +1602,12 @@ async function connectInjectedWallet(providerOverride = null, loginMethodOverrid
         const signature = await withInjectedSignTimeout(
             provider.request({ method: 'personal_sign', params: [messageHex, wallet] }),
             120000,
-            'Your wallet did not respond to the signature request. Open MetaMask, make sure it is unlocked, then try again.'
+            'Your wallet did not respond to the signature request. Make sure it is open and unlocked, then try again.'
         );
-        const loginMethod = loginMethodOverride === 'walletconnect' ? 'walletconnect' : 'injected';
-        const verifyData = await postVerifyIdentity(wallet, signature, message, '', loginMethod);
+        const resolvedLoginMethod = loginMethod === 'walletconnect' ? 'walletconnect' : 'injected';
+        const verifyData = await postVerifyIdentity(wallet, signature, message, '', resolvedLoginMethod);
         try {
-            if (providerOverride && loginMethod === 'walletconnect') {
+            if (resolvedLoginMethod === 'walletconnect') {
                 localStorage.setItem('gm_reown_appkit_walletconnect_address', wallet.toLowerCase());
             } else {
                 localStorage.removeItem('gm_reown_appkit_walletconnect_address');
@@ -1627,7 +1618,7 @@ async function connectInjectedWallet(providerOverride = null, loginMethodOverrid
         // WalletConnect (which would force a QR prompt instead of MetaMask).
         // Per-wallet: a session belonging to a DIFFERENT wallet is untouched.
         try {
-            if (loginMethod === 'injected' && typeof GMWalletConnect !== 'undefined') {
+            if (resolvedLoginMethod === 'injected' && typeof GMWalletConnect !== 'undefined') {
                 if (typeof GMWalletConnect.clearStoredSessionFor === 'function') {
                     GMWalletConnect.clearStoredSessionFor(wallet);
                 } else if (typeof GMWalletConnect.clearStoredSession === 'function') {
@@ -1648,7 +1639,7 @@ async function connectInjectedWallet(providerOverride = null, loginMethodOverrid
         const rejected = code === 4001 || /reject|denied|cancel|user refused/i.test(rawMsg);
         showWalletStatus('walletConnectStatus', (rejected ? '❌ Signature or connection was rejected. ' : '❌ ') + rawMsg, rejected ? 'warning' : 'error');
     } finally {
-        _injectedConnecting = false;
+        _reownLoginInProgress = false;
         if (connectBtn) connectBtn.disabled = false;
     }
 }
@@ -2328,7 +2319,6 @@ window.syncReferralInputs        = syncReferralInputs;
 window.showWalletConnectOptions= showWalletConnectOptions;
 window.openGoodWalletConnect   = openGoodWalletConnect;
 window.openWalletConnectAppKit = openWalletConnectAppKit;
-window.connectInjectedWallet   = connectInjectedWallet;
 window.connectWalletConnect    = connectWalletConnect;
 window.showWalletStatus        = showWalletStatus;
 window.makeLoginMessage        = makeLoginMessage;
