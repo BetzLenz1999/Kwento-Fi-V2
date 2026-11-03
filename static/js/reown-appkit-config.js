@@ -215,6 +215,12 @@ if (!projectId) {
         },
         enableWalletGuide: false,
         enableReconnect: true,
+        // Use WalletConnect for external wallet sessions instead of letting
+        // AppKit also register the page's injected/EIP-6963 providers. The
+        // Get Started provider scan remains advisory only; it does not start
+        // a competing wallet request.
+        enableInjected: false,
+        enableEIP6963: false,
         allWallets: 'SHOW',
         // The homepage Get Started overlay is at z-index 10000. AppKit's
         // default 9999 would leave its picker hidden behind that full-screen
