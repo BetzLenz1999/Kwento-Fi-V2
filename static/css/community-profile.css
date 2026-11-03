@@ -578,3 +578,100 @@ body.cf-modal-open { overflow: hidden; }
     .cp-stat { padding-inline: 0.15rem; }
     .cp-label { font-size: 0.64rem; }
 }
+
+
+/* ── Instant private-message modal ───────────────────────────────────────── */
+body.cp-message-modal-open { overflow: hidden; }
+.cp-message-modal {
+    position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center;
+    padding: 1rem; background: rgba(25, 21, 17, .55);
+    -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
+}
+.cp-message-modal[hidden] { display: none !important; }
+.cp-message-modal-card {
+    width: min(100%, 520px); height: min(680px, calc(100dvh - 2rem));
+    display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden; border: 1px solid var(--cp-border); border-radius: 20px;
+    background: var(--cp-bg); box-shadow: 0 24px 80px rgba(18, 14, 10, .25);
+    animation: cpMessageEnter 180ms ease-out;
+}
+.cp-message-modal-head {
+    display: flex; align-items: center; justify-content: space-between; gap: .7rem;
+    min-height: 74px; padding: .8rem 1rem; border-bottom: 1px solid var(--cp-border);
+    background: #fff;
+}
+.cp-message-modal-person { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.cp-message-modal-person > div { min-width: 0; }
+.cp-message-modal-person h2 {
+    overflow: hidden; color: var(--cp-ink); font: 700 1.08rem/1.25 var(--cp-serif);
+    text-overflow: ellipsis; white-space: nowrap;
+}
+.cp-message-modal-person p { margin-top: .12rem; color: var(--cp-dim); font-size: .76rem; }
+.cp-message-modal-avatar {
+    display: grid; place-items: center; flex: 0 0 42px; height: 42px;
+    border: 1px solid rgba(var(--cp-accent-rgb), .24); border-radius: 50%;
+    background: #fff3df; color: var(--cp-accent-ink); font-size: 1.05rem; font-weight: 900;
+}
+.cp-message-modal-close {
+    display: grid; place-items: center; flex: 0 0 40px; height: 40px;
+    border: 1px solid var(--cp-border); border-radius: 50%; background: #fff;
+    color: var(--cp-dim); font: inherit; font-size: 1.35rem; cursor: pointer;
+}
+.cp-message-modal-close:hover { background: var(--cp-card-soft); color: var(--cp-ink); }
+.cp-message-thread {
+    display: flex; flex-direction: column; gap: .6rem; overflow-y: auto;
+    padding: 1rem; background: linear-gradient(180deg, #fffdfa, #fbfaf7);
+    overscroll-behavior: contain; scroll-behavior: smooth;
+}
+.cp-message-thread-state {
+    align-self: center; max-width: 90%; margin: auto 0; padding: .6rem .8rem;
+    color: var(--cp-dim); font-size: .84rem; line-height: 1.5; text-align: center;
+}
+.cp-message-thread-state.is-error { color: var(--cp-danger); }
+.cp-dm-bubble {
+    display: flex; flex-direction: column; gap: .35rem; max-width: min(84%, 390px);
+    padding: .65rem .8rem .45rem; border: 1px solid #e8e3dc; border-radius: 16px;
+    background: #fff; color: var(--cp-ink); box-shadow: 0 2px 6px rgba(50, 38, 22, .04);
+}
+.cp-dm-bubble.is-mine {
+    align-self: flex-end; border-color: #e4edca; border-bottom-right-radius: 5px;
+    background: #f2f7e7;
+}
+.cp-dm-bubble.is-theirs { align-self: flex-start; border-bottom-left-radius: 5px; }
+.cp-dm-bubble-text { color: var(--cp-ink); font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.cp-dm-bubble-time { align-self: flex-end; color: var(--cp-muted); font-size: .66rem; }
+.cp-dm-attachment-link { color: var(--cp-accent-ink); font-size: .82rem; font-weight: 800; text-decoration: underline; overflow-wrap: anywhere; }
+.cp-message-composer {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .55rem;
+    padding: .75rem; border-top: 1px solid var(--cp-border); background: #fff;
+}
+.cp-message-composer textarea {
+    width: 100%; min-height: 48px; max-height: 150px; resize: vertical;
+    padding: .7rem .8rem; border: 1px solid #ddd5c9; border-radius: 13px;
+    background: #fff; color: var(--cp-ink); font: inherit; font-size: .9rem; line-height: 1.4;
+}
+.cp-message-composer textarea:focus-visible { outline: 2px solid rgba(var(--cp-accent-rgb), .65); outline-offset: 1px; }
+.cp-message-composer > button {
+    align-self: end; min-width: 76px; min-height: 44px; padding: .55rem .85rem;
+    border: 0; border-radius: 12px; background: var(--cp-accent); color: #fff;
+    font: inherit; font-weight: 900; cursor: pointer;
+}
+.cp-message-composer > button:hover { background: var(--cp-accent-ink); }
+.cp-message-composer > button:disabled { opacity: .5; cursor: not-allowed; }
+.cp-message-modal-status {
+    grid-column: 1 / -1; min-height: 1em; color: var(--cp-muted); font-size: .72rem;
+}
+.cp-message-modal-status.is-error { color: var(--cp-danger); }
+.cp-message-modal-close:focus-visible,
+.cp-message-composer > button:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 2px; }
+@keyframes cpMessageEnter { from { opacity: 0; transform: translateY(8px) scale(.99); } to { opacity: 1; transform: none; } }
+@media (max-width: 560px) {
+    .cp-message-modal { align-items: end; padding: 0; }
+    .cp-message-modal-card {
+        width: 100%; height: min(88dvh, 760px); border-radius: 20px 20px 0 0;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .cp-message-modal-head { min-height: 68px; padding: .65rem .8rem; }
+    .cp-message-thread { padding: .75rem; }
+}
+@media (prefers-reduced-motion: reduce) { .cp-message-modal-card { animation: none; } }
