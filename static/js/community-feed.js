@@ -609,8 +609,7 @@
         if (typeof input.oninput === 'function') input.oninput();
     }
 
-    // A live preview under the composer: the member sees the real weight and
-    // slant while typing, which is what makes the markup worth using.
+    // The edit modal keeps a preview so changes can be reviewed before saving.
     function updateFormatPreview(inputId, previewId) {
         var input = $(inputId);
         var preview = $(previewId);
@@ -978,12 +977,10 @@
         var input = $('cfCaption');
         var node = $('cfCounter');
         if (!input || !node) return;
-        autoGrowCaption(input);
         var length = input.value.length;
         node.textContent = length + ' / ' + MAX_CAPTION;
         node.className = 'cf-counter'
             + (length > MAX_CAPTION ? ' is-over' : (length > MAX_CAPTION * 0.9 ? ' is-near' : ''));
-        updateFormatPreview('cfCaption', 'cfCaptionPreview');
     }
 
     // A username is required before posting: a post without one renders as a
@@ -5054,7 +5051,7 @@
                 var marker = button.getAttribute('data-marker') || '';
                 var previewId = button.getAttribute('data-preview') || '';
                 applyFormat(target, marker);
-                autoGrowCaption(target);
+                if (target && target.id === 'cfEditCaption') autoGrowCaption(target);
                 if (previewId) updateFormatPreview(button.getAttribute('data-target'), previewId);
             });
         });
