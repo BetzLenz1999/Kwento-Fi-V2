@@ -3210,6 +3210,48 @@ def get_chicken_farming_kpi():
     return response
 
 
+@routes.route("/api/data/community-garden-kpi", methods=["GET"])
+@admin_required
+def get_community_garden_kpi():
+    """Fetch bounded monthly Community Garden V2 activity and cached total gardeners."""
+    try:
+        from community_feed.garden_kpis import (
+            get_monthly_garden_activity_stats,
+            get_total_gardeners_stats,
+        )
+        garden_address = os.getenv("COMMUNITY_GARDEN_CONTRACT_ADDRESS", "")
+        monthly = get_monthly_garden_activity_stats(garden_address)
+        if monthly.get("status") == "not_configured":
+            data = {
+                **monthly,
+                "total_gardeners": None,
+                "total_status": "not_configured",
+            }
+        else:
+            totals = get_total_gardeners_stats(garden_address)
+            data = {
+                **monthly,
+                "total_gardeners": totals.get("total_gardeners"),
+                "total_status": totals.get("status", "loading"),
+                "total_error": totals.get("error"),
+                "total_updated_at_utc": totals.get("updated_at_utc"),
+                "refreshing": totals.get("refreshing", False),
+            }
+    except Exception:
+        logger.exception("Community Garden KPI unavailable")
+        data = {
+            "status": "error",
+            "period_month": datetime.now(timezone.utc).strftime("%Y-%m"),
+            "monthly_active_users": None,
+            "total_gardeners": None,
+            "error": "Community Garden event data is temporarily unavailable",
+        }
+    response = jsonify({"success": True, "community_garden": data})
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
 @routes.route("/api/data/kpi", methods=["GET"])
 @admin_required
 def get_kpi_data():
