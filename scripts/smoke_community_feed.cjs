@@ -2864,16 +2864,28 @@ function feedFetch(handler, feedRows) {
          store.cfEarnWithdrawStatus.textContent);
     }
 
-    // Resuming an existing reservation must ignore the field: the server
-    // re-signs the amount it already stored.
+    // A changed amount during resume must reach the server so an active signed
+    // authorization can be rejected instead of silently substituting its amount.
     {
       const server = partialServer({ status: 'resume', amount_gd: '777' });
       const { api, store } = run({ boot: MEMBER, fetchImpl: feedFetch(server.impl) });
       store.cfEarnWithdrawAmount.value = '600';
       await api._internals.checkWithdrawalEligibility();
       const sent = server.calls[0] && server.calls[0].body;
-      ok('resuming does not resend a changed amount',
-         !!sent && !Object.prototype.hasOwnProperty.call(sent, 'amount_gd'),
+      ok('a changed amount during resume is sent for server validation',
+         !!sent && sent.amount_gd === '600',
+         JSON.stringify(sent));
+    }
+
+    // A blank field intentionally resumes the amount already signed by the server.
+    {
+      const server = partialServer({ status: 'resume', amount_gd: '777' });
+      const { api, store } = run({ boot: MEMBER, fetchImpl: feedFetch(server.impl) });
+      store.cfEarnWithdrawAmount.value = '';
+      await api._internals.checkWithdrawalEligibility();
+      const sent = server.calls[0] && server.calls[0].body;
+      ok('a blank field resumes the stored signed amount',
+         !!sent && sent.amount_gd === '777',
          JSON.stringify(sent));
     }
   }
