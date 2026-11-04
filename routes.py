@@ -3239,6 +3239,10 @@ def get_kpi_data():
         total_users = exact_user_count(
             user_table.select("wallet_address", count="exact", head=True)
         )
+        from local_wallet_verification import get_local_wallet_verification_summary
+
+        local_wallet_summary = get_local_wallet_verification_summary()
+        local_wallet_available = bool(local_wallet_summary.get("service_available"))
         active_activity_types = ["login", "page_view", "verification_attempt", "ubi_activity"]
         activity_wallets_by_day: dict[object, set[str]] = {}
         history_page_size = 1000
@@ -3354,6 +3358,18 @@ def get_kpi_data():
             },
             "user_data": {
                 "total_users": total_users,
+            },
+            "local_wallet_accounts": {
+                "total_users": (
+                    int(local_wallet_summary.get("completed", local_wallet_summary.get("total", 0)) or 0)
+                    if local_wallet_available else None
+                ),
+                "verified_wallets": (
+                    int(local_wallet_summary.get("verified", 0) or 0)
+                    if local_wallet_available else None
+                ),
+                "service_available": local_wallet_available,
+                "source": "local_wallet_accounts",
             },
             "user_activity": {
                 "daily_active": daily_active,
