@@ -92,6 +92,9 @@ _farming_kpi_lock = threading.Lock()
 _farming_kpi_cache: dict = {}           # contract_lower -> cached aggregates + scan cursor
 _farming_kpi_refreshing: set[str] = set()
 _farming_kpi_errors: dict = {}          # contract_lower -> {message, retry_after}
+_monthly_farming_activity_cache: dict = {}  # (contract_lower, YYYY-MM) -> bounded month result
+_farming_month_start_block_cache: dict = {} # (contract_lower, YYYY-MM) -> first block in month
+MONTHLY_FARMING_ACTIVITY_CACHE_TTL = 120
 
 
 def get_deploy_block(contract_address: str, latest_block: int | None = None,
@@ -372,22 +375,115 @@ def fetch_wallet_farm_history(contract_address: str, wallet_address: str,
     return rows
 
 
-def _farm_event_timestamp(log: dict, topic0: str) -> int:
-    """Read the event timestamp from the static ABI data words."""
-    word_index = {
-        FARM_STARTED_TOPIC: 2,  # principal, chickens, startedAt, unlocksAt
-        EGGS_SOLD_TOPIC: 2,     # eggs, profitGd, timestamp
-        FARM_CLOSED_TOPIC: 3,   # principal, finalProfit, totalPaid, timestamp
-    }.get(topic0)
-    if word_index is None:
-        return 0
-    data = str(log.get("data") or "").lower().removeprefix("0x")
-    start = word_index * 64
-    return _word_to_int(data[start:start + 64]) if len(data) >= start + 64 else 0
+def get_monthly_farming_activity_stats(
+    contract_address: str,
+    now: datetime | None = None,
+    web3_instance=None,
+) -> dict:
+    """Fetch this UTC month's farm events using a bounded, cached block range."""
+    contract = (contract_address or "").strip()
+    if not contract:
+        return {
+            "status": "not_configured",
+            "period_month": "",
+            "monthly_active_users": None,
+            "updated_at_utc": None,
+        }
+    if _get_logs_full is None:
+        raise RuntimeError("Shared Celo log scanner is unavailable")
+    if (len(contract) != 42 or not contract.startswith("0x")
+            or any(char not in "0123456789abcdefABCDEF" for char in contract[2:])):
+        raise RuntimeError("FARMING_CONTRACT_ADDRESS is not a valid EVM address")
+
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    now = now.astimezone(timezone.utc)
+    period_month = now.strftime("%Y-%m")
+    cache_key = (contract.lower(), period_month)
+    with _farming_kpi_lock:
+        cached = _monthly_farming_activity_cache.get(cache_key)
+        if cached and cached.get("expires_at", 0) > time.time():
+            return dict(cached["stats"])
+
+    if web3_instance is None:
+        from web3 import Web3
+        from web3.providers.rpc import HTTPProvider
+        rpc_urls = _celo_rpc_urls() if _celo_rpc_urls else []
+        rpc_url = os.getenv("CELO_RPC_URL", "").strip() or (rpc_urls[0] if rpc_urls else "https://forno.celo.org")
+        web3_instance = Web3(HTTPProvider(rpc_url, request_kwargs={"timeout": 10}))
+
+    chain_id = int(web3_instance.eth.chain_id)
+    if chain_id != 42220:
+        raise RuntimeError(f"Farm contract RPC returned chain ID {chain_id}, expected Celo 42220")
+    if not web3_instance.eth.get_code(contract):
+        raise RuntimeError("FARMING_CONTRACT_ADDRESS has no contract code on Celo")
+    latest_block = int(web3_instance.eth.block_number)
+    if latest_block <= 0:
+        raise RuntimeError("Could not get the latest Celo block")
+
+    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    target_timestamp = int(month_start.timestamp())
+    with _farming_kpi_lock:
+        first_block = _farming_month_start_block_cache.get(cache_key)
+    if first_block is None:
+        timestamp_cache: dict[int, int] = {}
+
+        def block_timestamp(block_number: int) -> int:
+            block_number = int(block_number)
+            if block_number not in timestamp_cache:
+                timestamp_cache[block_number] = int(web3_instance.eth.get_block(block_number)["timestamp"])
+            return timestamp_cache[block_number]
+
+        if block_timestamp(latest_block) < target_timestamp:
+            first_block = latest_block + 1
+        else:
+            low, high = 0, latest_block + 1
+            while low < high:
+                middle = (low + high) // 2
+                if block_timestamp(middle) >= target_timestamp:
+                    high = middle
+                else:
+                    low = middle + 1
+            first_block = low
+        with _farming_kpi_lock:
+            _farming_month_start_block_cache[cache_key] = int(first_block)
+
+    monthly_wallets: set[str] = set()
+    if first_block <= latest_block:
+        logs = _get_logs_full(
+            {"address": contract, "topics": [list(USER_EVENT_TOPICS)]},
+            int(first_block),
+            latest_block,
+        )
+        for log in logs or []:
+            topics = log.get("topics") or []
+            topic0 = str(topics[0] or "").lower() if topics else ""
+            indexed_user = str(topics[1] or "").lower() if len(topics) > 1 else ""
+            wallet = "0x" + indexed_user[-40:] if len(indexed_user) >= 42 else ""
+            if topic0 in USER_EVENT_TOPICS and wallet and wallet != "0x" + ("0" * 40):
+                monthly_wallets.add(wallet)
+
+    stats = {
+        "status": "ready",
+        "period_month": period_month,
+        "monthly_active_users": len(monthly_wallets),
+        "range_start_block": int(first_block),
+        "range_end_block": latest_block,
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "source": "GoodMarketChickenFarm FarmStarted, EggsSold, and FarmClosed events",
+    }
+    with _farming_kpi_lock:
+        _monthly_farming_activity_cache[cache_key] = {
+            "stats": stats,
+            "wallets": monthly_wallets,
+            "expires_at": time.time() + MONTHLY_FARMING_ACTIVITY_CACHE_TTL,
+        }
+    return stats
 
 
 def _scan_farming_kpi_stats(contract_address: str, now: datetime | None = None) -> dict:
-    """Incrementally aggregate unique farmers and current-month farm activity."""
+    """Incrementally count unique wallets from FarmStarted events."""
     contract = (contract_address or "").strip()
     contract_key = contract.lower()
     if not contract or _get_logs_full is None:
@@ -402,10 +498,6 @@ def _scan_farming_kpi_stats(contract_address: str, now: datetime | None = None) 
         previous = _farming_kpi_cache.get(contract_key)
         previous = dict(previous) if previous else {}
     farmers = set(previous.get("farmers") or ())
-    monthly_wallets = (
-        set(previous.get("monthly_wallets") or ())
-        if previous.get("period_month") == period_month else set()
-    )
     latest_block = _get_latest_block_number() if _get_latest_block_number else 0
     if not latest_block:
         raise RuntimeError("Could not get the latest Celo block")
@@ -420,41 +512,34 @@ def _scan_farming_kpi_stats(contract_address: str, now: datetime | None = None) 
 
     if from_block <= latest_block:
         logs = _get_logs_full(
-            {"address": contract, "topics": [list(USER_EVENT_TOPICS)]},
+            {"address": contract, "topics": [[FARM_STARTED_TOPIC]]},
             from_block,
             latest_block,
         )
         for log in logs or []:
             topics = log.get("topics") or []
             topic0 = str(topics[0] or "").lower() if topics else ""
-            if topic0 not in USER_EVENT_TOPICS or len(topics) < 2:
+            if topic0 != FARM_STARTED_TOPIC or len(topics) < 2:
                 continue
             indexed_user = str(topics[1] or "").lower()
             wallet = "0x" + indexed_user[-40:] if len(indexed_user) >= 42 else ""
             if not wallet or wallet == "0x" + ("0" * 40):
                 continue
-            if topic0 == FARM_STARTED_TOPIC:
-                farmers.add(wallet)
-            event_timestamp = _farm_event_timestamp(log, topic0)
-            if event_timestamp:
-                event_month = datetime.fromtimestamp(event_timestamp, timezone.utc).strftime("%Y-%m")
-                if event_month == period_month:
-                    monthly_wallets.add(wallet)
+            farmers.add(wallet)
 
     updated_at = datetime.now(timezone.utc).isoformat()
     stats = {
         "status": "ready",
         "period_month": period_month,
-        "monthly_active_users": len(monthly_wallets),
+        "monthly_active_users": None,
         "total_farmers": len(farmers),
         "updated_at_utc": updated_at,
-        "source": "GoodMarketChickenFarm FarmStarted, EggsSold, and FarmClosed events",
+        "source": "GoodMarketChickenFarm FarmStarted events",
     }
     with _farming_kpi_lock:
         _farming_kpi_cache[contract_key] = {
             "stats": stats,
             "farmers": farmers,
-            "monthly_wallets": monthly_wallets,
             "period_month": period_month,
             "deploy_block": int(deploy_block),
             "last_scanned_block": int(latest_block),
