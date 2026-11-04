@@ -283,11 +283,14 @@ def _community_garden_boot() -> dict[str, object]:
 def community_feed_home():
     """Feed page. Guests may view; they get the shared connect card."""
     wallet = _session_wallet()
-
     if not svc.is_enabled():
         # Enabled-check first: a hidden feature must not even render a shell.
         return redirect("/wallet" if wallet else "/")
-
+    # Count signed-in visits to /community in the wallet-based active-user KPIs.
+    # Guest visits have no wallet address to attribute and are intentionally skipped.
+    if wallet:
+        from analytics_service import analytics
+        analytics.track_page_view(wallet, "community_feed")
     # NOTE: deliberately NOT face-verification gated — like the chatroom, the
     # feed is for all signed-in users and guests may read it. Moderation is the
     # report/ban path. Re-add a human_verification_redirect only if the product
