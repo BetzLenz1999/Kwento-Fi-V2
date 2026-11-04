@@ -2833,7 +2833,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
                         <div>
                             <h2 style="margin:0 0 0.25rem;">💰 REFERRAL_KEY Wallet Status</h2>
-                            <p style="margin:0;font-size:0.85rem;color:rgba(241,245,249,0.6);">Monitor the G$ balance and CELO gas needed for disbursements (Referrer: 1000 G$, Referee: 500 G$)</p>
+                            <p style="margin:0;font-size:0.85rem;color:rgba(241,245,249,0.6);">Monitor the G$ balance and CELO gas needed for disbursements (Referrer: 500 G$, Referee: 250 G$)</p>
                         </div>
                         <button onclick="loadReferralKeyBalance()" class="admin-btn" style="background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.5);color:#86efac;white-space:nowrap;">
                             🔄 Refresh Balance
@@ -2855,7 +2855,7 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                         <strong>Automatic flow:</strong><br>
                         1. Referral is recorded as <strong>pending_face_verification</strong> at sign-up<br>
                         2. When the referee finishes <strong>face verification</strong> or makes a <strong>UBI claim</strong>,
-                           rewards send automatically (Referrer <strong>1,000 G$</strong> | Referee <strong>500 G$</strong>)<br>
+                           rewards send automatically (Referrer <strong>500 G$</strong> | Referee <strong>250 G$</strong>)<br>
                         3. A background reconciler re-checks stuck referrals every few minutes<br><br>
                         <strong>Manual recovery:</strong> if a referral is stuck (<em>failed</em> / <em>disbursing</em> /
                         <em>pending_disbursed</em>), first check the <strong>REFERRAL_KEY wallet has enough G$ AND CELO gas</strong>
@@ -9101,7 +9101,7 @@ async function loadMinigamesMaintenance() {
                     alert(`❌ Failed: ${data.error || 'Unable to approve referral.'}`);
                     return;
                 }
-                alert(`✅ SUCCESS!\n\nReferral ${referralCode} approved!\n\n• Referrer: 1,000 G$\n• Referee: 500 G$`);
+                alert(`✅ SUCCESS!\n\nReferral ${referralCode} approved!\n\n• Referrer: 500 G$\n• Referee: 250 G$`);
                 loadReferralStats();
                 loadReferralKeyBalance();
                 loadPendingReferrals();
@@ -9364,7 +9364,7 @@ async function loadMinigamesMaintenance() {
                         result.referee_tx ? `Referee TX: https://celoscan.io/tx/${result.referee_tx}` : '',
                         result.referrer_tx ? `Referrer TX: https://celoscan.io/tx/${result.referrer_tx}` : '',
                     ].filter(Boolean).join('\n');
-                    alert(`✅ SUCCESS!\n\nReferral ${referralCode} approved and disbursed!\n\n• Referrer: 1,000 G$\n• Referee: 500 G$${txLines ? '\n\n' + txLines : ''}`);
+                    alert(`✅ SUCCESS!\n\nReferral ${referralCode} approved and disbursed!\n\n• Referrer: 500 G$\n• Referee: 250 G$${txLines ? '\n\n' + txLines : ''}`);
                     closeReferralModal();
                     loadPendingReferrals();
                     loadCompletedReferrals();
