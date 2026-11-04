@@ -9,8 +9,8 @@ from env_utils import get_env_int
 
 logger = logging.getLogger(__name__)
 
-REFERRER_REWARD = 1000.0
-REFEREE_REWARD = 500.0
+REFERRER_REWARD = 500.0
+REFEREE_REWARD = 250.0
 
 BASE_URL = os.getenv('BASE_URL', 'https://goodmarketph.live')
 
@@ -1123,8 +1123,8 @@ class ReferralService:
 
         try:
             # Preflight the combined amount before sending either leg.  Without
-            # this guard a REFERRAL_KEY wallet with only 500-999 G$ can pay the
-            # referee first and then leave the referrer unpaid.  The two rewards
+            # this guard a REFERRAL_KEY wallet with only 250-749 G$ can pay the
+            # referee first and then leave the referrer unpaid. The two rewards
             # are intentionally handled as an all-or-queue unit unless one side
             # was already completed by an earlier retry.
             remaining_required = 0.0
@@ -1165,7 +1165,7 @@ class ReferralService:
                         "balance_required": remaining_required,
                     }
 
-            # IMPORTANT: Process referee FIRST (500 G$), then referrer (1000 G$).
+            # IMPORTANT: Process referee FIRST (250 G$), then referrer (500 G$).
             # Each call waits for its receipt before the next transaction is built,
             # so a fixed 10-15 second UI delay is not required for nonce ordering.
 
@@ -1382,7 +1382,7 @@ class ReferralService:
             # THE REFEREE MUST BE ON-CHAIN VERIFIED — for BOTH legs.
             # A reward row's `wallet_address` is the PAYEE: for the 'referrer'
             # leg that is the OLD (already-verified) inviter. Checking the payee
-            # would let the referrer's 1000 G$ through while the NEW user this
+            # would let the referrer's 500 G$ through while the NEW user this
             # referral is about was never verified. So resolve the referral and
             # gate on its REFEREE.
             #
