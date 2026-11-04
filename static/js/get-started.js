@@ -897,15 +897,19 @@ function showWalletConnectOptions() {
 let _miniPayLoginInProgress = false;
 function openGoodWalletConnect() {
     if (_miniPayLoginInProgress) return;
-    showWalletConnectOptions();
     // Reuse injected Trust / MetaMask providers when already inside the
-    // wallet's mobile dApp browser. Other browsers use the WC QR flow.
+    // wallet's mobile dApp browser without first opening the WalletConnect
+    // QR panel. Other browsers open that panel only after detection fails.
     if (typeof connectPreferredInjectedWalletIfAvailable !== 'function') {
+        showWalletConnectOptions();
         connectWalletConnect();
         return;
     }
     connectPreferredInjectedWalletIfAvailable().then(function (handled) {
-        if (!handled) connectWalletConnect();
+        if (!handled) {
+            showWalletConnectOptions();
+            connectWalletConnect();
+        }
     });
 }
 
