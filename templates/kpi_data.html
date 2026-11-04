@@ -206,6 +206,24 @@
         </article>
     </section>
     <p class="footnote" id="farmingStatus" role="status" aria-live="polite">Loading on-chain chicken farming metrics…</p>
+
+    <div class="section-heading">
+        <h2>Community Garden</h2>
+        <span class="period" id="gardenPeriod">Garden V2 on-chain events · UTC</span>
+    </div>
+    <section class="grid" aria-label="Community Garden KPIs">
+        <article class="card daily">
+            <div class="card-label">Monthly Active Gardeners</div>
+            <div class="value" id="gardenMonthlyActive">—</div>
+            <div class="detail">Unique wallets with a GardenPlanted, GardenHarvested, or GardenExited event this UTC calendar month</div>
+        </article>
+        <article class="card user-total">
+            <div class="card-label">Total Gardeners</div>
+            <div class="value" id="gardenTotalUsers">—</div>
+            <div class="detail">Unique wallets that have ever emitted a GardenPlanted event on the configured V2 contract</div>
+        </article>
+    </section>
+    <p class="footnote" id="gardenStatus" role="status" aria-live="polite">Loading Community Garden on-chain metrics…</p>
     <p class="status" id="statusMessage" role="status" aria-live="polite">Loading KPI data…</p>
     <p class="footer">Last updated: <span id="updatedAt">—</span></p>
 </main>
@@ -219,6 +237,9 @@
     const farmingPeriod = document.getElementById('farmingPeriod');
     const farmingStatus = document.getElementById('farmingStatus');
     let farmingPollTimer = null;
+    const gardenPeriod = document.getElementById('gardenPeriod');
+    const gardenStatus = document.getElementById('gardenStatus');
+    let gardenPollTimer = null;
     const button = document.getElementById('refreshButton');
     const status = document.getElementById('statusMessage');
     const chartStatus = document.getElementById('chartStatus');
@@ -370,6 +391,53 @@
         }
     }
 
+    function setGardenMetric(id, value) {
+        document.getElementById(id).textContent = value === null || value === undefined
+            ? '—' : numberFormat.format(Number(value));
+    }
+
+    async function loadCommunityGardenKpis() {
+        gardenStatus.textContent = 'Fetching current-month Community Garden events from Celo…';
+        try {
+            const response = await fetch('/api/data/community-garden-kpi', {
+                method: 'GET', credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }, cache: 'no-store'
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) throw new Error(payload.error || 'Could not load Community Garden metrics.');
+            const garden = payload.community_garden || {};
+            setGardenMetric('gardenMonthlyActive', garden.monthly_active_users);
+            setGardenMetric('gardenTotalUsers', garden.total_gardeners);
+            if (garden.period_month) gardenPeriod.textContent = `${garden.period_month} UTC · Garden V2 events`;
+
+            if (garden.status === 'ready') {
+                const updated = garden.updated_at_utc
+                    ? ` Updated ${new Date(garden.updated_at_utc).toLocaleTimeString(undefined, { timeZone: 'UTC', timeZoneName: 'short' })}.`
+                    : '';
+                if (garden.total_status === 'loading') {
+                    if (garden.total_gardeners === null || garden.total_gardeners === undefined) {
+                        document.getElementById('gardenTotalUsers').textContent = 'Scanning…';
+                    }
+                    gardenStatus.textContent = `Monthly active gardeners loaded from this UTC month's Garden V2 events.${updated} The all-time unique gardener count is scanning historical GardenPlanted events.`;
+                    gardenPollTimer = window.setTimeout(loadCommunityGardenKpis, 5000);
+                } else if (garden.total_status === 'error') {
+                    document.getElementById('gardenTotalUsers').textContent = 'Unavailable';
+                    gardenStatus.textContent = `Monthly active gardeners loaded from this UTC month's Garden V2 events.${updated} All-time gardener total unavailable: ${garden.total_error || 'historical GardenPlanted scan failed'}`;
+                } else {
+                    gardenStatus.textContent = `Counts use unique gardener wallets from the configured Garden V2 contract.${updated}`;
+                }
+            } else if (garden.status === 'not_configured') {
+                document.getElementById('gardenMonthlyActive').textContent = 'Unavailable';
+                document.getElementById('gardenTotalUsers').textContent = 'Unavailable';
+                gardenStatus.textContent = 'Community Garden metrics are unavailable because COMMUNITY_GARDEN_CONTRACT_ADDRESS is not configured.';
+            } else {
+                gardenStatus.textContent = garden.error || 'Community Garden event data is temporarily unavailable. Refresh the page to retry.';
+            }
+        } catch (error) {
+            gardenStatus.textContent = error.message || 'Could not load Community Garden metrics.';
+        }
+    }
+
     async function loadKpis(useSelectedRange = false) {
         if (useSelectedRange && !rangeForm.reportValidity()) return;
         button.disabled = true;
@@ -435,10 +503,16 @@
         event.preventDefault();
         loadKpis(true);
     });
-    button.addEventListener('click', () => loadKpis(true));
+    button.addEventListener('click', () => {
+        loadKpis(true);
+        loadChickenFarmingKpis();
+        loadCommunityGardenKpis();
+    });
     loadKpis();
     if (farmingPollTimer) window.clearTimeout(farmingPollTimer);
+    if (gardenPollTimer) window.clearTimeout(gardenPollTimer);
     loadChickenFarmingKpis();
+    loadCommunityGardenKpis();
 })();
 </script>
 </body>
