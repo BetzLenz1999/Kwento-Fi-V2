@@ -6,7 +6,7 @@ import os
 import re
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, time as datetime_time, timedelta, timezone
 
 from eth_hash.auto import keccak
 
@@ -30,7 +30,7 @@ GARDEN_ACTIVITY_TOPICS = (
 
 _garden_kpi_lock = threading.Lock()
 _monthly_activity_cache: dict = {}
-_month_start_block_cache: dict = {}
+_utc_start_block_cache: dict = {}
 _total_gardeners_cache: dict = {}
 _total_gardeners_refreshing: set[str] = set()
 _total_gardeners_errors: dict = {}
@@ -56,12 +56,12 @@ def _validated_web3(address: str, web3_instance=None):
     return w3
 
 
-def get_monthly_garden_activity_stats(
+def get_garden_activity_stats(
     contract_address: str | None = None,
     now: datetime | None = None,
     web3_instance=None,
 ) -> dict:
-    """Count unique V2 gardener wallets active during the current UTC month."""
+    """Count unique V2 gardener wallets in current UTC daily, weekly, and monthly windows."""
     address = _normalize_address(
         contract_address if contract_address is not None
         else os.getenv("COMMUNITY_GARDEN_CONTRACT_ADDRESS", "")
@@ -71,17 +71,20 @@ def get_monthly_garden_activity_stats(
         now = now.replace(tzinfo=timezone.utc)
     now = now.astimezone(timezone.utc)
     period_month = now.strftime("%Y-%m")
+    today_utc = now.date()
     if not address:
         return {
             "status": "not_configured",
             "period_month": period_month,
+            "daily_active_users": None,
+            "weekly_active_users": None,
             "monthly_active_users": None,
             "updated_at_utc": None,
         }
     if shared_chain._get_logs_full is None:
         raise RuntimeError("Shared Celo event-log scanner is unavailable")
 
-    cache_key = (address.lower(), period_month)
+    cache_key = (address.lower(), today_utc.isoformat())
     with _garden_kpi_lock:
         cached = _monthly_activity_cache.get(cache_key)
         if cached and cached.get("expires_at", 0) > time.time():
@@ -93,11 +96,17 @@ def get_monthly_garden_activity_stats(
         raise RuntimeError("Could not read the latest Celo block")
 
     month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-    target_timestamp = int(month_start.timestamp())
-    with _garden_kpi_lock:
-        first_block = _month_start_block_cache.get(cache_key)
-    if first_block is None:
-        timestamp_cache: dict[int, int] = {}
+    day_start = datetime.combine(today_utc, datetime_time.min, tzinfo=timezone.utc)
+    week_start_day = today_utc - timedelta(days=6)
+    week_start = datetime.combine(week_start_day, datetime_time.min, tzinfo=timezone.utc)
+    timestamp_cache: dict[int, int] = {}
+
+    def first_block_on_or_after(target_timestamp: int, period_key: str) -> int:
+        start_key = (address.lower(), period_key)
+        with _garden_kpi_lock:
+            cached_block = _utc_start_block_cache.get(start_key)
+        if cached_block is not None:
+            return int(cached_block)
 
         def block_timestamp(block_number: int) -> int:
             number = int(block_number)
@@ -117,30 +126,70 @@ def get_monthly_garden_activity_stats(
                     low = middle + 1
             first_block = low
         with _garden_kpi_lock:
-            if len(_month_start_block_cache) >= 256:
-                _month_start_block_cache.pop(next(iter(_month_start_block_cache)))
-            _month_start_block_cache[cache_key] = int(first_block)
+            if len(_utc_start_block_cache) >= 512:
+                _utc_start_block_cache.pop(next(iter(_utc_start_block_cache)))
+            _utc_start_block_cache[start_key] = int(first_block)
+        return int(first_block)
 
-    gardeners: set[str] = set()
-    if first_block <= latest_block:
+    monthly_start_block = first_block_on_or_after(
+        int(month_start.timestamp()), period_month
+    )
+    weekly_start_block = first_block_on_or_after(
+        int(week_start.timestamp()), week_start_day.isoformat()
+    )
+    scan_start_block = min(monthly_start_block, weekly_start_block)
+    daily_wallets: set[str] = set()
+    weekly_wallets: set[str] = set()
+    monthly_wallets: set[str] = set()
+    if scan_start_block <= latest_block:
         logs = shared_chain._get_logs_full(
             {"address": address, "topics": [list(GARDEN_ACTIVITY_TOPICS)]},
-            int(first_block),
+            int(scan_start_block),
             latest_block,
         )
+        month_start_ts = int(month_start.timestamp())
+        day_start_ts = int(day_start.timestamp())
+        week_start_ts = int(week_start.timestamp())
+        now_ts = int(now.timestamp())
+        timestamp_word_by_topic = {
+            GARDEN_PLANTED_TOPIC: 3,
+            GARDEN_HARVESTED_TOPIC: 2,
+            GARDEN_EXITED_TOPIC: 1,
+        }
         for log in logs or []:
             topics = log.get("topics") or []
             topic0 = str(topics[0] or "").lower() if topics else ""
             indexed_gardener = str(topics[1] or "").lower() if len(topics) > 1 else ""
             wallet = "0x" + indexed_gardener[-40:] if len(indexed_gardener) >= 42 else ""
-            if topic0 in GARDEN_ACTIVITY_TOPICS and wallet and wallet != "0x" + ("0" * 40):
-                gardeners.add(wallet)
+            word_index = timestamp_word_by_topic.get(topic0)
+            if word_index is None:
+                continue
+            raw_data = log.get("data") or "0x"
+            if isinstance(raw_data, (bytes, bytearray)):
+                raw_data = "0x" + bytes(raw_data).hex()
+            data_hex = str(raw_data).lower().removeprefix("0x")
+            word_start = int(word_index) * 64 if word_index is not None else -1
+            try:
+                event_timestamp = int(data_hex[word_start:word_start + 64], 16)
+            except (TypeError, ValueError):
+                continue
+            if not wallet or wallet == "0x" + ("0" * 40) or event_timestamp > now_ts:
+                continue
+            if event_timestamp >= month_start_ts:
+                monthly_wallets.add(wallet)
+            if event_timestamp >= week_start_ts:
+                weekly_wallets.add(wallet)
+            if event_timestamp >= day_start_ts:
+                daily_wallets.add(wallet)
 
     stats = {
         "status": "ready",
         "period_month": period_month,
-        "monthly_active_users": len(gardeners),
-        "range_start_block": int(first_block),
+        "daily_active_users": len(daily_wallets),
+        "weekly_active_users": len(weekly_wallets),
+        "monthly_active_users": len(monthly_wallets),
+        "range_start_block": int(monthly_start_block),
+        "scan_start_block": int(scan_start_block),
         "range_end_block": latest_block,
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
         "source": "Community Garden V2 GardenPlanted, GardenHarvested, and GardenExited events",
@@ -148,7 +197,6 @@ def get_monthly_garden_activity_stats(
     with _garden_kpi_lock:
         _monthly_activity_cache[cache_key] = {
             "stats": stats,
-            "gardeners": gardeners,
             "expires_at": time.time() + MONTHLY_CACHE_TTL,
         }
     return stats
