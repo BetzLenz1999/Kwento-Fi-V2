@@ -346,9 +346,8 @@ function cancelCreatePreflight() {
     showWalletOptions();
 }
 
-// Device-aware warning: when a wallet is detected, remind the user to
-// connect it through the Reown WalletConnect picker instead of creating
-// a second wallet. There is no separate injected-wallet button in this flow.
+// Device-aware warning: use the injected provider when the user is already
+// inside a mobile wallet browser; otherwise WalletConnect remains available.
 function _lwApplyDetectionNudge(provider) {
     _lwDetectedProvider = provider || null;
     const banner = document.getElementById('walletDetectBanner');
@@ -365,9 +364,15 @@ function _lwApplyDetectionNudge(provider) {
     const name = (typeof getInjectedProviderLabel === 'function')
         ? getInjectedProviderLabel(provider) : 'Wallet';
     const isMini = !!(provider && provider.isMiniPay);
+    const isMetaMaskInApp = !!(
+        provider && provider.isMetaMask && !provider.isBraveWallet &&
+        typeof isMobileDappContext === 'function' && isMobileDappContext()
+    );
     const message = isMini
         ? "You're in MiniPay. Choose WalletConnect to connect this wallet instead of creating another one."
-        : name + ' detected. Choose WalletConnect to connect this wallet instead of creating another one.';
+        : isMetaMaskInApp
+            ? 'MetaMask detected. Tap WalletConnect to connect this wallet in the current page.'
+            : name + ' detected. Choose WalletConnect to connect this wallet instead of creating another one.';
     if (text) text.textContent = message;
     if (banner) banner.classList.toggle('show', !deferReminder);
     if (preflightNotice) {
@@ -893,15 +898,13 @@ let _miniPayLoginInProgress = false;
 function openGoodWalletConnect() {
     if (_miniPayLoginInProgress) return;
     showWalletConnectOptions();
-    // Keep users already inside Trust Wallet in the current dApp browser.
-    // Regular browsers fall back to the existing WalletConnect URI flow.
-    // The guard also keeps this entry point safe while the optional wallet
-    // detection bundle is still loading.
-    if (typeof connectTrustWalletIfInjected !== 'function') {
+    // Reuse injected Trust / MetaMask providers when already inside the
+    // wallet's mobile dApp browser. Other browsers use the WC QR flow.
+    if (typeof connectPreferredInjectedWalletIfAvailable !== 'function') {
         connectWalletConnect();
         return;
     }
-    connectTrustWalletIfInjected().then(function (handled) {
+    connectPreferredInjectedWalletIfAvailable().then(function (handled) {
         if (!handled) connectWalletConnect();
     });
 }
@@ -1334,8 +1337,8 @@ function detectInjectedWallet(_retryDepth) {
     const provider = getPreferredInjectedProvider();
     const depth = Number(_retryDepth || 0);
     const maxDepth = _walletDetectionMaxDepth();
-    // MiniPay stays on its native injected path; Trust Wallet and MetaMask
-    // are deliberately routed through WalletConnect instead.
+    // MiniPay has a separate CTA. The primary connect card checks for injected
+    // Trust / mobile MetaMask providers before starting a WalletConnect QR.
     const miniPayButton = document.getElementById('miniPayWalletBtn');
     if (miniPayButton) miniPayButton.style.display = provider && provider.isMiniPay ? 'flex' : 'none';
     if (typeof _lwApplyDetectionNudge === 'function') _lwApplyDetectionNudge(provider);
@@ -1594,42 +1597,47 @@ function withInjectedSignTimeout(promise, ms, message) {
     });
 }
 
-// Trust Wallet's dApp browser exposes an injected EIP-1193 provider. Prefer
-// that provider when it is already present so a user who is already inside
-// Trust never gets bounced through link.trustwallet.com (which can land on an
-// intermediate search/AI screen instead of returning to this dApp tab).
-let _trustWalletLoginInProgress = false;
-async function connectTrustWalletIfInjected() {
-    if (_trustWalletLoginInProgress || _miniPayLoginInProgress || _wcConnecting) return true;
+// Prefer injected providers in wallet browsers so MetaMask Mobile does not
+// have to open a WalletConnect deep link back into itself. Desktop MetaMask
+// extensions keep the existing QR/WalletConnect path.
+let _injectedWalletLoginInProgress = false;
+async function connectPreferredInjectedWalletIfAvailable() {
+    if (_injectedWalletLoginInProgress || _miniPayLoginInProgress || _wcConnecting) return true;
 
     const isTrust = (p) => p && typeof _isTrustWalletProvider === 'function' && _isTrustWalletProvider(p);
+    const isMobileMetaMask = (p) => !!(
+        p && p.isMetaMask && !p.isBraveWallet &&
+        typeof isMobileDappContext === 'function' && isMobileDappContext()
+    );
+    const isSupportedInjected = (p) => isTrust(p) || isMobileMetaMask(p);
     let provider = getPreferredInjectedProvider();
-    if (!isTrust(provider) && (isTrustWalletMobileContext() || isLikelyMobileWalletContext())) {
+    if (!isSupportedInjected(provider) && (isTrustWalletMobileContext() || isLikelyMobileWalletContext())) {
         provider = await awaitPreferredInjectedProvider(isTrustWalletMobileContext() ? 3200 : 1200);
-        if (!isTrust(provider)) provider = null;
+        if (!isSupportedInjected(provider)) provider = null;
     }
     if (!provider) return false;
 
-    _trustWalletLoginInProgress = true;
+    const walletName = isTrust(provider) ? 'Trust Wallet' : 'MetaMask';
+    _injectedWalletLoginInProgress = true;
     const button = document.getElementById('walletConnectPrimaryButton');
     if (button) button.disabled = true;
     try {
-        showWalletStatus('walletConnectStatus', '🛡 Trust Wallet detected. Connecting in this page…', 'info');
+        showWalletStatus('walletConnectStatus', '📱 ' + walletName + ' detected. Connecting in this page…', 'info');
         const accounts = await provider.request({ method: 'eth_requestAccounts' });
         const wallet = String(Array.isArray(accounts) ? accounts[0] || '' : '').trim();
         if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
-            throw new Error('Trust Wallet did not return a valid account. Please reconnect and try again.');
+            throw new Error(walletName + ' did not return a valid account. Please reconnect and try again.');
         }
         showWalletStatus('walletConnectStatus', '🔀 Confirming the Celo network…', 'info');
         if (!(await ensureCeloChain(provider))) {
-            throw new Error('Please switch Trust Wallet to Celo Mainnet and try again.');
+            throw new Error('Please switch ' + walletName + ' to Celo Mainnet and try again.');
         }
         const message = makeLoginMessage(wallet);
-        showWalletStatus('walletConnectStatus', '✍️ Approve the KwentoFi sign-in message in Trust Wallet.', 'info');
+        showWalletStatus('walletConnectStatus', '✍️ Approve the KwentoFi sign-in message in ' + walletName + '.', 'info');
         const signature = await withInjectedSignTimeout(
             provider.request({ method: 'personal_sign', params: [utf8ToHex(message), wallet] }),
             120000,
-            'Trust Wallet did not respond. Return to Trust Wallet and approve the sign-in message.'
+            walletName + ' did not respond. Return to the wallet and approve the sign-in message.'
         );
         const verifyData = await postVerifyIdentity(wallet, signature, message, '', 'injected');
         try {
@@ -1639,17 +1647,17 @@ async function connectTrustWalletIfInjected() {
             }
         } catch (_) {}
         const okMsg = (verifyData && verifyData.referral_warning)
-            ? ('✅ Trust Wallet login verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting…')
-            : '✅ Trust Wallet login verified. Redirecting…';
+            ? ('✅ ' + walletName + ' login verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting…')
+            : ('✅ ' + walletName + ' login verified. Redirecting…');
         showWalletStatus('walletConnectStatus', okMsg, verifyData && verifyData.referral_warning ? 'warning' : 'success');
         _gmAfterLoginRedirect(verifyData && verifyData.referral_warning ? 2400 : 900);
     } catch (err) {
-        const rawMsg = (err && err.message) ? err.message : 'Trust Wallet connection failed.';
+        const rawMsg = (err && err.message) ? err.message : walletName + ' connection failed.';
         const code = err && (err.code || (err.cause && err.cause.code));
         const rejected = code === 4001 || /reject|denied|cancel|user refused/i.test(rawMsg);
-        showWalletStatus('walletConnectStatus', (rejected ? '❌ Trust Wallet request was declined. ' : '❌ ') + rawMsg, rejected ? 'warning' : 'error');
+        showWalletStatus('walletConnectStatus', (rejected ? '❌ ' + walletName + ' request was declined. ' : '❌ ') + rawMsg, rejected ? 'warning' : 'error');
     } finally {
-        _trustWalletLoginInProgress = false;
+        _injectedWalletLoginInProgress = false;
         if (button) button.disabled = false;
     }
     return true;
@@ -2220,12 +2228,9 @@ async function connectWalletConnect() {
         }), WC_FALLBACK_TIMEOUT_MS.connect, 'connect');
         if (result.uri) {
             drawWalletConnectQr(result.uri);
-            // Add a one-tap deep link to the mobile wallet for users
-            // on the same phone as the wallet (common on our
-            // Vercel deployment where Trust Wallet / MetaMask
-            // Mobile users open goodmarket.live inside the wallet
-            // app's own browser — scanning their own QR is
-            // awkward).
+            // Add mobile handoff links: Trust receives the active WC URI;
+            // MetaMask opens KwentoFi in its in-app browser and connects via
+            // its injected provider there.
             _renderWalletConnectDeepLinks(result.uri);
             showWalletStatus('walletConnectStatus', '📲 Awaiting wallet approval. Tap the button below to open your wallet, or scan the QR from another device.', 'info');
         }
@@ -2346,11 +2351,9 @@ async function connectWalletConnect() {
     }
 }
 
-// Render one-tap deep links to open the WalletConnect session in
-// the user's mobile wallet app. On Vercel the user often opens
-// goodmarket.live inside the wallet's own in-app browser and has
-// no way to scan a QR from the same phone, so surface direct links
-// for the two supported WalletConnect destinations.
+// Trust Wallet can receive the active WalletConnect URI directly. For MetaMask,
+// open KwentoFi in its official in-app browser instead; its injected provider
+// completes login there without a fragile self-WalletConnect handoff.
 function _renderWalletConnectDeepLinks(uri) {
     if (!uri) return;
     const qrWrap = document.getElementById('wcQrWrap');
@@ -2365,14 +2368,16 @@ function _renderWalletConnectDeepLinks(uri) {
     // version pushed the status message below the phone fold.
     box.style.cssText = 'margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;';
     const btnStyle = 'flex:1 1 0;min-width:104px;text-align:center;padding:8px 6px;border-radius:9px;text-decoration:none;font-weight:600;font-size:0.76rem;color:#fff;white-space:nowrap;';
+    const metaMaskDappLink = 'https://link.metamask.io/dapp/' + encodeURIComponent(window.location.host || 'kwentofi.live');
     box.innerHTML =
         // Keep the existing KwentoFi page as the active browser entry.
         // In Trust Wallet's in-app browser, opening the universal link in a
         // new tab can leave the dApp tab behind when the wallet app takes
         // focus, forcing users to reopen KwentoFi manually after approval.
         '<a href="https://link.trustwallet.com/wc?uri=' + enc + '" style="' + btnStyle + 'background:#3375bb;">🛡 Trust</a>' +
-        '<a href="https://metamask.app.link/wc?uri=' + enc + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#f6851b;">🦊 MetaMask</a>' +
-        '<div style="flex:1 1 100%;text-align:center;font-size:0.72rem;color:#9ca3af;margin-top:2px;">On desktop? Scan the QR above instead.</div>';
+        '<a href="' + metaMaskDappLink + '" target="_blank" rel="noopener noreferrer" style="' + btnStyle + 'background:#f6851b;">🦊 Open MetaMask</a>' +
+        '<div style="flex:1 1 100%;text-align:center;font-size:0.72rem;color:#9ca3af;margin-top:2px;">MetaMask opens KwentoFi in its browser. Tap WalletConnect there to connect.</div>' +
+        '<div style="flex:1 1 100%;text-align:center;font-size:0.72rem;color:#9ca3af;">On desktop? Scan the QR above instead.</div>';
     qrWrap.appendChild(box);
 }
 
