@@ -3169,7 +3169,38 @@ def kpi_data_page():
         return redirect("/")
     if not is_admin(wallet):
         return redirect("/wallet")
+    # Start (or reuse) the non-blocking on-chain cache refresh as early as the
+    # admin opens /data; the page itself must never wait for an RPC log scan.
+    try:
+        from farming.routes import FARMING_CONTRACT_ADDRESS
+        from farming.blockchain import get_farming_kpi_stats
+        get_farming_kpi_stats(FARMING_CONTRACT_ADDRESS)
+    except Exception:
+        logger.exception("Could not start chicken farming KPI refresh")
     return render_template("kpi_data.html")
+
+
+@routes.route("/api/data/farming-kpi", methods=["GET"])
+@admin_required
+def get_chicken_farming_kpi():
+    """Return cached chicken-farming aggregates; refreshes chain logs off-request."""
+    try:
+        from farming.routes import FARMING_CONTRACT_ADDRESS
+        from farming.blockchain import get_farming_kpi_stats
+        data = get_farming_kpi_stats(FARMING_CONTRACT_ADDRESS)
+    except Exception:
+        logger.exception("Chicken farming KPI unavailable")
+        data = {
+            "status": "error",
+            "period_month": datetime.now(timezone.utc).strftime("%Y-%m"),
+            "monthly_active_users": None,
+            "total_farmers": None,
+            "error": "Chicken farming event data is temporarily unavailable",
+        }
+    response = jsonify({"success": True, "chicken_farming": data})
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Vary"] = "Cookie"
+    return response
 
 
 @routes.route("/api/data/kpi", methods=["GET"])
