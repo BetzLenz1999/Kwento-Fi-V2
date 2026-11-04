@@ -3651,6 +3651,9 @@
                 // authorization for a different amount is still active.
                 amountGd = ready.status === 'transaction_submitted' || !typed
                     ? String(ready.amount_gd || '') : typed;
+                if (!typed && ready.status === 'resume' && amountInput) {
+                    amountInput.value = amountGd;
+                }
                 if (typed && ready.status !== 'transaction_submitted') {
                     var resumedParsed = Number(typed);
                     if (!Number.isFinite(resumedParsed) || resumedParsed <= 0) {
@@ -3676,9 +3679,10 @@
                 }
                 amountGd = typed;
             } else if (Number.isFinite(maxWithdrawable) && maxWithdrawable > 0) {
-                // Blank means "the most I can take right now", which is the
-                // whole balance unless the vault or the daily cap trims it.
+                // Show the actual default in the field: the balance capped by
+                // the vault maximum and the remaining daily capacity.
                 amountGd = String(ready.max_withdrawable_gd);
+                if (amountInput) amountInput.value = amountGd;
             }
             var amountLabel = amountGd || String(ready.amount_gd || 'your available balance');
             var remainderWarning = '';
