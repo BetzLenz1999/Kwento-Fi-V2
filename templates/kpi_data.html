@@ -326,6 +326,7 @@
     }
 
     async function loadChickenFarmingKpis() {
+        farmingStatus.textContent = 'Fetching current-month farming events from Celo…';
         try {
             const response = await fetch('/api/data/farming-kpi', {
                 method: 'GET', credentials: 'same-origin',
@@ -342,7 +343,18 @@
                 const updated = farm.updated_at_utc
                     ? ` Updated ${new Date(farm.updated_at_utc).toLocaleTimeString(undefined, { timeZone: 'UTC', timeZoneName: 'short' })}.`
                     : '';
-                farmingStatus.textContent = `Counts use unique wallet addresses from ChickenFarm contract events.${updated}${farm.refreshing ? ' A newer snapshot is refreshing in the background.' : ''}`;
+                if (farm.total_status === 'loading') {
+                    if (farm.total_farmers === null || farm.total_farmers === undefined) {
+                        document.getElementById('farmingTotalUsers').textContent = 'Scanning…';
+                    }
+                    farmingStatus.textContent = `Monthly active farmers loaded from this UTC month's contract events.${updated} The all-time unique farmer count is still scanning historical FarmStarted events.`;
+                    farmingPollTimer = window.setTimeout(loadChickenFarmingKpis, 2500);
+                } else if (farm.total_status === 'error') {
+                    document.getElementById('farmingTotalUsers').textContent = 'Unavailable';
+                    farmingStatus.textContent = `Monthly active farmers loaded from this UTC month's contract events.${updated} All-time farmer total unavailable: ${farm.total_error || 'historical event scan failed'}`;
+                } else {
+                    farmingStatus.textContent = `Counts use unique wallet addresses from ChickenFarm contract events.${updated}`;
+                }
             } else if (farm.status === 'loading') {
                 farmingStatus.textContent = 'Scanning farm events in the background. The first historical scan may take a little while; results are cached and subsequent refreshes scan only new blocks.';
                 farmingPollTimer = window.setTimeout(loadChickenFarmingKpis, 2500);
