@@ -96,7 +96,6 @@
         busy: false,
         skipRevealOnce: false,
         statusLoaded: false,
-        statusRequestId: 0,
         canWithdraw: false,
         resumeAuthorizationId: null,
     };
@@ -1084,6 +1083,8 @@
         _pending = [];
         var input = $('cfCaption');
         if (input) input.value = '';
+        var permanentToggle = $('cfPermanentPost');
+        if (permanentToggle) permanentToggle.checked = false;
         var fileInput = $('cfFileInput');
         if (fileInput) fileInput.value = '';
         renderPreviews();
@@ -1168,6 +1169,8 @@
         }
         var input = $('cfCaption');
         var caption = input ? input.value : '';
+        var permanentToggle = $('cfPermanentPost');
+        var isPermanent = !!(permanentToggle && permanentToggle.checked);
 
         var done = _pending.filter(function (e) { return e.state === 'done' && e.upload; });
         if (_pending.some(function (e) { return e.state !== 'done'; })) {
@@ -1199,7 +1202,7 @@
         // attach their public URLs to the media descriptors.
         uploadPosters(done).then(function (posters) {
             posters.forEach(function (url, index) { media[index].poster_url = url; });
-            var postBody = { caption: caption, media: media };
+            var postBody = { caption: caption, media: media, is_permanent: isPermanent };
             if (_promptModeId) postBody.prompt_id = _promptModeId;
             return api('/community/api/posts', {
                 method: 'POST',
@@ -1922,6 +1925,12 @@
             if (exactTime) time.title = exactTime;
         }
         who.appendChild(time);
+        if (post.is_permanent) {
+            var permanentBadge = el('span', 'cf-permanent-badge', 'Permanent post');
+            permanentBadge.title = 'The author cannot delete this post. Admins may remove it after reviewing a report.';
+            permanentBadge.setAttribute('aria-label', permanentBadge.title);
+            who.appendChild(permanentBadge);
+        }
         var earnedBadges = Array.isArray(post.badges) ? post.badges.slice(0, 3) : [];
         if (earnedBadges.length) {
             var badgeRow = el('span', 'cf-badge-row');
@@ -1949,8 +1958,8 @@
         if (!post.is_mine && post.username) {
             head.appendChild(buildFollowButton(post.username, post.is_following));
         }
-        // `⋯` is on every post: your own offers edit / pin / delete, another
-        // member's offers support / report.
+        // `⋯` is on every post: an author's permanent post has no delete action;
+        // another member's post offers support / report.
         var menu = el('button', 'cf-menu-btn', '⋯');
         menu.type = 'button';
         menu.setAttribute('aria-label', 'Post options');
@@ -2467,7 +2476,9 @@
             item(post.is_pinned ? 'Unpin from top' : 'Pin to top (free)',
                 post.is_pinned ? '📌' : '📍',
                 function () { togglePin(post); });
-            item('Delete post', '🗑', function () { deletePost(post); }, true);
+            if (!post.is_permanent) {
+                item('Delete post', '🗑', function () { deletePost(post); }, true);
+            }
         } else if (post.post_type === 'user') {
             if (BOOT.postSupport && BOOT.postSupport.enabled) {
                 item('Support with G$', '♥', function () {
@@ -2838,9 +2849,6 @@
         syncWithdrawalActionVisibility();
     }
     function hideReconciliationPrompt() {
-        // Any status read started before this authoritative hide may have
-        // captured a stale claimed row. Ignore it if it resolves later.
-        _reconciliation.statusRequestId += 1;
         var prompt = $('cfEarnReconcile');
         var copy = $('cfEarnReconcileCopy');
         var button = $('cfEarnReconcileBtn');
@@ -2858,11 +2866,9 @@
         // The member-only markup and this guard keep guests from learning even
         // that a wallet-specific reservation exists.
         if (BOOT.isGuest || !WALLET || !$('cfEarnReconcile')) return Promise.resolve(false);
-        var requestId = ++_reconciliation.statusRequestId;
         return api('/community/api/rewards/withdrawals/reconciliation', {
             headers: { 'Cache-Control': 'no-cache' },
         }).then(function (result) {
-            if (requestId !== _reconciliation.statusRequestId) return false;
             var skipReveal = _reconciliation.skipRevealOnce;
             _reconciliation.skipRevealOnce = false;
             var data = result && result.data;
@@ -2903,7 +2909,6 @@
             syncTodayHub();
             return true;
         }).catch(function () {
-            if (requestId !== _reconciliation.statusRequestId) return false;
             _reconciliation.skipRevealOnce = false;
             _reconciliation.statusLoaded = false;
             showReconciliationStatusUnavailable();
@@ -2938,9 +2943,6 @@
         await loadReconciliationStatus();
     }
     async function confirmWithdrawalTransaction(withdrawalId, txHash, setStatus) {
-        // A confirmation in progress is newer than any status fetch started
-        // earlier on page load; do not let that fetch overwrite its UI state.
-        _reconciliation.statusRequestId += 1;
         _reconciliation.withdrawalId = isWithdrawalId(withdrawalId)
             ? String(withdrawalId).toLowerCase() : null;
         _reconciliation.resumeAuthorizationId = null;
@@ -3670,7 +3672,16 @@
                 amountGd = String(ready.max_withdrawable_gd);
             }
             var amountLabel = amountGd || String(ready.amount_gd || 'your available balance');
-            if (!window.confirm('Withdraw ' + amountLabel + ' G$ to your logged-in wallet? You will pay Celo gas. Confirm the recipient, vault address and network in your wallet before signing.')) return;
+            var remainderWarning = '';
+            var requestedNumber = Number(amountGd);
+            var availableNumber = Number(ready.balance_gd);
+            if (!resuming && Number.isFinite(requestedNumber) && Number.isFinite(availableNumber)) {
+                var remainder = availableNumber - requestedNumber;
+                if (remainder > 0 && remainder < minWithdrawable) {
+                    remainderWarning = '\n\nThis leaves ' + formatGd(remainder) + ' G$ in your Community balance. It is below the minimum and can only be withdrawn after your balance grows to the minimum again.';
+                }
+            }
+            if (!window.confirm('Withdraw ' + amountLabel + ' G$ to your logged-in wallet? You will pay Celo gas. Confirm the recipient, vault address and network in your wallet before signing.' + remainderWarning)) return;
 
             if (button) button.textContent = 'Preparing…';
             var authResult = await api('/community/api/rewards/withdrawals/authorize', {
@@ -4780,7 +4791,8 @@
         var config = {
             'uniswap-v3': { title: 'Convert your G$ to Crypto', source: 'data-uniswap-v3-src' },
             farming: { title: 'Farming', source: 'data-farming-src' },
-            savings: { title: 'Savings', source: 'data-savings-src' }
+            savings: { title: 'Savings', source: 'data-savings-src' },
+            'xdc-wallet': { title: 'XDC Wallet', source: 'data-xdc-wallet-src' }
         }[String(page || '').toLowerCase()];
         if (!config) return false;
         var trigger = _sheetReturnFocus || document.querySelector('[data-nav="menu"]');
