@@ -43,6 +43,53 @@ def current_origin_domain() -> str:
     return base.split('://', 1)[-1]
 
 
+def build_user_referral_link(wallet_address: str) -> str:
+    """Build the current user's referral link, preferring their saved code."""
+    wallet = str(wallet_address or "").strip()
+    if not wallet:
+        raise ValueError("A wallet address is required to build a referral link")
+    service = ReferralService()
+    code = ""
+    supabase = service.supabase
+    if supabase:
+        user_row = _safe(
+            lambda: supabase.table('user_data')
+                .select('my_referral_code')
+                .ilike('wallet_address', wallet)
+                .limit(1)
+                .execute(),
+            op="get saved referral code for task message",
+        )
+        if user_row and getattr(user_row, "data", None):
+            code = str(user_row.data[0].get("my_referral_code") or "").strip()
+        if not code:
+            referral_row = _safe(
+                lambda: supabase.table('referral_codes')
+                    .select('referral_code')
+                    .ilike('wallet_address', wallet)
+                    .limit(1)
+                    .execute(),
+                op="get saved referral-code row for task message",
+            )
+            if referral_row and getattr(referral_row, "data", None):
+                code = str(referral_row.data[0].get("referral_code") or "").strip()
+    if not code:
+        result = service.get_or_create_referral_code(wallet)
+        if result.get("success"):
+            code = str(result.get("referral_code") or "").strip()
+    if not code:
+        # Keep task messages usable during a transient database outage. This
+        # deterministic code is the same default the referral service creates.
+        code = service.generate_code_for_wallet(wallet)
+        logger.warning(
+            "Using deterministic referral-code fallback for task message wallet %s...",
+            wallet[:8],
+        )
+    if not code:
+        raise RuntimeError("Could not resolve a referral code for this wallet")
+    return build_referral_link(code)
+
+
 def _get_supabase():
     from supabase_client import get_supabase_client
     return get_supabase_client()
