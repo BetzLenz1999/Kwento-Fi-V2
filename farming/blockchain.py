@@ -98,10 +98,10 @@ MONTHLY_FARMING_ACTIVITY_CACHE_TTL = 120
 
 
 def get_deploy_block(contract_address: str, latest_block: int | None = None,
-                     session=None) -> int:
-    """Return the block the farm contract was deployed at.
+                     session=None, *, env_var_name: str = "FARMING_DEPLOY_BLOCK") -> int:
+    """Return the block an EVM contract was deployed at.
 
-    Prefers the ``FARMING_DEPLOY_BLOCK`` env var (an explicit, cheap
+    Prefers the named deployment-block environment variable (an explicit, cheap
     configuration), else binary-searches ``eth_getCode`` for the first block
     that returns non-empty bytecode. That state is available on Celo archive
     nodes (verified on forno.celo.org), so no indexing service is required.
@@ -110,12 +110,12 @@ def get_deploy_block(contract_address: str, latest_block: int | None = None,
     bounded lookback; all-time aggregate callers must report unavailable rather
     than present a partial scan as the total.
     """
-    env_override = os.getenv("FARMING_DEPLOY_BLOCK", "").strip()
+    env_override = os.getenv(env_var_name, "").strip()
     if env_override:
         try:
             return max(0, int(env_override))
         except (TypeError, ValueError):
-            logger.warning("Invalid FARMING_DEPLOY_BLOCK=%r; ignoring", env_override)
+            logger.warning("Invalid %s=%r; ignoring", env_var_name, env_override)
 
     contract = (contract_address or "").lower()
     if not contract:
@@ -175,7 +175,7 @@ def get_deploy_block(contract_address: str, latest_block: int | None = None,
     found = low
     with _deploy_block_lock:
         _deploy_block_cache[contract] = found
-    logger.info("🐔 Farm contract deploy block discovered: %s", found)
+    logger.info("EVM contract deploy block discovered for %s: %s", contract, found)
     return found
 
 
