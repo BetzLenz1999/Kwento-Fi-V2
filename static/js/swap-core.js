@@ -14,6 +14,9 @@
  */
 
 // ─── Constants ────────────────────────────────────────────────────────────
+// Used by WalletConnect metadata and actionable wallet errors throughout this
+// bundle. The swap template sets GM_DISPLAY_BRAND before loading this script.
+const SWAP_DISPLAY_BRAND = String(window.GM_DISPLAY_BRAND || 'KwentoFi');
 const WALLET_ADDRESS = window.GM_SWAP_BOOT.wallet;
 const CELO_CHAIN_ID  = 42220;
 const LOGIN_METHOD = window.GM_SWAP_BOOT.loginMethod;
@@ -2860,4 +2863,3 @@ async function startFuseSwap() {
         else setFuseSwapBtnState("enter");
     }
 }
-
