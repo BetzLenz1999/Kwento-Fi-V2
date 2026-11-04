@@ -1117,7 +1117,7 @@ def api_onchain_withdrawal_range_history():
 
 @community_feed_bp.route("/api/rewards/withdrawals/reconciliation", methods=["GET"])
 def api_withdrawal_reconciliation_status():
-    """Expose only whether this wallet has a signed claimed row to reconcile."""
+    """Expose signed requests only when an on-chain payout exists to reconcile."""
     if not svc.is_enabled():
         response = _disabled_response()
         response[0].headers["Cache-Control"] = "private, no-store, max-age=0"
@@ -1129,13 +1129,22 @@ def api_withdrawal_reconciliation_status():
         row = _claimed_withdrawal(_withdrawal_admin_db(), wallet)
         if not row or not row.get("authorization_signature"):
             return _private_withdrawal_json({"success": True, "needs_reconciliation": False})
+        tx_hash = str(row.get("tx_hash") or "").strip().lower()
+        if not tx_hash:
+            # A user may approve an authorization and cancel the wallet prompt.
+            # A signed database row alone is not evidence of a submitted payout.
+            runtime = withdrawal_vault.build_runtime(
+                require_enabled=False, require_signer_key=False)
+            tx_hash = withdrawal_vault.find_withdrawal_transaction(runtime, row) or ""
+        if not tx_hash:
+            return _private_withdrawal_json({"success": True, "needs_reconciliation": False})
         return _private_withdrawal_json({
             "success": True,
             "needs_reconciliation": True,
             "withdrawal": {
                 "withdrawal_id": row.get("withdrawal_id"),
                 "amount_gd": str(row.get("amount_gd") or "0"),
-                "tx_hash": row.get("tx_hash"),
+                "tx_hash": tx_hash,
             },
         })
     except Exception as exc:  # noqa: BLE001
@@ -1459,15 +1468,6 @@ def api_withdrawal_authorize():
             return jsonify({"success": False, "error": f"At least {required_minimum:g} G$ is required to withdraw."}), 409
         if amount_base > runtime.max_amount:
             return jsonify({"success": False, "error": f"A single withdrawal is limited to {max_gd:g} G$ by the vault contract. Withdraw {max_gd:g} G$ now and the rest afterwards."}), 409
-        # A leftover below the minimum could never be withdrawn on its own, so
-        # it would silently strand the member's G$. Require either the full
-        # balance or a remainder the member can still take out later.
-        remainder = balance - amount_gd
-        if remainder > 0 and remainder < required_minimum:
-            return jsonify({"success": False,
-                            "error": (f"Leaving {remainder:g} G$ behind is below the {required_minimum:g} G$ minimum "
-                                      f"and could not be withdrawn later. Withdraw your full {balance:g} G$ balance, "
-                                      f"or leave at least {required_minimum:g} G$.")}), 409
         db_row = _open_withdrawal(db, member)
         latest = runtime.web3.eth.get_block("latest")
         chain_now = int(latest["timestamp"])
