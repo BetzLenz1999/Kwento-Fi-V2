@@ -231,7 +231,7 @@ class TwitterTaskService:
         import hashlib
         from datetime import datetime, timezone
         from referral_program.referral_service import (
-            ReferralService, build_referral_link, current_origin_domain,
+            build_user_referral_link, current_origin_domain,
         )
         
         # Normalize wallet address to lowercase
@@ -257,16 +257,19 @@ class TwitterTaskService:
         # Get the base message template
         message = self.custom_messages[message_index]
         
-        # Replace the static goodmarket.live URL with the user's personal referral link.
-        # Origin-aware: build_referral_link uses flask.request.host_url on request.
+        # Replace the static domain URL with this wallet's saved referral code.
         try:
-            referral_service = ReferralService()
-            referral_code = referral_service.generate_code_for_wallet(wallet_address)
-            referral_link = build_referral_link(referral_code)
+            referral_link = build_user_referral_link(wallet_address)
             message = message.replace("https://goodmarket.live", referral_link)
-            logger.info(f"🔗 Referral link injected for {wallet_address[:8]}...: {referral_link}")
+            logger.info(f"🔗 Personal referral link injected for {wallet_address[:8]}...")
         except Exception as ref_err:
-            logger.warning(f"⚠️ Could not generate referral link for {wallet_address[:8]}...: {ref_err}")
+            logger.exception(
+                "Could not include a personal referral link for task-message wallet %s...",
+                wallet_address[:8],
+            )
+            raise RuntimeError(
+                "Could not build a referral link for this Daily Task message"
+            ) from ref_err
 
         # Re-anchor any remaining bare 'goodmarket.live' text (opening/middle
         # phrases) to the current origin domain. Lambda repl avoids re's
