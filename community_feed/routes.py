@@ -1365,7 +1365,7 @@ def api_withdrawal_eligibility():
 
 @community_feed_bp.route("/api/rewards/withdrawals/authorize", methods=["POST"])
 def api_withdrawal_authorize():
-    """Reserve the full server-derived balance and issue the issuer EIP-712 signature."""
+    """Reserve the requested amount and issue the issuer EIP-712 signature."""
     if not _withdrawal_origin_ok():
         return jsonify({"success": False, "error": "Cross-origin withdrawal request rejected"}), 403
     if not svc.is_enabled():
@@ -1416,11 +1416,6 @@ def api_withdrawal_authorize():
                     "p_tx_hash": None,
                 })
                 existing = None
-            elif has_signature:
-                if resume_runtime.vault.functions.paused().call():
-                    return jsonify({"success": False, "status": "paused",
-                                    "error": "Community withdrawals are temporarily paused."}), 409
-                return jsonify(_sign_reserved_withdrawal(db, resume_runtime, existing))
             elif current_nonce != row_nonce:
                 _withdrawal_rpc(db, "community_reward_withdrawal_fail", {
                     "p_withdrawal_id": existing["withdrawal_id"],
@@ -1499,6 +1494,19 @@ def api_withdrawal_authorize():
                     "p_tx_hash": None,
                 })
                 db_row = None
+            elif has_signature and (
+                int(db_row.get("amount_base_units") or 0) != amount_base
+                or Decimal(str(db_row.get("amount_gd") or "0")) != amount_gd
+            ):
+                existing_amount = str(db_row.get("amount_gd") or "0")
+                return jsonify({
+                    "success": False,
+                    "status": "authorization_active",
+                    "withdrawal_id": db_row.get("withdrawal_id"),
+                    "amount_gd": existing_amount,
+                    "error": (f"A previous authorization for {existing_amount} G$ is still active and cannot be changed yet. "
+                              f"Clear the amount field to continue with {existing_amount} G$, or retry your chosen amount after it expires."),
+                }), 409
             elif not has_signature and current_nonce != row_nonce:
                 _withdrawal_rpc(db, "community_reward_withdrawal_fail", {
                     "p_withdrawal_id": db_row["withdrawal_id"],
