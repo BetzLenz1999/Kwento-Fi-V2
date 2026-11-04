@@ -1602,7 +1602,7 @@ let _trustWalletLoginInProgress = false;
 async function connectTrustWalletIfInjected() {
     if (_trustWalletLoginInProgress || _miniPayLoginInProgress || _wcConnecting) return true;
 
-    const isTrust = (p) => p && typeof isTrustWalletProvider === 'function' && isTrustWalletProvider(p);
+    const isTrust = (p) => p && typeof _isTrustWalletProvider === 'function' && _isTrustWalletProvider(p);
     let provider = getPreferredInjectedProvider();
     if (!isTrust(provider) && (isTrustWalletMobileContext() || isLikelyMobileWalletContext())) {
         provider = await awaitPreferredInjectedProvider(isTrustWalletMobileContext() ? 3200 : 1200);
