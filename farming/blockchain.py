@@ -33,6 +33,7 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime, timezone
 
 try:  # imported lazily-safe so the module loads without the project deps
     from blockchain import (
@@ -86,6 +87,11 @@ _deploy_block_cache: dict = {}          # contract_lower -> block int
 _history_cache_lock = threading.Lock()
 _history_cache: dict = {}               # (contract_lower, wallet_lower) -> {expires_at, rows}
 HISTORY_CACHE_TTL = 60
+FARMING_KPI_CACHE_TTL = 300
+_farming_kpi_lock = threading.Lock()
+_farming_kpi_cache: dict = {}           # contract_lower -> cached aggregates + scan cursor
+_farming_kpi_refreshing: set[str] = set()
+_farming_kpi_errors: dict = {}          # contract_lower -> {message, retry_after}
 
 
 def get_deploy_block(contract_address: str, latest_block: int | None = None,
@@ -97,8 +103,9 @@ def get_deploy_block(contract_address: str, latest_block: int | None = None,
     that returns non-empty bytecode. That state is available on Celo archive
     nodes (verified on forno.celo.org), so no indexing service is required.
 
-    Returns 0 when discovery fails, which makes the caller scan the bounded
-    lookback window instead of the whole chain — slower but never wrong.
+    Returns 0 when discovery fails. Wallet-history callers may then use their
+    bounded lookback; all-time aggregate callers must report unavailable rather
+    than present a partial scan as the total.
     """
     env_override = os.getenv("FARMING_DEPLOY_BLOCK", "").strip()
     if env_override:
@@ -363,6 +370,193 @@ def fetch_wallet_farm_history(contract_address: str, wallet_address: str,
     with _history_cache_lock:
         _history_cache[cache_key] = {"expires_at": time.time() + HISTORY_CACHE_TTL, "rows": rows}
     return rows
+
+
+def _farm_event_timestamp(log: dict, topic0: str) -> int:
+    """Read the event timestamp from the static ABI data words."""
+    word_index = {
+        FARM_STARTED_TOPIC: 2,  # principal, chickens, startedAt, unlocksAt
+        EGGS_SOLD_TOPIC: 2,     # eggs, profitGd, timestamp
+        FARM_CLOSED_TOPIC: 3,   # principal, finalProfit, totalPaid, timestamp
+    }.get(topic0)
+    if word_index is None:
+        return 0
+    data = str(log.get("data") or "").lower().removeprefix("0x")
+    start = word_index * 64
+    return _word_to_int(data[start:start + 64]) if len(data) >= start + 64 else 0
+
+
+def _scan_farming_kpi_stats(contract_address: str, now: datetime | None = None) -> dict:
+    """Incrementally aggregate unique farmers and current-month farm activity."""
+    contract = (contract_address or "").strip()
+    contract_key = contract.lower()
+    if not contract or _get_logs_full is None:
+        raise RuntimeError("Chicken farming contract or shared Celo RPC helpers are unavailable")
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    now = now.astimezone(timezone.utc)
+    period_month = now.strftime("%Y-%m")
+
+    with _farming_kpi_lock:
+        previous = _farming_kpi_cache.get(contract_key)
+        previous = dict(previous) if previous else {}
+    farmers = set(previous.get("farmers") or ())
+    monthly_wallets = (
+        set(previous.get("monthly_wallets") or ())
+        if previous.get("period_month") == period_month else set()
+    )
+    latest_block = _get_latest_block_number() if _get_latest_block_number else 0
+    if not latest_block:
+        raise RuntimeError("Could not get the latest Celo block")
+
+    deploy_block = previous.get("deploy_block")
+    if deploy_block is None:
+        deploy_block = get_deploy_block(contract, latest_block=latest_block)
+    if not deploy_block:
+        raise RuntimeError("Could not determine the farm deploy block; set FARMING_DEPLOY_BLOCK")
+    last_scanned_block = previous.get("last_scanned_block")
+    from_block = int(deploy_block) if last_scanned_block is None else int(last_scanned_block) + 1
+
+    if from_block <= latest_block:
+        logs = _get_logs_full(
+            {"address": contract, "topics": [list(USER_EVENT_TOPICS)]},
+            from_block,
+            latest_block,
+        )
+        for log in logs or []:
+            topics = log.get("topics") or []
+            topic0 = str(topics[0] or "").lower() if topics else ""
+            if topic0 not in USER_EVENT_TOPICS or len(topics) < 2:
+                continue
+            indexed_user = str(topics[1] or "").lower()
+            wallet = "0x" + indexed_user[-40:] if len(indexed_user) >= 42 else ""
+            if not wallet or wallet == "0x" + ("0" * 40):
+                continue
+            if topic0 == FARM_STARTED_TOPIC:
+                farmers.add(wallet)
+            event_timestamp = _farm_event_timestamp(log, topic0)
+            if event_timestamp:
+                event_month = datetime.fromtimestamp(event_timestamp, timezone.utc).strftime("%Y-%m")
+                if event_month == period_month:
+                    monthly_wallets.add(wallet)
+
+    updated_at = datetime.now(timezone.utc).isoformat()
+    stats = {
+        "status": "ready",
+        "period_month": period_month,
+        "monthly_active_users": len(monthly_wallets),
+        "total_farmers": len(farmers),
+        "updated_at_utc": updated_at,
+        "source": "GoodMarketChickenFarm FarmStarted, EggsSold, and FarmClosed events",
+    }
+    with _farming_kpi_lock:
+        _farming_kpi_cache[contract_key] = {
+            "stats": stats,
+            "farmers": farmers,
+            "monthly_wallets": monthly_wallets,
+            "period_month": period_month,
+            "deploy_block": int(deploy_block),
+            "last_scanned_block": int(latest_block),
+            "expires_at": time.time() + FARMING_KPI_CACHE_TTL,
+        }
+        _farming_kpi_errors.pop(contract_key, None)
+    return stats
+
+
+def _refresh_farming_kpi_stats(contract_address: str) -> None:
+    contract_key = (contract_address or "").strip().lower()
+    try:
+        _scan_farming_kpi_stats(contract_address)
+    except Exception as exc:
+        logger.warning("Chicken farming KPI refresh failed: %s", exc)
+        with _farming_kpi_lock:
+            _farming_kpi_errors[contract_key] = {
+                "message": str(exc),
+                "retry_after": time.time() + 60,
+            }
+    finally:
+        with _farming_kpi_lock:
+            _farming_kpi_refreshing.discard(contract_key)
+
+
+def get_farming_kpi_stats(contract_address: str) -> dict:
+    """Return cached farm KPIs immediately and refresh stale data in a daemon thread."""
+    contract = (contract_address or "").strip()
+    now = datetime.now(timezone.utc)
+    period_month = now.strftime("%Y-%m")
+    if not contract:
+        return {
+            "status": "not_configured",
+            "period_month": period_month,
+            "monthly_active_users": None,
+            "total_farmers": None,
+            "updated_at_utc": None,
+            "source": "GoodMarketChickenFarm events",
+        }
+
+    contract_key = contract.lower()
+    with _farming_kpi_lock:
+        entry = _farming_kpi_cache.get(contract_key)
+        error = _farming_kpi_errors.get(contract_key)
+        entry = dict(entry) if entry else None
+        refreshing = contract_key in _farming_kpi_refreshing
+        same_month = bool(entry and entry.get("period_month") == period_month)
+        fresh = bool(same_month and entry.get("expires_at", 0) > time.time())
+        if not fresh and not refreshing and not (
+            error and error.get("retry_after", 0) > time.time()
+        ):
+            _farming_kpi_refreshing.add(contract_key)
+            refreshing = True
+            try:
+                threading.Thread(
+                    target=_refresh_farming_kpi_stats,
+                    args=(contract,),
+                    name="farming-kpi-refresh",
+                    daemon=True,
+                ).start()
+            except Exception as exc:
+                _farming_kpi_refreshing.discard(contract_key)
+                _farming_kpi_errors[contract_key] = {
+                    "message": str(exc), "retry_after": time.time() + 60
+                }
+                error = _farming_kpi_errors[contract_key]
+
+        if same_month and entry and entry.get("stats"):
+            result = dict(entry["stats"])
+            result["refreshing"] = refreshing and not fresh
+            return result
+        if refreshing:
+            return {
+                "status": "loading",
+                "period_month": period_month,
+                "monthly_active_users": None,
+                "total_farmers": (len(entry.get("farmers") or ()) if entry else None),
+                "updated_at_utc": None,
+                "refreshing": True,
+                "source": "GoodMarketChickenFarm events",
+            }
+        error = _farming_kpi_errors.get(contract_key)
+        if error:
+            return {
+                "status": "error",
+                "period_month": period_month,
+                "monthly_active_users": None,
+                "total_farmers": (len(entry.get("farmers") or ()) if entry else None),
+                "updated_at_utc": None,
+                "error": error.get("message", "Farm event data is temporarily unavailable"),
+                "refreshing": False,
+                "source": "GoodMarketChickenFarm events",
+            }
+        return {
+            "status": "loading",
+            "period_month": period_month,
+            "monthly_active_users": None,
+            "total_farmers": (len(entry.get("farmers") or ()) if entry else None),
+            "updated_at_utc": None,
+            "refreshing": False,
+            "source": "GoodMarketChickenFarm events",
+        }
 
 
 def invalidate_history_cache(wallet_address: str = "", contract_address: str = "") -> None:
