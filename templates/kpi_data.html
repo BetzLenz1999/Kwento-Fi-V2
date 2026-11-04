@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>KPI Data | KwentoFi</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0b1020;
+            --panel: #131b2e;
+            --panel-2: #18233a;
+            --text: #f3f6fc;
+            --muted: #9eacc4;
+            --line: rgba(177, 197, 230, .14);
+            --blue: #7eb8ff;
+            --mint: #65e0bd;
+            --gold: #ffd479;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: radial-gradient(ellipse at 15% 0%, #17264a 0, transparent 38%), var(--bg);
+            color: var(--text);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+        main { width: min(1040px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0 60px; }
+        .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 30px; }
+        .eyebrow { margin: 0 0 8px; color: var(--mint); font-size: .76rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+        h1 { margin: 0; font-size: clamp(1.8rem, 5vw, 2.6rem); letter-spacing: -.04em; }
+        .intro { color: var(--muted); margin: 10px 0 0; line-height: 1.55; }
+        .actions { display: flex; gap: 10px; align-items: center; }
+        button, .back-link {
+            border: 1px solid var(--line); border-radius: 11px; color: var(--text); background: var(--panel-2);
+            padding: 10px 14px; font: inherit; font-size: .9rem; font-weight: 700; text-decoration: none;
+        }
+        button { cursor: pointer; }
+        button:hover, .back-link:hover { border-color: rgba(126,184,255,.65); }
+        button:disabled { cursor: wait; opacity: .65; }
+        .section-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin: 30px 0 14px; }
+        h2 { font-size: 1.08rem; margin: 0; }
+        .period { color: var(--muted); font-size: .82rem; }
+        .date-range-form { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin:0 0 14px; padding:16px; border:1px solid var(--line); border-radius:14px; background:rgba(19,27,46,.72); }
+        .date-field { display:grid; gap:6px; }
+        .date-field label { color:var(--muted); font-size:.8rem; font-weight:700; }
+        .date-field input { min-height:40px; padding:8px 10px; border:1px solid var(--line); border-radius:9px; background:#0d1527; color:var(--text); font:inherit; }
+        .range-hint { flex:1 1 100%; color:var(--muted); font-size:.8rem; }
+        .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+        .card {
+            min-height: 156px; padding: 21px; border: 1px solid var(--line); border-radius: 17px;
+            background: linear-gradient(150deg, rgba(24,35,58,.98), rgba(17,25,43,.98));
+            box-shadow: 0 18px 45px rgba(0,0,0,.14);
+        }
+        .card-label { color: var(--muted); font-size: .9rem; font-weight: 650; }
+        .value { margin: 17px 0 7px; font-size: clamp(2rem, 5vw, 2.65rem); font-weight: 800; letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
+        .detail { color: var(--muted); font-size: .82rem; line-height: 1.45; }
+        .user-total .value { color: var(--blue); }
+        .daily .value { color: var(--mint); }
+        .weekly .value { color: var(--gold); }
+        .community-card { display: grid; grid-template-columns: minmax(180px, .85fr) 1.4fr; align-items: center; gap: 24px; }
+        .community-card .value { color: var(--mint); margin-top: 8px; }
+        .breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .breakdown-item { padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: rgba(7,12,24,.26); }
+        .breakdown-value { display:block; margin-top: 7px; font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .chart-card { padding: 20px 20px 14px; }
+        .chart-wrap { position: relative; height: 360px; }
+        .chart-status { min-height: 1.2em; margin: 10px 2px 0; color: var(--muted); font-size: .82rem; }
+        .footnote { color: var(--muted); font-size: .83rem; line-height: 1.55; margin: 14px 2px 0; }
+        .status { min-height: 1.4em; margin: 16px 2px 0; color: var(--muted); font-size: .85rem; }
+        .status.error { color: #ff9b9b; }
+        .footer { margin-top: 26px; color: #76849e; font-size: .8rem; }
+        @media (max-width: 720px) {
+            main { padding-top: 28px; }
+            .topbar { align-items: flex-start; flex-direction: column; }
+            .grid { grid-template-columns: 1fr; }
+            .card { min-height: auto; }
+            .community-card { grid-template-columns: 1fr; gap: 8px; }
+            .chart-wrap { height: 300px; }
+        }
+        @media (max-width: 420px) {
+            .breakdown { grid-template-columns: 1fr; }
+            .actions { width: 100%; }
+            .actions > * { flex: 1; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">KwentoFi · Admin</p>
+            <h1>KPI Data</h1>
+            <p class="intro">Aggregate user and activity metrics. All time windows use UTC.</p>
+        </div>
+        <nav class="actions" aria-label="Page actions">
+            <a class="back-link" href="/admin">Admin</a>
+            <button id="refreshButton" type="button">Refresh data</button>
+        </nav>
+    </header>
+
+    <div class="section-heading">
+        <h2>User Data</h2>
+        <span class="period">Total users: <code>user_data</code> · Activity: <code>user_sessions</code></span>
+    </div>
+    <section class="grid" aria-label="User KPIs">
+        <article class="card user-total">
+            <div class="card-label">Total users</div>
+            <div class="value" id="totalUsers">—</div>
+            <div class="detail">Registered user records</div>
+        </article>
+        <article class="card daily">
+            <div class="card-label">Daily Active Users (DAU)</div>
+            <div class="value" id="dailyActive">—</div>
+            <div class="detail">Unique users with recorded activity since 00:00 UTC</div>
+        </article>
+        <article class="card weekly">
+            <div class="card-label">Weekly Active Users (WAU)</div>
+            <div class="value" id="weeklyActive">—</div>
+            <div class="detail">Unique users active in the last 7 UTC calendar days</div>
+        </article>
+    </section>
+
+        <div class="section-heading">
+        <h2>Active Users Trend</h2>
+        <span class="period" id="trendRangeSummary">Loading date range…</span>
+    </div>
+    <form class="date-range-form" id="trendRangeForm">
+        <div class="date-field">
+            <label for="trendStartDate">Start date (UTC)</label>
+            <input type="date" id="trendStartDate" name="start_date" required>
+        </div>
+        <div class="date-field">
+            <label for="trendEndDate">End date (UTC)</label>
+            <input type="date" id="trendEndDate" name="end_date" required>
+        </div>
+        <button id="applyRangeButton" type="submit">Apply range</button>
+        <span class="range-hint">Choose a range up to 366 days. This filters the chart only; summary cards stay current. Weekly activity includes the six UTC days before the selected start date.</span>
+    </form>
+    <section class="card chart-card" aria-label="Daily and weekly active users trend chart">
+        <div class="chart-wrap">
+            <canvas id="activeUsersChart" role="img" aria-label="Line chart showing daily and seven-day weekly active users over the last 30 days"></canvas>
+        </div>
+        <p class="chart-status" id="chartStatus" role="status" aria-live="polite">Loading activity trend…</p>
+    </section>
+    <p class="footnote">DAU counts unique wallets with recorded login, page-view, verification, or UBI activity on each UTC date. WAU counts unique wallets active on that date or the six preceding UTC dates. Historical activity comes from <code>user_sessions</code>.</p>
+
+    <div class="section-heading">
+        <h2>Daily Quiz / Community Feed</h2>
+        <span class="period">Ledger activity today (UTC)</span>
+    </div>
+    <section class="card community-card" aria-label="Daily Quiz and Community Feed KPIs">
+        <div>
+            <div class="card-label">Unique active users</div>
+            <div class="value" id="communityActive">—</div>
+            <div class="detail">Combined users across the quiz and feed</div>
+        </div>
+        <div class="breakdown">
+            <div class="breakdown-item">
+                <span class="card-label">Daily Quiz</span>
+                <span class="breakdown-value" id="quizActive">—</span>
+            </div>
+            <div class="breakdown-item">
+                <span class="card-label">Community Feed</span>
+                <span class="breakdown-value" id="feedActive">—</span>
+            </div>
+        </div>
+    </section>
+    <p class="footnote">Daily Quiz counts come from <code>daily_learn</code> entries. Community Feed counts come from reaction and comment entries in <code>community_reward_ledger</code>. Users are deduplicated by wallet, even if they have multiple ledger entries.</p>
+    <p class="status" id="statusMessage" role="status" aria-live="polite">Loading KPI data…</p>
+    <p class="footer">Last updated: <span id="updatedAt">—</span></p>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(() => {
+    const numberFormat = new Intl.NumberFormat();
+    const setNumber = (id, value) => {
+        document.getElementById(id).textContent = numberFormat.format(Number(value || 0));
+    };
+    const button = document.getElementById('refreshButton');
+    const status = document.getElementById('statusMessage');
+    const chartStatus = document.getElementById('chartStatus');
+    const rangeForm = document.getElementById('trendRangeForm');
+    const startDateInput = document.getElementById('trendStartDate');
+    const endDateInput = document.getElementById('trendEndDate');
+    const applyRangeButton = document.getElementById('applyRangeButton');
+    const trendRangeSummary = document.getElementById('trendRangeSummary');
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    startDateInput.max = todayUtc;
+    endDateInput.max = todayUtc;
+    let activeUsersChart = null;
+
+    function syncDateConstraints() {
+        startDateInput.max = endDateInput.value || todayUtc;
+        endDateInput.min = startDateInput.value || '';
+        endDateInput.max = todayUtc;
+    }
+
+    function formatRangeDate(value) {
+        return new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, {
+            year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC'
+        });
+    }
+
+    function renderActivityTrend(trend) {
+        if (typeof window.Chart !== 'function') {
+            chartStatus.textContent = 'The chart library could not be loaded. Check the network connection and refresh.';
+            return;
+        }
+        const canvas = document.getElementById('activeUsersChart');
+        const chartData = {
+            labels: trend.labels || [],
+            datasets: [
+                {
+                    label: 'Daily Active Users (DAU)',
+                    data: trend.daily_active_users || [],
+                    borderColor: '#65e0bd',
+                    backgroundColor: 'rgba(101, 224, 189, 0.12)',
+                    borderWidth: 2.5,
+                    pointRadius: 2,
+                    pointHoverRadius: 5,
+                    tension: 0.32,
+                    fill: false
+                },
+                {
+                    label: 'Weekly Active Users (WAU · 7-day)',
+                    data: trend.weekly_active_users || [],
+                    borderColor: '#7eb8ff',
+                    backgroundColor: 'rgba(126, 184, 255, 0.12)',
+                    borderWidth: 2.5,
+                    pointRadius: 2,
+                    pointHoverRadius: 5,
+                    tension: 0.32,
+                    fill: false
+                }
+            ]
+        };
+        const options = {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    align: 'start',
+                    labels: { color: '#dce6f6', usePointStyle: true, boxWidth: 8, padding: 18 }
+                },
+                tooltip: {
+                    callbacks: {
+                        title(items) {
+                            const rawDate = items[0]?.label;
+                            if (!rawDate) return '';
+                            return new Date(`${rawDate}T00:00:00Z`).toLocaleDateString(undefined, {
+                                month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+                            });
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(177, 197, 230, 0.08)' },
+                    ticks: { color: '#9eacc4', maxTicksLimit: 8, maxRotation: 0 }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(177, 197, 230, 0.10)' },
+                    ticks: { color: '#9eacc4', precision: 0 }
+                }
+            }
+        };
+        if (activeUsersChart) {
+            activeUsersChart.data = chartData;
+            activeUsersChart.update();
+        } else {
+            activeUsersChart = new window.Chart(canvas, { type: 'line', data: chartData, options });
+        }
+        chartStatus.textContent = 'Daily and seven-day active user counts, by UTC date.';
+    }
+
+    async function loadKpis(useSelectedRange = false) {
+        if (useSelectedRange && !rangeForm.reportValidity()) return;
+        button.disabled = true;
+        applyRangeButton.disabled = true;
+        status.classList.remove('error');
+        status.textContent = 'Loading KPI data…';
+        try {
+            const params = new URLSearchParams();
+            if (useSelectedRange) {
+                params.set('start_date', startDateInput.value);
+                params.set('end_date', endDateInput.value);
+            }
+            const query = params.toString();
+            const response = await fetch(`/api/data/kpi${query ? `?${query}` : ''}`, {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' },
+                cache: 'no-store'
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Could not load KPI data.');
+            }
+            setNumber('totalUsers', data.user_data.total_users);
+            setNumber('dailyActive', data.user_activity.daily_active);
+            setNumber('weeklyActive', data.user_activity.weekly_active);
+            const trend = data.user_activity.trend || {};
+            renderActivityTrend(trend);
+            if (trend.range) {
+                startDateInput.value = trend.range.start_date;
+                endDateInput.value = trend.range.end_date;
+                syncDateConstraints();
+                trendRangeSummary.textContent = `${formatRangeDate(trend.range.start_date)} – ${formatRangeDate(trend.range.end_date)} (UTC)`;
+            }
+            setNumber('communityActive', data.daily_quiz_community_feed.active_users);
+            setNumber('quizActive', data.daily_quiz_community_feed.daily_quiz_active_users);
+            setNumber('feedActive', data.daily_quiz_community_feed.community_feed_active_users);
+            const timestamp = new Date(data.as_of_utc);
+            document.getElementById('updatedAt').textContent = timestamp.toLocaleString(undefined, { timeZone: 'UTC', timeZoneName: 'short' });
+            status.textContent = 'KPI data updated.';
+        } catch (error) {
+            status.classList.add('error');
+            status.textContent = error.message || 'There was a problem loading KPI data.';
+        } finally {
+            button.disabled = false;
+            applyRangeButton.disabled = false;
+        }
+    }
+    startDateInput.addEventListener('change', syncDateConstraints);
+    endDateInput.addEventListener('change', syncDateConstraints);
+    rangeForm.addEventListener('submit', event => {
+        event.preventDefault();
+        loadKpis(true);
+    });
+    button.addEventListener('click', () => loadKpis(true));
+    loadKpis();
+})();
+</script>
+</body>
+</html>
