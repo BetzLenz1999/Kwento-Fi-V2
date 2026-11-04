@@ -1117,7 +1117,7 @@ def api_onchain_withdrawal_range_history():
 
 @community_feed_bp.route("/api/rewards/withdrawals/reconciliation", methods=["GET"])
 def api_withdrawal_reconciliation_status():
-    """Expose signed requests only when an on-chain payout exists to reconcile."""
+    """Expose only signed requests with a transaction hash already linked."""
     if not svc.is_enabled():
         response = _disabled_response()
         response[0].headers["Cache-Control"] = "private, no-store, max-age=0"
@@ -1131,12 +1131,10 @@ def api_withdrawal_reconciliation_status():
             return _private_withdrawal_json({"success": True, "needs_reconciliation": False})
         tx_hash = str(row.get("tx_hash") or "").strip().lower()
         if not tx_hash:
-            # A user may approve an authorization and cancel the wallet prompt.
-            # A signed database row alone is not evidence of a submitted payout.
-            runtime = withdrawal_vault.build_runtime(
-                require_enabled=False, require_signer_key=False)
-            tx_hash = withdrawal_vault.find_withdrawal_transaction(runtime, row) or ""
-        if not tx_hash:
+            # Do not make the normal withdrawal button depend on an RPC history
+            # scan. Canceled wallet prompts leave a signed row but no payout;
+            # authorization still performs nonce/history recovery before any
+            # subsequent payout can be signed or submitted.
             return _private_withdrawal_json({"success": True, "needs_reconciliation": False})
         return _private_withdrawal_json({
             "success": True,
