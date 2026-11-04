@@ -279,6 +279,27 @@ def _community_garden_boot() -> dict[str, object]:
     }
 
 
+def _record_referral_program_visit(wallet: str | None) -> dict:
+    """Count one authenticated Community page visit toward the unlock streak."""
+    if not wallet:
+        return {"eligible": False, "streak_days": 0, "days_required": 3, "days_remaining": 3}
+    try:
+        from .referral_eligibility import record_community_referral_visit
+
+        return record_community_referral_visit(wallet)
+    except Exception as exc:  # noqa: BLE001 - a DB outage must not break the feed
+        logger.warning("community_feed: referral eligibility unavailable: %s", exc)
+        return {"eligible": False, "streak_days": 0, "days_required": 3, "days_remaining": 3}
+
+
+def _render_private_community_page(**context):
+    """Render member-specific Community markup without shared-cache leakage."""
+    response = Response(render_template("community.html", **context), mimetype="text/html")
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
 @community_feed_bp.route("/")
 def community_feed_home():
     """Feed page. Guests may view; they get the shared connect card."""
@@ -291,14 +312,14 @@ def community_feed_home():
     if wallet:
         from analytics_service import analytics
         analytics.track_page_view(wallet, "community_feed")
+    referral_access = _record_referral_program_visit(wallet)
     # NOTE: deliberately NOT face-verification gated — like the chatroom, the
     # feed is for all signed-in users and guests may read it. Moderation is the
     # report/ban path. Re-add a human_verification_redirect only if the product
     # decision changes.
     from routes import _claim_boot_context
 
-    return render_template(
-        "community.html",
+    return _render_private_community_page(
         **_claim_boot_context(
             wallet or "",
             session.get("login_method", ""),
@@ -325,6 +346,7 @@ def community_feed_home():
         # client-rendered date would disagree with the reset for anyone whose
         # device is not on UTC.
         today_label=datetime.now(timezone.utc).strftime("%d %b").lstrip("0"),
+        referral_program_eligible=referral_access.get("eligible", False),
         garden_boot=_community_garden_boot(),
     )
 
@@ -348,6 +370,11 @@ def community_feed_post(post_id: int):
     if not post:
         return Response("Post not found", status=404, mimetype="text/plain")
 
+    if wallet:
+        from analytics_service import analytics
+        analytics.track_page_view(wallet, "community_feed_post")
+    referral_access = _record_referral_program_visit(wallet)
+
     from routes import _claim_boot_context
 
     media = post.get("media") or []
@@ -361,8 +388,7 @@ def community_feed_post(post_id: int):
     if not description:
         description = "A post from the KwentoFi Community."
     canonical_url = request.url_root.rstrip("/") + "/community/p/" + str(post_id)
-    return render_template(
-        "community.html",
+    return _render_private_community_page(
         **_claim_boot_context(
             wallet or "",
             session.get("login_method", ""),
@@ -384,6 +410,7 @@ def community_feed_post(post_id: int):
         max_avatar_mb=svc.MAX_AVATAR_MB,
         storage_ready=storage.storage_available(),
         focus_post=post,
+        referral_program_eligible=referral_access.get("eligible", False),
         focus_post_id=post_id,
         canonical_url=canonical_url,
         share_title=("Community Vault donation · KwentoFi" if post.get("post_type") == "system_vault_donation"
@@ -391,6 +418,61 @@ def community_feed_post(post_id: int):
         share_description=description,
         share_image=share_image,
     )
+
+
+@community_feed_bp.route("/api/referral-program", methods=["GET"])
+def community_referral_program_data():
+    """Return private referral data only after the server-side unlock."""
+    def private_json(payload: dict, status: int = 200):
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        response.headers["Vary"] = "Cookie"
+        return response, status
+
+    wallet = _session_wallet()
+    if not wallet:
+        return private_json({"success": False, "error": "Sign in to view referrals."}, 401)
+    try:
+        from .referral_eligibility import get_community_referral_status
+
+        access = get_community_referral_status(wallet)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: referral access check failed: %s", exc)
+        return private_json({"success": False, "error": "Referral access is temporarily unavailable."}, 503)
+    if not access.get("eligible"):
+        return private_json({
+            "success": False,
+            "eligible": False,
+            "error": "Complete three consecutive days of Community visits to unlock referrals.",
+        }, 403)
+
+    try:
+        from referral_program.referral_service import referral_service
+
+        stats = referral_service.get_referral_stats(wallet)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("community_feed: referral stats request failed: %s", exc)
+        return private_json({"success": False, "error": "Referral details could not be loaded."}, 503)
+    if not stats or not stats.get("success"):
+        return private_json({"success": False, "error": "Referral details could not be loaded."}, 503)
+
+    history = []
+    for row in (stats.get("referrals") or [])[:10]:
+        history.append({
+            "status": str(row.get("status") or "pending"),
+            "created_at": row.get("created_at"),
+            "completed_at": row.get("completed_at"),
+        })
+    return private_json({
+        "success": True,
+        "referral_code": stats.get("referral_code"),
+        "referral_link": stats.get("referral_link"),
+        "total_referrals": int(stats.get("total_referrals") or 0),
+        "completed_referrals": int(stats.get("completed_referrals") or 0),
+        "pending_referrals": int(stats.get("pending_referrals") or 0),
+        "total_earned_g": float(stats.get("total_earned_g") or 0),
+        "referrals": history,
+    })
 
 
 # ── Feed ─────────────────────────────────────────────────────────────────────
