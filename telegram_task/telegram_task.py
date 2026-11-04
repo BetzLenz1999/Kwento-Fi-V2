@@ -7,7 +7,10 @@ from typing import Dict, Any, Optional, List
 from config import DAILY_TASK_COOLDOWN_HOURS
 from supabase_client import get_supabase_client
 from cache_utils import supabase_cache
-from referral_program.referral_service import current_origin_domain
+from referral_program.referral_service import (
+    build_user_referral_link,
+    current_origin_domain,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +291,18 @@ class TelegramTaskService:
         logger.info(f"📅 Message index {message_index} for user: {wallet_address[:8]}... (Day: {day_of_year}, {len(self.custom_messages)} unique messages available)")
 
         message = self.custom_messages[message_index]
+        try:
+            referral_link = build_user_referral_link(wallet_address)
+            message = message.replace("https://goodmarket.live", referral_link)
+            logger.info(f"🔗 Personal referral link injected for {wallet_address[:8]}...")
+        except Exception as referral_error:
+            logger.exception(
+                "Could not include a personal referral link for task-message wallet %s...",
+                wallet_address[:8],
+            )
+            raise RuntimeError(
+                "Could not build a referral link for this Daily Task message"
+            ) from referral_error
 
         # Re-anchor hardcoded 'goodmarket.live' (any case) to the origin the
         # requesting client actually used; fallback is referral_service BASE_URL.
