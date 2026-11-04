@@ -802,9 +802,54 @@
             <button type="button" class="cf-menu-subitem" id="cfMenuDailyTask">
                 <span aria-hidden="true">✓</span><span>Daily Task</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
             </button>
+            {% if not is_guest and referral_program_eligible %}
+            <button type="button" class="cf-menu-subitem" id="cfMenuReferralProgram"
+                    onclick="GMCommunity.openReferralProgram(this)">
+                <span aria-hidden="true">🎁</span><span>Referral Program</span><span class="cf-menu-row-arrow" aria-hidden="true">›</span>
+            </button>
+            {% endif %}
         </div>
     </div>
 </div>
+
+{% if not is_guest and referral_program_eligible %}
+<div class="cf-referral-modal" id="cfReferralProgramModal" hidden role="dialog"
+     aria-modal="true" aria-labelledby="cfReferralProgramTitle" aria-hidden="true">
+    <div class="cf-referral-overlay" onclick="GMCommunity.closeReferralProgram()"></div>
+    <section class="cf-referral-card" tabindex="-1">
+        <header class="cf-referral-head">
+            <div>
+                <div class="cf-referral-kicker">KWENTOFI COMMUNITY</div>
+                <h2 id="cfReferralProgramTitle">Referral Program</h2>
+            </div>
+            <button type="button" class="cf-referral-close" aria-label="Close Referral Program"
+                    onclick="GMCommunity.closeReferralProgram()">×</button>
+        </header>
+        <div class="cf-referral-body">
+            <p class="cf-referral-intro">Invite a friend to KwentoFi. When they qualify, you earn <strong>500 G$</strong> and your friend earns <strong>250 G$</strong>.</p>
+            <div class="cf-referral-status" id="cfReferralProgramStatus" role="status" aria-live="polite">Loading your referral details…</div>
+            <div id="cfReferralProgramContent" hidden>
+                <div class="cf-referral-stats">
+                    <div><span>Total referrals</span><strong id="cfReferralTotal">0</strong></div>
+                    <div><span>Completed</span><strong id="cfReferralCompleted">0</strong></div>
+                    <div><span>G$ earned</span><strong id="cfReferralEarned">0 G$</strong></div>
+                </div>
+                <label class="cf-referral-link-label" for="cfReferralLink">Your referral link</label>
+                <div class="cf-referral-link-row">
+                    <input id="cfReferralLink" type="text" readonly autocomplete="off" aria-label="Your referral link">
+                    <button type="button" id="cfReferralCopy" onclick="GMCommunity.copyReferralProgramLink()">Copy</button>
+                </div>
+                <button type="button" class="cf-referral-share" id="cfReferralShare" onclick="GMCommunity.shareReferralProgramLink()">Share invite</button>
+                <h3 class="cf-referral-history-title">Recent referrals</h3>
+                <div class="cf-referral-history" id="cfReferralHistory">
+                    <p class="cf-referral-empty">No referrals yet. Share your link to invite a friend.</p>
+                </div>
+            </div>
+            <p class="cf-referral-error" id="cfReferralProgramError" role="alert" hidden></p>
+        </div>
+    </section>
+</div>
+{% endif %}
 
 {% if not is_guest and garden_boot.enabled %}
 <div class="cf-garden-modal" id="cfGardenModal" hidden role="dialog" aria-modal="true"
