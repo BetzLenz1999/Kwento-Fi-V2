@@ -188,6 +188,24 @@
         </div>
     </section>
     <p class="footnote">Daily Quiz counts come from <code>daily_learn</code> entries. Community Feed counts come from reaction and comment entries in <code>community_reward_ledger</code>. Users are deduplicated by wallet, even if they have multiple ledger entries.</p>
+
+    <div class="section-heading">
+        <h2>Chicken Farming</h2>
+        <span class="period" id="farmingPeriod">On-chain farm events · UTC</span>
+    </div>
+    <section class="grid" aria-label="Chicken Farming KPIs">
+        <article class="card daily">
+            <div class="card-label">Monthly Active Farmers</div>
+            <div class="value" id="farmingMonthlyActive">—</div>
+            <div class="detail">Unique wallets with a FarmStarted, EggsSold, or FarmClosed event this UTC calendar month</div>
+        </article>
+        <article class="card user-total">
+            <div class="card-label">Total Farmers</div>
+            <div class="value" id="farmingTotalUsers">—</div>
+            <div class="detail">Unique wallets that have ever emitted a FarmStarted event</div>
+        </article>
+    </section>
+    <p class="footnote" id="farmingStatus" role="status" aria-live="polite">Loading on-chain chicken farming metrics…</p>
     <p class="status" id="statusMessage" role="status" aria-live="polite">Loading KPI data…</p>
     <p class="footer">Last updated: <span id="updatedAt">—</span></p>
 </main>
@@ -198,6 +216,9 @@
     const setNumber = (id, value) => {
         document.getElementById(id).textContent = numberFormat.format(Number(value || 0));
     };
+    const farmingPeriod = document.getElementById('farmingPeriod');
+    const farmingStatus = document.getElementById('farmingStatus');
+    let farmingPollTimer = null;
     const button = document.getElementById('refreshButton');
     const status = document.getElementById('statusMessage');
     const chartStatus = document.getElementById('chartStatus');
@@ -299,6 +320,44 @@
         chartStatus.textContent = 'Daily and seven-day active user counts, by UTC date.';
     }
 
+    function setFarmMetric(id, value) {
+        document.getElementById(id).textContent = value === null || value === undefined
+            ? '—' : numberFormat.format(Number(value));
+    }
+
+    async function loadChickenFarmingKpis() {
+        try {
+            const response = await fetch('/api/data/farming-kpi', {
+                method: 'GET', credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }, cache: 'no-store'
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) throw new Error(payload.error || 'Could not load chicken farming metrics.');
+            const farm = payload.chicken_farming || {};
+            setFarmMetric('farmingMonthlyActive', farm.monthly_active_users);
+            setFarmMetric('farmingTotalUsers', farm.total_farmers);
+            if (farm.period_month) farmingPeriod.textContent = `${farm.period_month} UTC · on-chain events`;
+
+            if (farm.status === 'ready') {
+                const updated = farm.updated_at_utc
+                    ? ` Updated ${new Date(farm.updated_at_utc).toLocaleTimeString(undefined, { timeZone: 'UTC', timeZoneName: 'short' })}.`
+                    : '';
+                farmingStatus.textContent = `Counts use unique wallet addresses from ChickenFarm contract events.${updated}${farm.refreshing ? ' A newer snapshot is refreshing in the background.' : ''}`;
+            } else if (farm.status === 'loading') {
+                farmingStatus.textContent = 'Scanning farm events in the background. The first historical scan may take a little while; results are cached and subsequent refreshes scan only new blocks.';
+                farmingPollTimer = window.setTimeout(loadChickenFarmingKpis, 2500);
+            } else if (farm.status === 'not_configured') {
+                document.getElementById('farmingMonthlyActive').textContent = 'Unavailable';
+                document.getElementById('farmingTotalUsers').textContent = 'Unavailable';
+                farmingStatus.textContent = 'Chicken Farming metrics are unavailable because FARMING_CONTRACT_ADDRESS is not configured.';
+            } else {
+                farmingStatus.textContent = farm.error || 'Chicken farming event data is temporarily unavailable. Refresh the page to retry.';
+            }
+        } catch (error) {
+            farmingStatus.textContent = error.message || 'Could not load chicken farming metrics.';
+        }
+    }
+
     async function loadKpis(useSelectedRange = false) {
         if (useSelectedRange && !rangeForm.reportValidity()) return;
         button.disabled = true;
@@ -366,6 +425,8 @@
     });
     button.addEventListener('click', () => loadKpis(true));
     loadKpis();
+    if (farmingPollTimer) window.clearTimeout(farmingPollTimer);
+    loadChickenFarmingKpis();
 })();
 </script>
 </body>
