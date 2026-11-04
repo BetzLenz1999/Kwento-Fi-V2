@@ -14,7 +14,7 @@ import urllib.request
 import urllib.error
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import re
 import hashlib
 from collaboration_automation import (
@@ -3160,6 +3160,230 @@ def admin_local_wallet_verification_sync():
     except Exception as e:
         logger.exception("local-wallet verification sync failed")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@routes.route("/data", methods=["GET"])
+def kpi_data_page():
+    """Render the aggregate KPI page for verified administrators only."""
+    wallet = session.get("wallet")
+    if not session.get("verified") or not wallet:
+        return redirect("/")
+    if not is_admin(wallet):
+        return redirect("/wallet")
+    return render_template("kpi_data.html")
+
+
+@routes.route("/api/data/kpi", methods=["GET"])
+@admin_required
+def get_kpi_data():
+    """Return aggregate user and Community Feed KPI counts (UTC)."""
+    try:
+        # The community ledger has RLS enabled with no public read policies;
+        # only the service-role client can read its aggregate source rows.
+        db = get_supabase_admin_client()
+        if not db:
+            return jsonify({
+                "success": False,
+                "error": "Service-role database client is unavailable",
+            }), 503
+
+        now = datetime.now(timezone.utc)
+        today_utc = now.date()
+        utc_day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        def parse_date_parameter(name: str) -> date | None:
+            raw_value = (request.args.get(name) or "").strip()
+            if not raw_value:
+                return None
+            parsed = date.fromisoformat(raw_value)
+            if parsed.isoformat() != raw_value:
+                raise ValueError(f"{name} must use YYYY-MM-DD format")
+            return parsed
+
+        try:
+            requested_start = parse_date_parameter("start_date")
+            requested_end = parse_date_parameter("end_date")
+        except ValueError as date_error:
+            return jsonify({"success": False, "error": str(date_error)}), 400
+
+        if requested_start is None and requested_end is None:
+            trend_end_day = today_utc
+            trend_start_day = trend_end_day - timedelta(days=29)
+        elif requested_start is None:
+            trend_end_day = requested_end
+            trend_start_day = trend_end_day - timedelta(days=29)
+        else:
+            trend_start_day = requested_start
+            trend_end_day = requested_end or today_utc
+
+        if trend_start_day > today_utc or trend_end_day > today_utc:
+            return jsonify({"success": False, "error": "Dates cannot be after today (UTC)."}), 400
+        if trend_start_day > trend_end_day:
+            return jsonify({"success": False, "error": "Start date must be on or before end date."}), 400
+        trend_days = (trend_end_day - trend_start_day).days + 1
+        if trend_days > 366:
+            return jsonify({"success": False, "error": "Date range cannot exceed 366 days."}), 400
+
+        trend_history_start_day = trend_start_day - timedelta(days=6)
+        trend_history_start = datetime.combine(
+            trend_history_start_day, datetime.min.time(), tzinfo=timezone.utc
+        )
+        trend_end_exclusive = datetime.combine(
+            trend_end_day + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc
+        )
+
+        def exact_user_count(query):
+            result = query.execute()
+            return int(getattr(result, "count", 0) or 0)
+
+        user_table = db.table("user_data")
+        total_users = exact_user_count(
+            user_table.select("wallet_address", count="exact", head=True)
+        )
+        active_activity_types = ["login", "page_view", "verification_attempt", "ubi_activity"]
+        activity_wallets_by_day: dict[object, set[str]] = {}
+        history_page_size = 1000
+        def load_activity_window(window_start_day: date, window_end_exclusive: datetime) -> None:
+            history_offset = 0
+            window_start = datetime.combine(
+                window_start_day, datetime.min.time(), tzinfo=timezone.utc
+            )
+            while True:
+                history_result = (
+                    db.table("user_sessions")
+                    .select("id,wallet_address,activity_type,timestamp")
+                    .gte("timestamp", window_start.isoformat())
+                    .lt("timestamp", window_end_exclusive.isoformat())
+                    .lte("timestamp", now.isoformat())
+                    .in_("activity_type", active_activity_types)
+                    .order("timestamp")
+                    .order("id")
+                    .range(history_offset, history_offset + history_page_size - 1)
+                    .execute()
+                )
+                history_rows = getattr(history_result, "data", None) or []
+                for row in history_rows:
+                    wallet_address = str(row.get("wallet_address") or "").strip().lower()
+                    raw_timestamp = row.get("timestamp")
+                    if not wallet_address or not raw_timestamp:
+                        continue
+                    try:
+                        activity_at = datetime.fromisoformat(
+                            str(raw_timestamp).replace("Z", "+00:00")
+                        )
+                        if activity_at.tzinfo is None:
+                            activity_at = activity_at.replace(tzinfo=timezone.utc)
+                        activity_day = activity_at.astimezone(timezone.utc).date()
+                    except (TypeError, ValueError):
+                        continue
+                    if window_start_day <= activity_day < window_end_exclusive.date():
+                        activity_wallets_by_day.setdefault(activity_day, set()).add(wallet_address)
+                if len(history_rows) < history_page_size:
+                    break
+                history_offset += history_page_size
+
+        load_activity_window(trend_history_start_day, trend_end_exclusive)
+        if trend_end_day < today_utc:
+            current_window_start = today_utc - timedelta(days=6)
+            current_window_end = datetime.combine(
+                today_utc + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc
+            )
+            load_activity_window(current_window_start, current_window_end)
+
+        trend_dates = [trend_start_day + timedelta(days=index) for index in range(trend_days)]
+        daily_active_trend = [
+            len(activity_wallets_by_day.get(day, set())) for day in trend_dates
+        ]
+        weekly_active_trend = []
+        for day in trend_dates:
+            weekly_wallets: set[str] = set()
+            for offset_days in range(6, -1, -1):
+                weekly_wallets.update(
+                    activity_wallets_by_day.get(day - timedelta(days=offset_days), set())
+                )
+            weekly_active_trend.append(len(weekly_wallets))
+        daily_active = len(activity_wallets_by_day.get(today_utc, set()))
+        current_week_wallets: set[str] = set()
+        for offset_days in range(6, -1, -1):
+            current_week_wallets.update(
+                activity_wallets_by_day.get(today_utc - timedelta(days=offset_days), set())
+            )
+        weekly_active = len(current_week_wallets)
+
+        quiz_wallets: set[str] = set()
+        feed_wallets: set[str] = set()
+        event_types = [
+            "daily_learn", "reaction_in", "reaction_out", "comment_in", "comment_out"
+        ]
+        page_size = 1000
+        offset = 0
+        while True:
+            result = (
+                db.table("community_reward_ledger")
+                .select("wallet_address,event_type")
+                .gte("created_at", utc_day_start.isoformat())
+                .in_("event_type", event_types)
+                .order("id")
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            rows = getattr(result, "data", None) or []
+            for row in rows:
+                wallet_address = str(row.get("wallet_address") or "").strip().lower()
+                if not wallet_address:
+                    continue
+                if row.get("event_type") == "daily_learn":
+                    quiz_wallets.add(wallet_address)
+                elif row.get("event_type") in event_types[1:]:
+                    feed_wallets.add(wallet_address)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+
+        response = jsonify({
+            "success": True,
+            "as_of_utc": now.isoformat(),
+            "timezone": "UTC",
+            "periods": {
+                "daily_active": "Recorded activity since 00:00 UTC today",
+                "weekly_active": "Seven UTC calendar days including today",
+            "activity_trend": {
+                "start_date": trend_start_day.isoformat(),
+                "end_date": trend_end_day.isoformat(),
+            },
+                "community_ledger": "Since 00:00 UTC today",
+            },
+            "user_data": {
+                "total_users": total_users,
+            },
+            "user_activity": {
+                "daily_active": daily_active,
+                "weekly_active": weekly_active,
+                "source": "user_sessions",
+                "trend": {
+                    "range": {
+                        "start_date": trend_start_day.isoformat(),
+                        "end_date": trend_end_day.isoformat(),
+                    },
+                    "labels": [day.isoformat() for day in trend_dates],
+                    "daily_active_users": daily_active_trend,
+                    "weekly_active_users": weekly_active_trend,
+                },
+            },
+            "daily_quiz_community_feed": {
+                "name": "Daily Quiz / Community Feed",
+                "active_users": len(quiz_wallets | feed_wallets),
+                "daily_quiz_active_users": len(quiz_wallets),
+                "community_feed_active_users": len(feed_wallets),
+                "source": "community_reward_ledger",
+            },
+        })
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        response.headers["Vary"] = "Cookie"
+        return response
+    except Exception as e:
+        logger.exception("KPI data query failed")
+        return jsonify({"success": False, "error": "KPI data is temporarily unavailable"}), 500
+
 
 @routes.route("/api/admin/stats", methods=["GET"])
 @admin_required
