@@ -2836,6 +2836,21 @@ function feedFetch(handler, feedRows) {
       ok('a blank field defaults to the vault ceiling, not the whole balance',
          withdrawAmountOf(server.calls) === '1000',
          String(withdrawAmountOf(server.calls)));
+      ok('the default maximum appears in the amount field',
+         store.cfEarnWithdrawAmount.value === '1000',
+         String(store.cfEarnWithdrawAmount.value));
+    }
+
+    // The requested example: a 1500 G$ balance visibly defaults to 1000 G$.
+    {
+      const server = partialServer({ balance_gd: '1500' });
+      const { api, store } = run({ boot: MEMBER, fetchImpl: feedFetch(server.impl) });
+      store.cfEarnWithdrawAmount.value = '';
+      await api._internals.checkWithdrawalEligibility();
+      ok('a G$1500 balance auto-fills G$1000',
+         store.cfEarnWithdrawAmount.value === '1000'
+             && withdrawAmountOf(server.calls) === '1000',
+         'field=' + store.cfEarnWithdrawAmount.value + ', request=' + withdrawAmountOf(server.calls));
     }
 
     // Below the minimum: explained locally, and no authorization is requested.
