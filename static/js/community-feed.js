@@ -3646,9 +3646,18 @@
             var typed = amountInput ? String(amountInput.value || '').trim() : '';
             var amountGd = typed;
             if (resuming) {
-                // A reservation already exists; the server re-signs that exact
-                // stored amount, so the input must not change or block it.
-                amountGd = String(ready.amount_gd || '');
+                // A submitted transaction is already fixed; otherwise preserve
+                // a newly typed amount so the server can reject it if a signed
+                // authorization for a different amount is still active.
+                amountGd = ready.status === 'transaction_submitted' || !typed
+                    ? String(ready.amount_gd || '') : typed;
+                if (typed && ready.status !== 'transaction_submitted') {
+                    var resumedParsed = Number(typed);
+                    if (!Number.isFinite(resumedParsed) || resumedParsed <= 0) {
+                        setStatus('Enter a valid G$ amount to withdraw.');
+                        return;
+                    }
+                }
             } else if (typed) {
                 var parsed = Number(typed);
                 if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -3675,7 +3684,8 @@
             var remainderWarning = '';
             var requestedNumber = Number(amountGd);
             var availableNumber = Number(ready.balance_gd);
-            if (!resuming && Number.isFinite(requestedNumber) && Number.isFinite(availableNumber)) {
+            if (ready.status !== 'transaction_submitted'
+                    && Number.isFinite(requestedNumber) && Number.isFinite(availableNumber)) {
                 var remainder = availableNumber - requestedNumber;
                 if (remainder > 0 && remainder < minWithdrawable) {
                     remainderWarning = '\n\nThis leaves ' + formatGd(remainder) + ' G$ in your Community balance. It is below the minimum and can only be withdrawn after your balance grows to the minimum again.';
@@ -3685,7 +3695,7 @@
 
             if (button) button.textContent = 'Preparing…';
             var authResult = await api('/community/api/rewards/withdrawals/authorize', {
-                method: 'POST', body: JSON.stringify(resuming ? {} : { amount_gd: amountGd })
+                method: 'POST', body: JSON.stringify({ amount_gd: amountGd })
             });
             var authData = authResult && authResult.data;
             var withdrawalId = authData && authData.withdrawal_id;
@@ -3721,11 +3731,25 @@
                 throw new Error('The authorization project, Celo network, or vault configuration did not match. No transaction was sent.');
             }
             var authDecimals = Number(authData.token_decimals);
+            if (!Number.isInteger(authDecimals) || authDecimals < 0 || authDecimals > 36) {
+                throw new Error('The token precision could not be verified. No transaction was sent.');
+            }
             var authUnits = BigInt(String(auth.amount));
             var authScale = 10n ** BigInt(authDecimals);
             var authWhole = (authUnits / authScale).toString();
             var authFraction = (authUnits % authScale).toString().padStart(authDecimals, '0').replace(/0+$/, '');
             var authAmountGd = authWhole + (authFraction ? '.' + authFraction : '');
+            var requestedParts = String(amountGd || '').trim().match(/^(\d*)(?:\.(\d*))?$/);
+            if (!requestedParts || (!requestedParts[1] && !requestedParts[2])
+                    || (requestedParts[2] || '').length > authDecimals) {
+                throw new Error('The selected amount could not be verified against the authorization. No transaction was sent.');
+            }
+            var requestedFraction = requestedParts[2] || '';
+            var requestedUnits = BigInt(requestedParts[1] || '0') * authScale
+                + BigInt((requestedFraction + '0'.repeat(authDecimals)).slice(0, authDecimals) || '0');
+            if (requestedUnits !== authUnits) {
+                throw new Error('The authorization amount (' + authAmountGd + ' G$) does not match your selected amount (' + amountGd + ' G$). No transaction was sent. Refresh and retry.');
+            }
             // The member's wallet pays the Celo fee, so confirm it can before
             // opening the wallet — otherwise the failure only surfaces as an
             // opaque "insufficient funds" inside the wallet after approval.
