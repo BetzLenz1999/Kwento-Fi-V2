@@ -4857,6 +4857,142 @@
         if (trigger && trigger.focus) trigger.focus();
     }
 
+    var _referralProgramReturnFocus = null;
+    function openReferralProgram(trigger) {
+        var modal = $('cfReferralProgramModal');
+        if (!modal) return false;
+        _referralProgramReturnFocus = document.querySelector('[data-nav="menu"]') || trigger || null;
+        closeSheet(false);
+        if (!modal._cfReferralKeyboardBound) {
+            modal._cfReferralKeyboardBound = true;
+            document.addEventListener('keydown', referralProgramKeydown);
+        }
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cf-modal-open');
+        var closeButton = modal.querySelector('.cf-referral-close');
+        if (closeButton && closeButton.focus) closeButton.focus();
+        loadReferralProgram();
+        return true;
+    }
+
+    function closeReferralProgram() {
+        var modal = $('cfReferralProgramModal');
+        if (!modal || modal.hidden) return;
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('cf-modal-open');
+        var trigger = _referralProgramReturnFocus;
+        _referralProgramReturnFocus = null;
+        if (trigger && trigger.focus) trigger.focus();
+    }
+
+    function referralProgramKeydown(event) {
+        var modal = $('cfReferralProgramModal');
+        if (!modal || modal.hidden || !event) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeReferralProgram();
+            return;
+        }
+        if (event.key !== 'Tab') return;
+        var items = Array.prototype.slice.call(modal.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(function (node) { return !node.hidden && !node.closest('[hidden]'); });
+        if (!items.length) return;
+        var first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first.focus();
+        }
+    }
+
+    function loadReferralProgram() {
+        var status = $('cfReferralProgramStatus');
+        var content = $('cfReferralProgramContent');
+        var error = $('cfReferralProgramError');
+        if (status) { status.hidden = false; status.textContent = 'Loading your referral details…'; }
+        if (content) content.hidden = true;
+        if (error) { error.hidden = true; error.textContent = ''; }
+        return fetch('/community/api/referral-program', {
+            method: 'GET', credentials: 'same-origin', headers: { 'Accept': 'application/json' }
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok || !data.success) throw new Error(data.error || 'Could not load referral details.');
+                var total = $('cfReferralTotal');
+                var completed = $('cfReferralCompleted');
+                var earned = $('cfReferralEarned');
+                var link = $('cfReferralLink');
+                if (total) total.textContent = String(Number(data.total_referrals) || 0);
+                if (completed) completed.textContent = String(Number(data.completed_referrals) || 0);
+                if (earned) earned.textContent = (Number(data.total_earned_g) || 0).toLocaleString(undefined, { maximumFractionDigits: 4 }) + ' G$';
+                if (link) link.value = String(data.referral_link || '');
+                renderReferralHistory(data.referrals || []);
+                if (status) status.hidden = true;
+                if (content) content.hidden = false;
+            });
+        }).catch(function (err) {
+            if (status) status.hidden = true;
+            if (error) { error.textContent = err && err.message ? err.message : 'Could not load referral details.'; error.hidden = false; }
+        });
+    }
+
+    function renderReferralHistory(referrals) {
+        var list = $('cfReferralHistory');
+        if (!list) return;
+        list.textContent = '';
+        if (!Array.isArray(referrals) || !referrals.length) {
+            list.appendChild(el('p', 'cf-referral-empty', 'No referrals yet. Share your link to invite a friend.'));
+            return;
+        }
+        referrals.forEach(function (row) {
+            var item = document.createElement('div');
+            item.className = 'cf-referral-history-item';
+            var status = el('span', '', String(row.status || 'pending').replace(/_/g, ' '));
+            var when = row.completed_at || row.created_at;
+            var dateText = when ? new Date(when).toLocaleDateString() : '';
+            var date = el('span', '', dateText);
+            item.appendChild(status);
+            item.appendChild(date);
+            list.appendChild(item);
+        });
+    }
+
+    function copyReferralProgramLink() {
+        var input = $('cfReferralLink');
+        var button = $('cfReferralCopy');
+        var value = input && input.value;
+        if (!value) return Promise.resolve(false);
+        var copy = window.navigator.clipboard && window.navigator.clipboard.writeText
+            ? window.navigator.clipboard.writeText(value)
+            : Promise.reject(new Error('Clipboard unavailable'));
+        return copy.catch(function () {
+            input.focus(); input.select();
+            if (!document.execCommand || !document.execCommand('copy')) {
+                throw new Error('Copy failed');
+            }
+            return true;
+        }).then(function () {
+            if (button) { button.textContent = 'Copied'; setTimeout(function () { button.textContent = 'Copy'; }, 1800); }
+            return true;
+        }).catch(function () {
+            if (input) { input.focus(); input.select(); }
+            return false;
+        });
+    }
+
+    function shareReferralProgramLink() {
+        var input = $('cfReferralLink');
+        var url = input && input.value;
+        if (!url) return Promise.resolve(false);
+        if (window.navigator.share) {
+            return window.navigator.share({ title: 'Join me on KwentoFi', text: 'Use my KwentoFi referral link:', url: url })
+                .then(function () { return true; }).catch(function () { return false; });
+        }
+        return copyReferralProgramLink();
+    }
+
     var _communityDailyTaskReturnFocus = null;
     /* ── Face-verification gate for the rewarded flows ──────────────────────
        Garden and Daily Task are verified-only, like Swap and Reloadly. The
@@ -5883,6 +6019,10 @@
         openSettings: openSettings,
         openEarnPage: openEarnPage,
         closeEarnPage: closeEarnPage,
+        openReferralProgram: openReferralProgram,
+        closeReferralProgram: closeReferralProgram,
+        copyReferralProgramLink: copyReferralProgramLink,
+        shareReferralProgramLink: shareReferralProgramLink,
         openDailyTask: openDailyTask,
         closeDailyTask: closeDailyTask,
         openAirtime: openAirtime,
