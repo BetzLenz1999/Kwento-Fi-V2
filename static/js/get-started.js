@@ -1186,7 +1186,14 @@ function _looksLikeTrustWalletInfo(info) {
 
 function _isTrustWalletProvider(provider) {
     if (!provider) return false;
-    if (provider.isTrust) return true;
+    if (provider.isTrust || provider.isTrustWallet) return true;
+    // Some Trust Wallet mobile builds expose an unmarked provider only via
+    // `window.trustwallet` / `window.trustWallet`, sometimes nested under
+    // `.ethereum` or `.provider`, without EIP-6963 metadata.
+    const trustAliases = [window.trustwallet, window.trustWallet];
+    if (trustAliases.some((alias) => alias && (
+        alias === provider || alias.ethereum === provider || alias.provider === provider
+    ))) return true;
     return _looksLikeTrustWalletInfo(_eip6963InfoForProvider(provider));
 }
 
@@ -1222,13 +1229,12 @@ function getPreferredInjectedProvider() {
     const providers = getAllInjectedProviders();
     if (!providers.length) return null;
 
-    const ua = (navigator.userAgent || '').toLowerCase();
-    const uaIsTrust = ua.includes('trust') || ua.includes('trustwallet');
-
     // Mobile dapp browsers: MiniPay > Trust Wallet > MetaMask > generic.
     const miniPayProvider = providers.find(p => p && p.isMiniPay);
     if (miniPayProvider) return miniPayProvider;
-    const trustProvider = providers.find(p => p && p.isTrust);
+    // Trust aliases and EIP-6963 metadata are equally authoritative as the
+    // legacy `isTrust` flag; choose them before a generic/competing provider.
+    const trustProvider = providers.find(p => _isTrustWalletProvider(p));
     if (trustProvider) return trustProvider;
     const coinbaseProvider = providers.find(p => _isCoinbaseWalletProvider(p));
     if (coinbaseProvider) return coinbaseProvider;
@@ -1236,12 +1242,6 @@ function getPreferredInjectedProvider() {
     if (braveProvider) return braveProvider;
     const okxProvider = providers.find(p => _isOkxWalletProvider(p));
     if (okxProvider) return okxProvider;
-    // Inside Trust Wallet's dApp browser the injected provider may not
-    // self-identify via isTrust; fall back to EIP-6963's rdns match.
-    if (uaIsTrust) {
-        const trust6963 = _trustProviderFromEip6963();
-        if (trust6963) return trust6963;
-    }
     const metaMaskProvider = providers.find(p => p && p.isMetaMask && !p.isBraveWallet);
     if (metaMaskProvider) return metaMaskProvider;
 
@@ -1612,7 +1612,10 @@ async function connectPreferredInjectedWalletIfAvailable() {
     const isSupportedInjected = (p) => isTrust(p) || isMobileMetaMask(p);
     let provider = getPreferredInjectedProvider();
     if (!isSupportedInjected(provider) && (isTrustWalletMobileContext() || isLikelyMobileWalletContext())) {
-        provider = await awaitPreferredInjectedProvider(isTrustWalletMobileContext() ? 3200 : 1200);
+        // Use the shared mobile-aware wait budget (3.2s for known Trust,
+        // 2.2s for generic mobile contexts) so late Trust injection does not
+        // fall through to a WalletConnect deep link prematurely.
+        provider = await awaitPreferredInjectedProvider();
         if (!isSupportedInjected(provider)) provider = null;
     }
     if (!provider) return false;
@@ -1628,9 +1631,14 @@ async function connectPreferredInjectedWalletIfAvailable() {
         if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
             throw new Error(walletName + ' did not return a valid account. Please reconnect and try again.');
         }
-        showWalletStatus('walletConnectStatus', '🔀 Confirming the Celo network…', 'info');
-        if (!(await ensureCeloChain(provider))) {
-            throw new Error('Please switch ' + walletName + ' to Celo Mainnet and try again.');
+        // Trust Wallet login uses an off-chain signature, so a chain switch is
+        // not needed before the signature prompt. Transaction screens handle
+        // Celo network selection separately.
+        if (!isTrust(provider)) {
+            showWalletStatus('walletConnectStatus', '🔀 Confirming the Celo network…', 'info');
+            if (!(await ensureCeloChain(provider))) {
+                throw new Error('Please switch ' + walletName + ' to Celo Mainnet and try again.');
+            }
         }
         const message = makeLoginMessage(wallet);
         showWalletStatus('walletConnectStatus', '✍️ Approve the KwentoFi sign-in message in ' + walletName + '.', 'info');
