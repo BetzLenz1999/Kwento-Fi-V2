@@ -3169,25 +3169,32 @@ def kpi_data_page():
         return redirect("/")
     if not is_admin(wallet):
         return redirect("/wallet")
-    # Start (or reuse) the non-blocking on-chain cache refresh as early as the
-    # admin opens /data; the page itself must never wait for an RPC log scan.
-    try:
-        from farming.routes import FARMING_CONTRACT_ADDRESS
-        from farming.blockchain import get_farming_kpi_stats
-        get_farming_kpi_stats(FARMING_CONTRACT_ADDRESS)
-    except Exception:
-        logger.exception("Could not start chicken farming KPI refresh")
     return render_template("kpi_data.html")
 
 
 @routes.route("/api/data/farming-kpi", methods=["GET"])
 @admin_required
 def get_chicken_farming_kpi():
-    """Return cached chicken-farming aggregates; refreshes chain logs off-request."""
+    """Fetch the bounded monthly count and return cached/background all-time totals."""
     try:
         from farming.routes import FARMING_CONTRACT_ADDRESS
-        from farming.blockchain import get_farming_kpi_stats
-        data = get_farming_kpi_stats(FARMING_CONTRACT_ADDRESS)
+        from farming.blockchain import (
+            get_farming_kpi_stats,
+            get_monthly_farming_activity_stats,
+        )
+        monthly = get_monthly_farming_activity_stats(FARMING_CONTRACT_ADDRESS)
+        if monthly.get("status") == "not_configured":
+            data = monthly
+        else:
+            totals = get_farming_kpi_stats(FARMING_CONTRACT_ADDRESS)
+            data = {
+                **monthly,
+                "total_farmers": totals.get("total_farmers"),
+                "total_status": totals.get("status", "loading"),
+                "total_error": totals.get("error"),
+                "total_updated_at_utc": totals.get("updated_at_utc"),
+                "refreshing": totals.get("refreshing", False),
+            }
     except Exception:
         logger.exception("Chicken farming KPI unavailable")
         data = {
