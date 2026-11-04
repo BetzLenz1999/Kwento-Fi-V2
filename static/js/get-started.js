@@ -1604,13 +1604,17 @@ let _injectedWalletLoginInProgress = false;
 async function connectPreferredInjectedWalletIfAvailable() {
     if (_injectedWalletLoginInProgress || _miniPayLoginInProgress || _wcConnecting) return true;
 
-    const isTrust = (p) => p && typeof _isTrustWalletProvider === 'function' && _isTrustWalletProvider(p);
+    let provider = getPreferredInjectedProvider();
+    const isTrust = (p) => p && (
+        (typeof _isTrustWalletProvider === 'function' && _isTrustWalletProvider(p)) ||
+        (p === provider && typeof isTrustWalletMobileContext === 'function'
+            && isTrustWalletMobileContext())
+    );
     const isMobileMetaMask = (p) => !!(
         p && p.isMetaMask && !p.isBraveWallet &&
         typeof isMobileDappContext === 'function' && isMobileDappContext()
     );
     const isSupportedInjected = (p) => isTrust(p) || isMobileMetaMask(p);
-    let provider = getPreferredInjectedProvider();
     if (!isSupportedInjected(provider) && (isTrustWalletMobileContext() || isLikelyMobileWalletContext())) {
         // Use the shared mobile-aware wait budget (3.2s for known Trust,
         // 2.2s for generic mobile contexts) so late Trust injection does not
