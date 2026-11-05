@@ -917,10 +917,24 @@
     function renderScene() {
         var scene = $("farmScene");
         if (!scene) return;
-        var active = Boolean(farmState && farmState.active);
-        var mature = Boolean(farmState && farmState.mature);
-        var chickens = active ? Number(farmState.chickens) : 0;
-        var eggsReady = active ? Number(farmState.eggs) : 0;
+        var v1Active = Boolean(farmState && farmState.active);
+        var v2Position = v2 && v2.position && v2.position.active ? v2.position : null;
+        var useV2 = !v1Active && Boolean(v2Position);
+        var active = v1Active || Boolean(v2Position);
+        var v2Maturity = v2Position ? Number(v2Position.matures_at || 0) : 0;
+        var mature = v1Active ? Boolean(farmState.mature) : Boolean(v2Position && v2Maturity && Date.now() >= v2Maturity * 1000);
+        var v2Principal = useV2 ? Number(v2Position.principal_gd || v2Position.principal || 0) : 0;
+        // V2 stores principal, not chicken NFTs: show the legacy 100 G$ per
+        // chicken visual convention, and map claimable reward progress to
+        // illustrative reward eggs. These are visuals, not V2 contract units.
+        var chickens = v1Active ? Number(farmState.chickens) : (useV2 ? Math.floor(v2Principal / 100) : 0);
+        var eggsReady = v1Active ? Number(farmState.eggs) : 0;
+        if (useV2) {
+            var p = v2Params(), cap = v2Principal * p.bps / 10000;
+            var claimable = Number(v2Position.claimable_reward || 0);
+            var rewardPerIllustratedEgg = chickens > 0 && p.days > 0 ? cap / p.days / chickens : 0;
+            eggsReady = rewardPerIllustratedEgg > 0 ? Math.floor(claimable / rewardPerIllustratedEgg) : 0;
+        }
 
         scene.classList.toggle("is-idle", !active);
         scene.classList.toggle("is-mature", mature);
@@ -949,13 +963,14 @@
         var caption = $("sceneCaption");
         if (caption) {
             if (!active) caption.textContent = "Start a farm to see your chickens";
+            else if (useV2) caption.textContent = chickens.toLocaleString() + " V2 chickens · " + eggsReady + " reward eggs (visual)" + (mature ? " · cycle complete — collect G$ rewards" : "");
             else if (mature) caption.textContent = chickens.toLocaleString() + " chickens · cycle complete — close to collect";
             else caption.textContent = chickens.toLocaleString() + " chickens · " + eggsReady + " eggs ready";
         }
         scene.setAttribute("aria-label", !active
             ? "Your farm — start a farm to see your chickens"
-            : chickens.toLocaleString() + " chickens with " + eggsReady + " eggs ready" +
-              (mature ? ", cycle complete" : ""));
+            : (useV2 ? "V2 visual representation: " : "") + chickens.toLocaleString() + " chickens with " + eggsReady +
+              (useV2 ? " illustrative reward eggs" : " eggs ready") + (mature ? ", cycle complete" : ""));
     }
 
     function renderFarm() {
@@ -1266,6 +1281,7 @@
     }
     function v2RenderPosition() {
         var pos = v2.position, card = v2Element("v2Position");
+        renderScene();
         if (!card) return;
         card.hidden = !(pos && pos.active);
         if (!pos || !pos.active) { ["v2ClaimBtn", "v2CloseBtn"].forEach(function (id) { var b = v2Element(id); if (b) b.disabled = true; }); return; }
