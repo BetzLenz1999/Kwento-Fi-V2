@@ -4,7 +4,7 @@
   "installCommand": "pip install --no-cache-dir -r requirements.txt",
   "functions": {
     "main.py": {
-      "includeFiles": "{static/**,templates/**,community_garden_gas_sponsor.py,chain_rpc.py}",
+      "includeFiles": "{static/**,templates/**,community_garden_gas_sponsor.py,farming/gas_sponsor.py,chain_rpc.py}",
       "excludeFiles": "{tests/**,docs/**,scripts/**,contracts/**,node_modules/**,.git/**}",
       "maxDuration": 60
     }
