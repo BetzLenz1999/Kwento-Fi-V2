@@ -1012,3 +1012,43 @@
     .gs-home-continue { transition: none; }
     .gs-home-continue:hover { transform: none; }
 }
+
+
+/* Community feed dark theme. The shared modal stays light on other pages. */
+body.cf-page {
+    --sheet: #101b2b;
+    --sheet-text: #eef6ff;
+    --sheet-dim: #9aacc0;
+    --sheet-border: #304861;
+    --card-soft: #18283c;
+}
+body.cf-page .wallet-modal { background: rgba(1, 7, 14, 0.84); backdrop-filter: blur(8px); }
+body.cf-page .wallet-modal-content {
+    background: #101b2b;
+    color: #eef6ff;
+    border: 1px solid #304861;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+body.cf-page .modal-title,
+body.cf-page .wallet-label { color: #eef6ff; }
+body.cf-page .modal-subtitle,
+body.cf-page .wc-panel-note,
+body.cf-page .wallet-option-card .option-text .option-desc { color: #a9bbcf; }
+body.cf-page .close-modal { background: #1b2c42; color: #dcecff; }
+body.cf-page .close-modal:hover { background: #29415b; color: #fff; }
+body.cf-page .wallet-option-card:not(.primary):not(.wc-option) {
+    border-color: #304861;
+    background: #18283c;
+    color: #eef6ff;
+}
+body.cf-page .wallet-option-card:not(.primary):not(.wc-option):hover { border-color: #38bdf8; background: #203650; }
+body.cf-page .wallet-option-card:not(.primary):not(.wc-option) .option-icon { background: #213650; }
+body.cf-page .wallet-option-card:not(.primary):not(.wc-option) .option-text .option-title { color: #eef6ff; }
+body.cf-page .wallet-input { border-color: #3b5872; background: #18283c; color: #eef6ff; }
+body.cf-page .wallet-input::placeholder { color: #8297ad; }
+body.cf-page .wallet-input:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16); }
+body.cf-page .lw-word { border-color: #304861; background: #1b2c42; color: #eef6ff; }
+body.cf-page .lw-warning { background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.36); color: #f8d98a; }
+body.cf-page .lw-recovery-instruction { background: rgba(248, 113, 113, 0.12); border-color: rgba(248, 113, 113, 0.5); color: #fecaca; }
+body.cf-page .lw-copy-btn { border-color: #8b5cf6; background: rgba(139, 92, 246, 0.14); color: #c4b5fd; }
+body.cf-page .lw-copy-btn:hover { background: rgba(139, 92, 246, 0.24); }
