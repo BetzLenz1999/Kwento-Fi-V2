@@ -20,9 +20,9 @@ Design notes:
     halving and RPC failover are all inherited, not re-implemented.
   * Only the wallet's own events are ever returned — the log filter is anchored
     on the indexed user topic, so one wallet can never receive another's rows.
-  * The scan is anchored to the contract's deploy block (discovered once via an
-    ``eth_getCode`` binary search, or set explicitly with
-    ``FARMING_DEPLOY_BLOCK``) instead of scanning from genesis.
+  * The scan starts at the contract's deploy block when discovered/configured.
+    If discovery fails, it falls back to block 0 so older records are never
+    silently omitted; the shared helper chunks and batches this wallet filter.
   * Event data is decoded by slicing topics/data words directly, so no ABI
     dependency is needed and the decoder is unit-testable.
 """
@@ -37,7 +37,6 @@ from datetime import datetime, timezone
 
 try:  # imported lazily-safe so the module loads without the project deps
     from blockchain import (
-        _calculate_block_range,
         _celo_rpc_urls,
         _format_timestamps_batch,
         _get_logs_full,
@@ -52,7 +51,6 @@ except Exception:  # pragma: no cover - only when blockchain itself is unimporta
     _celo_rpc_urls = None  # type: ignore
     _get_latest_block_number = None  # type: ignore
     _get_rpc_session = None  # type: ignore
-    _calculate_block_range = None  # type: ignore
 
 logger = logging.getLogger("farming.blockchain")
 
@@ -75,11 +73,6 @@ EVENT_LABEL = {
 }
 
 WEI_PER_GD = 10 ** 18
-
-# A farm matures 30 days after start; a lookback of that many days always covers
-# at least the current cycle, so a wallet with an active farm is fully visible
-# even when the deploy block is unknown.
-DEFAULT_LOOKBACK_DAYS = 45
 
 # Deploy-block discovery / result caching.
 _deploy_block_lock = threading.Lock()
@@ -328,13 +321,12 @@ def fetch_wallet_farm_history(contract_address: str, wallet_address: str,
     deploy_block = get_deploy_block(contract, latest_block=head, session=session)
     if deploy_block > 0:
         from_block = deploy_block
-    elif _calculate_block_range is not None:
-        # Bounded fallback: no archive state for the anchor, so cover the
-        # current max cycle instead of scanning from genesis.
-        from_hex, _ = _calculate_block_range(DEFAULT_LOOKBACK_DAYS * 24)
-        from_block = max(0, int(from_hex, 16))
     else:
-        from_block = max(0, head - (DEFAULT_LOOKBACK_DAYS * 24 * 720))
+        # History is promised to include old V1 transactions too. If deployment
+        # block discovery is unavailable, fall back to genesis rather than
+        # silently omitting older EggsSold/other farm events. _get_logs_full
+        # chunks and batches the wallet-indexed scan to respect RPC limits.
+        from_block = 0
 
     wallet_topic = (_topic_for_address(wallet) if _topic_for_address
                     else "0x" + ("0" * 24) + wallet.lower().replace("0x", ""))
