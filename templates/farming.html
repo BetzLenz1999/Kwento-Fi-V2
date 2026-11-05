@@ -149,11 +149,6 @@
         .tx-hash.muted { color:var(--muted); }
         .empty-note { color:var(--muted); font-size:0.86rem; line-height:1.5; margin-top:0.6rem; }
 
-        /* ── steps ────────────────────────────────────────────────────── */
-        .steps { display:grid; gap:0.55rem; color:var(--muted); line-height:1.45; }
-        .step { display:flex; gap:0.6rem; align-items:flex-start; padding:0.75rem; border-radius:14px; background:rgba(0,0,0,0.16); font-size:0.88rem; }
-        .badge { width:26px; height:26px; border-radius:999px; background:rgba(250,204,21,0.18); color:var(--gold); display:flex; align-items:center; justify-content:center; font-weight:900; flex:0 0 auto; }
-
         .notice { margin-top:0.8rem; color:var(--muted); font-size:0.8rem; line-height:1.45; word-break:break-all; }
         code { color:#fde68a; }
 
@@ -424,18 +419,6 @@
         <div class="empty-note" id="farmHistoryEmpty">No farm transactions yet. Your history appears here after your first farm action.</div>
     </section>
     {% endif %}
-
-    <section class="panel">
-        <h2>Farming terms and safety</h2>
-        <div class="steps">
-            <div class="step"><span class="badge">1</span><span>New farms use V2 only: 1,000–20,000 G$, in 100 G$ increments, with one active farm per wallet and a 7-day maturity.</span></div>
-            <div class="step"><span class="badge">2</span><span>V2's maximum sponsor-funded reward cap is 5% per cycle (up to 50 G$ on 1,000 G$ principal); it is not guaranteed yield or investment profit.</span></div>
-            <div class="step"><span class="badge">3</span><span>V2 rewards can be claimed as they accrue, or collected with the principal when the farm matures. Full reward funding is reserved before a new farm is accepted.</span></div>
-            <div class="step"><span class="badge">4</span><span>Sponsor contributions are non-refundable and do not give the donor a personal reward. Exact pool balances are not shown in the app.</span></div>
-            <div class="step" data-legacy-v1-ui hidden><span class="badge">5</span><span>V1 is for legacy positions only in this app. Its deployed contract has separate terms and pool risks; the V2 contract does not alter V1 positions.</span></div>
-        </div>
-        <p class="notice" data-legacy-v1-ui hidden>Legacy V1 contract address: <code>{{ farming_contract or 'Not configured' }}</code>. V2's destination address is shown only after backend verification in the V2 panel.</p>
-    </section>
 
     <!-- Close-farm success (congrats) modal -->
     <div class="modal-overlay" id="closeSuccessModal" role="dialog" aria-modal="true" aria-labelledby="closeSuccessTitle">
