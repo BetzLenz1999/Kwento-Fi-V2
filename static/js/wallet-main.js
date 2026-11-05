@@ -2716,6 +2716,26 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         setTimeout(function () { statusEl.style.display = 'none'; }, 3000);
     }
 
+    function _wlDailyProcessing(title, detail) {
+        const overlay = _wlDailyEl('wlDailyTaskProcessingOverlay');
+        if (!overlay) return;
+        if (!title) {
+            overlay.hidden = true;
+            overlay.style.display = 'none';
+            overlay.setAttribute('aria-hidden', 'true');
+            overlay.setAttribute('aria-busy', 'false');
+            return;
+        }
+        const titleEl = _wlDailyEl('wlDailyTaskProcessingTitle');
+        const detailEl = _wlDailyEl('wlDailyTaskProcessingDetail');
+        if (titleEl) titleEl.textContent = title;
+        if (detailEl) detailEl.textContent = detail || 'Please keep this page open while the request completes.';
+        overlay.hidden = false;
+        overlay.style.display = 'flex';
+        overlay.setAttribute('aria-hidden', 'false');
+        overlay.setAttribute('aria-busy', 'false');
+    }
+
     var DAILY_TASK_PAYMENT_STORAGE_KEY = 'kwentofiDailyTaskPaymentPendingV2:'
         + (typeof WALLET !== 'undefined' ? String(WALLET).toLowerCase() : 'unknown');
 
@@ -2828,6 +2848,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         if (btn.disabled) return;
         btn.disabled = true;
         btn.textContent = 'Checking eligibility…';
+        _wlDailyProcessing('Checking post eligibility…', 'Checking the post and preparing a short-lived payment authorization. Your link is not saved yet.');
         try {
             var salt = _wlDailyRandomSalt();
             var intent = await _wlDailyPaymentRequest('/api/daily-task/payment-intent', {
@@ -2848,6 +2869,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         } catch (error) {
             _wlDailyFlash('Unable to prepare payment: ' + (error.message || 'Please try again.'), '#f87171');
         } finally {
+            _wlDailyProcessing('', '');
             btn.disabled = false;
             btn.textContent = 'Check post & continue';
         }
@@ -2880,11 +2902,13 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         if (btn.disabled) return;
         btn.disabled = true;
         btn.textContent = 'Verifying on Celo…';
+        _wlDailyProcessing('Checking your payment…', 'Verifying the transaction on Celo and finishing your submission.');
         try {
             await _wlDailyVerifyPayment();
         } catch (error) {
             _wlDailyFlash('Payment not recorded yet: ' + (error.message || 'Retry verification; do not pay again.'), '#f87171');
         } finally {
+            _wlDailyProcessing('', '');
             btn.disabled = false;
             btn.textContent = 'I paid — retry confirmation';
         }
@@ -2902,6 +2926,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         btn.disabled = true;
         btn.textContent = 'Preparing Celo transaction…';
         var verifyButton = _wlDailyEl('wlDailyTaskVerifyBtn');
+        _wlDailyProcessing('Preparing your Daily Task payment…', 'Checking your G$ balance, wallet allowance and estimated Celo gas.');
         try {
             if (!_wlDailyStorePaymentState()) throw new Error('Browser storage is unavailable. Enable site storage before paying so you can recover the payment confirmation if needed.');
             if (!window.P2PWallet || !window.GMEthersLoader) throw new Error('Celo wallet tools are unavailable. Please refresh and try again.');
@@ -2912,21 +2937,26 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 'function balanceOf(address owner) view returns (uint256)',
                 'function allowance(address owner,address spender) view returns (uint256)'
             ], read);
+            _wlDailyProcessing('Checking your G$ balance…', 'Making sure your wallet has the 20 G$ submission fee before any payment is sent.');
             var fee = BigInt(state.intent.fee_wei);
             var tokenBalance = await token.balanceOf(WALLET);
             if (tokenBalance < fee) throw new Error('Your wallet needs at least 20 G$ before continuing. No app gas was sponsored.');
             var allowance = await token.allowance(WALLET, state.intent.contract_address);
+            _wlDailyProcessing('Checking Celo gas support…', 'Estimating the approval and payment fees and checking whether a top-up is available.');
             var gas = await _wlDailyPaymentRequest('/api/daily-task/gas-sponsor', { intent_id: state.intent.intent_id });
             if (gas.sponsored && gas.sponsor_tx_hash) {
                 _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'The app is sponsoring the estimated Celo gas (' + gas.estimated_fee_celo + ' CELO). Waiting for the top-up to confirm…';
+                _wlDailyProcessing('Gas top-up sent…', 'Waiting for the estimated ' + gas.estimated_fee_celo + ' CELO top-up to confirm on Celo.');
                 var topupReceipt = await read.waitForTransaction(gas.sponsor_tx_hash, 1, 120000);
                 if (!topupReceipt || Number(topupReceipt.status) !== 1) throw new Error('The app gas top-up did not confirm. No G$ payment was made; retry later.');
             } else {
                 _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'Your CELO balance is at least 0.3 CELO, so your wallet will pay the estimated network fee.';
+                _wlDailyProcessing('Gas check complete', 'Your wallet will pay the estimated Celo transaction fees.');
             }
 
             if (allowance < fee) {
                 btn.textContent = 'Approve exact 20 G$…';
+                _wlDailyProcessing('Approve exactly 20 G$…', 'Confirm the token approval in your wallet. The submission payment happens only after this confirms.');
                 await window.P2PWallet.sendTx(
                     state.intent.token_address,
                     'function approve(address spender,uint256 amount) returns (bool)',
@@ -2934,9 +2964,11 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                     '0x0',
                     { waitForReceipt: true }
                 );
+                _wlDailyProcessing('G$ approval confirmed', 'Preparing the Daily Task payment transaction.');
             }
 
             btn.textContent = 'Confirm 20 G$ payment…';
+            _wlDailyProcessing('Confirm the 20 G$ payment…', 'Review and confirm the non-refundable submission fee in your wallet.');
             var paymentHash = await window.P2PWallet.sendTx(
                 state.intent.contract_address,
                 'function payTaskSubmission(bytes32 intentId,bytes32 platformHash,bytes32 postCommitment,uint256 rewardAmount,uint256 deadline,bytes ownerSignature)',
@@ -2957,6 +2989,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             _wlDailyStorePaymentState();
             _wlDailyShowPaymentReview(state);
             btn.textContent = 'Verifying payment…';
+            _wlDailyProcessing('Payment confirmed', 'Verifying the Celo receipt and recording your post for review.');
             await _wlDailyVerifyPayment();
         } catch (error) {
             if (state.paymentTxHash) {
@@ -2967,6 +3000,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 _wlDailyFlash('Payment was not completed: ' + (error.message || 'Please try again.'), '#f87171');
             }
         } finally {
+            _wlDailyProcessing('', '');
             btn.disabled = false;
             if (!state.paymentTxHash) btn.textContent = 'Pay 20 G$ & submit';
         }
