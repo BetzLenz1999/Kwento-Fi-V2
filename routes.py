@@ -3249,6 +3249,37 @@ def get_chicken_farming_kpi():
     return response
 
 
+@routes.route("/api/data/farming-v2-kpi", methods=["GET"])
+@admin_required
+def get_chicken_farming_v2_kpi():
+    """Return read-only aggregate metrics from Chicken Farming V2 events."""
+    try:
+        from farming.v2_kpis import get_farming_v2_kpi_stats
+        raw_data = get_farming_v2_kpi_stats()
+        allowed_fields = (
+            "status", "period_month", "active_farmers", "total_farmers",
+            "monthly_active_farmers", "total_transactions", "monthly_transactions",
+            "updated_at_utc", "refreshing", "source", "error",
+        )
+        data = {key: raw_data[key] for key in allowed_fields if key in raw_data}
+    except Exception:
+        logger.exception("Chicken farming V2 KPI unavailable")
+        data = {
+            "status": "error",
+            "period_month": datetime.now(timezone.utc).strftime("%Y-%m"),
+            "active_farmers": None,
+            "total_farmers": None,
+            "monthly_active_farmers": None,
+            "total_transactions": None,
+            "monthly_transactions": None,
+            "error": "Chicken Farming V2 event data is temporarily unavailable",
+        }
+    response = jsonify({"success": True, "chicken_farming_v2": data})
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
 @routes.route("/api/data/community-garden-kpi", methods=["GET"])
 @admin_required
 def get_community_garden_kpi():
