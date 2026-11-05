@@ -73,12 +73,62 @@ def farming_home():
 
 @farming_bp.route("/api/config")
 def api_config():
+    # Preserve the original V1 fields for legacy clients; add versioned metadata.
+    from farming.blockchain import farming_v2_runtime
+    v2 = farming_v2_runtime()
     return jsonify({
         "contract": FARMING_CONTRACT_ADDRESS,
         "gd_contract": GD_TOKEN_ADDRESS,
         "chain_id": CHAIN_ID,
         "config": FARMING_CONFIG,
+        "versions": {
+            "v1": {"contract": FARMING_CONTRACT_ADDRESS, "enabled": bool(FARMING_CONTRACT_ADDRESS),
+                   "source": "legacy_v1_config", "config": FARMING_CONFIG},
+            "v2": {"contract": v2.get("contract", ""), "enabled": v2["enabled"],
+                   "verified": v2["verified"], "source": v2["source"], "reason": v2["reason"],
+                   "token": v2.get("token", ""), "token_decimals": v2.get("token_decimals", 18),
+                   "chain_id": v2["chain_id"], "params": v2.get("params", {
+                       "duration_seconds": 604800, "min_principal_wei": 1000 * 10**18,
+                       "max_principal_wei": 20000 * 10**18, "reward_bps": 500}),
+                   "reward_description": "Sponsor-funded reward cap up to 5% per 7-day cycle; not guaranteed"}
+        }
     })
+
+
+@farming_bp.route("/api/v2/config")
+def api_v2_config():
+    from farming.blockchain import farming_v2_runtime
+    status = farming_v2_runtime()
+    # Never serialize the runtime object wholesale; only approved public fields.
+    return jsonify({"version": "v2", "enabled": status["enabled"], "verified": status["verified"],
+        "contract": status.get("contract", ""), "token": status.get("token", ""),
+        "chain_id": status["chain_id"], "token_decimals": status.get("token_decimals", 18),
+        "params": status.get("params", {"duration_seconds": 604800, "min_principal_wei": 1000*10**18,
+                                          "max_principal_wei": 20000*10**18, "reward_bps": 500}),
+        "source": status["source"], "reason": status["reason"],
+        "reward_description": "Sponsor-funded reward cap up to 5% per 7-day cycle; not guaranteed"})
+
+
+@farming_bp.route("/api/v2/history")
+def api_v2_history():
+    wallet, verified = _require_auth()
+    if not wallet or not verified:
+        return jsonify({"error": "Not authenticated"}), 401
+    from farming.blockchain import farming_v2_runtime, fetch_wallet_farm_v2_history, get_deploy_block
+    status = farming_v2_runtime()
+    rows = []
+    if status["verified"]:
+        try:
+            deploy_block = get_env_int("FARMINGV2_DEPLOY_BLOCK", 0) or get_deploy_block(
+                status["contract"], env_var_name="FARMINGV2_DEPLOY_BLOCK")
+            if deploy_block > 0:
+                rows = fetch_wallet_farm_v2_history(status["contract"], wallet, deploy_block=deploy_block,
+                    force=str(request.args.get("force", "")).lower() in ("1", "true", "yes"))
+        except Exception as exc:
+            logger.warning("Farming V2 history unavailable (%s)", type(exc).__name__)
+        return jsonify({"transactions": rows, "contract": status.get("contract", ""), "wallet": wallet,
+        "version": "v2", "source": "onchain" if status["verified"] and rows is not None else "unavailable",
+        "verified": status["verified"], "count": len(rows)})
 
 
 @farming_bp.route("/api/history")
