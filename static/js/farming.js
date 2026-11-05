@@ -1185,6 +1185,79 @@
         el.hidden = false; el.className = "status " + (kind || "info"); el.textContent = message;
         if (hash) { var a = document.createElement("a"); a.href = v2.explorer.replace(/\/$/, "") + "/tx/" + hash; a.target = "_blank"; a.rel = "noopener"; a.textContent = " View transaction"; el.appendChild(a); }
     }
+    var v2GasRequestMemory = null;
+    function v2Processing(title, detail) {
+        var overlay = v2Element("farmProcessingOverlay");
+        if (!overlay) return;
+        if (!title) { overlay.classList.remove("show"); overlay.hidden = true; overlay.setAttribute("aria-hidden", "true"); overlay.setAttribute("aria-busy", "false"); return; }
+        var titleEl = v2Element("farmProcessingTitle"), detailEl = v2Element("farmProcessingDetail");
+        if (titleEl) titleEl.textContent = title;
+        if (detailEl) detailEl.textContent = detail || "Please keep this page open while the request completes.";
+        overlay.hidden = false; overlay.setAttribute("aria-hidden", "false"); overlay.classList.add("show");
+    }
+    function v2GasRequestId(amountWei) {
+        var principal = amountWei.toString();
+        var storageKey = "kwentofiFarmingV2GasRequest:" + String(WALLET || "").toLowerCase();
+        var record = v2GasRequestMemory;
+        try { record = JSON.parse(window.sessionStorage.getItem(storageKey) || "null") || record; } catch (_) {}
+        if (record && record.request_id) {
+            if (String(record.principal_wei) !== principal) throw new Error("A previous gas-support request is still being reconciled. Retry the same farm amount first.");
+            v2GasRequestMemory = record;
+            return record.request_id;
+        }
+        if (!window.crypto || typeof window.crypto.getRandomValues !== "function") throw new Error("Secure request IDs are unavailable. Refresh the page and try again.");
+        var bytes = new Uint8Array(32); window.crypto.getRandomValues(bytes);
+        var requestId = "0x" + Array.from(bytes).map(function (value) { return value.toString(16).padStart(2, "0"); }).join("");
+        v2GasRequestMemory = { principal_wei: principal, request_id: requestId };
+        try { window.sessionStorage.setItem(storageKey, JSON.stringify(v2GasRequestMemory)); } catch (_) {}
+        return requestId;
+    }
+    function v2ClearGasRequest(requestId) {
+        var storageKey = "kwentofiFarmingV2GasRequest:" + String(WALLET || "").toLowerCase();
+        if (v2GasRequestMemory && v2GasRequestMemory.request_id === requestId) v2GasRequestMemory = null;
+        try {
+            var saved = JSON.parse(window.sessionStorage.getItem(storageKey) || "null");
+            if (saved && saved.request_id === requestId) window.sessionStorage.removeItem(storageKey);
+        } catch (_) {}
+    }
+    function v2PrepareGasSupport(amountWei) {
+        var requestId = v2GasRequestId(amountWei), reader = getReadProvider();
+        if (!reader || typeof reader.waitForTransaction !== "function") throw new Error("Celo read provider is unavailable. Please retry before starting the farm.");
+        v2Processing("Checking gas support…", "Estimating the approval and farm-start gas. No farm transaction is sent until you confirm it in your wallet.");
+        return fetch("/api/farming/v2/gas-sponsor", {
+            method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ principal_wei: amountWei.toString(), request_id: requestId })
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                var hash = String(data.sponsor_tx_hash || "");
+                if ((!response.ok || !data.success) && hash) data.sponsored = true;
+                if (!response.ok || !data.success) {
+                    if (hash) return { data: data, hash: hash };
+                    v2TxStatus("Gas sponsorship is unavailable. Your wallet can continue only if it has enough CELO to pay the transaction fees. " + String(data.error || ""), "info");
+                    v2Processing("Gas check complete", "Automatic gas support is unavailable. Your wallet will need enough CELO for approval and farm start.");
+                    return null;
+                }
+                if (!data.sponsored) {
+                    v2ClearGasRequest(requestId);
+                    v2Processing("Gas check complete", "Your wallet will pay its own estimated Celo transaction fees.");
+                    return null;
+                }
+                if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new Error("The gas top-up response did not include a valid Celo transaction hash.");
+                return { data: data, hash: hash };
+            });
+        }).then(function (pending) {
+            if (!pending) return null;
+            var amountText = String(pending.data.amount_celo || pending.data.estimated_fee_celo || "");
+            v2Processing("Gas top-up sent", "Waiting for the " + (amountText ? amountText + " CELO " : "") + "top-up to confirm on Celo before asking you to sign.");
+            v2TxStatus("Gas top-up sent. Waiting for Celo confirmation…", "info", pending.hash);
+            return reader.waitForTransaction(pending.hash, 1, 120000).then(function (receipt) {
+                if (!receipt || Number(receipt.status) !== 1) throw new Error("The gas top-up is not confirmed yet. Retry the same farm amount; do not start another transaction.");
+                v2ClearGasRequest(requestId);
+                v2Processing("Gas top-up confirmed", "Now checking G$ approval and preparing your farm-start transaction.");
+                return receipt;
+            });
+        });
+    }
     function v2Normalize(data) {
         // Backend contract expected: {v2:{enabled,verified,contract/address,token,chain_id,
         // min_farm_gd,max_farm_gd,step_gd,duration_seconds,reward_bps,explorer_url,
@@ -1334,28 +1407,50 @@
         var amount = action === "start" ? estimate.amount : fundAmount;
         var amountWei = amount ? ethers.parseUnits(String(amount), GD_DECIMALS) : null;
         var resolved, token;
+        if (action === "start") v2Processing("Preparing your V2 farm…", "Checking your wallet connection and Celo network.");
         v2TxStatus(action === "fund" ? "Review contribution " + amount + " G$. Non-refundable; no personal reward. Approve in your wallet." : "Waiting for wallet confirmation…", "info");
         return resolveSigner().then(function (r) { resolved = r; return ensureCelo(r.provider); }).then(function () {
+            if (action !== "start") return null;
+            return v2PrepareGasSupport(amountWei);
+        }).then(function () {
             var contract = new ethers.Contract(v2.address, V2_ABI, resolved.signer);
             if (action === "start" || action === "fund") {
                 token = new ethers.Contract(v2.token, GD_ABI, resolved.signer);
                 return token.allowance(WALLET, v2.address).then(function (allowance) {
-                    if (BigInt(allowance) >= BigInt(amountWei)) return;
+                    if (BigInt(allowance) >= BigInt(amountWei)) return null;
+                    if (action === "start") v2Processing("Approve G$ spending", "Confirm the exact approval in your wallet. The farm will start only after this approval confirms.");
                     v2TxStatus("Approve G$ spending for verified V2 only. Confirm approval in your wallet…", "info");
-                    return token.approve(v2.address, amountWei).then(function (tx) { v2TxStatus("Approval pending: " + HISTORY.shortHash(tx.hash), "info", tx.hash); return tx.wait(); });
-                }).then(function () { v2TxStatus(action === "fund" ? "Confirm sponsor funding in your wallet…" : "Confirm V2 farm start in your wallet…", "info"); return action === "fund" ? contract.fundRewardPool(amountWei) : contract.startFarm(amountWei); });
+                    return token.approve(v2.address, amountWei).then(function (tx) {
+                        v2TxStatus("Approval pending: " + HISTORY.shortHash(tx.hash), "info", tx.hash);
+                        if (action === "start") v2Processing("G$ approval submitted", "Waiting for Celo to confirm the approval transaction.");
+                        return tx.wait().then(function (receipt) {
+                            if (!receipt || Number(receipt.status) !== 1) throw new Error("G$ approval failed or could not be confirmed.");
+                            if (action === "start") v2Processing("Approval confirmed", "Preparing the V2 farm-start transaction.");
+                            return receipt;
+                        });
+                    });
+                }).then(function () {
+                    if (action === "start") v2Processing("Confirm farm start", "Review and confirm the V2 farm transaction in your wallet.");
+                    v2TxStatus(action === "fund" ? "Confirm sponsor funding in your wallet…" : "Confirm V2 farm start in your wallet…", "info");
+                    return action === "fund" ? contract.fundRewardPool(amountWei) : contract.startFarm(amountWei);
+                });
             }
             v2TxStatus("Confirm " + (action === "claim" ? "reward claim" : "mature farm close") + " in your wallet…", "info");
             return action === "claim" ? contract.claimReward() : contract.closeFarm();
         }).then(function (tx) {
             if (!tx || !tx.hash) return;
+            if (action === "start") v2Processing("Farm transaction submitted", "Waiting for the V2 farm start to confirm on Celo.");
             v2TxStatus("Transaction pending confirmation: " + HISTORY.shortHash(tx.hash), "info", tx.hash);
             return tx.wait().then(function (receipt) {
                 if (!receipt || Number(receipt.status) !== 1) throw new Error("Transaction failed or receipt could not be verified.");
                 v2TxStatus("Transaction confirmed on-chain.", "ok", tx.hash);
+                if (action === "start") v2Processing("Farm started on Celo", "Refreshing your verified Farming V2 position.");
                 return v2Refresh();
             });
-        }).catch(function (err) { v2TxStatus(_isUserRejection(err) ? "Wallet request cancelled." : _errMessage(err), "error"); }).then(function () {
+        }).catch(function (err) {
+            v2TxStatus(_isUserRejection(err) ? "Wallet request cancelled." : _errMessage(err), "error");
+        }).then(function () {
+            if (action === "start") v2Processing("", "");
             v2.busy = false; ["v2FundBtn"].forEach(function (id) { var b = v2Element(id); if (b) b.disabled = !v2.enabled; }); v2RenderPosition(); v2Estimate();
         });
     }
