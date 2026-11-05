@@ -50,33 +50,47 @@ def build_user_referral_link(wallet_address: str) -> str:
         raise ValueError("A wallet address is required to build a referral link")
     service = ReferralService()
     code = ""
-    supabase = service.supabase
+    # ReferralService does not own a `supabase` attribute; always obtain the
+    # shared client through the same factory used by the rest of this module.
+    # Previously this attribute access raised AttributeError on every request,
+    # causing both Daily Task custom-message APIs to return HTTP 500.
+    try:
+        supabase = _get_supabase()
+    except Exception as exc:
+        logger.warning("Could not initialize Supabase for task-message referral lookup: %s", exc)
+        supabase = None
     if supabase:
-        user_row = _safe(
-            lambda: supabase.table('user_data')
-                .select('my_referral_code')
-                .ilike('wallet_address', wallet)
-                .limit(1)
-                .execute(),
-            op="get saved referral code for task message",
-        )
-        if user_row and getattr(user_row, "data", None):
-            code = str(user_row.data[0].get("my_referral_code") or "").strip()
-        if not code:
-            referral_row = _safe(
-                lambda: supabase.table('referral_codes')
-                    .select('referral_code')
+        try:
+            user_row = _safe(
+                lambda: supabase.table('user_data')
+                    .select('my_referral_code')
                     .ilike('wallet_address', wallet)
                     .limit(1)
                     .execute(),
-                op="get saved referral-code row for task message",
+                op="get saved referral code for task message",
             )
-            if referral_row and getattr(referral_row, "data", None):
-                code = str(referral_row.data[0].get("referral_code") or "").strip()
+            if user_row and getattr(user_row, "data", None):
+                code = str(user_row.data[0].get("my_referral_code") or "").strip()
+            if not code:
+                referral_row = _safe(
+                    lambda: supabase.table('referral_codes')
+                        .select('referral_code')
+                        .ilike('wallet_address', wallet)
+                        .limit(1)
+                        .execute(),
+                    op="get saved referral-code row for task message",
+                )
+                if referral_row and getattr(referral_row, "data", None):
+                    code = str(referral_row.data[0].get("referral_code") or "").strip()
+        except Exception as exc:
+            logger.warning("Could not look up saved task-message referral code: %s", exc)
     if not code:
-        result = service.get_or_create_referral_code(wallet)
-        if result.get("success"):
-            code = str(result.get("referral_code") or "").strip()
+        try:
+            result = service.get_or_create_referral_code(wallet)
+            if result.get("success"):
+                code = str(result.get("referral_code") or "").strip()
+        except Exception as exc:
+            logger.warning("Could not create task-message referral code: %s", exc)
     if not code:
         # Keep task messages usable during a transient database outage. This
         # deterministic code is the same default the referral service creates.
