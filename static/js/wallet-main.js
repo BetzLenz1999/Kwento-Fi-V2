@@ -1485,19 +1485,19 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             try {
                 const ordered = await window.GMMinipayFeeCurrencies.orderByBalances(provider, wallet, {
                     ...opts,
-                    // Injected MiniPay requires stablecoin fee currencies for
-                    // CIP-64. Do not append the plain/native fallback here:
-                    // that fallback asks MiniPay to pay gas with native CELO
-                    // and surfaces "insufficient CELO for gas" even when the
-                    // user has USDT/cUSD/USDC available.
-                    includePlain: false,
+                    // Keep an omitted feeCurrency attempt last. MiniPay can
+                    // auto-select the stablecoin the wallet actually holds;
+                    // this is important when an explicit adapter is rejected
+                    // as unavailable even though the underlying USDT/USDC
+                    // balance is present.
+                    includePlain: opts.includePlain !== false,
                 });
                 if (ordered && ordered.length) return ordered;
             } catch (err) {
                 console.warn('[MiniPay] unable to read stablecoin fee balances; using local fee-currency order:', err);
             }
         }
-        return _miniPayFeeCurrenciesByBalance({ ...opts, includePlain: false });
+        return _miniPayFeeCurrenciesByBalance({ ...opts, includePlain: opts.includePlain !== false });
     }
 
     async function _miniPayWaitForReceipt(ep, txHash, maxAttempts = 60) {
@@ -3410,17 +3410,24 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                         }
                     }
 
-                    // MiniPay sends must use stablecoin fee currencies (CIP-64).
-                    // Read live cUSD/USDT/USDC balances from the injected provider
-                    // so USDT-only users are prioritized correctly, and avoid the
-                    // native CELO fallback that causes "insufficient CELO for gas"
-                    // errors inside MiniPay.
+                    // Prefer explicit CIP-64 stablecoin adapters, then let
+                    // MiniPay auto-select a held stablecoin if an adapter is
+                    // rejected or its balance cannot be read by the provider.
                     const backendFeeHints = (txData && txData.minipay_fee_currencies) || {};
-                    const feeCurrencies = await _miniPayStableFeeCurrenciesForSend(provider, from, backendFeeHints);
+                    const feeCurrencies = await _miniPayStableFeeCurrenciesForSend(provider, from, {
+                        ...backendFeeHints,
+                        includePlain: true,
+                    });
                     let lastErr;
                     for (const fc of feeCurrencies) {
                         const params = { ...txParams };
-                        params.feeCurrency = fc;
+                        // An omitted feeCurrency is not a native-only request
+                        // in MiniPay: it lets MiniPay choose the user's funded
+                        // stablecoin. Do not send feeCurrency: null, which
+                        // some MiniPay builds interpret as an invalid/empty
+                        // explicit fee currency.
+                        if (fc) params.feeCurrency = fc;
+                        else delete params.feeCurrency;
                         try {
                             txHash = await provider.request({
                                 method: 'eth_sendTransaction',
