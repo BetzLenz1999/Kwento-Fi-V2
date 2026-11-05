@@ -654,3 +654,120 @@ def invalidate_history_cache(wallet_address: str = "", contract_address: str = "
         for key in list(_history_cache):
             if (not contract or key[0] == contract) and (not wallet or key[1] == wallet):
                 _history_cache.pop(key, None)
+
+# Farming V2 — deliberately separate from the legacy V1 decoder/runtime above.
+# Verification fails closed unless the deployed contract implements this read interface.
+FARMING_V2_ABI = [
+    {"type":"function","name":"goodDollarToken","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
+    {"type":"function","name":"adminSigner","stateMutability":"view","inputs":[],"outputs":[{"type":"address"}]},
+    {"type":"function","name":"REWARD_BPS","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"FARM_DURATION","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"MIN_PRINCIPAL","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"MAX_PRINCIPAL","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+    {"type":"function","name":"PRINCIPAL_INCREMENT","stateMutability":"view","inputs":[],"outputs":[{"type":"uint256"}]},
+]
+
+
+def farming_v2_runtime(config=None, *, rpc_url=None):
+    """Verify V2 config and immutable deployment values; return safe metadata only."""
+    import os
+    import re
+    cfg = config or os.environ
+    address = str(cfg.get("FARMINGV2_CONTRACT_ADDRESS", "")).strip()
+    token_expected = str(cfg.get("GOODDOLLAR_CONTRACT_ADDRESS", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A")).strip()
+    signer_expected = str(cfg.get("FARMINGV2_ADMIN_SIGNER_ADDRESS", "")).strip()
+    chain_expected = int(cfg.get("CHAIN_ID", 42220))
+    result = {"enabled": False, "verified": False, "contract": "", "chain_id": chain_expected,
+              "token": "", "admin_signer": "", "source": "unavailable", "reason": "disabled_or_unconfigured"}
+    valid_address = lambda value: bool(re.fullmatch(r"0x[0-9a-fA-F]{40}", value))
+    if str(cfg.get("FARMINGV2_ENABLED", "")).lower() != "true" or not all(valid_address(x) for x in (address, token_expected, signer_expected)):
+        return result
+    try:
+        from web3 import Web3
+        w3 = Web3(Web3.HTTPProvider(rpc_url or cfg.get("CELO_RPC_URL", "https://forno.celo.org"), request_kwargs={"timeout": 8}))
+        contract_address, expected_token, expected_signer = map(Web3.to_checksum_address, (address, token_expected, signer_expected))
+        if int(w3.eth.chain_id) != chain_expected:
+            result["reason"] = "chain_mismatch"
+            return result
+        if not w3.eth.get_code(contract_address):
+            result["reason"] = "contract_code_missing"
+            return result
+        c = w3.eth.contract(address=contract_address, abi=FARMING_V2_ABI)
+        actual_token = Web3.to_checksum_address(c.functions.goodDollarToken().call())
+        actual_signer = Web3.to_checksum_address(c.functions.adminSigner().call())
+        if actual_token != expected_token:
+            result["reason"] = "token_mismatch"
+            return result
+        if actual_signer != expected_signer:
+            result["reason"] = "signer_mismatch"
+            return result
+        token_abi = [{"type":"function","name":"decimals","stateMutability":"view","inputs":[],"outputs":[{"type":"uint8"}]}]
+        decimals = int(w3.eth.contract(address=actual_token, abi=token_abi).functions.decimals().call())
+        params = {"duration_seconds": int(c.functions.FARM_DURATION().call()), "min_principal_wei": int(c.functions.MIN_PRINCIPAL().call()),
+                  "max_principal_wei": int(c.functions.MAX_PRINCIPAL().call()),
+                  "principal_increment_wei": int(c.functions.PRINCIPAL_INCREMENT().call()),
+                  "reward_bps": int(c.functions.REWARD_BPS().call())}
+        if decimals != 18 or params != {"duration_seconds": 604800, "min_principal_wei": 1000*10**18,
+                                       "max_principal_wei": 20000*10**18, "principal_increment_wei": 100*10**18,
+                                       "reward_bps": 500}:
+            result["reason"] = "parameters_mismatch"
+            return result
+        if not validate_farming_v2_admin_key(cfg):
+            result["reason"] = "admin_key_mismatch"
+            return result
+        result.update(enabled=True, verified=True, contract=contract_address, token=actual_token,
+                      admin_signer=actual_signer, token_decimals=decimals, params=params,
+                      source="verified_contract", reason="")
+        return result
+    except Exception as exc:
+        logger.warning("Farming V2 runtime verification failed (%s)", type(exc).__name__)
+        result["reason"] = "verification_failed"
+        return result
+
+
+def validate_farming_v2_admin_key(config=None):
+    """Require the server key to derive the configured on-chain signer; never expose it."""
+    import os
+    import re
+    cfg = config or os.environ
+    key, expected = str(cfg.get("FARMINGV2_ADMIN_PRIVATE_KEY", "")).strip(), str(cfg.get("FARMINGV2_ADMIN_SIGNER_ADDRESS", "")).strip()
+    if not re.fullmatch(r"0x[0-9a-fA-F]{64}", key):
+        return False
+    try:
+        from eth_account import Account
+        from web3 import Web3
+        if not Web3.is_address(expected):
+            return False
+        return Web3.to_checksum_address(Account.from_key(key).address) == Web3.to_checksum_address(expected)
+    except Exception:
+        return False
+
+
+def fetch_wallet_farm_v2_history(contract_address, wallet_address, *, deploy_block=0, force=False):
+    """Return only wallet-indexed V2 logs, clearly tagged as V2."""
+    if not (_get_logs_full and _topic_for_address):
+        return []
+    try:
+        from web3 import Web3
+        topic_wallet = _topic_for_address(wallet_address)
+        latest = _get_latest_block_number()
+        definitions = [("FarmStarted", "address,uint256,uint256,uint256,uint256"), ("RewardClaimed", "address,uint256,uint256,uint256"),
+                       ("FarmClosed", "address,uint256,uint256,uint256,uint256"), ("RewardPoolFunded", "address,uint256")]
+        rows = []
+        for name, types in definitions:
+            topic = "0x" + Web3.keccak(text=f"{name}({types})").hex()
+            logs = _get_logs_full({"address": contract_address, "topics": [topic, topic_wallet]}, int(deploy_block or 0), latest) or []
+            for log in logs:
+                data = (log.get("data") or "0x").removeprefix("0x")
+                words = [data[i:i+64] for i in range(0, len(data), 64)]
+                amount = _word_to_int(words[0]) if words else 0
+                if name == "FarmClosed" and len(words) > 1:
+                    amount += _word_to_int(words[1])
+                rows.append({"hash": log.get("transactionHash") or "", "action": name, "actionLabel": name,
+                    "amountLabel": _format_gd(amount) + " G$", "amountGdWei": str(amount), "note": "",
+                    "blockNumber": _word_to_int(log.get("blockNumber")), "logIndex": _word_to_int(log.get("logIndex")),
+                    "wallet": wallet_address, "source": "onchain", "version": "v2", "contract": contract_address})
+        return sorted(rows, key=lambda x: (x["blockNumber"], x["logIndex"]), reverse=True)
+    except Exception as exc:
+        logger.warning("Farming V2 history unavailable (%s)", type(exc).__name__)
+        return []
