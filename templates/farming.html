@@ -90,6 +90,8 @@
         .game-card { margin-top:1rem; background:rgba(6,11,26,0.72); border:1px solid rgba(250,204,21,0.22); border-radius:22px; padding:1.1rem; }
         .game-card h2 { font-size:1.12rem; margin-bottom:0.45rem; }
         .form-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:0.7rem; margin-top:0.85rem; }
+        /* Author display rules must not override the HTML hidden attribute. */
+        [hidden] { display:none !important; }
         .input { width:100%; border:1px solid var(--border); border-radius:16px; padding:0.9rem 1rem; background:rgba(255,255,255,0.08); color:var(--text); font:inherit; font-weight:800; outline:none; }
         .input:focus { border-color:rgba(250,204,21,0.7); box-shadow:0 0 0 3px rgba(250,204,21,0.14); }
         .amount-help { color:var(--muted); font-size:0.84rem; line-height:1.5; margin-top:0.55rem; }
@@ -222,9 +224,9 @@
             <div class="hero-copy">
                 <div class="kicker">Chicken-and-Egg Farming</div>
                 <h1>Manage your G$ farms</h1>
-                <p class="copy">Legacy V1 farms remain separate from new V2 farms. Review the version and its terms before taking an action; V2 rewards are sponsor-funded caps, not guaranteed returns.</p>
+                <p class="copy" data-legacy-v1-ui hidden>Legacy V1 farms remain separate from new V2 farms. Review the version and its terms before taking an action; V2 rewards are sponsor-funded caps, not guaranteed returns.</p>
                 <div class="hero-chips">
-                    <span class="hero-chip">Legacy V1: existing farms only</span>
+                    <span class="hero-chip" data-legacy-v1-ui hidden>Legacy V1: existing farms only</span>
                     <span class="hero-chip">New farms: verified V2 only</span>
                     <span class="hero-chip">V2: 7-day sponsor-funded reward cap</span>
                 </div>
@@ -313,7 +315,7 @@
     </section>
 
     {% if not is_guest %}
-    <section class="panel">
+    <section class="panel" data-legacy-v1-ui hidden>
         <div class="phase-banner"><span class="emoji">🌾</span><span id="farmStatusBanner">Checking your farm…</span></div>
         <div class="progress-track"><div class="progress-fill" id="cycleProgressFill"></div></div>
         <div class="progress-label" id="cycleProgressLabel">Loading your farming cycle…</div>
@@ -355,10 +357,10 @@
     </section>
 
     {% if not is_guest %}
-    <section class="panel" id="legacyV1Panel"><span class="kicker">Legacy Farms · V1</span><h2>Existing V1 farms</h2><p class="sub">Manage legacy positions only. New V2 farms and sponsor contributions use a separate contract.</p></section>
+    <section class="panel" id="legacyV1Panel" data-legacy-v1-ui hidden><span class="kicker">Legacy Farms · V1</span><h2>Existing V1 farms</h2><p class="sub">Manage legacy positions only. New V2 farms and sponsor contributions use a separate contract.</p></section>
     {% endif %}
     {% if is_guest %}
-    <section class="game-card" id="playFarm">
+    <section class="game-card" id="playFarm"{% if not is_guest %} data-legacy-v1-ui hidden{% endif %}>
         {# Guest: the play panel (start / sell / close) is not rendered at all
            until connected — the connect card occupies the action slot. #}
         {% with guest_card_icon='🐔',
@@ -410,7 +412,7 @@
     </section>
 
     {% if not is_guest %}
-    <section class="panel">
+    <section class="panel" id="legacyV1HistoryPanel" data-legacy-v1-history-panel hidden>
         <div class="history-head">
             <div>
                 <h2>📜 Transaction history</h2>
@@ -430,9 +432,9 @@
             <div class="step"><span class="badge">2</span><span>V2's maximum sponsor-funded reward cap is 5% per cycle (up to 50 G$ on 1,000 G$ principal); it is not guaranteed yield or investment profit.</span></div>
             <div class="step"><span class="badge">3</span><span>V2 rewards can be claimed as they accrue, or collected with the principal when the farm matures. Full reward funding is reserved before a new farm is accepted.</span></div>
             <div class="step"><span class="badge">4</span><span>Sponsor contributions are non-refundable and do not give the donor a personal reward. Exact pool balances are not shown in the app.</span></div>
-            <div class="step"><span class="badge">5</span><span>V1 is for legacy positions only in this app. Its deployed contract has separate terms and pool risks; the V2 contract does not alter V1 positions.</span></div>
+            <div class="step" data-legacy-v1-ui hidden><span class="badge">5</span><span>V1 is for legacy positions only in this app. Its deployed contract has separate terms and pool risks; the V2 contract does not alter V1 positions.</span></div>
         </div>
-        <p class="notice">Legacy V1 contract address: <code>{{ farming_contract or 'Not configured' }}</code>. V2's destination address is shown only after backend verification in the V2 panel.</p>
+        <p class="notice" data-legacy-v1-ui hidden>Legacy V1 contract address: <code>{{ farming_contract or 'Not configured' }}</code>. V2's destination address is shown only after backend verification in the V2 panel.</p>
     </section>
 
     <!-- Close-farm success (congrats) modal -->
