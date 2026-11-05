@@ -208,6 +208,39 @@
     <p class="footnote" id="farmingStatus" role="status" aria-live="polite">Loading on-chain chicken farming metrics…</p>
 
     <div class="section-heading">
+        <h2>Chicken Farming V2</h2>
+        <span class="period" id="farmingV2Period">V2 farm events · UTC</span>
+    </div>
+    <section class="grid" aria-label="Chicken Farming V2 KPIs">
+        <article class="card daily">
+            <div class="card-label">Active Farmers</div>
+            <div class="value" id="farmingV2ActiveFarmers">—</div>
+            <div class="detail">Wallets whose latest FarmStarted is not followed by FarmClosed</div>
+        </article>
+        <article class="card user-total">
+            <div class="card-label">Total Farmers</div>
+            <div class="value" id="farmingV2TotalFarmers">—</div>
+            <div class="detail">Unique wallets that have ever emitted FarmStarted</div>
+        </article>
+        <article class="card weekly">
+            <div class="card-label">Monthly Active Farmers</div>
+            <div class="value" id="farmingV2MonthlyActive">—</div>
+            <div class="detail">Unique farm wallets with FarmStarted, RewardClaimed, or FarmClosed this UTC month</div>
+        </article>
+        <article class="card daily">
+            <div class="card-label">Total Event Transactions</div>
+            <div class="value" id="farmingV2TotalTransactions">—</div>
+            <div class="detail">FarmStarted, RewardClaimed, FarmClosed, and RewardPoolFunded events</div>
+        </article>
+        <article class="card weekly">
+            <div class="card-label">Monthly Event Transactions</div>
+            <div class="value" id="farmingV2MonthlyTransactions">—</div>
+            <div class="detail">Those transaction events recorded this UTC calendar month</div>
+        </article>
+    </section>
+    <p class="footnote" id="farmingV2Status" role="status" aria-live="polite">Loading Chicken Farming V2 metrics…</p>
+
+    <div class="section-heading">
         <h2>Community Garden</h2>
         <span class="period" id="gardenPeriod">Garden V2 on-chain events · UTC</span>
     </div>
@@ -247,6 +280,9 @@
     const farmingPeriod = document.getElementById('farmingPeriod');
     const farmingStatus = document.getElementById('farmingStatus');
     let farmingPollTimer = null;
+    const farmingV2Period = document.getElementById('farmingV2Period');
+    const farmingV2Status = document.getElementById('farmingV2Status');
+    let farmingV2PollTimer = null;
     const gardenPeriod = document.getElementById('gardenPeriod');
     const gardenStatus = document.getElementById('gardenStatus');
     let gardenPollTimer = null;
@@ -401,6 +437,52 @@
         }
     }
 
+    function setFarmingV2Metric(id, value) {
+        document.getElementById(id).textContent = value === null || value === undefined
+            ? '—' : numberFormat.format(Number(value));
+    }
+
+    async function loadChickenFarmingV2Kpis() {
+        if (farmingV2PollTimer) {
+            window.clearTimeout(farmingV2PollTimer);
+            farmingV2PollTimer = null;
+        }
+        farmingV2Status.textContent = 'Loading Chicken Farming V2 metrics…';
+        try {
+            const response = await fetch('/api/data/farming-v2-kpi', {
+                method: 'GET', credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }, cache: 'no-store'
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) throw new Error('Chicken Farming V2 metrics could not be loaded.');
+            const farm = payload.chicken_farming_v2 || {};
+            setFarmingV2Metric('farmingV2ActiveFarmers', farm.active_farmers);
+            setFarmingV2Metric('farmingV2TotalFarmers', farm.total_farmers);
+            setFarmingV2Metric('farmingV2MonthlyActive', farm.monthly_active_farmers);
+            setFarmingV2Metric('farmingV2TotalTransactions', farm.total_transactions);
+            setFarmingV2Metric('farmingV2MonthlyTransactions', farm.monthly_transactions);
+            if (farm.period_month) farmingV2Period.textContent = `${farm.period_month} UTC · V2 farm events`;
+
+            if (farm.status === 'not_configured') {
+                farmingV2Status.textContent = 'Chicken Farming V2 is not configured; its metrics are unavailable.';
+            } else if (farm.status === 'loading' || farm.refreshing) {
+                farmingV2Status.textContent = farm.status === 'loading'
+                    ? 'Chicken Farming V2 metrics are still loading; checking again shortly.'
+                    : 'Refreshing cached Chicken Farming V2 metrics in the background; checking again shortly.';
+                farmingV2PollTimer = window.setTimeout(loadChickenFarmingV2Kpis, 2500);
+            } else if (farm.status === 'ready') {
+                const updated = farm.updated_at_utc
+                    ? ` Updated ${new Date(farm.updated_at_utc).toLocaleTimeString(undefined, { timeZone: 'UTC', timeZoneName: 'short' })}.`
+                    : '';
+                farmingV2Status.textContent = `Metrics loaded from Chicken Farming V2 events.${updated}`;
+            } else {
+                farmingV2Status.textContent = farm.error || 'Chicken Farming V2 metrics are unavailable due to a data or service error. Refresh to retry.';
+            }
+        } catch (error) {
+            farmingV2Status.textContent = error.message || 'Chicken Farming V2 metrics could not be loaded. Refresh to retry.';
+        }
+    }
+
     function setGardenMetric(id, value) {
         document.getElementById(id).textContent = value === null || value === undefined
             ? '—' : numberFormat.format(Number(value));
@@ -520,12 +602,15 @@
     button.addEventListener('click', () => {
         loadKpis(true);
         loadChickenFarmingKpis();
+        loadChickenFarmingV2Kpis();
         loadCommunityGardenKpis();
     });
     loadKpis();
     if (farmingPollTimer) window.clearTimeout(farmingPollTimer);
+    if (farmingV2PollTimer) window.clearTimeout(farmingV2PollTimer);
     if (gardenPollTimer) window.clearTimeout(gardenPollTimer);
     loadChickenFarmingKpis();
+    loadChickenFarmingV2Kpis();
     loadCommunityGardenKpis();
 })();
 </script>
