@@ -646,6 +646,8 @@
 
     function updateActionState() {
         var active = Boolean(farmState && farmState.active);
+        var legacyUi = document.querySelectorAll("[data-legacy-v1-ui]");
+        for (var i = 0; i < legacyUi.length; i += 1) legacyUi[i].hidden = !active;
         var hasContract = Boolean(FARMING_CONTRACT);
         var eggsReady = active && farmState.eggValue > 0n;
         var poolCovers = active && farmState.pool >= farmState.eggValue;
@@ -656,12 +658,14 @@
         var closeBtn = $("closeFarmBtn");
         if (sellBtn) sellBtn.disabled = !canSell || busy;
         if (closeBtn) closeBtn.disabled = !canClose || busy;
+        // Starting legacy V1 farms is permanently disabled; only the verified
+        // V2 panel can start a new position.
         var startBtn = $("startFarmBtn");
-        if (startBtn) startBtn.disabled = !hasContract || active || busy;
+        if (startBtn) startBtn.disabled = true;
 
         var banner = $("farmStatusBanner");
         if (banner) {
-            if (!active) banner.textContent = "No active farm yet — start one below. 🐣";
+            if (!active) banner.textContent = "No active legacy V1 farm.";
             else if (!farmState.mature) banner.textContent = "Your chickens are laying eggs. You can sell eggs any time.";
             else banner.textContent = "Your farm is mature! Close it to get your principal + egg rewards. 💰";
         }
@@ -687,100 +691,10 @@
     // ── actions ─────────────────────────────────────────────────────────────
 
     function startFarm() {
-        if (busy) return Promise.resolve();
-        if (!FARMING_CONTRACT) return Promise.resolve(setStatus("The farming contract is not configured yet.", "error"));
-        var check = validateFarmAmount(($("farmAmount") || {}).value);
-        if (!check.ok) return Promise.resolve(setStatus(check.error, "error"));
-
-        var amountWei;
-        try { amountWei = ethers.parseUnits(String(check.amount), GD_DECIMALS); }
-        catch (_) { return Promise.resolve(setStatus("Invalid amount.", "error")); }
-
-        busy = true; updateActionState();
-        v2Processing("Preparing your farm…", "Checking your wallet, G$ balance and Celo network.");
-        setStatus("Preparing " + check.chickens + " chickens (" + HISTORY.formatGd(check.amount) + " G$)…");
-        setProgress(0, 0);
-
-        var resolved, reader;
-        return resolveSigner().then(function (r) {
-            resolved = r;
-            return ensureCelo(r.provider);
-        }).then(function () {
-            reader = getReadProvider();
-            if (!reader) throw new Error("Could not reach the Celo network. Please check your connection.");
-            return gdContract(reader).balanceOf(WALLET);
-        }).then(function (balance) {
-            if (BigInt(balance) < amountWei) {
-                var err = new Error("Not enough G$ in your wallet. You need " +
-                    HISTORY.formatGd(check.amount) + " G$ but have " +
-                    HISTORY.formatWei(balance) + " G$.");
-                if (window.GMTxError && typeof GMTxError.asFriendly === "function") {
-                    // Prevents format() from replacing this with a wallet-pattern
-                    // message — the exact shortfall is the actionable part.
-                    GMTxError.asFriendly(err);
-                }
-                throw err;
-            }
-            return gdContract(reader).allowance(WALLET, FARMING_CONTRACT);
-        }).then(function (allowance) {
-            if (BigInt(allowance) >= amountWei) return null;
-            // Step 1/2: approve. Tracked so the user can always see the hash.
-            setProgress(1, 2);
-            v2Processing("Approve G$ spending", "Confirm the exact approval in your wallet. Farm start will continue after it confirms.");
-            setStatus("Step 1 of 2 — approve G$ spending. Confirm in your wallet…");
-            var gd = gdContract(resolved.signer);
-            return gd.approve(FARMING_CONTRACT, amountWei).then(function (tx) {
-                var entry = trackTx("approve", tx.hash, { amountLabel: HISTORY.formatGd(check.amount) + " G$", note: "G$ spending approval" });
-                setProgress(1, 2);
-                v2Processing("G$ approval submitted", "Waiting for Celo to confirm the approval transaction.");
-                setStatus("Approval sent. Waiting for confirmation… Tx: " + HISTORY.shortHash(tx.hash));
-                return waitForReceipt(tx.hash).then(function (receipt) {
-                    if (receipt) {
-                        settleFromReceipt(entry, receipt);
-                    } else {
-                        HISTORY.update(entry.id, { note: "Approval submitted — confirming" });
-                    }
-                    renderHistory();
-                });
-            });
-        }).then(function () {
-            setProgress(2, 2);
-            v2Processing("Confirm farm start", "Review and confirm the farm transaction in your wallet.");
-            setStatus("Step 2 of 2 — start your farm. Confirm in your wallet…");
-            var farm = farmContract(resolved.signer);
-            return farm.startFarm(amountWei).then(function (tx) {
-                var entry = trackTx("startFarm", tx.hash, {
-                    amountLabel: HISTORY.formatGd(check.amount) + " G$",
-                    note: check.chickens + " chickens",
-                });
-                v2Processing("Farm transaction submitted", "Waiting for your farm start to confirm on Celo.");
-                setStatus("Farm start sent. Waiting for confirmation… Tx: " + HISTORY.shortHash(tx.hash));
-                return waitForReceipt(tx.hash).then(function (receipt) {
-                    if (receipt) settleFromReceipt(entry, receipt);
-                    renderHistory();
-                    setProgress(0, 0);
-                    if (receipt && (receipt.status === 0 || receipt.status === "0x0")) {
-                        setStatus("The farm transaction reverted on-chain. See history below.", "error");
-                        return;
-                    }
-                    setStatus("✅ Farm started with " + check.chickens + " chickens! " +
-                        HISTORY.formatGd(check.amount) + " G$ is now locked until maturity.", "ok");
-                    toast("🐣 " + check.chickens + " chickens are now farming!", "success");
-                    return refreshFarm();
-                });
-            });
-        }).catch(function (err) {
-            setProgress(0, 0);
-            if (_isUserRejection(err)) {
-                setStatus("You cancelled the wallet request.", "error");
-            } else {
-                setStatus(_errMessage(err), "error");
-            }
-        }).then(function () {
-            v2Processing("", "");
-            busy = false;
-            updateActionState();
-        });
+        // Defensive guard for legacy markup, scripts, and stale browser state.
+        // Never connect a signer or request a V1 approval from this action.
+        setStatus("Starting new V1 farms is disabled. Use the separate verified Farming V2 panel; no V1 approval will be requested.", "error");
+        return Promise.resolve();
     }
 
     function sellEggs() {
@@ -923,6 +837,8 @@
         var list = $("farmHistoryList");
         if (!list) return;
         var items = HISTORY.all();
+        var panel = $("legacyV1HistoryPanel");
+        if (panel) panel.hidden = items.length === 0;
         var empty = $("farmHistoryEmpty");
         if (!items.length) {
             list.innerHTML = "";
@@ -1301,6 +1217,22 @@
         var start = v2Element("v2StartBtn"); if (start) start.disabled = !v2.enabled || !v2.positionChecked || !valid || Boolean(v2.position && v2.position.active) || v2.busy;
         return valid ? { amount: amount, reward: reward } : null;
     }
+    function v2UnavailableMessage(cfg) {
+        if (Number(cfg && cfg.chain_id || CHAIN_ID) !== CHAIN_ID) {
+            return "Farming V2 is configured for a different Celo chain.";
+        }
+        var messages = {
+            disabled_or_unconfigured: "The server has not enabled or fully configured Farming V2.",
+            chain_mismatch: "The configured V2 deployment is on a different chain.",
+            contract_code_missing: "No V2 contract code was found at the configured Celo address.",
+            token_mismatch: "The V2 contract's G$ token does not match the configured token.",
+            signer_mismatch: "The V2 contract signer does not match the configured signer.",
+            parameters_mismatch: "The on-chain V2 terms do not match the reviewed app settings.",
+            admin_key_mismatch: "The server-side V2 signing key does not match the configured signer.",
+            verification_failed: "The backend could not verify the V2 contract over Celo RPC."
+        };
+        return messages[String(cfg && cfg.reason || "")] || "The backend has not verified the Farming V2 contract.";
+    }
     function v2ApplyConfig(data) {
         var cfg = v2Normalize(data), badge = v2Element("farmingV2Badge"), fund = v2Element("v2FundBtn");
         if (!cfg) { v2.enabled = false; v2.position = null; v2.positionChecked = false;
@@ -1325,7 +1257,7 @@
             }
         }
         var funding = String(cfg.funding_status || cfg.sponsor_funding_status || cfg.reason || "").toLowerCase();
-        var status = v2.enabled ? (funding.indexOf("insufficient") >= 0 ? "New V2 farms are temporarily unavailable because sponsor funding is insufficient." : funding.indexOf("unverified") >= 0 || funding.indexOf("unknown") >= 0 ? "Sponsor funding could not be verified; new V2 farms are unavailable." : "V2 contract verified. A farm is accepted only if the contract can reserve its full reward cap.") : "V2 unavailable or unverified. New farms and sponsor contributions are disabled; there is no fallback to V1.";
+        var status = v2.enabled ? (funding.indexOf("insufficient") >= 0 ? "New V2 farms are temporarily unavailable because sponsor funding is insufficient." : funding.indexOf("unverified") >= 0 || funding.indexOf("unknown") >= 0 ? "Sponsor funding could not be verified; new V2 farms are unavailable." : "V2 contract verified. A farm is accepted only if the contract can reserve its full reward cap.") : "V2 unavailable or unverified. " + v2UnavailableMessage(cfg) + " New farms and sponsor contributions are disabled; there is no fallback to V1.";
         v2Status(status, v2.enabled ? "info" : "error");
         if (fund) fund.disabled = !v2.enabled || v2.busy;
         var p = v2Params(), amountInput = v2Element("v2FarmAmount");
