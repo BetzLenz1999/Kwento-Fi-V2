@@ -2802,7 +2802,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             _wlDailyEl('wlDailyTaskPayBtn').style.display = 'none';
             _wlDailyEl('wlDailyTaskVerifyBtn').style.display = 'block';
         } else {
-            gasText.textContent = 'Celo Mainnet. If your CELO balance is below 0.3, the app will try to sponsor the estimated approval/payment fees, subject to strict caps. Otherwise your wallet pays gas.';
+            gasText.textContent = 'Your wallet pays the estimated network fee for this transaction.';
             _wlDailyEl('wlDailyTaskPayBtn').style.display = 'block';
             _wlDailyEl('wlDailyTaskVerifyBtn').style.display = 'none';
         }
@@ -2942,6 +2942,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             var tokenBalance = await token.balanceOf(WALLET);
             if (tokenBalance < fee) throw new Error('Your wallet needs at least 20 G$ before continuing. No app gas was sponsored.');
             var allowance = await token.allowance(WALLET, state.intent.contract_address);
+            _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'Checking gas support eligibility for this payment…';
             _wlDailyProcessing('Checking Celo gas support…', 'Estimating the approval and payment fees and checking whether a top-up is available.');
             var gas = await _wlDailyPaymentRequest('/api/daily-task/gas-sponsor', { intent_id: state.intent.intent_id });
             if (gas.sponsored && gas.sponsor_tx_hash) {
@@ -2950,7 +2951,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                 var topupReceipt = await read.waitForTransaction(gas.sponsor_tx_hash, 1, 120000);
                 if (!topupReceipt || Number(topupReceipt.status) !== 1) throw new Error('The app gas top-up did not confirm. No G$ payment was made; retry later.');
             } else {
-                _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'Your CELO balance is at least 0.3 CELO, so your wallet will pay the estimated network fee.';
+                _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'App gas sponsorship is unavailable for this payment. Your wallet must have enough CELO to cover the estimated network fee.';
                 _wlDailyProcessing('Gas check complete', 'Your wallet will pay the estimated Celo transaction fees.');
             }
 
