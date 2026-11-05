@@ -82,3 +82,36 @@ body.cf-community-messages-open { overflow: hidden; }
     .cf-community-messages-log { padding: .8rem; }
 }
 @media (prefers-reduced-motion: reduce) { .cf-community-messages-card { animation: none; } }
+
+
+/* Community dark theme: the header may keep its blue identity, but every
+   interior surface and control must remain dark as well. */
+body.cf-page .cf-community-messages-modal { background: rgba(1, 7, 14, 0.84); }
+body.cf-page .cf-community-messages-card { border-color: #304861; background: #101b2b; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55); }
+body.cf-page .cf-community-messages-body,
+body.cf-page .cf-community-messages-inbox { background: #101b2b; }
+body.cf-page .cf-community-messages-row { border-bottom-color: #263b53; background: #101b2b; color: #eef6ff; }
+body.cf-page .cf-community-messages-row:hover,
+body.cf-page .cf-community-messages-row:focus-visible { background: #18283c; }
+body.cf-page .cf-community-messages-loading,
+body.cf-page .cf-community-messages-empty,
+body.cf-page .cf-community-messages-preview,
+body.cf-page .cf-community-messages-meta { color: #9aacc0; }
+body.cf-page .cf-community-messages-empty > span { background: #213650; color: #8edcff; }
+body.cf-page .cf-community-messages-empty strong,
+body.cf-page .cf-community-messages-row-copy strong,
+body.cf-page .cf-community-messages-person strong { color: #eef6ff; }
+body.cf-page .cf-community-messages-thread { background: #0d1522; }
+body.cf-page .cf-community-messages-thread-head { border-bottom-color: #263b53; background: #101b2b; }
+body.cf-page .cf-community-messages-back { background: #1b2c42; color: #dcecff; }
+body.cf-page .cf-community-messages-log { background: radial-gradient(circle at 10% 0%, #1b2c42 0, transparent 28%), #0d1522; }
+body.cf-page .cf-community-messages-bubble { border-color: #304861; background: #18283c; box-shadow: 0 4px 13px rgba(0, 0, 0, 0.18); }
+body.cf-page .cf-community-messages-bubble.is-mine { border-color: rgba(251, 191, 36, 0.38); background: linear-gradient(145deg, #3a2d17, #514019); }
+body.cf-page .cf-community-messages-bubble-text { color: #eef6ff; }
+body.cf-page .cf-community-messages-time { color: #8297ad; }
+body.cf-page .cf-community-messages-composer { border-top-color: #263b53; background: rgba(16, 27, 43, 0.98); }
+body.cf-page .cf-community-messages-composer textarea { border-color: #3b5872; background: #18283c; color: #eef6ff; }
+body.cf-page .cf-community-messages-composer textarea::placeholder { color: #8297ad; }
+body.cf-page .cf-community-messages-error,
+body.cf-page .cf-community-messages-thread-error { border-color: rgba(248, 113, 113, 0.38); background: rgba(248, 113, 113, 0.12); color: #fecaca; }
+body.cf-page .cf-community-messages-retry { border-color: #3b5872; background: #1b2c42; color: #8edcff; }
