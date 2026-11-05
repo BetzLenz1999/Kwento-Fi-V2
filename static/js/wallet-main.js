@@ -2670,22 +2670,38 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
         if (review) review.style.display = 'none';
     }
 
+    var _wlDailyMessageRequestId = 0;
     async function loadDailyTaskMessage(platform) {
         const messageDisplay = _wlDailyEl('wlTaskMessageDisplay');
         if (!messageDisplay) return;
-        messageDisplay.innerHTML = '<div class="spinner" style="width:22px;height:22px;"></div>';
+        _wlDailySelectedPlatform = platform;
+        const requestId = ++_wlDailyMessageRequestId;
+        const copyButton = document.querySelector('[data-daily-task-action="copy"]');
+        const retryButton = document.querySelector('[data-daily-task-action="retry-message"]');
+        window._wlDailyCustomMessage = '';
+        if (copyButton) copyButton.disabled = true;
+        if (retryButton) retryButton.hidden = true;
+        messageDisplay.textContent = 'Loading the task message…';
         const endpoint = platform === 'twitter' ? '/api/twitter-task/custom-message' : '/api/telegram-task/custom-message';
         try {
-            const resp = await fetch(endpoint);
-            const result = await resp.json();
-            if (result && result.success) {
-                window._wlDailyCustomMessage = result.custom_message;
-                messageDisplay.textContent = result.custom_message;
-            } else {
-                messageDisplay.innerHTML = '<span style="color:#f87171;">Error loading message. Please try again.</span>';
+            const resp = await fetch(endpoint, { credentials: 'same-origin' });
+            const result = await resp.json().catch(function () { return {}; });
+            if (requestId !== _wlDailyMessageRequestId || platform !== _wlDailySelectedPlatform) return;
+            const message = result && typeof result.custom_message === 'string' ? result.custom_message.trim() : '';
+            if (resp.ok && result && result.success && message) {
+                window._wlDailyCustomMessage = message;
+                messageDisplay.textContent = message;
+                if (copyButton) copyButton.disabled = false;
+                return;
             }
-        } catch (e) {
-            messageDisplay.innerHTML = '<span style="color:#f87171;">Network error loading message. Please try again.</span>';
+            messageDisplay.textContent = resp.status === 401
+                ? 'Your session needs refreshing before the task message can load.'
+                : 'Task message unavailable right now. Please retry.';
+            if (retryButton) retryButton.hidden = false;
+        } catch (_) {
+            if (requestId !== _wlDailyMessageRequestId || platform !== _wlDailySelectedPlatform) return;
+            messageDisplay.textContent = 'Could not connect to load the task message. Please retry.';
+            if (retryButton) retryButton.hidden = false;
         }
     }
 
@@ -2802,7 +2818,7 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             _wlDailyEl('wlDailyTaskPayBtn').style.display = 'none';
             _wlDailyEl('wlDailyTaskVerifyBtn').style.display = 'block';
         } else {
-            gasText.textContent = 'Your wallet pays the estimated network fee for this transaction.';
+            gasText.textContent = 'Make sure your wallet can cover network fees before continuing.';
             _wlDailyEl('wlDailyTaskPayBtn').style.display = 'block';
             _wlDailyEl('wlDailyTaskVerifyBtn').style.display = 'none';
         }
@@ -2940,19 +2956,19 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             _wlDailyProcessing('Checking your G$ balance…', 'Making sure your wallet has the 20 G$ submission fee before any payment is sent.');
             var fee = BigInt(state.intent.fee_wei);
             var tokenBalance = await token.balanceOf(WALLET);
-            if (tokenBalance < fee) throw new Error('Your wallet needs at least 20 G$ before continuing. No app gas was sponsored.');
+            if (tokenBalance < fee) throw new Error('Your wallet needs at least 20 G$ before continuing.');
             var allowance = await token.allowance(WALLET, state.intent.contract_address);
-            _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'Checking gas support eligibility for this payment…';
-            _wlDailyProcessing('Checking Celo gas support…', 'Estimating the approval and payment fees and checking whether a top-up is available.');
+            _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'Make sure your wallet can cover network fees before continuing.';
+            _wlDailyProcessing('Checking network fees…', 'Your wallet may need CELO for network fees; keep sufficient balance available.');
             var gas = await _wlDailyPaymentRequest('/api/daily-task/gas-sponsor', { intent_id: state.intent.intent_id });
             if (gas.sponsored && gas.sponsor_tx_hash) {
-                _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'The app is sponsoring the estimated Celo gas (' + gas.estimated_fee_celo + ' CELO). Waiting for the top-up to confirm…';
-                _wlDailyProcessing('Gas top-up sent…', 'Waiting for the estimated ' + gas.estimated_fee_celo + ' CELO top-up to confirm on Celo.');
+                _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'Network-fee preparation is in progress. The G$ payment will not be sent until this step confirms.';
+                _wlDailyProcessing('Preparing payment…', 'Waiting for network-fee preparation to confirm before requesting your G$ payment approval.');
                 var topupReceipt = await read.waitForTransaction(gas.sponsor_tx_hash, 1, 120000);
-                if (!topupReceipt || Number(topupReceipt.status) !== 1) throw new Error('The app gas top-up did not confirm. No G$ payment was made; retry later.');
+                if (!topupReceipt || Number(topupReceipt.status) !== 1) throw new Error('Network-fee preparation did not confirm. No G$ payment was made; please retry or ensure your wallet can pay the network fee.');
             } else {
-                _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'App gas sponsorship is unavailable for this payment. Your wallet must have enough CELO to cover the estimated network fee.';
-                _wlDailyProcessing('Gas check complete', 'Your wallet will pay the estimated Celo transaction fees.');
+                _wlDailyEl('wlDailyTaskGasPayerText').textContent = 'Your wallet must have enough CELO to cover the estimated network fee.';
+                _wlDailyProcessing('Network-fee check complete', 'Your wallet must cover the estimated network fees for this payment.');
             }
 
             if (allowance < fee) {
@@ -3024,6 +3040,9 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
             switch (target.getAttribute('data-daily-task-action')) {
                 case 'copy':
                     copyDailyTaskMessage();
+                    break;
+                case 'retry-message':
+                    if (_wlDailySelectedPlatform) loadDailyTaskMessage(_wlDailySelectedPlatform);
                     break;
                 case 'back':
                     goBackToDailyTaskPlatformSelection();
