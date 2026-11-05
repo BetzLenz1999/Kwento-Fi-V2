@@ -1,15 +1,12 @@
-
 /* GoodMarket Community Feed — self-contained styles.
    Kept out of the template so community.html stays small and cacheable.
 
-   Palette is the app's LIGHT theme on a PURE WHITE canvas: white page, white
-   cards, sky-blue accents. The page canvas used to be warm cream; the owner
-   asked for pure white, so the feed and the shared profile are white. On a
-   white canvas a borderless card is invisible, so the card keeps its 1px
-   border — that hairline is what separates card from page, not decoration.
-   Text colours clear WCAG AA (4.5:1) on white (the lightest surface, so every
-   pair that passed on cream still passes); the G$ gold carries DARK text
-   because white on amber fails. Animation is transform/opacity only — no
+   Palette is a dark, layered navy theme: a deep canvas, raised cards, cool
+   hairlines, sky-blue interactive accents, and restrained G$ gold. The page
+   should feel calm rather than like a black sheet, so surfaces are separated
+   by small value shifts instead of heavy shadows. Text colours are kept bright
+   enough for comfortable reading; the G$ gold carries DARK text because white
+   on amber fails. Animation is transform/opacity only — no
    box-shadow or left/top keyframes (they repaint the whole element each
    frame).
 
@@ -29,43 +26,43 @@
    ------------------------------------------------------------------------- */
 
 :root {
-    --cf-bg: #ffffff;
-    --cf-bg2: #ffffff;
-    --cf-card: #ffffff;
-    --cf-card-solid: #ffffff;
-    --cf-field: #f7f7f7;
-    --cf-soft: rgba(95, 72, 40, 0.06);
-    --cf-border: #e9e2d6;
+    --cf-bg: #0d1522;
+    --cf-bg2: #111c2b;
+    --cf-card: #152235;
+    --cf-card-solid: #18283c;
+    --cf-field: #1b2c42;
+    --cf-soft: rgba(125, 211, 252, 0.10);
+    --cf-border: #263b53;
     /* Instagram's separator: a neutral hairline, not a warm brand border. The
        card edge, the section rules and the top bar all use it so the page has
        ONE weight of line. */
-    --cf-hairline: #dbdbdb;
+    --cf-hairline: #2b4058;
     /* Instagram's secondary text grey. AA on white (4.5:1+). */
-    --cf-ink-2: #737373;
-    --cf-ink: #292524;
-    --cf-dim: #6b5d48;
-    --cf-muted: #8a8378;
-    --cf-accent: #0369a1;
-    --cf-accent-rgb: 3, 105, 161;
-    --cf-accent-2: #075985;
-    --cf-accent-ink: #075985;
+    --cf-ink-2: #a9bbcf;
+    --cf-ink: #eef6ff;
+    --cf-dim: #9aacc0;
+    --cf-muted: #8297ad;
+    --cf-accent: #38bdf8;
+    --cf-accent-rgb: 56, 189, 248;
+    --cf-accent-2: #7dd3fc;
+    --cf-accent-ink: #8edcff;
     /* The caption field's resting border. 5.93:1 on white — clearly above the
        3:1 non-text floor WCAG sets for UI boundaries. The field is the one
        control a post cannot be written without, so it reads as interactive. */
-    --cf-accent-border: #0369a1;
+    --cf-accent-border: #248fbe;
     /* The focus halo. Kept as a token so the ring and the border cannot drift. */
     --cf-accent-soft: rgba(14, 165, 233, 0.17);
-    --cf-gold: #f5a623;
-    --cf-gold-deep: #d97e0a;
+    --cf-gold: #fbbf24;
+    --cf-gold-deep: #d97706;
     --cf-gold-ink: #1f1300;
-    --cf-danger: #dc2626;
-    --cf-ok: #16a34a;
+    --cf-danger: #f87171;
+    --cf-ok: #4ade80;
     /* "Done" surface for the Daily Learn strip. --cf-ok (4.05:1) is a hair under
        AA for normal text, so the ink is a darker green and the tint stays pale.
        Measured below against the strip's own background. */
-    --cf-ok-ink: #15803d;
-    --cf-ok-soft: #f0fdf4;
-    --cf-ok-border: #bbf7d0;
+    --cf-ok-ink: #86efac;
+    --cf-ok-soft: rgba(34, 197, 94, 0.12);
+    --cf-ok-border: rgba(74, 222, 128, 0.34);
     --cf-bottom-nav-height: 76px;
     /* The desktop left rail's box. The two-column grid reserves this much
        inline padding so its first column can never sit under the rail, so the
@@ -74,7 +71,7 @@
     --cf-rail-gap: 0.8rem;
     --cf-serif: 'Fraunces', Georgia, serif;
     --cf-sans: 'Nunito Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    --cf-shadow: 0 4px 16px rgba(67, 56, 43, 0.06);
+    --cf-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
     /* Instagram has NO elevation on the mobile feed — posts are sections of one
        canvas, not floating cards. Named so the phone layout can switch it off
        in one place instead of unsetting a box-shadow on five rules. */
@@ -88,16 +85,16 @@
        every text token below is measured against the WORST (lightest) stop
        `#ffdfae`, not the average — see
        docs/COMMUNITY_REWARDS_CARD_REVAMP_PROPOSAL.md §2 for the numbers. */
-    --cf-earn-bg1: #fff7e6;
-    --cf-earn-bg2: #ffdfae;
-    --cf-earn-line: rgba(180, 120, 20, 0.22);
-    --cf-earn-ink: #4a2a00;
-    --cf-earn-ink-2: #5c3600;
+    --cf-earn-bg1: #332817;
+    --cf-earn-bg2: #5a3b17;
+    --cf-earn-line: rgba(251, 191, 36, 0.28);
+    --cf-earn-ink: #fff1bd;
+    --cf-earn-ink-2: #f6d98a;
     /* NOT --cf-gold-deep: that is only 2.37:1 here, and the rate value is the
        number that matters. */
-    --cf-earn-accent: #8a4b00;
-    --cf-earn-tile: rgba(255, 255, 255, 0.72);
-    --cf-earn-shadow: 0 6px 20px rgba(180, 120, 20, 0.14);
+    --cf-earn-accent: #fbbf24;
+    --cf-earn-tile: rgba(255, 255, 255, 0.08);
+    --cf-earn-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -3850,3 +3847,225 @@ body.cf-page .btn-secondary:hover { background: var(--cf-field); }
     .cf-daily-learn-congrats,
     .cf-daily-learn-congrats-card { animation: none; }
 }
+
+
+/* ── Dark mode finish ────────────────────────────────────────────────────────
+   The feed uses a layered palette rather than a single black background. These
+   final overrides cover the older feature cards and overlays that intentionally
+   keep their own component palette, so every surface on /community stays in the
+   same dark visual system. */
+.cf-page {
+    color-scheme: dark;
+    background: var(--cf-bg);
+}
+
+.cf-page .cf-permanent-option {
+    border-color: rgba(251, 191, 36, 0.28);
+    background: linear-gradient(135deg, #302515, #3b2b16);
+}
+.cf-page .cf-permanent-copy strong,
+.cf-page .cf-permanent-badge { color: #f8d98a; }
+.cf-page .cf-permanent-badge { background: rgba(251, 191, 36, 0.12); }
+.cf-page .cf-learn-done-toggle:hover { background: rgba(255, 255, 255, 0.08); }
+.cf-page .cf-skeleton { background: linear-gradient(100deg, var(--cf-card) 30%, #22364d 50%, var(--cf-card) 70%); }
+
+/* Notification/search and action surfaces. */
+.cf-page .cf-notification-item.is-unread { background: rgba(56, 189, 248, 0.12); }
+.cf-page .cf-notification-item.is-unread:hover,
+.cf-page .cf-search-result:hover,
+.cf-page .cf-sheet-item:hover { background: rgba(56, 189, 248, 0.16); }
+.cf-page .cf-notification-unread-dot { background: var(--cf-accent); }
+.cf-page .cf-search-result { background: var(--cf-card); color: var(--cf-ink); }
+
+/* Daily Learn and reward surfaces retain semantic green/gold, but with dark
+   tints that do not compete with the main feed. */
+.cf-page .cf-daily-learn {
+    border-color: rgba(251, 191, 36, 0.32);
+    background:
+        radial-gradient(ellipse at 0% 0%, rgba(255, 188, 71, 0.16), transparent 44%),
+        radial-gradient(ellipse at 100% 100%, rgba(74, 174, 126, 0.12), transparent 42%),
+        linear-gradient(135deg, #2d261b 0%, #273126 100%);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.cf-page .cf-daily-learn-badge,
+.cf-page .cf-earn-history-state { background: rgba(251, 191, 36, 0.14); color: #f8d98a; }
+.cf-page .cf-daily-learn-question,
+.cf-page .cf-daily-learn-option,
+.cf-page .cf-earn-history-item { background: rgba(255, 255, 255, 0.06); }
+.cf-page .cf-daily-learn-question { border-color: rgba(251, 191, 36, 0.26); }
+
+/* Menu / Community Cards / wallet sheets. */
+.cf-page .cf-menu,
+.cf-page .cf-community-cards,
+.cf-page .cf-menu-card,
+.cf-page .cf-wallet-card {
+    background: #111d2d;
+    border-color: #304861;
+    color: var(--cf-ink);
+}
+.cf-page .cf-menu-row,
+.cf-page .cf-menu-subitem,
+.cf-page .cf-wallet-token,
+.cf-page .cf-wallet-network,
+.cf-page .cf-wallet-send-form {
+    background: #18283c;
+    border-color: #2d4560;
+    color: var(--cf-ink);
+}
+.cf-page .cf-menu-row:hover,
+.cf-page .cf-menu-subitem:hover,
+.cf-page .cf-menu-close:hover { background: #213650; border-color: #52718e; }
+.cf-page .cf-menu-subitem > span:first-child { background: #203650; border-color: #35536f; }
+.cf-page .cf-menu-row strong,
+.cf-page .cf-menu-subitem strong,
+.cf-page .cf-wallet-network strong,
+.cf-page .cf-wallet-token-name strong,
+.cf-page .cf-wallet-send-title { color: #edf7ff; }
+.cf-page .cf-menu-row small,
+.cf-page .cf-menu-subitem small,
+.cf-page .cf-wallet-network span,
+.cf-page .cf-wallet-token-name small,
+.cf-page .cf-wallet-note,
+.cf-page .cf-wallet-send-hint { color: #9aacc0; }
+.cf-page .cf-menu-close,
+.cf-page .cf-wallet-close { background: #1a2c42; border-color: #36516b; color: #d7e9f8; }
+.cf-page .cf-wallet-token-badge-celo,
+.cf-page .cf-wallet-token-badge-usdt,
+.cf-page .cf-wallet-token-badge-usdc { background: rgba(52, 211, 153, 0.16); color: #86efac; }
+.cf-page .cf-wallet-token-badge-gd { background: rgba(251, 191, 36, 0.16); color: #f8d98a; }
+.cf-page .cf-wallet-token-badge-cusd { background: rgba(96, 165, 250, 0.16); color: #bfdbfe; }
+.cf-page .cf-wallet-token-badge-phpm { background: rgba(248, 113, 113, 0.16); color: #fecaca; }
+
+/* Keep modal backdrops dark enough to separate content without making the
+   page feel blacked out. */
+.cf-page .cf-modal,
+.cf-page .cf-community-cards-backdrop,
+.cf-page .cf-menu-backdrop { background: rgba(3, 10, 19, 0.78); }
+.cf-page .cf-modal-card { background: var(--cf-card-solid); border-color: var(--cf-border); }
+.cf-page .cf-lightbox { background: rgba(3, 8, 15, 0.96); }
+
+/* Small screens use a bottom sheet; keep its handle and header readable. */
+.cf-page .cf-community-cards-sheet,
+.cf-page .cf-sheet { background: #111d2d; color: var(--cf-ink); border-color: #304861; }
+.cf-page .cf-community-cards-sheet::before,
+.cf-page .cf-sheet::before { background: #55718b; }
+
+@media (prefers-reduced-transparency: reduce) {
+    .cf-page .cf-nav { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+
+/* ── True dark surfaces for the Community shell ─────────────────────────────
+   These are intentionally explicit: changing only --cf-bg leaves the Today
+   hub and the five-action navigation looking like light islands. */
+.cf-page .cf-today-hub {
+    background: #0b1220;
+    border: 1px solid #213650;
+    border-radius: 18px;
+    padding: 0.9rem;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+}
+.cf-page .cf-today-hub-title { color: #eef6ff; }
+.cf-page .cf-today-hub-head p,
+.cf-page .cf-daily-prompt > p,
+.cf-page .cf-daily-prompt-foot > span,
+.cf-page .cf-daily-learn-progress,
+.cf-page .cf-daily-learn-reset { color: #9aacc0; }
+.cf-page .cf-daily-prompt,
+.cf-page .cf-daily-learn {
+    border-color: #304861;
+    background: #142438;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.20);
+}
+.cf-page .cf-daily-learn {
+    background:
+        radial-gradient(ellipse at 0% 0%, rgba(255, 188, 71, 0.14), transparent 44%),
+        radial-gradient(ellipse at 100% 100%, rgba(74, 174, 126, 0.10), transparent 42%),
+        linear-gradient(135deg, #182638 0%, #1c302b 100%);
+}
+.cf-page .cf-daily-prompt h2,
+.cf-page .cf-daily-learn h2,
+.cf-page .cf-daily-learn-question { color: #eef6ff; }
+.cf-page .cf-daily-learn-progress { border-color: rgba(251, 191, 36, 0.30); background: rgba(251, 191, 36, 0.12); color: #f8d98a; }
+.cf-page .cf-daily-learn-option {
+    border-color: #304861;
+    background: #1b2c42;
+    color: #eef6ff;
+}
+.cf-page .cf-daily-learn-option:hover { background: #243b55; border-color: #52718e; }
+.cf-page .cf-daily-learn-option[aria-pressed="true"] { background: #263e58; border-color: #38bdf8; }
+.cf-page .cf-daily-learn-next,
+.cf-page .cf-daily-learn-share,
+.cf-page .cf-daily-learn-connect { border-color: #3b5872; background: #1b2c42; color: #eef6ff; }
+.cf-page .cf-daily-learn-connect { border-color: #38bdf8; background: #1688b8; color: #fff; }
+
+/* Five-button mobile action rail: keep each action on a dark tile; gold is
+   reserved for the claim action, while the other actions share one surface. */
+.cf-page .cf-community-mobile-actions .cf-nav-item,
+.cf-page .cf-sheet-item {
+    border-color: #304861;
+    background: #142438;
+    color: #dcecff;
+}
+.cf-page .cf-community-mobile-actions .cf-nav-item:hover,
+.cf-page .cf-sheet-item:hover { background: #203650; border-color: #52718e; }
+.cf-page .cf-community-mobile-actions .cf-nav-item[data-nav="claim"] {
+    background: linear-gradient(135deg, #6b4b13, #9a670e);
+    border-color: rgba(251, 191, 36, 0.52);
+    color: #fff1bd;
+}
+.cf-page .cf-community-mobile-actions .cf-nav-item[data-nav="search"],
+.cf-page .cf-community-mobile-actions .cf-nav-item[data-nav="messages"],
+.cf-page .cf-community-mobile-actions .cf-nav-item[data-nav="airtime"],
+.cf-page .cf-community-mobile-actions .cf-nav-item[data-nav="menu"] {
+    background: #142438;
+    border-color: #304861;
+    color: #dcecff;
+}
+.cf-page .cf-community-mobile-actions .cf-nav-item[data-nav="search"] .cf-nav-icon,
+.cf-page .cf-community-mobile-actions .cf-nav-item[data-nav="messages"] .cf-nav-icon,
+.cf-page .cf-community-mobile-actions .cf-nav-item[data-nav="airtime"] .cf-nav-icon,
+.cf-page .cf-community-mobile-actions .cf-nav-item[data-nav="menu"] .cf-nav-icon { background: #213650; }
+
+/* Community Cards and the earning-page modal are separate from the menu sheet. */
+.cf-page .cf-community-cards-modal,
+.cf-page .cf-reactions-modal,
+.cf-page .cf-earn-page-modal,
+.cf-page .cf-garden-modal,
+.cf-page .cf-airtime-modal,
+.cf-page .cf-referral-modal {
+    background: rgba(1, 7, 14, 0.84);
+    backdrop-filter: blur(8px);
+}
+.cf-page .cf-community-cards-card,
+.cf-page .cf-reactions-card,
+.cf-page .cf-earn-page-card,
+.cf-page .cf-garden-card,
+.cf-page .cf-airtime-card,
+.cf-page .cf-referral-card {
+    background: #101b2b;
+    border-color: #304861;
+    color: #eef6ff;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+
+/* Guest welcome is part of the feed canvas too; it must not remain a light
+   island beside dark cards. */
+.cf-page .cf-guest .gm-guest-connect-card {
+    border-color: #304861;
+    background: linear-gradient(135deg, #101b2b 0%, #142438 62%, #1d2a2c 100%);
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
+}
+.cf-page .cf-guest .gm-guest-connect-icon { border-color: #3b5872; background: #213650; }
+.cf-page .cf-guest .gm-guest-connect-kicker { color: #8edcff; }
+.cf-page .cf-guest .gm-guest-connect-title { color: #eef6ff; }
+.cf-page .cf-guest .gm-guest-connect-body { color: #a9bbcf; }
+.cf-page .cf-guest .gm-guest-connect-highlights li {
+    border-color: #304861;
+    background: rgba(255, 255, 255, 0.06);
+    color: #dcecff;
+}
+.cf-page .cf-guest .gm-guest-connect-actions { border-left-color: #304861; }
+.cf-page .cf-guest .gm-guest-connect-foot { color: #9aacc0; }
+.cf-page .cf-guest .gm-guest-connect-foot a { color: #8edcff; }
