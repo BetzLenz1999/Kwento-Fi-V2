@@ -2401,6 +2401,10 @@ body.cf-modal-open { overflow: hidden; }
     .cf-today-hub-title { font-size: 1.35rem; }
     .cf-today-hub .cf-daily-prompt,
     .cf-today-hub .cf-daily-learn { padding: 0.85rem; }
+    /* The sticky side column is max-height capped and scrolls internally. Keep
+       its interactive quiz card at natural height instead of flex-shrinking it
+       and clipping the answers / Start Quiz button via overflow:hidden. */
+    .cf-today-hub .cf-daily-learn { flex-shrink: 0; }
     .cf-today-hub .cf-daily-prompt h2,
     .cf-today-hub .cf-daily-learn h2 { font-size: 1rem; }
     .cf-today-hub .cf-earn-budget-grid { gap: 0.4rem; }
