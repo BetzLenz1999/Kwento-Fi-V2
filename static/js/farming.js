@@ -697,6 +697,7 @@
         catch (_) { return Promise.resolve(setStatus("Invalid amount.", "error")); }
 
         busy = true; updateActionState();
+        v2Processing("Preparing your farm…", "Checking your wallet, G$ balance and Celo network.");
         setStatus("Preparing " + check.chickens + " chickens (" + HISTORY.formatGd(check.amount) + " G$)…");
         setProgress(0, 0);
 
@@ -725,11 +726,13 @@
             if (BigInt(allowance) >= amountWei) return null;
             // Step 1/2: approve. Tracked so the user can always see the hash.
             setProgress(1, 2);
+            v2Processing("Approve G$ spending", "Confirm the exact approval in your wallet. Farm start will continue after it confirms.");
             setStatus("Step 1 of 2 — approve G$ spending. Confirm in your wallet…");
             var gd = gdContract(resolved.signer);
             return gd.approve(FARMING_CONTRACT, amountWei).then(function (tx) {
                 var entry = trackTx("approve", tx.hash, { amountLabel: HISTORY.formatGd(check.amount) + " G$", note: "G$ spending approval" });
                 setProgress(1, 2);
+                v2Processing("G$ approval submitted", "Waiting for Celo to confirm the approval transaction.");
                 setStatus("Approval sent. Waiting for confirmation… Tx: " + HISTORY.shortHash(tx.hash));
                 return waitForReceipt(tx.hash).then(function (receipt) {
                     if (receipt) {
@@ -742,6 +745,7 @@
             });
         }).then(function () {
             setProgress(2, 2);
+            v2Processing("Confirm farm start", "Review and confirm the farm transaction in your wallet.");
             setStatus("Step 2 of 2 — start your farm. Confirm in your wallet…");
             var farm = farmContract(resolved.signer);
             return farm.startFarm(amountWei).then(function (tx) {
@@ -749,6 +753,7 @@
                     amountLabel: HISTORY.formatGd(check.amount) + " G$",
                     note: check.chickens + " chickens",
                 });
+                v2Processing("Farm transaction submitted", "Waiting for your farm start to confirm on Celo.");
                 setStatus("Farm start sent. Waiting for confirmation… Tx: " + HISTORY.shortHash(tx.hash));
                 return waitForReceipt(tx.hash).then(function (receipt) {
                     if (receipt) settleFromReceipt(entry, receipt);
@@ -772,6 +777,7 @@
                 setStatus(_errMessage(err), "error");
             }
         }).then(function () {
+            v2Processing("", "");
             busy = false;
             updateActionState();
         });
@@ -785,6 +791,7 @@
         var soldValue = farmState.eggValue;
 
         busy = true; updateActionState();
+        v2Processing("Confirm egg sale", "Review and confirm selling your ready eggs in your wallet.");
         setStatus("Confirm selling your eggs in your wallet…");
         setProgress(1, 1);
 
@@ -799,6 +806,7 @@
                     amountLabel: HISTORY.formatWei(soldValue) + " G$",
                     note: soldEggs.toString() + " eggs",
                 });
+                v2Processing("Egg sale submitted", "Waiting for the G$ transfer to confirm on Celo.");
                 setStatus("Eggs sale sent. Waiting for confirmation… Tx: " + HISTORY.shortHash(tx.hash));
                 return waitForReceipt(tx.hash).then(function (receipt) {
                     setProgress(0, 0);
@@ -823,6 +831,7 @@
             setProgress(0, 0);
             setStatus(_isUserRejection(err) ? "You cancelled the wallet request." : _errMessage(err), "error");
         }).then(function () {
+            v2Processing("", "");
             busy = false;
             updateActionState();
         });
@@ -837,6 +846,7 @@
         var expectedTotal = expectedPrincipal + expectedProfit;
 
         busy = true; updateActionState();
+        v2Processing("Confirm farm close", "Review and confirm closing your matured farm and withdrawing its balance.");
         setStatus("Confirm closing your farm in your wallet…");
         setProgress(1, 1);
 
@@ -851,6 +861,7 @@
                     amountLabel: HISTORY.formatWei(expectedTotal) + " G$",
                     note: "Principal + egg rewards",
                 });
+                v2Processing("Farm close submitted", "Waiting for the principal and rewards withdrawal to confirm on Celo.");
                 setStatus("Farm closing sent. Waiting for confirmation… Tx: " + HISTORY.shortHash(tx.hash));
                 return waitForReceipt(tx.hash).then(function (receipt) {
                     setProgress(0, 0);
@@ -876,6 +887,7 @@
             setProgress(0, 0);
             setStatus(_isUserRejection(err) ? "You cancelled the wallet request." : _errMessage(err), "error");
         }).then(function () {
+            v2Processing("", "");
             busy = false;
             updateActionState();
         });
@@ -1193,7 +1205,7 @@
         var titleEl = v2Element("farmProcessingTitle"), detailEl = v2Element("farmProcessingDetail");
         if (titleEl) titleEl.textContent = title;
         if (detailEl) detailEl.textContent = detail || "Please keep this page open while the request completes.";
-        overlay.hidden = false; overlay.setAttribute("aria-hidden", "false"); overlay.classList.add("show");
+        overlay.hidden = false; overlay.setAttribute("aria-hidden", "false"); overlay.setAttribute("aria-busy", "true"); overlay.classList.add("show");
     }
     function v2GasRequestId(amountWei) {
         var principal = amountWei.toString();
@@ -1407,7 +1419,8 @@
         var amount = action === "start" ? estimate.amount : fundAmount;
         var amountWei = amount ? ethers.parseUnits(String(amount), GD_DECIMALS) : null;
         var resolved, token;
-        if (action === "start") v2Processing("Preparing your V2 farm…", "Checking your wallet connection and Celo network.");
+        var actionLabels = { start: "farm start", claim: "reward claim", close: "mature farm close", fund: "sponsor contribution" };
+        v2Processing("Preparing your V2 " + actionLabels[action] + "…", "Checking your wallet connection and Celo network.");
         v2TxStatus(action === "fund" ? "Review contribution " + amount + " G$. Non-refundable; no personal reward. Approve in your wallet." : "Waiting for wallet confirmation…", "info");
         return resolveSigner().then(function (r) { resolved = r; return ensureCelo(r.provider); }).then(function () {
             if (action !== "start") return null;
@@ -1418,39 +1431,49 @@
                 token = new ethers.Contract(v2.token, GD_ABI, resolved.signer);
                 return token.allowance(WALLET, v2.address).then(function (allowance) {
                     if (BigInt(allowance) >= BigInt(amountWei)) return null;
-                    if (action === "start") v2Processing("Approve G$ spending", "Confirm the exact approval in your wallet. The farm will start only after this approval confirms.");
+                    v2Processing("Approve G$ spending", action === "start"
+                        ? "Confirm the exact approval in your wallet. The farm will start only after this approval confirms."
+                        : "Confirm the exact approval in your wallet. The sponsor contribution will continue after it confirms.");
                     v2TxStatus("Approve G$ spending for verified V2 only. Confirm approval in your wallet…", "info");
                     return token.approve(v2.address, amountWei).then(function (tx) {
                         v2TxStatus("Approval pending: " + HISTORY.shortHash(tx.hash), "info", tx.hash);
-                        if (action === "start") v2Processing("G$ approval submitted", "Waiting for Celo to confirm the approval transaction.");
+                        v2Processing("G$ approval submitted", "Waiting for Celo to confirm the approval transaction.");
                         return tx.wait().then(function (receipt) {
                             if (!receipt || Number(receipt.status) !== 1) throw new Error("G$ approval failed or could not be confirmed.");
-                            if (action === "start") v2Processing("Approval confirmed", "Preparing the V2 farm-start transaction.");
+                            v2Processing("Approval confirmed", action === "start" ? "Preparing the V2 farm-start transaction." : "Preparing the sponsor contribution transaction.");
                             return receipt;
                         });
                     });
                 }).then(function () {
-                    if (action === "start") v2Processing("Confirm farm start", "Review and confirm the V2 farm transaction in your wallet.");
+                    v2Processing(action === "start" ? "Confirm farm start" : "Confirm sponsor contribution",
+                        action === "start" ? "Review and confirm the V2 farm transaction in your wallet."
+                            : "Review and confirm the non-refundable sponsor contribution in your wallet.");
                     v2TxStatus(action === "fund" ? "Confirm sponsor funding in your wallet…" : "Confirm V2 farm start in your wallet…", "info");
                     return action === "fund" ? contract.fundRewardPool(amountWei) : contract.startFarm(amountWei);
                 });
             }
+            v2Processing(action === "claim" ? "Confirm reward claim" : "Confirm mature farm close",
+                action === "claim" ? "Review and confirm your accrued V2 reward claim in your wallet."
+                    : "Review and confirm closing your mature V2 farm in your wallet.");
             v2TxStatus("Confirm " + (action === "claim" ? "reward claim" : "mature farm close") + " in your wallet…", "info");
             return action === "claim" ? contract.claimReward() : contract.closeFarm();
         }).then(function (tx) {
             if (!tx || !tx.hash) return;
-            if (action === "start") v2Processing("Farm transaction submitted", "Waiting for the V2 farm start to confirm on Celo.");
+            v2Processing(action === "start" ? "Farm transaction submitted"
+                : action === "claim" ? "Reward claim submitted"
+                : action === "close" ? "Farm close submitted" : "Sponsor contribution submitted",
+                "Waiting for the transaction to confirm on Celo.");
             v2TxStatus("Transaction pending confirmation: " + HISTORY.shortHash(tx.hash), "info", tx.hash);
             return tx.wait().then(function (receipt) {
                 if (!receipt || Number(receipt.status) !== 1) throw new Error("Transaction failed or receipt could not be verified.");
                 v2TxStatus("Transaction confirmed on-chain.", "ok", tx.hash);
-                if (action === "start") v2Processing("Farm started on Celo", "Refreshing your verified Farming V2 position.");
+                v2Processing("Transaction confirmed on Celo", "Refreshing your verified Farming V2 position.");
                 return v2Refresh();
             });
         }).catch(function (err) {
             v2TxStatus(_isUserRejection(err) ? "Wallet request cancelled." : _errMessage(err), "error");
         }).then(function () {
-            if (action === "start") v2Processing("", "");
+            v2Processing("", "");
             v2.busy = false; ["v2FundBtn"].forEach(function (id) { var b = v2Element(id); if (b) b.disabled = !v2.enabled; }); v2RenderPosition(); v2Estimate();
         });
     }
