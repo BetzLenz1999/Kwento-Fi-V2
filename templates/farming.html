@@ -210,13 +210,12 @@
         <div class="hero-grid">
             <div class="hero-copy">
                 <div class="kicker">Chicken-and-Egg Farming</div>
-                <h1>Grow your G$ farm</h1>
-                <p class="copy">Buy chickens with G$, collect eggs every day, and sell them for G$ whenever you like. When the {{ farming_config.farm_days }}-day cycle matures, close the farm to get your capital back <strong>plus</strong> the remaining egg rewards.</p>
+                <h1>Manage your G$ farms</h1>
+                <p class="copy">Legacy V1 farms remain separate from new V2 farms. Review the version and its terms before taking an action; V2 rewards are sponsor-funded caps, not guaranteed returns.</p>
                 <div class="hero-chips">
-                    <span class="hero-chip">🐔 {{ farming_config.chicken_price_gd }} G$ = 1 chicken</span>
-                    <span class="hero-chip">🥚 1 egg / chicken / day</span>
-                    <span class="hero-chip">📈 up to {{ farming_config.monthly_profit_percent }}% profit</span>
-                    <span class="hero-chip">🗓 {{ farming_config.farm_days }}-day cycle</span>
+                    <span class="hero-chip">Legacy V1: existing farms only</span>
+                    <span class="hero-chip">New farms: verified V2 only</span>
+                    <span class="hero-chip">V2: 7-day sponsor-funded reward cap</span>
                 </div>
             </div>
             <div class="hero-chicken is-idle" id="farmScene" role="img" aria-label="Your farm — start a farm to see your chickens">
@@ -310,6 +309,43 @@
     </section>
     {% endif %}
 
+    <section class="panel" id="farmingV2Panel" aria-labelledby="farmingV2Title">
+        <div class="history-head"><div><span class="kicker">Farming V2 · New farms</span><h2 id="farmingV2Title">New sponsor-funded farm</h2>
+            <p class="sub">A separate, verified V2 contract is required. V2 never falls back to the legacy V1 contract.</p></div><span class="hero-chip" id="farmingV2Badge">V2 · checking availability</span></div>
+        <p class="status info" id="farmingV2Status" role="status" aria-live="polite">Checking V2 configuration and sponsor funding…</p>
+        {% if not is_guest %}
+        <div class="game-card">
+            <h3>Start a V2 farm</h3><p class="amount-help">One active V2 farm per wallet · 7 days · 1,000–20,000 G$ · increments of 100 G$.</p>
+            <div class="form-row"><input class="input" id="v2FarmAmount" type="number" min="1000" max="20000" step="100" value="1000" inputmode="numeric" aria-label="New V2 farm amount in G$">
+                <button class="btn primary" type="button" id="v2StartBtn" disabled>Approve &amp; start V2 farm</button></div>
+            <div class="projection"><div class="box"><span>Maximum reward cap · 7 days</span><strong id="v2RewardEstimate">Up to 50 G$</strong></div><div class="box"><span>Principal + maximum cap</span><strong id="v2TotalEstimate">1,050 G$</strong></div></div>
+            <p class="notice">Warning: this is a sponsor-funded reward cap, not guaranteed yield, profit, or a promised return. A farm can start only when its full cap is reserved by the V2 contract.</p>
+            <div class="mini-stats" id="v2Position" hidden>
+                <div class="mini-stat"><span>V2 principal</span><strong id="v2Principal">—</strong></div><div class="mini-stat"><span>Accrued / claimable reward</span><strong id="v2Accrued">—</strong></div>
+                <div class="mini-stat"><span>Already claimed</span><strong id="v2Claimed">—</strong></div><div class="mini-stat"><span>Maturity</span><strong id="v2Maturity">—</strong></div>
+                <div class="mini-stat"><span>Farm status</span><strong id="v2FarmPhase">—</strong></div>
+            </div>
+            <div class="action-grid"><button class="btn secondary" id="v2ClaimBtn" type="button" disabled>Claim accrued V2 reward</button><button class="btn secondary" id="v2CloseBtn" type="button" disabled>Close mature V2 farm</button></div>
+            <p class="notice" id="v2ContractNotice">V2 destination contract: unavailable until backend verification.</p>
+            <div class="status" id="v2TxStatus" role="status" aria-live="polite" hidden></div>
+        </div>
+        <div class="game-card"><h3>Contribute to V2 sponsor rewards</h3>
+            <p class="amount-help"><strong>Non-refundable:</strong> sponsor contributions cannot be refunded and give the donor no personal reward or yield. Review the G$ amount and destination contract before wallet approval.</p>
+            <div class="form-row"><input class="input" id="v2FundAmount" type="number" min="1" step="any" value="100" inputmode="decimal" aria-label="Sponsor contribution amount in G$">
+                <button class="btn secondary" type="button" id="v2FundBtn" disabled>Approve &amp; fund V2</button></div>
+        </div>
+        <div class="game-card" id="v2HistoryPanel">
+            <div class="history-head"><div><h3>V2 transaction history</h3><p class="sub">On-chain V2 activity for your connected wallet only.</p></div>
+                <button class="btn secondary" type="button" id="v2RefreshHistoryBtn">Refresh V2 history</button></div>
+            <div class="history-list" id="v2HistoryList"></div>
+            <div class="empty-note" id="v2HistoryEmpty">V2 history is unavailable until the backend verifies the deployed contract.</div>
+        </div>
+        {% else %}<p class="amount-help">Connect your wallet to start a V2 farm or contribute to its sponsor pool.</p>{% endif %}
+    </section>
+
+    {% if not is_guest %}
+    <section class="panel" id="legacyV1Panel"><span class="kicker">Legacy Farms · V1</span><h2>Existing V1 farms</h2><p class="sub">Manage legacy positions only. New V2 farms and sponsor contributions use a separate contract.</p></section>
+    {% endif %}
     {% if is_guest %}
     <section class="game-card" id="playFarm">
         {# Guest: the play panel (start / sell / close) is not rendered at all
@@ -321,22 +357,21 @@
         {% include "_guest_connect_card.html" %}
         {% endwith %}
         {% else %}
-        <div class="kicker">Play Farming</div>
-        <h2 id="playTitle">Start, sell eggs, or close your farm</h2>
+        <div class="kicker">Legacy Farms · V1</div>
+        <h2 id="playTitle">Manage your legacy V1 farm</h2>
         <p class="copy" style="color:var(--muted); line-height:1.55; font-size:0.9rem;">You are already signed in — your wallet opens only when a transaction needs your confirmation.</p>
-
-        <div class="form-row">
-            <input class="input" id="farmAmount" type="number" min="{{ farming_config.min_farm_gd }}" step="{{ farming_config.chicken_price_gd }}" value="{{ farming_config.min_farm_gd }}" inputmode="decimal" aria-label="Farm amount in G$">
-            <button class="btn primary" type="button" id="startFarmBtn">🐣 Approve &amp; start farm</button>
+        <p class="amount-help">Starting new V1 farms is disabled in the app. Use the separate verified V2 panel above for new farms. V1 positions remain available for reward claims and maturity close.</p>
+        <div class="form-row" hidden>
+            <input class="input" id="farmAmount" type="number" min="{{ farming_config.min_farm_gd }}" step="{{ farming_config.chicken_price_gd }}" value="{{ farming_config.min_farm_gd }}" inputmode="numeric" aria-label="Legacy V1 farm amount in G$" disabled>
+            <button class="btn primary" type="button" id="startFarmBtn" disabled>New V1 farms are disabled</button>
         </div>
-        <p class="amount-help">Every <strong>{{ farming_config.chicken_price_gd }} G$</strong> buys <strong>1 chicken</strong>. Your amount buys <strong id="chickensToBuy">{{ farming_config.min_chickens }}</strong> chickens.</p>
-        <div class="quick-amounts" aria-label="Quick chicken amounts">
+        <div class="quick-amounts" aria-label="Legacy V1 quick chicken amounts" hidden>
             <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 10 }}">10 chickens</button>
             <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 20 }}">20 chickens</button>
             <button class="chip" type="button" data-farm-amount="{{ farming_config.chicken_price_gd * 50 }}">50 chickens</button>
         </div>
-        <div class="projection">
-            <div class="box"><span>Est. egg profit / cycle</span><strong id="projectedProfit">0 G$</strong></div>
+        <div class="projection" hidden>
+            <div class="box"><span>Est. V1 legacy reward / cycle</span><strong id="projectedProfit">0 G$</strong></div>
             <div class="box"><span>Est. payout at maturity</span><strong id="projectedPayout">0 G$</strong></div>
         </div>
 
@@ -378,15 +413,15 @@
     {% endif %}
 
     <section class="panel">
-        <h2>How it works</h2>
+        <h2>Farming terms and safety</h2>
         <div class="steps">
-            <div class="step"><span class="badge">1</span><span>Start with at least {{ farming_config.min_farm_gd }} G$. Every {{ farming_config.chicken_price_gd }} G$ buys 1 chicken, so the minimum farm starts with {{ farming_config.min_chickens }} chickens.</span></div>
-            <div class="step"><span class="badge">2</span><span>Each chicken produces 1 egg per day during the farming cycle. Egg reward value follows the live contract configuration.</span></div>
-            <div class="step"><span class="badge">3</span><span>Sell eggs during the cycle, or wait until maturity. Closing the farm returns principal plus any remaining egg rewards.</span></div>
-            <div class="step"><span class="badge">4</span><span>Minimum final withdrawal is hardcoded at {{ farming_config.min_withdraw_gd }} G$ in the smart contract.</span></div>
-            <div class="step"><span class="badge">5</span><span>Rewards are calculated by the farming contract. Gas is estimated by the Celo network and your wallet — it is not a hardcoded farming fee.</span></div>
+            <div class="step"><span class="badge">1</span><span>New farms use V2 only: 1,000–20,000 G$, in 100 G$ increments, with one active farm per wallet and a 7-day maturity.</span></div>
+            <div class="step"><span class="badge">2</span><span>V2's maximum sponsor-funded reward cap is 5% per cycle (up to 50 G$ on 1,000 G$ principal); it is not guaranteed yield or investment profit.</span></div>
+            <div class="step"><span class="badge">3</span><span>V2 rewards can be claimed as they accrue, or collected with the principal when the farm matures. Full reward funding is reserved before a new farm is accepted.</span></div>
+            <div class="step"><span class="badge">4</span><span>Sponsor contributions are non-refundable and do not give the donor a personal reward. Exact pool balances are not shown in the app.</span></div>
+            <div class="step"><span class="badge">5</span><span>V1 is for legacy positions only in this app. Its deployed contract has separate terms and pool risks; the V2 contract does not alter V1 positions.</span></div>
         </div>
-        <p class="notice">Contract address: <code>{{ farming_contract or 'Not deployed yet — set FARMING_CONTRACT_ADDRESS after deployment' }}</code></p>
+        <p class="notice">Legacy V1 contract address: <code>{{ farming_contract or 'Not configured' }}</code>. V2's destination address is shown only after backend verification in the V2 panel.</p>
     </section>
 
     <!-- Close-farm success (congrats) modal -->
