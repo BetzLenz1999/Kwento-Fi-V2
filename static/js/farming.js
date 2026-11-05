@@ -1168,6 +1168,198 @@
         pollOnce();
     }
 
+    // ── Farming V2 (isolated contract; never reuse the V1 address) ──────────
+    var v2 = { enabled: false, busy: false, address: "", token: GD_CONTRACT, position: null, positionChecked: false, explorer: "https://celoscan.io" };
+    var V2_ABI = [
+        "function startFarm(uint256 amount)", "function claimReward()", "function closeFarm()",
+        "function fundRewardPool(uint256 amount)",
+        "function farms(address) view returns (uint256 principal,uint256 maxReward,uint256 claimedReward,uint64 startedAt,bool active)",
+        "function accruedReward(address) view returns (uint256)", "function claimableReward(address) view returns (uint256)",
+    ];
+    function v2Element(id) { return $(id); }
+    function v2Status(message, kind) {
+        var el = v2Element("farmingV2Status"); if (el) { el.textContent = message; el.className = "status " + (kind || "info"); }
+    }
+    function v2TxStatus(message, kind, hash) {
+        var el = v2Element("v2TxStatus"); if (!el) return;
+        el.hidden = false; el.className = "status " + (kind || "info"); el.textContent = message;
+        if (hash) { var a = document.createElement("a"); a.href = v2.explorer.replace(/\/$/, "") + "/tx/" + hash; a.target = "_blank"; a.rel = "noopener"; a.textContent = " View transaction"; el.appendChild(a); }
+    }
+    function v2Normalize(data) {
+        // Backend contract expected: {v2:{enabled,verified,contract/address,token,chain_id,
+        // min_farm_gd,max_farm_gd,step_gd,duration_seconds,reward_bps,explorer_url,
+        // funding_status,active_farm:{principal,started_at,matures_at,accrued_reward,
+        // claimable_reward,claimed_reward,active,mature}}}. Accept config.v2/farming_v2 too.
+        var cfg = data && (data.v2 || data.farming_v2 || (data.config && (data.config.v2 || data.config.farming_v2)) ||
+            (String(data.version || "").toLowerCase() === "v2" ? data : null));
+        if (!cfg || typeof cfg !== "object") return null;
+        return cfg;
+    }
+    function v2Params() {
+        var c = v2.config || {}, raw = c.params || c;
+        var decimals = Number(c.token_decimals || 18), unit = Math.pow(10, decimals);
+        return {
+            min: Number(c.min_farm_gd || c.min_principal || (raw.min_principal_wei ? Number(raw.min_principal_wei) / unit : 1000)),
+            max: Number(c.max_farm_gd || c.max_principal || (raw.max_principal_wei ? Number(raw.max_principal_wei) / unit : 20000)),
+            step: Number(c.step_gd || c.amount_increment || (raw.principal_increment_wei ? Number(raw.principal_increment_wei) / unit : 100)),
+            days: Number(c.farm_days || c.duration_days || (raw.duration_seconds ? Number(raw.duration_seconds) / 86400 : 7)),
+            bps: Number(raw.reward_bps || c.reward_bps || (Number(c.reward_percent || 5) * 100)),
+        };
+    }
+    function v2Estimate() {
+        var input = v2Element("v2FarmAmount"), amount = Number(input && input.value), p = v2Params();
+        var valid = Number.isFinite(amount) && amount >= p.min && amount <= p.max && p.step > 0 && amount % p.step === 0;
+        var reward = valid ? Math.floor(amount * p.bps / 10000) : 0;
+        var est = v2Element("v2RewardEstimate"), total = v2Element("v2TotalEstimate");
+        if (est) est.textContent = "Up to " + (valid ? reward.toLocaleString() : "—") + " G$";
+        if (total) total.textContent = (valid ? (amount + reward).toLocaleString() : "—") + " G$";
+        var start = v2Element("v2StartBtn"); if (start) start.disabled = !v2.enabled || !v2.positionChecked || !valid || Boolean(v2.position && v2.position.active) || v2.busy;
+        return valid ? { amount: amount, reward: reward } : null;
+    }
+    function v2ApplyConfig(data) {
+        var cfg = v2Normalize(data), badge = v2Element("farmingV2Badge"), fund = v2Element("v2FundBtn");
+        if (!cfg) { v2.enabled = false; v2.position = null; v2.positionChecked = false;
+            if (badge) badge.textContent = "V2 · unavailable / unverified";
+            if (fund) fund.disabled = true;
+            v2Status("V2 status unavailable or unverified. New farms and contributions are disabled until the backend verifies V2.", "info");
+            v2RenderPosition(); v2Estimate(); return; }
+        v2.config = cfg;
+        // Require positive backend verification and explicit enablement. No V1 fallback.
+        v2.enabled = cfg.enabled === true && cfg.verified === true && Boolean(cfg.contract_address || cfg.contract || cfg.address) && Number(cfg.chain_id || CHAIN_ID) === CHAIN_ID;
+        v2.address = String(cfg.contract_address || cfg.contract || cfg.address || "");
+        v2.token = String(cfg.token_address || cfg.gd_contract || cfg.token || GD_CONTRACT);
+        v2.explorer = String(cfg.explorer_url || "https://celoscan.io");
+        v2.position = cfg.active_farm || cfg.position || null;
+        v2.positionChecked = Boolean(v2.position);
+        if (badge) badge.textContent = v2.enabled ? "V2 · verified and enabled" : "V2 · unavailable / unverified";
+        var notice = v2Element("v2ContractNotice");
+        if (notice) {
+            notice.textContent = v2.address ? "V2 destination contract: " + v2.address : "V2 destination contract: unavailable until backend verification.";
+            if (v2.address && (cfg.explorer_url || cfg.contract_explorer_url)) {
+                var link = document.createElement("a"); link.href = String(cfg.contract_explorer_url || cfg.explorer_url); link.target = "_blank"; link.rel = "noopener"; link.textContent = " View contract"; notice.appendChild(link);
+            }
+        }
+        var funding = String(cfg.funding_status || cfg.sponsor_funding_status || cfg.reason || "").toLowerCase();
+        var status = v2.enabled ? (funding.indexOf("insufficient") >= 0 ? "New V2 farms are temporarily unavailable because sponsor funding is insufficient." : funding.indexOf("unverified") >= 0 || funding.indexOf("unknown") >= 0 ? "Sponsor funding could not be verified; new V2 farms are unavailable." : "V2 contract verified. A farm is accepted only if the contract can reserve its full reward cap.") : "V2 unavailable or unverified. New farms and sponsor contributions are disabled; there is no fallback to V1.";
+        v2Status(status, v2.enabled ? "info" : "error");
+        if (fund) fund.disabled = !v2.enabled || v2.busy;
+        var p = v2Params(), amountInput = v2Element("v2FarmAmount");
+        if (amountInput) { amountInput.min = p.min; amountInput.max = p.max; amountInput.step = p.step; }
+        v2RenderPosition(); v2Estimate();
+    }
+    function v2RenderPosition() {
+        var pos = v2.position, card = v2Element("v2Position");
+        if (!card) return;
+        card.hidden = !(pos && pos.active);
+        if (!pos || !pos.active) { ["v2ClaimBtn", "v2CloseBtn"].forEach(function (id) { var b = v2Element(id); if (b) b.disabled = true; }); return; }
+        var set = function (id, value) { var el = v2Element(id); if (el) el.textContent = value; };
+        var maturity = Number(pos.matures_at || pos.maturity_timestamp || pos.unlocks_at || 0);
+        var reward = Number(pos.claimable_reward !== undefined ? pos.claimable_reward : (pos.accrued_reward !== undefined ? pos.accrued_reward : (pos.pending_reward || 0)));
+        set("v2Principal", String(pos.principal_gd || pos.principal || "—") + " G$");
+        set("v2Accrued", reward.toLocaleString() + " G$"); set("v2Claimed", String(pos.claimed_reward_gd || pos.claimed_reward || "0") + " G$");
+        set("v2Maturity", maturity ? new Date(maturity * 1000).toLocaleString() : "Not verified");
+        var mature = pos.mature === true || (maturity > 0 && Date.now() >= maturity * 1000);
+        set("v2FarmPhase", mature ? "Mature" : "Active · no early withdrawal");
+        var claim = v2Element("v2ClaimBtn"), close = v2Element("v2CloseBtn");
+        if (claim) claim.disabled = !v2.enabled || reward <= 0 || v2.busy;
+        if (close) close.disabled = !v2.enabled || !mature || v2.busy;
+    }
+    function v2RenderHistory(rows, unavailable) {
+        var list = v2Element("v2HistoryList"), empty = v2Element("v2HistoryEmpty");
+        if (!list || !empty) return;
+        list.textContent = "";
+        rows = Array.isArray(rows) ? rows : [];
+        empty.hidden = rows.length > 0 && !unavailable;
+        empty.textContent = unavailable ? "V2 history is unavailable until the backend verifies the deployed contract." :
+            (rows.length ? "" : "No V2 transactions found for this wallet yet.");
+        rows.forEach(function (entry) {
+            var card = document.createElement("div"); card.className = "tx-row ok";
+            var top = document.createElement("div"); top.className = "tx-top";
+            var label = document.createElement("span"); label.className = "tx-action"; label.textContent = String(entry.actionLabel || entry.action || "V2 transaction");
+            var badge = document.createElement("span"); badge.className = "tx-status ok"; badge.textContent = "V2 · on-chain";
+            top.appendChild(label); top.appendChild(badge); card.appendChild(top);
+            var meta = document.createElement("div"); meta.className = "tx-meta";
+            if (entry.amountLabel) { var amount = document.createElement("span"); amount.className = "tx-amount"; amount.textContent = String(entry.amountLabel); meta.appendChild(amount); }
+            var block = Number(entry.blockNumber || 0); var time = document.createElement("span"); time.className = "tx-time";
+            time.textContent = entry.timeLabel || (block > 0 ? "Block #" + block : "On-chain"); meta.appendChild(time); card.appendChild(meta);
+            var hash = String(entry.hash || "");
+            if (/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+                var foot = document.createElement("div"); foot.className = "tx-foot";
+                var link = document.createElement("a"); link.className = "tx-hash"; link.href = v2.explorer.replace(/\/$/, "") + "/tx/" + hash;
+                link.target = "_blank"; link.rel = "noopener"; link.textContent = HISTORY.shortHash(hash, 12) + " ↗";
+                foot.appendChild(link); card.appendChild(foot);
+            }
+            list.appendChild(card);
+        });
+    }
+    function v2LoadHistory() {
+        if (!WALLET || !v2.enabled) { v2RenderHistory([], true); return Promise.resolve([]); }
+        return fetch("/farming/api/v2/history", { credentials: "same-origin" }).then(function (response) {
+            if (!response.ok) throw new Error("V2 history unavailable.");
+            return response.json();
+        }).then(function (data) {
+            if (data.version !== "v2" || data.verified !== true) throw new Error("V2 history is not verified.");
+            v2RenderHistory(data.transactions || [], false); return data.transactions || [];
+        }).catch(function () { v2RenderHistory([], true); return []; });
+    }
+    function v2Refresh() { return fetch("/farming/api/v2/config", { credentials: "same-origin" }).then(function (r) { if (!r.ok) throw new Error("V2 configuration request failed."); return r.json(); }).then(function (data) {
+        v2ApplyConfig(data);
+        // Read only this wallet's V2 mapping and accrual from the verified V2 contract.
+        // Never call reward-pool getters or render an exact sponsor balance.
+        if (!v2.enabled || !WALLET || !ethers || !v2.address) { v2RenderHistory([], true); return; }
+        v2LoadHistory();
+        var reader = getReadProvider(); if (!reader) return;
+        var c = new ethers.Contract(v2.address, V2_ABI, reader);
+        return Promise.all([c.farms(WALLET), c.accruedReward(WALLET), c.claimableReward(WALLET)]).then(function (r) {
+            var f = r[0], active = Boolean(f.active !== undefined ? f.active : f[4]);
+            if (!active) { v2.position = null; v2.positionChecked = true; v2RenderPosition(); v2Estimate(); return; }
+            var started = Number(f.startedAt !== undefined ? f.startedAt : f[3]);
+            var claimable = Number(ethers.formatUnits(r[2], Number(v2.config.token_decimals || 18)));
+            var accrued = Number(ethers.formatUnits(r[1], Number(v2.config.token_decimals || 18)));
+            var principal = Number(ethers.formatUnits(f.principal !== undefined ? f.principal : f[0], Number(v2.config.token_decimals || 18)));
+            var claimed = Number(ethers.formatUnits(f.claimedReward !== undefined ? f.claimedReward : f[2], Number(v2.config.token_decimals || 18)));
+            v2.position = { active: true, principal_gd: principal, accrued_reward: accrued, claimable_reward: claimable,
+                claimed_reward_gd: claimed, started_at: started, matures_at: started + v2Params().days * 86400 };
+            v2.positionChecked = true;
+            v2RenderPosition(); v2Estimate();
+        });
+    }).catch(function () { v2.enabled = false; v2Status("V2 status unavailable or unverified. Actions are disabled; no V1 fallback is used.", "error"); v2Estimate(); }); }
+    function v2Send(action) {
+        if (v2.busy || !v2.enabled || !v2.address) return Promise.resolve();
+        var estimate = action === "start" ? v2Estimate() : null;
+        if (action === "start" && (!estimate || !v2.positionChecked || (v2.position && v2.position.active))) { v2TxStatus("Enter a valid amount and wait for the V2 contract to confirm you have no active farm.", "error"); return Promise.resolve(); }
+        var fundAmount = Number((v2Element("v2FundAmount") || {}).value);
+        if (action === "fund" && (!Number.isFinite(fundAmount) || fundAmount <= 0)) { v2TxStatus("Enter a valid contribution amount.", "error"); return Promise.resolve(); }
+        v2.busy = true; ["v2StartBtn", "v2ClaimBtn", "v2CloseBtn", "v2FundBtn"].forEach(function (id) { var b = v2Element(id); if (b) b.disabled = true; });
+        var amount = action === "start" ? estimate.amount : fundAmount;
+        var amountWei = amount ? ethers.parseUnits(String(amount), GD_DECIMALS) : null;
+        var resolved, token;
+        v2TxStatus(action === "fund" ? "Review contribution " + amount + " G$. Non-refundable; no personal reward. Approve in your wallet." : "Waiting for wallet confirmation…", "info");
+        return resolveSigner().then(function (r) { resolved = r; return ensureCelo(r.provider); }).then(function () {
+            var contract = new ethers.Contract(v2.address, V2_ABI, resolved.signer);
+            if (action === "start" || action === "fund") {
+                token = new ethers.Contract(v2.token, GD_ABI, resolved.signer);
+                return token.allowance(WALLET, v2.address).then(function (allowance) {
+                    if (BigInt(allowance) >= BigInt(amountWei)) return;
+                    v2TxStatus("Approve G$ spending for verified V2 only. Confirm approval in your wallet…", "info");
+                    return token.approve(v2.address, amountWei).then(function (tx) { v2TxStatus("Approval pending: " + HISTORY.shortHash(tx.hash), "info", tx.hash); return tx.wait(); });
+                }).then(function () { v2TxStatus(action === "fund" ? "Confirm sponsor funding in your wallet…" : "Confirm V2 farm start in your wallet…", "info"); return action === "fund" ? contract.fundRewardPool(amountWei) : contract.startFarm(amountWei); });
+            }
+            v2TxStatus("Confirm " + (action === "claim" ? "reward claim" : "mature farm close") + " in your wallet…", "info");
+            return action === "claim" ? contract.claimReward() : contract.closeFarm();
+        }).then(function (tx) {
+            if (!tx || !tx.hash) return;
+            v2TxStatus("Transaction pending confirmation: " + HISTORY.shortHash(tx.hash), "info", tx.hash);
+            return tx.wait().then(function (receipt) {
+                if (!receipt || Number(receipt.status) !== 1) throw new Error("Transaction failed or receipt could not be verified.");
+                v2TxStatus("Transaction confirmed on-chain.", "ok", tx.hash);
+                return v2Refresh();
+            });
+        }).catch(function (err) { v2TxStatus(_isUserRejection(err) ? "Wallet request cancelled." : _errMessage(err), "error"); }).then(function () {
+            v2.busy = false; ["v2FundBtn"].forEach(function (id) { var b = v2Element(id); if (b) b.disabled = !v2.enabled; }); v2RenderPosition(); v2Estimate();
+        });
+    }
+
     function init() {
         if (typeof ethers === "undefined") {
             setStatus("Wallet libraries are still loading. Please refresh the page.", "error");
@@ -1202,6 +1394,9 @@
             });
         });
         updateChickensToBuy();
+        var v2Amount = $("v2FarmAmount"); if (v2Amount) v2Amount.addEventListener("input", v2Estimate);
+        [["v2StartBtn", "start"], ["v2ClaimBtn", "claim"], ["v2CloseBtn", "close"], ["v2FundBtn", "fund"]].forEach(function (pair) { var b = $(pair[0]); if (b) b.addEventListener("click", function () { return v2Send(pair[1]); }); });
+        var v2HistoryBtn = $("v2RefreshHistoryBtn"); if (v2HistoryBtn) v2HistoryBtn.addEventListener("click", v2LoadHistory);
 
         var startBtn = $("startFarmBtn");
         if (startBtn) startBtn.addEventListener("click", startFarm);
@@ -1241,6 +1436,9 @@
         // chaining it ahead of the state read is what forced users to tap
         // Refresh — they saw "no active farm" until the scan finished.
         refreshFarm();
+        // Do not let the separate V2 config request delay visibility of a
+        // user's V1 legacy position on initial page load.
+        v2Refresh();
         loadOnchainHistory().then(reconcilePending);
     }
 
