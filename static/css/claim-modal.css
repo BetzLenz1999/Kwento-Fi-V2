@@ -77,3 +77,73 @@ body.cf-page .gm-reverify-hint button:active { transform: translateY(1px); }
     body.cf-page .gm-claim-sheet > #ubiClaimBtn,
     body.cf-page .gm-reverify-hint button { transition: none; }
 }
+
+
+/* ── Community dark claim sheet ─────────────────────────────────────────────
+   This sheet is shared with Wallet, so every change below is scoped to the
+   feed body and cannot alter the wallet page's palette. */
+body.cf-page .gm-claim-modal,
+body.cf-page .gm-claim-support { background: rgba(1, 7, 14, 0.84); backdrop-filter: blur(8px); }
+body.cf-page .gm-claim-sheet {
+    --card: #101b2b;
+    --card-soft: #18283c;
+    --card-border: #304861;
+    --text: #eef6ff;
+    --text-muted: #a9bbcf;
+    --accent: #38bdf8;
+    background: #101b2b;
+    border-color: #304861;
+    color: #eef6ff;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+body.cf-page .gm-claim-sheet .modal-handle { background: #55718b; }
+body.cf-page .gm-claim-subtitle,
+body.cf-page .claim-network-hint,
+body.cf-page .claim-network-status,
+body.cf-page .ubi-pool-cell-label,
+body.cf-page .ubi-pool-note,
+body.cf-page .claim-wallet-note,
+body.cf-page .claim-status,
+body.cf-page .countdown-label,
+body.cf-page .countdown-note,
+body.cf-page .gm-claim-support-copy { color: #9aacc0; }
+body.cf-page .ubi-pool-panel,
+body.cf-page .gm-claim-sheet .countdown-box {
+    border-color: #304861;
+    background: #142438;
+}
+body.cf-page .ubi-pool-cell { background: rgba(255, 255, 255, 0.06); }
+body.cf-page .ubi-pool-live,
+body.cf-page .claim-network-status.available { color: #86efac; }
+body.cf-page .ubi-pool-cell-value.is-accent,
+body.cf-page .claim-network-status.warning { color: #f8d98a; }
+body.cf-page .claim-network-card {
+    border-color: #304861;
+    background: #18283c;
+}
+body.cf-page .claim-network-card:hover { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28); }
+body.cf-page .claim-network-card.is-recommended {
+    border-color: rgba(45, 212, 191, 0.52);
+    background: linear-gradient(135deg, rgba(13, 148, 136, 0.16), rgba(234, 88, 12, 0.10));
+}
+body.cf-page .claim-network-card.is-selected { border-color: #a78bfa; }
+body.cf-page .claim-network-icon { background: #213650; border-color: #3c5b76; }
+body.cf-page .claim-card-btn,
+body.cf-page .gm-claim-sheet > #ubiClaimBtn { box-shadow: 0 8px 22px rgba(0, 0, 0, 0.30); }
+body.cf-page .gm-claim-sheet > #ubiClaimBtn:disabled {
+    border-color: #334b63;
+    background: #23374c;
+    color: #91a5ba;
+}
+body.cf-page .gm-claim-warning { background: rgba(251, 191, 36, 0.12); color: #f8d98a; }
+body.cf-page .gm-reverify-hint { background: rgba(167, 139, 250, 0.12); color: #c4b5fd; }
+body.cf-page .gm-claim-pin { border-color: #3b5872; background: #18283c; color: #eef6ff; }
+body.cf-page .gm-claim-error { color: #fca5a5; }
+body.cf-page .gm-fv-intro-lead { background: rgba(167, 139, 250, 0.14); color: #c4b5fd; }
+body.cf-page .gm-fv-intro-card { border-color: #304861; background: #142438; }
+body.cf-page .gm-fv-intro-card p { color: #a9bbcf; }
+body.cf-page .gm-claim-sheet .modal-sheet-footer .btn-secondary,
+body.cf-page .gm-claim-sheet > .btn-secondary,
+body.cf-page #gmEthersLoadActions .btn-secondary { border-color: #3b5872; background: #1b2c42; color: #dcecff; }
+body.cf-page .gm-claim-sheet .modal-sheet-footer .btn-secondary:hover,
+body.cf-page .gm-claim-sheet > .btn-secondary:hover { background: #263e58; }
