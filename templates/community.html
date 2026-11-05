@@ -895,7 +895,7 @@
                 </div>
                 <p class="cf-garden-price-note" id="cfGardenPriceNote">Price is read from the Garden contract. The USD value of G$ can change and is not guaranteed.</p>
                 <button type="button" class="cf-garden-primary cf-garden-plant-cta" id="cfGardenPlantButton" onclick="GMCommunityGarden.plant()">Plant my Garden</button>
-                <p class="cf-garden-transaction-note">Your wallet signs the exact G$ approval and seed purchase. If your CELO balance is 0.3 CELO or less, the app may send a limited gas top-up first; gas support is subject to per-purchase and daily caps.</p>
+                <p class="cf-garden-transaction-note" id="cfGardenTransactionNote" hidden>This Garden purchase is eligible for an app-sponsored gas top-up within configured per-purchase and daily limits. Your wallet still signs the exact G$ approval and seed purchase.</p>
             </section>
             {% endif %}
             <section id="cfGardenActivePanel" class="cf-garden-panel" hidden>
@@ -947,7 +947,7 @@
                 <button type="button" class="cf-garden-secondary cf-garden-sponsor-button" id="cfGardenSponsorButton" onclick="GMCommunityGarden.sponsor()" disabled>Contribute to Garden</button>
             </section>
             {% endif %}
-            <p class="cf-garden-notice">Bonus is optional and may be zero. Any gas support applies only to eligible new V2 seed purchases; your wallet signs the transaction and pays gas if support is unavailable. V1 harvest and early exit remain separate user-signed transactions on the original V1 contract. G$ prices can change and the displayed USD reference is not a peg.</p>
+            <p class="cf-garden-notice">Bonus is optional and may be zero. V1 harvest and early exit remain separate user-signed transactions on the original V1 contract. G$ prices can change and the displayed USD reference is not a peg.</p>
             <p class="cf-garden-status" id="cfGardenStatus" role="status" aria-live="polite">Connect your Celo wallet to load Garden details.</p>
         </div>
     </section>
