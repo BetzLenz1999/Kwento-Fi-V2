@@ -317,7 +317,7 @@
                 if (legacyUnreadable) setStatus("Legacy Garden could not be read. Planting is disabled to avoid creating a duplicate position.", true);
                 else if (!boot.v2Enabled) setStatus("Your legacy Garden is clear. V2 planting and sponsorship are not available.");
                 else if (_plantingPaused) setStatus("New Garden planting is temporarily paused by the contract owner. You can still support optional Garden bonuses.");
-                else if (v1 && !v1.active && !v2.active) setStatus("Choose 1–" + _maxSeeds + " seeds. Each seed costs " + money(_seedPrice) + ". The app may cover estimated Celo gas for wallets with 0.3 CELO or less, subject to limits.");
+                else if (v1 && !v1.active && !v2.active) setStatus("Choose 1–" + _maxSeeds + " seeds. Each seed costs " + money(_seedPrice) + ". Your Garden transaction will check gas support before opening your wallet.");
                 else setStatus("No active Garden found.");
             }
         } catch (error) {
@@ -389,6 +389,8 @@
     }
 
     async function requestGardenGas(seeds, loaded, wallet) {
+        var gasNotice = el("cfGardenTransactionNote");
+        if (gasNotice) gasNotice.hidden = true;
         if (!_gasRequestId || _gasRequestSeeds !== seeds) {
             _gasRequestId = newGasRequestId();
             _gasRequestSeeds = seeds;
@@ -403,6 +405,7 @@
         var result = await response.json().catch(function () { return {}; });
         if (!response.ok || !result.success) throw new Error(result.error || "Garden gas support could not be prepared.");
         if (result.sponsored && result.sponsor_tx_hash) {
+            if (gasNotice) gasNotice.hidden = false;
             showGardenProcessing("Confirming your gas top-up", "The app is sponsoring an estimated " + result.estimated_fee_celo + " CELO of gas. Waiting for the top-up to confirm before opening your wallet…");
             var provider = loaded.v2 && loaded.v2.runner && loaded.v2.runner.provider;
             if (!provider || typeof provider.waitForTransaction !== "function") {
