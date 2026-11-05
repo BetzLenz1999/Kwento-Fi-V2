@@ -163,6 +163,17 @@
         .farm-toast.success { background:rgba(34,197,94,0.95); color:#04180c; border-color:transparent; }
         .farm-toast.error { background:rgba(239,68,68,0.95); color:#fff; border-color:transparent; }
 
+        .farm-processing-overlay { position:fixed; inset:0; z-index:9400; display:none; align-items:center; justify-content:center;
+            padding:1rem; background:rgba(3,6,16,0.72); backdrop-filter:blur(3px); }
+        .farm-processing-overlay.show { display:flex; }
+        .farm-processing-card { width:min(100%,360px); padding:1.35rem 1.2rem; text-align:center; border-radius:20px;
+            color:var(--text); background:linear-gradient(145deg,rgba(250,204,21,0.13),rgba(74,222,128,0.1)),#131a33;
+            border:1px solid rgba(250,204,21,0.32); box-shadow:0 20px 60px rgba(0,0,0,0.5); }
+        .farm-processing-spinner { width:34px; height:34px; margin:0 auto 0.8rem; border:3px solid rgba(253,230,138,0.22);
+            border-top-color:#fde68a; border-radius:50%; animation:spin 0.8s linear infinite; }
+        .farm-processing-title { display:block; font-size:1rem; line-height:1.4; }
+        .farm-processing-detail { margin:0.45rem 0 0; color:var(--muted); font-size:0.84rem; line-height:1.5; }
+
         /* ── close-farm congrats modal ────────────────────────────────── */
         .modal-overlay { position:fixed; inset:0; z-index:9500; display:none; align-items:center; justify-content:center; padding:1rem; background:rgba(3,6,16,0.78); }
         .modal-overlay.open { display:flex; }
@@ -438,6 +449,13 @@
     </div>
 
     <div class="farm-toast" id="farmToast" role="status" aria-live="polite"></div>
+    <div class="farm-processing-overlay" id="farmProcessingOverlay" role="status" aria-live="polite" aria-atomic="true" aria-busy="false" hidden>
+        <div class="farm-processing-card">
+            <div class="farm-processing-spinner" aria-hidden="true"></div>
+            <strong class="farm-processing-title" id="farmProcessingTitle">Preparing your V2 farm…</strong>
+            <p class="farm-processing-detail" id="farmProcessingDetail">Checking your wallet and Celo network.</p>
+        </div>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
             integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
