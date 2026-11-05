@@ -393,6 +393,7 @@
             _gasRequestId = newGasRequestId();
             _gasRequestSeeds = seeds;
         }
+        showGardenProcessing("Checking Garden gas support", "Checking your CELO balance and estimating the approval and seed-purchase gas before any wallet transaction is requested…");
         var response = await fetch("/api/community/garden/gas-sponsor", {
             method: "POST",
             credentials: "same-origin",
@@ -411,11 +412,12 @@
             if (!receipt || Number(receipt.status) !== 1) {
                 throw new Error("The app gas top-up did not confirm. No G$ purchase was made; retry later.");
             }
+            showGardenProcessing("Gas top-up confirmed", "Checking that the sponsored CELO has arrived and waiting for the Garden safety delay before opening your wallet…");
             await waitForSponsoredBalance(provider, wallet, result);
-            hideGardenProcessing();
+            showGardenProcessing("Gas top-up successful", "The sponsored CELO is confirmed and available. Next, confirm the G$ approval or seed purchase in your wallet.");
             return result;
         }
-        setStatus("Your wallet will pay the estimated Celo network fee (" + result.estimated_fee_celo + " CELO). Confirm the seed purchase in your wallet.");
+        showGardenProcessing("Gas check complete", "Your wallet will pay the estimated Celo network fee (" + result.estimated_fee_celo + " CELO). Preparing your wallet confirmation…");
         return result;
     }
 
@@ -435,6 +437,7 @@
         try {
             address = walletAddress();
             setBusy(true);
+            showGardenProcessing("Checking your Garden", "Reading Garden availability, your G$ balance and the seed purchase requirements…");
             var loaded = await contracts();
             if (await loaded.v2.plantingPaused()) throw new Error("New Garden planting is temporarily paused by the contract owner.");
             var positions = await Promise.all([boot.legacyEnabled ? _v1.gardens(address) : Promise.resolve(null), _v2.gardens(address)]);
@@ -443,12 +446,16 @@
             var balance = await loaded.token.balanceOf(address);
             if (balance < amount) throw new Error("Insufficient G$ balance for " + seeds + (seeds === 1 ? " seed." : " seeds."));
             var allowance = await loaded.token.allowance(address, boot.contractAddress);
-            await requestGardenGas(seeds, loaded, address);
+            var gasResult = await requestGardenGas(seeds, loaded, address);
             if (allowance < amount) {
-                showWalletProcessing("Approve your G$ purchase", "Approve exactly " + money(amount) + " in your wallet. The Garden purchase will continue after this approval is confirmed.");
+                showWalletProcessing(gasResult && gasResult.sponsored ? "Gas top-up successful — approve G$" : "Approve your G$ purchase",
+                    (gasResult && gasResult.sponsored ? "The sponsored CELO is ready. " : "Your wallet pays the Celo transaction fee. ") +
+                    "Approve exactly " + money(amount) + " in your wallet. The Garden purchase will continue after this approval is confirmed.");
                 await send("function approve(address spender,uint256 amount) returns (bool)", [boot.contractAddress, amount], boot.tokenAddress);
             }
-            showWalletProcessing("Confirm your Garden purchase", "Confirm the seed purchase in your wallet. Your seeds will be planted after the transaction is confirmed on Celo…");
+            showWalletProcessing(gasResult && gasResult.sponsored ? "Gas top-up successful — confirm purchase" : "Confirm your Garden purchase",
+                (gasResult && gasResult.sponsored ? "The sponsored CELO is ready. " : "Your wallet pays the Celo transaction fee. ") +
+                "Confirm the seed purchase in your wallet. Your seeds will be planted after the transaction is confirmed on Celo…");
             await send("function buyAndPlant(uint256 seedCount)", [BigInt(seeds)], boot.contractAddress);
             _gasRequestId = null;
             _gasRequestSeeds = null;
