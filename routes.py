@@ -48,6 +48,20 @@ except Exception as exc:
 else:
     _garden_gas_sponsor_import_error = None
 
+# Keep the Farming service import static so Vercel traces and bundles it. A
+# missing helper disables only Farming gas support, not the rest of the app.
+try:
+    from farming.gas_sponsor import (
+        FarmingGasSponsorError as _FarmingGasSponsorError,
+        sponsor_for_start as _farming_gas_sponsor_for_start,
+    )
+except Exception as exc:
+    _farming_gas_sponsor_import_error = exc
+    _FarmingGasSponsorError = None
+    _farming_gas_sponsor_for_start = None
+else:
+    _farming_gas_sponsor_import_error = None
+
 # Simple TTL caches for high-frequency public endpoints
 _price_visibility_cache: dict = {"data": None, "expires": 0}
 _feature_visibility_cache: dict = {"data": None, "expires": 0}
@@ -785,6 +799,31 @@ def sponsor_community_garden_gas():
     except Exception:
         logger.exception('Community Garden gas sponsorship failed')
         return jsonify({'success': False, 'error': 'Garden gas support is temporarily unavailable.'}), 503
+
+
+@routes.route('/api/farming/v2/gas-sponsor', methods=['POST'])
+@auth_required
+def sponsor_farming_v2_gas():
+    if not _daily_task_same_origin():
+        return jsonify({'success': False, 'error': 'Cross-origin request rejected.'}), 403
+    fv_gate = _daily_task_fv_gate()
+    if fv_gate:
+        return fv_gate
+    if _farming_gas_sponsor_import_error is not None:
+        logger.error('Farming gas sponsorship service could not be loaded: %s',
+                     type(_farming_gas_sponsor_import_error).__name__)
+        return jsonify({'success': False, 'error': 'Farming gas support is temporarily unavailable.'}), 503
+    data = request.get_json(silent=True) or {}
+    try:
+        result = _farming_gas_sponsor_for_start(
+            session.get('wallet'), data.get('principal_wei'), str(data.get('request_id') or '').strip()
+        )
+        return jsonify(result), 200
+    except _FarmingGasSponsorError as exc:
+        return jsonify({'success': False, 'error': str(exc), **exc.detail}), exc.status_code
+    except Exception:
+        logger.exception('Farming gas sponsorship failed')
+        return jsonify({'success': False, 'error': 'Farming gas support is temporarily unavailable.'}), 503
 
 
 @routes.route('/api/daily-task/payment-confirm', methods=['POST'])
@@ -2229,7 +2268,7 @@ def local_wallet_register():
             response["referral_status"] = referral_status
             if referral_status == "recorded":
                 response["referral_message"] = (
-                    "Referral applied! Your 500 G$ referee reward is sent automatically "
+                    "Referral applied! Your 250 G$ referee reward is sent automatically "
                     "after you complete face verification or claim UBI."
                 )
         return jsonify(response)
@@ -3696,9 +3735,9 @@ def get_referral_detail(referral_code):
             "referrer": referrer_info,
             "rewards": rewards,
             "rewards_summary": {
-                "referrer_reward": 1000.0,
-                "referee_reward": 500.0,
-                "total": 1500.0
+                "referrer_reward": 500.0,
+                "referee_reward": 250.0,
+                "total": 750.0
             }
         })
     except Exception as e:
@@ -3777,8 +3816,8 @@ def get_completed_referrals():
                 "completed_at": r.get("completed_at"),
                 "referrer_tx": referrer_tx,
                 "referee_tx": referee_tx,
-                "referrer_reward": 1000.0,
-                "referee_reward": 500.0,
+                "referrer_reward": 500.0,
+                "referee_reward": 250.0,
                 "celoscan_referee_url": f"https://celoscan.io/address/{r.get('referee_wallet')}" if r.get("referee_wallet") else None,
                 "celoscan_referrer_url": f"https://celoscan.io/address/{r.get('referrer_wallet')}" if r.get("referrer_wallet") else None
             })
@@ -3925,7 +3964,7 @@ def admin_approve_referral():
                 "debug": claim
             }), 409
 
-        # Step 2: Process disbursement (referrer: 1000 G$, referee: 500 G$)
+        # Step 2: Process disbursement (referrer: 500 G$, referee: 250 G$)
         logger.info(f"Processing disbursement for {referral_code}: referrer={referrer_wallet[:8]}..., referee={referee_wallet[:8]}...")
         disbursement = referral_service.process_referral_disbursement(
             referrer_wallet=referrer_wallet,
@@ -3986,8 +4025,8 @@ def admin_approve_referral():
             "referral_code": referral_code,
             "referrer_wallet": referrer_wallet,
             "referee_wallet": referee_wallet,
-            "referrer_reward": 1000.0,
-            "referee_reward": 500.0,
+            "referrer_reward": 500.0,
+            "referee_reward": 250.0,
             "referrer_status": disbursement.get("referrer_status", "unknown"),
             "referee_status": disbursement.get("referee_status", "unknown"),
             "result": disbursement
