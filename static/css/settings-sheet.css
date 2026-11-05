@@ -65,20 +65,22 @@ body:not(.cf-page) {
 /* Community feed palette. `.cf-page` is the feed's body class, so this wins
    over the wallet block above on /community without touching wallet.html. */
 body.cf-page {
-    --set-surface: #ffffff;
-    --set-card: #f7f7f7;
-    --set-border: #e2e7f2;
-    --set-ink: #202949;
-    --set-ink-dim: #475467;
-    --set-ink-muted: #667085;
-    --set-accent: #0369a1;
-    --set-danger: #b42318;
-    --set-danger-surface: #fef3f2;
-    --set-danger-border: #fda29b;
-    --set-warn: #b54708;
-    --set-warn-surface: #fffaeb;
-    --set-ok: #067647;
-    --set-ok-surface: #ecfdf3;
+    --set-surface: #101b2b;
+    --set-card: #18283c;
+    --set-border: #304861;
+    --set-ink: #eef6ff;
+    --set-ink-dim: #a9bbcf;
+    --set-ink-muted: #8297ad;
+    --set-accent: #38bdf8;
+    --set-danger: #fca5a5;
+    --set-danger-surface: rgba(248, 113, 113, 0.12);
+    --set-danger-border: rgba(248, 113, 113, 0.36);
+    --set-warn: #f8d98a;
+    --set-warn-surface: rgba(251, 191, 36, 0.12);
+    --set-ok: #86efac;
+    --set-ok-surface: rgba(34, 197, 94, 0.12);
+    --set-gold-ink: #1f1300;
+    --set-overlay: rgba(3, 10, 19, 0.80);
 }
 
 /* ── Overlay + sheet ─────────────────────────────────────────────────────── */
