@@ -104,25 +104,52 @@
     // We cache the result after the first positive detection because provider
     // injection can be delayed and we don't want flaky detection mid-flow.
     let _miniPayDetectedCache = null;
+    function _isSwapCommunityEmbed() {
+        return !!(global.GM_SWAP_BOOT && global.GM_SWAP_BOOT.communityEmbed);
+    }
+    function _swapLoginMethodDisablesMiniPay() {
+        if (!_isSwapCommunityEmbed()) return false;
+        const method = String(global.GM_SWAP_BOOT.loginMethod || '').toLowerCase();
+        return ['local', 'privy', 'walletconnect', 'manual', 'manual_address', 'turnkey_google', 'turnkey_email'].includes(method);
+    }
+    function _walletProviders() {
+        const out = [];
+        const push = function (candidate) {
+            if (!candidate) return;
+            const provider = typeof candidate.request === 'function' ? candidate
+                : (candidate.ethereum && typeof candidate.ethereum.request === 'function' ? candidate.ethereum
+                    : (candidate.provider && typeof candidate.provider.request === 'function' ? candidate.provider : null));
+            if (provider && !out.includes(provider)) out.push(provider);
+        };
+        const ethereum = global.ethereum;
+        if (ethereum && Array.isArray(ethereum.providers)) ethereum.providers.forEach(push);
+        push(ethereum);
+        if (_isSwapCommunityEmbed()) {
+            const detection = global.GMCommunityWalletDetection;
+            if (detection && typeof detection.collect === 'function') {
+                try { detection.collect().forEach(push); } catch (_) {}
+            }
+        }
+        return out;
+    }
     function _isMiniPay() {
+        // The raw MiniPay path must not hijack local, Privy, or WalletConnect
+        // signers just because the Community iframe is open inside MiniPay.
+        if (_swapLoginMethodDisablesMiniPay()) return false;
         // Return cached result if we already detected MiniPay
         if (_miniPayDetectedCache === true) return true;
         
         try {
-            const eth = global.ethereum;
-            if (eth && eth.isMiniPay) {
-                _miniPayDetectedCache = true;
-                return true;
-            }
-            if (eth && Array.isArray(eth.providers)
-                && eth.providers.some(p => p && p.isMiniPay)) {
+            const providers = _walletProviders();
+            if (providers.some(p => p && (p.isMiniPay || p.isMiniPayWallet))) {
                 _miniPayDetectedCache = true;
                 return true;
             }
             // Check user agent for MiniPay or Opera Mini context
             if (typeof navigator !== 'undefined') {
                 const ua = navigator.userAgent || '';
-                if (/minipay/i.test(ua) || /OPR.*Mini/i.test(ua) || /Opera.*Mini/i.test(ua)) {
+                if (/minipay/i.test(ua) || /OPR.*Mini/i.test(ua) || /Opera.*Mini/i.test(ua)
+                    || (_isSwapCommunityEmbed() && global.GM_SWAP_BOOT.isMiniPay === true)) {
                     _miniPayDetectedCache = true;
                     return true;
                 }
@@ -139,14 +166,20 @@
     function _getProvider(providerOpt) {
         try {
             if (providerOpt && typeof providerOpt.request === 'function') return providerOpt;
-            const eth = global.ethereum;
-            if (!eth) return null;
-            if (eth.isMiniPay) return eth;
-            if (Array.isArray(eth.providers)) {
-                const mp = eth.providers.find(p => p && p.isMiniPay);
-                if (mp) return mp;
+            if (!_isSwapCommunityEmbed()) {
+                const eth = global.ethereum;
+                if (!eth) return null;
+                if (eth.isMiniPay || eth.isMiniPayWallet) return eth;
+                if (Array.isArray(eth.providers)) {
+                    const miniPay = eth.providers.find(p => p && (p.isMiniPay || p.isMiniPayWallet));
+                    if (miniPay) return miniPay;
+                }
+                return eth;
             }
-            return eth;
+            const providers = _walletProviders();
+            const miniPay = providers.find(p => p && (p.isMiniPay || p.isMiniPayWallet));
+            if (miniPay) return miniPay;
+            return providers[0] || null;
         } catch (_) { return null; }
     }
 
