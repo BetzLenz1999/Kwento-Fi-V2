@@ -2113,7 +2113,7 @@
                 registerButton.type = 'button';
                 registerButton.onclick = function () {
                     registerButton.disabled = true;
-                    registerButton.textContent = 'Registering…';
+                    registerButton.textContent = 'Check wallet…';
                     window.GMCommunityVideoDownloads.registerListing(post, downloadStatus)
                         .then(function () { post.download_listing_status = 'active'; renderFeed(); })
                         .catch(function (error) {
