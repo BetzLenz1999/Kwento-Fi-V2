@@ -1112,6 +1112,7 @@
     }
 
     // ── Farming V2 (isolated contract; never reuse the V1 address) ──────────
+    var v2MaturityTimer = null;
     var v2 = { enabled: false, busy: false, address: "", token: GD_CONTRACT, position: null, positionChecked: false, explorer: "https://celoscan.io" };
     var V2_ABI = [
         "function startFarm(uint256 amount)", "function claimReward()", "function closeFarm()",
@@ -1272,7 +1273,7 @@
             }
         }
         var funding = String(cfg.funding_status || cfg.sponsor_funding_status || cfg.reason || "").toLowerCase();
-        var status = v2.enabled ? (funding.indexOf("insufficient") >= 0 ? "New V2 farms are temporarily unavailable because sponsor funding is insufficient." : funding.indexOf("unverified") >= 0 || funding.indexOf("unknown") >= 0 ? "Sponsor funding could not be verified; new V2 farms are unavailable." : "V2 contract verified. A farm is accepted only if the contract can reserve its full reward cap.") : "V2 unavailable or unverified. " + v2UnavailableMessage(cfg) + " New farms and sponsor contributions are disabled; there is no fallback to V1.";
+        var status = v2.enabled ? (funding.indexOf("insufficient") >= 0 ? "New V2 farms are temporarily unavailable." : funding.indexOf("unverified") >= 0 || funding.indexOf("unknown") >= 0 ? "V2 availability could not be confirmed; new farms are unavailable." : "V2 is ready. New farms are available when rewards can be reserved.") : "V2 is unavailable or still being verified. " + v2UnavailableMessage(cfg) + " New farms are disabled.";
         v2Status(status, v2.enabled ? "info" : "error");
         if (fund) fund.disabled = !v2.enabled || v2.busy;
         var p = v2Params(), amountInput = v2Element("v2FarmAmount");
@@ -1283,8 +1284,9 @@
         var pos = v2.position, card = v2Element("v2Position");
         renderScene();
         if (!card) return;
+        if (v2MaturityTimer !== null) { clearTimeout(v2MaturityTimer); v2MaturityTimer = null; }
         card.hidden = !(pos && pos.active);
-        if (!pos || !pos.active) { ["v2ClaimBtn", "v2CloseBtn"].forEach(function (id) { var b = v2Element(id); if (b) b.disabled = true; }); return; }
+        if (!pos || !pos.active) { ["v2ClaimBtn", "v2CloseBtn"].forEach(function (id) { var b = v2Element(id); if (b) { b.disabled = true; if (id === "v2CloseBtn") b.hidden = true; } }); return; }
         var set = function (id, value) { var el = v2Element(id); if (el) el.textContent = value; };
         var maturity = Number(pos.matures_at || pos.maturity_timestamp || pos.unlocks_at || 0);
         var reward = Number(pos.claimable_reward !== undefined ? pos.claimable_reward : (pos.accrued_reward !== undefined ? pos.accrued_reward : (pos.pending_reward || 0)));
@@ -1295,7 +1297,11 @@
         set("v2FarmPhase", mature ? "Mature" : "Active · no early withdrawal");
         var claim = v2Element("v2ClaimBtn"), close = v2Element("v2CloseBtn");
         if (claim) claim.disabled = !v2.enabled || reward <= 0 || v2.busy;
-        if (close) close.disabled = !v2.enabled || !mature || v2.busy;
+        if (close) { close.hidden = !mature; close.disabled = !v2.enabled || !mature || v2.busy; }
+        if (!mature && maturity > 0) {
+            var untilMaturity = Math.max(0, maturity * 1000 - Date.now());
+            v2MaturityTimer = setTimeout(function () { v2MaturityTimer = null; v2RenderPosition(); }, Math.min(untilMaturity, 2147480000));
+        }
     }
     function v2RenderHistory(rows, unavailable) {
         var list = v2Element("v2HistoryList"), empty = v2Element("v2HistoryEmpty");
