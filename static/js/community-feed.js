@@ -28,6 +28,8 @@
     var MAX_VIDEO_MB = BOOT.maxVideoMb || 100;
     var MAX_AVATAR_MB = BOOT.maxAvatarMb || 5;
     var STORAGE_READY = !!BOOT.storageReady;
+    var VIDEO_DOWNLOADS = BOOT.videoDownloads || {};
+    var PAID_DOWNLOADS_ENABLED = !!VIDEO_DOWNLOADS.enabled;
     var FOCUS_POST_ID = String(BOOT.focusPostId || '');
     var FOCUS_POST = BOOT.focusPost || null;
     var _discoverCursor = null;
@@ -1065,12 +1067,39 @@
         return !!(toggle && toggle.checked && _pending.length === 1 && _pending[0].isVideo);
     }
 
+    // The server publishes only a reason code, so the user-facing copy lives here.
+    function paidDownloadUnavailableReason() {
+        var reason = String(VIDEO_DOWNLOADS.reason || '');
+        if (reason === 'disabled') {
+            return 'the download feature is switched off on this deployment (set COMMUNITY_VIDEO_DOWNLOADS_ENABLED=1).';
+        }
+        if (reason === 'contract') {
+            return 'the download contract address is missing or invalid (COMMUNITY_VIDEO_DOWNLOADS_CONTRACT_ADDRESS).';
+        }
+        if (reason === 'token') {
+            return 'the G$ token address is missing or invalid (GOODDOLLAR_TOKEN_ADDRESS).';
+        }
+        return 'the download contract is not configured.';
+    }
+
     function updateDownloadPricePanel() {
         var panel = $('cfDownloadPricePanel');
+        var fields = $('cfDownloadPriceFields');
+        var notice = $('cfDownloadUnavailable');
         var input = $('cfDownloadPrice');
         var error = $('cfDownloadPriceError');
         var eligible = hasPaidVideoDraft();
+        // When the deployment has no download contract, the price field cannot
+        // lead anywhere: show why instead of an input that silently does nothing.
+        var enabled = PAID_DOWNLOADS_ENABLED;
         if (panel) panel.hidden = !eligible;
+        if (fields) fields.hidden = !enabled;
+        if (notice) notice.hidden = enabled;
+        if (!enabled) {
+            if (error) { error.hidden = true; error.textContent = ''; }
+            if (input) input.setAttribute('aria-invalid', 'false');
+            return true;
+        }
         if (!input) return true;
         var value = String(input.value || '').trim();
         var valid = /^\d+$/.test(value) && Number(value) >= 1000 && Number(value) <= 10000;
@@ -1200,7 +1229,11 @@
         var isPermanent = !!(permanentToggle && permanentToggle.checked);
 
         var done = _pending.filter(function (e) { return e.state === 'done' && e.upload; });
-        var isPaidVideo = isPermanent && done.length === 1 && done[0].isVideo;
+        // A permanent video is a paid-download candidate only where the feature
+        // is actually deployed. Without the contract the post must still publish,
+        // so no price is required or sent.
+        var isPaidVideo = PAID_DOWNLOADS_ENABLED
+            && isPermanent && done.length === 1 && done[0].isVideo;
         if (_pending.some(function (e) { return e.state !== 'done'; })) {
             toast('Please wait for the uploads to finish.', 'error');
             return;
@@ -1268,7 +1301,8 @@
                 var listingStatus = $('cfUploadStatus');
                 if (!window.GMCommunityVideoDownloads
                         || !window.GMCommunityVideoDownloads.enabled) {
-                    setUploadStatus('Post published. Paid download listing is pending contract configuration.', true);
+                    setUploadStatus('Post published. Paid download listing is not active yet: '
+                        + paidDownloadUnavailableReason(), true);
                 } else {
                     setUploadStatus('Post published. Confirm the listing transaction in your wallet (gas only; no G$ posting fee).', false);
                     window.GMCommunityVideoDownloads.registerListing(paidPost, listingStatus)
@@ -2085,7 +2119,7 @@
             && Number.isInteger(Number(post.download_price_gd))
             && Number(post.download_price_gd) >= 1000
             && Number(post.download_price_gd) <= 10000;
-        if (isEligiblePaidVideo && BOOT.videoDownloads && BOOT.videoDownloads.enabled) {
+        if (isEligiblePaidVideo && PAID_DOWNLOADS_ENABLED) {
             var downloadControls = el('div', 'cf-download-controls');
             var downloadStatus = el('small', 'cf-download-card-status');
             downloadStatus.setAttribute('role', 'status');
