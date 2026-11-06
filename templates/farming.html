@@ -194,11 +194,92 @@
             .progress-fill, .farm-toast { transition:none; }
             .modal-card { animation:none; }
         }
+
+        /* ── Garden-aligned Farming refresh ──────────────────────────────
+           Keep the farm illustration and every existing JS hook, but use
+           Garden's calm light surfaces, indigo actions and green status cues. */
+        :root {
+            --bg:#f5f7fb; --bg2:#eef2ff; --border:#e2e8f0; --text:#172554;
+            --muted:#64748b; --gold:#d97706; --green:#15803d; --red:#b91c1c;
+        }
+        body { max-width:1040px; color:#172554; background:radial-gradient(circle at 95% 0%,rgba(34,197,94,.08),transparent 28%),#f5f7fb; }
+        .top { min-height:42px; }
+        .back { color:#334155; background:#fff; border-color:#dbe2ee; box-shadow:0 2px 8px rgba(15,23,42,.04); }
+        .kicker { color:#4f46e5; }
+        .hero { padding:clamp(1.1rem,3vw,1.8rem); border:1px solid #c7d2fe; border-radius:24px;
+            background:radial-gradient(circle at top right,rgba(99,102,241,.12),transparent 42%),linear-gradient(135deg,#f5f3ff 0%,#eff6ff 54%,#f0fdf4 100%);
+            box-shadow:0 10px 28px rgba(67,56,202,.08); }
+        .hero h1 { color:#172554; line-height:1.08; }
+        .hero .copy,.hero .copy strong { color:#475569; }
+        .hero .farm-lead { max-width:600px; margin-top:.55rem; font-size:.94rem; }
+        .hero-chips { gap:.45rem; margin-top:.8rem; }
+        .hero-chip { border:1px solid #c7d2fe; background:#eef2ff; color:#4338ca; padding:.36rem .68rem; font-size:.72rem; }
+        .hero-chip:last-child { border-color:#bbf7d0; background:#ecfdf5; color:#047857; }
+        .egg-rain { opacity:.18; }
+        .hero-chicken { max-width:300px; padding:.55rem; border:1px solid #dbeafe; border-radius:22px; background:rgba(255,255,255,.8); }
+        .chicken-caption { color:#4338ca; }
+        .panel { margin-top:.85rem; padding:clamp(.9rem,2.5vw,1.25rem); border:1px solid #e2e8f0; border-radius:20px; background:#fff; box-shadow:0 8px 24px rgba(15,23,42,.045); }
+        .panel h2,.game-card h2,.game-card h3 { color:#172554; }
+        .panel .sub { color:#64748b; }
+        .phase-banner { color:#14532d; border-color:#bbf7d0; background:linear-gradient(135deg,#f0fdf4,#eff6ff); }
+        .progress-track { background:#e2e8f0; }
+        .progress-fill { background:linear-gradient(90deg,#22c55e,#84cc16,#f59e0b); }
+        .progress-label { color:#64748b; }
+        .game-card { margin-top:.8rem; padding:1rem; border:1px solid #e0e7ff; border-radius:16px; background:linear-gradient(180deg,#fff,#fafaff); }
+        .form-row { align-items:center; }
+        .input { min-height:50px; border:1px solid #cbd5e1; border-radius:12px; background:#fff; color:#172554; }
+        .input:focus { border-color:#818cf8; box-shadow:0 0 0 3px rgba(99,102,241,.13); }
+        .amount-help,.notice,.empty-note { color:#64748b; }
+        .amount-help strong { color:#3730a3; }
+        .chip { border-color:#cbd5e1; background:#fff; color:#334155; }
+        .chip:hover { border-color:#818cf8; background:#eef2ff; }
+        .projection .box { border:1px solid #bbf7d0; background:#f0fdf4; }
+        .projection .box span { color:#64748b; }
+        .projection .box strong { color:#15803d; }
+        .btn { min-height:46px; border-radius:12px; padding:.75rem 1rem; }
+        .primary { background:linear-gradient(135deg,#4f46e5,#6366f1); color:#fff; box-shadow:0 6px 16px rgba(79,70,229,.2); }
+        .secondary { border:1px solid #cbd5e1; background:#fff; color:#334155; }
+        .secondary:not(:disabled):hover { border-color:#a5b4fc; background:#f8faff; }
+        .mini-stat { min-width:0; border:1px solid #e2e8f0; border-radius:14px; background:#f8fafc; }
+        .mini-stat .label,.mini-stat span { color:#64748b; font-size:.72rem; }
+        .mini-stat strong { color:#172554; overflow-wrap:anywhere; }
+        .status { border:1px solid #e2e8f0; background:#f8fafc; color:#475569; }
+        .status.ok { border-color:#bbf7d0; background:#f0fdf4; color:#166534; }
+        .status.error { border-color:#fecaca; background:#fef2f2; color:#b91c1c; }
+        .status.info { border-color:#c7d2fe; background:#eef2ff; color:#3730a3; }
+        .tx-row { border-color:#e2e8f0; background:#fff; }
+        .tx-amount,.tx-hash,code { color:#4338ca; }
+        .tx-received { color:#15803d; }
+        .tx-error { color:#b91c1c; }
+        .tx-status.ok { background:#dcfce7; color:#166534; }
+        .tx-status.pending { background:#fef3c7; color:#92400e; }
+        .tx-status.error { background:#fee2e2; color:#b91c1c; }
+        .farm-toast { color:#172554; border-color:#dbe2ee; background:#fff; box-shadow:0 12px 36px rgba(15,23,42,.16); }
+        .farm-toast.success { background:#15803d; color:#fff; }
+        .farm-toast.error { background:#b91c1c; color:#fff; }
+        .farm-processing-overlay,.modal-overlay { background:rgba(15,23,42,.5); backdrop-filter:blur(4px); }
+        .farm-processing-card,.modal-card { color:#172554; border:1px solid rgba(255,255,255,.8); background:#fff; box-shadow:0 24px 72px rgba(7,12,36,.25); }
+        .farm-processing-spinner { border-color:#e0e7ff; border-top-color:#4f46e5; }
+        .farm-processing-detail,.modal-card .congrats,.modal-card .tx-line { color:#64748b; }
+        .modal-card .paid { color:#15803d; }
+        .modal-card a { color:#4338ca; }
+        @media (max-width:720px) {
+            body { padding:.75rem .75rem 2rem; }
+            .hero { border-radius:20px; }
+            .hero-grid { gap:.6rem; }
+            .hero-chicken { max-width:250px; }
+            .panel { margin-top:.7rem; }
+            .action-grid { grid-template-columns:1fr; }
+            .mini-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .form-row { grid-template-columns:1fr; }
+            .form-row .btn { width:100%; }
+        }
+        @media (prefers-reduced-motion: reduce) { .egg-rain span { opacity:0; } }
     </style>
     <!-- Shared Get Started modal styles (guest connect flow). -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/get-started.css', v=ASSET_VERSION) }}">
 </head>
-<body>
+<body class="farm-page">
     {% if not community_embed or is_guest %}
     <div class="top">
         {% if not community_embed %}
@@ -219,11 +300,11 @@
             <div class="hero-copy">
                 <div class="kicker">Chicken-and-Egg Farming</div>
                 <h1>Manage your G$ farms</h1>
-                <p class="copy" data-legacy-v1-ui hidden>Legacy V1 farms remain separate from new V2 farms. Review the version and its terms before taking an action; V2 rewards are sponsor-funded caps, not guaranteed returns.</p>
+                <p class="copy farm-lead">Start a new V2 farm for a 7-day cycle. Existing V1 farms, if any, are managed separately.</p>
                 <div class="hero-chips">
                     <span class="hero-chip" data-legacy-v1-ui hidden>Legacy V1: existing farms only</span>
                     <span class="hero-chip">New farms: verified V2 only</span>
-                    <span class="hero-chip">V2: 7-day sponsor-funded reward cap</span>
+                    <span class="hero-chip">V2 · 7-day cycle</span>
                 </div>
             </div>
             <div class="hero-chicken is-idle" id="farmScene" role="img" aria-label="Your farm — start a farm to see your chickens">
@@ -318,8 +399,9 @@
     {% endif %}
 
     <section class="panel" id="farmingV2Panel" aria-labelledby="farmingV2Title">
-        <div class="history-head"><div><span class="kicker">Farming V2 · New farms</span><h2 id="farmingV2Title">New sponsor-funded farm</h2>
-            <p class="sub">A separate, verified V2 contract is required. V2 never falls back to the legacy V1 contract.</p></div><span class="hero-chip" id="farmingV2Badge">V2 · checking availability</span></div>
+        <div class="history-head"><div><span class="kicker">Farming V2 · New farms</span><h2 id="farmingV2Title">New farm</h2>
+            </div><span class="hero-chip" id="farmingV2Badge">V2 · checking availability</span></div>
+        <p class="sub" data-legacy-v1-ui hidden>Legacy V1 positions remain separate below. Review the farm version and its terms before taking an action.</p>
         <p class="status info" id="farmingV2Status" role="status" aria-live="polite">Checking V2 configuration and sponsor funding…</p>
         {% if not is_guest %}
         <div class="game-card">
@@ -327,13 +409,12 @@
             <div class="form-row"><input class="input" id="v2FarmAmount" type="number" min="1000" max="20000" step="100" value="1000" inputmode="numeric" aria-label="New V2 farm amount in G$">
                 <button class="btn primary" type="button" id="v2StartBtn" disabled>Approve &amp; start V2 farm</button></div>
             <div class="projection"><div class="box"><span>Maximum reward cap · 7 days</span><strong id="v2RewardEstimate">Up to 50 G$</strong></div><div class="box"><span>Principal + maximum cap</span><strong id="v2TotalEstimate">1,050 G$</strong></div></div>
-            <p class="notice">Warning: this is a sponsor-funded reward cap, not guaranteed yield, profit, or a promised return. A farm can start only when its full cap is reserved by the V2 contract.</p>
             <div class="mini-stats" id="v2Position" hidden>
                 <div class="mini-stat"><span>V2 principal</span><strong id="v2Principal">—</strong></div><div class="mini-stat"><span>Accrued / claimable reward</span><strong id="v2Accrued">—</strong></div>
                 <div class="mini-stat"><span>Already claimed</span><strong id="v2Claimed">—</strong></div><div class="mini-stat"><span>Maturity</span><strong id="v2Maturity">—</strong></div>
                 <div class="mini-stat"><span>Farm status</span><strong id="v2FarmPhase">—</strong></div>
             </div>
-            <div class="action-grid"><button class="btn secondary" id="v2ClaimBtn" type="button" disabled>Claim accrued V2 reward</button><button class="btn secondary" id="v2CloseBtn" type="button" disabled>Close mature V2 farm</button></div>
+            <div class="action-grid"><button class="btn secondary" id="v2ClaimBtn" type="button" disabled>Claim accrued V2 reward</button><button class="btn secondary" id="v2CloseBtn" type="button" disabled hidden>Close mature V2 farm</button></div>
             <p class="notice" id="v2ContractNotice">V2 destination contract: unavailable until backend verification.</p>
             <div class="status" id="v2TxStatus" role="status" aria-live="polite" hidden></div>
         </div>
