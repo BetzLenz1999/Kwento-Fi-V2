@@ -7,10 +7,6 @@ from typing import Dict, Any, Optional, List
 from config import DAILY_TASK_COOLDOWN_HOURS
 from supabase_client import get_supabase_client
 from cache_utils import supabase_cache
-from referral_program.referral_service import (
-    build_user_referral_link,
-    current_origin_domain,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +73,8 @@ def _generate_telegram_messages() -> List[str]:
       * No claim of official affiliation (GoodMarket is an independent
         community project — see the impersonation-risk note in AGENTS.md).
       * No "free"/"guaranteed"/"join thousands" style promises.
-      * Exactly one link per post (the referral link injected at serve time);
-        the opening and middle sentences stay link-free.
+      * No links or referral codes. Telegram group posts are intentionally
+        message-only so they do not look like promotional spam.
       * Single closing punctuation only, no doubled "?." / ".!".
     """
     opening_phrases = [
@@ -135,8 +131,7 @@ def _generate_telegram_messages() -> List[str]:
     ]
 
     middle_phrases = [
-        # Link-free by design: the only URL in the final post is the referral
-        # link injected at serve time.
+        # Telegram group copy is intentionally link-free.
         "I like having a simple place to learn and compare notes with other members.",
         "The short lessons give me something useful to discuss with friends.",
         "I am learning at my own pace and asking questions when an idea is unclear.",
@@ -176,16 +171,16 @@ def _generate_telegram_messages() -> List[str]:
     ]
 
     closing_phrases = [
-        "If you want to start, this is the link I used: https://goodmarket.live",
-        "My link, in case it helps: https://goodmarket.live",
-        "I started here: https://goodmarket.live",
-        "This is where I claim mine: https://goodmarket.live",
-        "Same place I use every day: https://goodmarket.live",
-        "Here is where I started learning: https://goodmarket.live",
-        "Start with the daily task here: https://goodmarket.live",
-        "The site I use for this: https://goodmarket.live",
-        "You can try it here: https://goodmarket.live",
-        "Link for anyone curious: https://goodmarket.live",
+        "I am keeping this as a small, useful learning habit.",
+        "I am still learning and sharing what makes sense to me.",
+        "It is a simple routine that gives me something to think about.",
+        "I am glad I took a few minutes to learn something practical today.",
+        "I will keep exploring the topic and asking better questions.",
+        "The short routine helps me stay curious without rushing.",
+        "I am taking the useful ideas with me into the next conversation.",
+        "Small lessons like this make a complicated topic easier to discuss.",
+        "I am learning one idea at a time and keeping an open mind.",
+        "That is my small takeaway from today's task.",
     ]
 
     def render(s1, s2, s3):
@@ -290,28 +285,9 @@ class TelegramTaskService:
 
         logger.info(f"📅 Message index {message_index} for user: {wallet_address[:8]}... (Day: {day_of_year}, {len(self.custom_messages)} unique messages available)")
 
+        # Telegram group copy is intentionally message-only. The Twitter task
+        # keeps its referral-link flow, but Telegram must not look promotional.
         message = self.custom_messages[message_index]
-        try:
-            referral_link = build_user_referral_link(wallet_address)
-            message = message.replace("https://goodmarket.live", referral_link)
-            logger.info(f"🔗 Personal referral link injected for {wallet_address[:8]}...")
-        except Exception as referral_error:
-            logger.exception(
-                "Could not include a personal referral link for task-message wallet %s...",
-                wallet_address[:8],
-            )
-            raise RuntimeError(
-                "Could not build a referral link for this Daily Task message"
-            ) from referral_error
-
-        # Re-anchor hardcoded 'goodmarket.live' (any case) to the origin the
-        # requesting client actually used; fallback is referral_service BASE_URL.
-        try:
-            domain = current_origin_domain()
-            if domain != 'goodmarket.live':
-                message = re.sub(r'goodmarket\.live', lambda _: domain, message, flags=re.IGNORECASE)
-        except Exception as anchor_err:
-            logger.warning(f"⚠️ Could not re-anchor message domain: {anchor_err}")
         return message
 
     def _validate_telegram_url(self, telegram_url: str) -> Dict[str, Any]:
