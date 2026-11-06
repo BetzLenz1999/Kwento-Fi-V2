@@ -368,11 +368,22 @@
 
     function acknowledgeVerifiedBuild(onVerified) {
       setProgress(92, 'Verifying the installed app…');
-      var activeWorker = navigator.serviceWorker.controller || (registration && registration.active);
-      readWorkerBuildVersion(activeWorker, WORKER_VERSION_TIMEOUT_MS).then(function (version) {
-        if (version !== buildVersion) {
-          throw new Error('The active app worker does not match this release. Please retry the update check.');
+      var candidates = [];
+      if (registration && registration.active) candidates.push(registration.active);
+      var controller = navigator.serviceWorker.controller;
+      if (controller && candidates.indexOf(controller) === -1) candidates.push(controller);
+      function verifyCandidate(index) {
+        if (index >= candidates.length) {
+          return Promise.reject(new Error('The active app worker does not match this release. Please retry the update check.'));
         }
+        return readWorkerBuildVersion(candidates[index], WORKER_VERSION_TIMEOUT_MS).then(function (version) {
+          if (version === buildVersion) return version;
+          return verifyCandidate(index + 1);
+        }, function () {
+          return verifyCandidate(index + 1);
+        });
+      }
+      verifyCandidate(0).then(function () {
         if (rememberBuild(buildVersion)) clearInstallBaselineIntent();
         onVerified();
       }).catch(showCheckError);
@@ -475,7 +486,11 @@
       }
       if (waitingWorker.addEventListener) {
         waitingWorker.addEventListener('statechange', function () {
-          if (waitingWorker.state === 'activated' && !navigator.serviceWorker.controller) updated();
+          // controllerchange is not guaranteed in every standalone launch
+          // context. The activated worker is authoritative once it becomes the
+          // registration's active worker, even if an older controller remains.
+          if (waitingWorker.state === 'activated'
+              && (!registration.active || registration.active === waitingWorker)) updated();
         });
       }
       try {
