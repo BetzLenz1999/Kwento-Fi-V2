@@ -467,6 +467,19 @@
             </span>
         </label>
 
+        <div class="cf-download-price" id="cfDownloadPricePanel" hidden>
+            <label for="cfDownloadPrice"><strong>Download price (G$)</strong></label>
+            <p class="cf-download-warning">Double-check that this is the correct video before publishing. This post is permanent. Other members may pay this amount to download it. Video URLs are public, so payment does not prevent direct access to the file.</p>
+            <div class="cf-download-price-row">
+                <input id="cfDownloadPrice" type="number" min="1000" max="10000" step="1"
+                       inputmode="numeric" placeholder="1,000–10,000" aria-describedby="cfDownloadPriceHint cfDownloadPriceError">
+                <span>G$ per download</span>
+            </div>
+            <small id="cfDownloadPriceHint">Set a whole amount from 1,000 to 10,000 G$. No G$ posting fee; network gas is separate.</small>
+            <small id="cfDownloadPriceError" class="cf-download-price-error" role="alert" hidden></small>
+            <p id="cfDownloadListingStatus" class="cf-download-listing-status" role="status" aria-live="polite" hidden></p>
+        </div>
+
         <div class="cf-composer-foot">
             <div class="cf-composer-right">
                 <span class="cf-counter" id="cfCounter">0 / {{ max_caption }}</span>
@@ -1189,6 +1202,7 @@ window.GM_COMMUNITY_BOOT = {
     isGuest: {{ 'true' if is_guest else 'false' }},
     messagesEnabled: {{ 'true' if messages_enabled else 'false' }},
     postSupport: {{ post_support_config|default({'enabled': false}, true)|tojson }},
+    videoDownloads: {{ video_downloads_config|default({'enabled': false}, true)|tojson }},
     wallet: {{ (wallet or '')|tojson }},
     fvVerified: {{ 'true' if fv_verified|default(false, true) else 'false' }},
     username: {{ (username or '')|tojson }},
@@ -1260,6 +1274,7 @@ window.GM_COMMUNITY_BOOT = {
    what renders the cards and raises the connect card on a gated write. It
    signs nothing, so it needs no ethers of its own. #}
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/community-video-downloads.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-message-modal.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-support.js', v=ASSET_VERSION) }}"></script>
@@ -1309,6 +1324,7 @@ window.GM_GARDEN_BOOT = {{ garden_boot|tojson }};
 <script src="{{ url_for('static', filename='js/p2p/p2p-wallet.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-avatar.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-push.js', v=ASSET_VERSION) }}"></script>
+<script src="{{ url_for('static', filename='js/community-video-downloads.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-feed.js', v=ASSET_VERSION) }}"></script>
 <script src="{{ url_for('static', filename='js/community-message-modal.js', v=ASSET_VERSION) }}"></script>
 {% if garden_boot.enabled %}
