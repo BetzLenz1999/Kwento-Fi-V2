@@ -1060,10 +1060,34 @@
         renderFeed();
     }
 
+    function hasPaidVideoDraft() {
+        var toggle = $('cfPermanentPost');
+        return !!(toggle && toggle.checked && _pending.length === 1 && _pending[0].isVideo);
+    }
+
+    function updateDownloadPricePanel() {
+        var panel = $('cfDownloadPricePanel');
+        var input = $('cfDownloadPrice');
+        var error = $('cfDownloadPriceError');
+        var eligible = hasPaidVideoDraft();
+        if (panel) panel.hidden = !eligible;
+        if (!input) return true;
+        var value = String(input.value || '').trim();
+        var valid = /^\d+$/.test(value) && Number(value) >= 1000 && Number(value) <= 10000;
+        if (error) {
+            error.hidden = !eligible || valid;
+            error.textContent = eligible && !valid
+                ? 'Enter a whole amount from 1,000 to 10,000 G$.' : '';
+        }
+        input.setAttribute('aria-invalid', eligible && !valid ? 'true' : 'false');
+        return !eligible || valid;
+    }
+
     function updatePostButton() {
         var button = $('cfPostBtn');
         var input = $('cfCaption');
         if (!button || !input) return;
+        var downloadPriceValid = updateDownloadPricePanel();
         var uploading = _pending.some(function (e) { return e.state === 'uploading' || e.state === 'preparing'; });
         var failed = _pending.some(function (e) { return e.state === 'failed'; });
         var hasText = input.value.trim().length > 0;
@@ -1072,6 +1096,7 @@
             && !needsUsername()
             && _pending.length <= MAX_MEDIA
             && !overLimit
+            && downloadPriceValid
             && (hasText || _pending.some(function (e) { return e.state === 'done'; }));
         button.disabled = !canPost;
         // Say WHY the button is dead: "Uploading…" answers the user's "did it
@@ -1085,6 +1110,8 @@
         if (input) input.value = '';
         var permanentToggle = $('cfPermanentPost');
         if (permanentToggle) permanentToggle.checked = false;
+        var downloadPrice = $('cfDownloadPrice');
+        if (downloadPrice) downloadPrice.value = '';
         var fileInput = $('cfFileInput');
         if (fileInput) fileInput.value = '';
         renderPreviews();
@@ -1173,12 +1200,23 @@
         var isPermanent = !!(permanentToggle && permanentToggle.checked);
 
         var done = _pending.filter(function (e) { return e.state === 'done' && e.upload; });
+        var isPaidVideo = isPermanent && done.length === 1 && done[0].isVideo;
         if (_pending.some(function (e) { return e.state !== 'done'; })) {
             toast('Please wait for the uploads to finish.', 'error');
             return;
         }
         if (!caption.trim() && !done.length) {
             toast('Please write something or attach a photo/video.', 'error');
+            return;
+        }
+        var downloadPriceInput = $('cfDownloadPrice');
+        var downloadPrice = isPaidVideo && downloadPriceInput
+            ? Number(String(downloadPriceInput.value || '').trim()) : null;
+        if (isPaidVideo && (!Number.isInteger(downloadPrice)
+                || downloadPrice < 1000 || downloadPrice > 10000)) {
+            updateDownloadPricePanel();
+            toast('Set a whole download price from 1,000 to 10,000 G$.', 'error');
+            if (downloadPriceInput) downloadPriceInput.focus();
             return;
         }
 
@@ -1203,6 +1241,7 @@
         uploadPosters(done).then(function (posters) {
             posters.forEach(function (url, index) { media[index].poster_url = url; });
             var postBody = { caption: caption, media: media, is_permanent: isPermanent };
+            if (isPaidVideo) postBody.download_price_gd = downloadPrice;
             if (_promptModeId) postBody.prompt_id = _promptModeId;
             return api('/community/api/posts', {
                 method: 'POST',
@@ -1224,6 +1263,26 @@
                 detail: { prompt_id: result.data.post && result.data.post.prompt_id }
             }));
             toast('Posted!', 'ok');
+            if (result.data.post && result.data.post.download_price_gd) {
+                var paidPost = result.data.post;
+                var listingStatus = $('cfUploadStatus');
+                if (!window.GMCommunityVideoDownloads
+                        || !window.GMCommunityVideoDownloads.enabled) {
+                    setUploadStatus('Post published. Paid download listing is pending contract configuration.', true);
+                } else {
+                    setUploadStatus('Post published. Confirm the listing transaction in your wallet (gas only; no G$ posting fee).', false);
+                    window.GMCommunityVideoDownloads.registerListing(paidPost, listingStatus)
+                        .then(function () {
+                            renderFeed();
+                            setUploadStatus('Paid listing active at ' + paidPost.download_price_gd + ' G$ per download.', false);
+                        }).catch(function (error) {
+                            paidPost.download_listing_status = 'pending';
+                            renderFeed();
+                            setUploadStatus('Post published, but its paid listing is not active yet: '
+                                + ((error && error.message) || 'registration failed.'), true);
+                        });
+                }
+            }
         }).catch(function (error) {
             _posting = false;
             setUploadStatus('');
@@ -2018,6 +2077,57 @@
                 }
             });
             card.appendChild(mediaWrap);
+        }
+
+        var isEligiblePaidVideo = post.is_permanent
+            && Array.isArray(post.media) && post.media.length === 1
+            && post.media[0] && post.media[0].type === 'video'
+            && Number.isInteger(Number(post.download_price_gd))
+            && Number(post.download_price_gd) >= 1000
+            && Number(post.download_price_gd) <= 10000;
+        if (isEligiblePaidVideo && BOOT.videoDownloads && BOOT.videoDownloads.enabled) {
+            var downloadControls = el('div', 'cf-download-controls');
+            var downloadStatus = el('small', 'cf-download-card-status');
+            downloadStatus.setAttribute('role', 'status');
+            downloadStatus.setAttribute('aria-live', 'polite');
+            if (post.download_listing_status === 'active') {
+                var downloadButton = el('button', 'cf-download-btn',
+                    'Download · ' + Number(post.download_price_gd).toLocaleString('en-US') + ' G$');
+                downloadButton.type = 'button';
+                downloadButton.onclick = function () {
+                    downloadButton.disabled = true;
+                    downloadButton.textContent = 'Preparing…';
+                    window.GMCommunityVideoDownloads.purchase(post, downloadStatus)
+                        .catch(function (error) {
+                            downloadStatus.textContent = (error && error.message) || 'Could not complete the download.';
+                        }).finally(function () {
+                            downloadButton.disabled = false;
+                            downloadButton.textContent = 'Download · '
+                                + Number(post.download_price_gd).toLocaleString('en-US') + ' G$';
+                        });
+                };
+                downloadControls.appendChild(downloadButton);
+                downloadStatus.textContent = 'Payment goes directly to the author. Public video URLs may be accessed outside this button.';
+            } else if (post.is_mine) {
+                var registerButton = el('button', 'cf-download-btn cf-download-register-btn', 'Activate paid download');
+                registerButton.type = 'button';
+                registerButton.onclick = function () {
+                    registerButton.disabled = true;
+                    registerButton.textContent = 'Registering…';
+                    window.GMCommunityVideoDownloads.registerListing(post, downloadStatus)
+                        .then(function () { post.download_listing_status = 'active'; renderFeed(); })
+                        .catch(function (error) {
+                            downloadStatus.textContent = (error && error.message) || 'Listing registration failed.';
+                        }).finally(function () {
+                            registerButton.disabled = false;
+                            registerButton.textContent = 'Activate paid download';
+                        });
+                };
+                downloadControls.appendChild(registerButton);
+                downloadStatus.textContent = 'Listing pending. Registration requires Celo gas only; no G$ posting fee.';
+            }
+            if (downloadStatus.textContent) downloadControls.appendChild(downloadStatus);
+            if (downloadControls.childNodes.length) card.appendChild(downloadControls);
         }
 
         var body = el('div', 'cf-card-body');
@@ -5271,6 +5381,14 @@
                 addFiles(fileInput.files);
                 fileInput.value = '';
             });
+        }
+        var permanentToggle = $('cfPermanentPost');
+        if (permanentToggle) {
+            permanentToggle.addEventListener('change', updatePostButton);
+        }
+        var downloadPriceInput = $('cfDownloadPrice');
+        if (downloadPriceInput) {
+            downloadPriceInput.addEventListener('input', updatePostButton);
         }
         var avatarInput = $('cfAvatarInput');
         if (avatarInput && window.GMCommunityAvatar) {
