@@ -419,6 +419,7 @@
         }
         var video = document.createElement('video');
         video.controls = true;
+        video.setAttribute('controlslist', 'nodownload');
         video.preload = 'metadata';
         video.playsInline = true;
         if (item.poster) video.poster = item.poster;
@@ -807,6 +808,7 @@
         if (kind === 'video') {
             var video = document.createElement('video');
             video.controls = true;
+            video.setAttribute('controlslist', 'nodownload');
             video.autoplay = true;
             video.playsInline = true;
             video.src = url;
