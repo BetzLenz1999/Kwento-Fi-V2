@@ -3163,30 +3163,6 @@
     </div>
     {% include "_daily_task_modal.html" %}
 
-    <!-- Discourse Task Modal — surfaced only from the "More Ways To Earn G$"
-         bottom sheet, same pattern as the Referral / Daily Task modals. Reuses
-         the existing /api/discourse-task/settings + /submit endpoints; all four
-         states (available / pending / approved / rejected) render inside this
-         single wallet-scoped (wl*) modal. -->
-    <div class="modal-overlay" id="discourseTaskModal">
-        <div class="modal-sheet">
-            <div class="modal-handle"></div>
-            <div class="modal-title">💬 Discourse Community Task</div>
-
-            <div id="wlDiscourseTaskContent">
-                <div style="text-align:center;padding:1.25rem 0;">
-                    <div class="spinner"></div>
-                    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">Loading Discourse Task…</div>
-                </div>
-            </div>
-
-            <div class="modal-sheet-footer">
-                <button class="btn-secondary" onclick="closeModal('discourseTaskModal')">Close</button>
-            </div>
-        </div>
-    </div>
-
-
     {% if dapp_connect_visible %}
     <!-- ── Connect a dApp (WalletConnect wallet role) — Phase 1 ──
          Local-login users paste a WalletConnect link copied from an external
@@ -3470,10 +3446,6 @@
             <div class="bn-sheet-item" onclick="bnGo(function(){ openReferralModal(); })">
                 <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;">🤝</div>
                 <div class="bn-sheet-name">Referral</div>
-            </div>
-            <div class="bn-sheet-item" onclick="bnGo(function(){ openDiscourseTaskModal(); })">
-                <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;">💬</div>
-                <div class="bn-sheet-name">Discourse Task</div>
             </div>
             <div class="bn-sheet-item" onclick="bnGo(function(){ openGdRafflePanel(); })">
                 <div class="bn-sheet-circle" style="background:linear-gradient(135deg,#f59e0b,#fcd34d);color:#fff;">🎟️</div>
