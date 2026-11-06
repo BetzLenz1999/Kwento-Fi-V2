@@ -9,7 +9,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <meta name="theme-color" content="#4f46e5">
+    <meta name="theme-color" content="#0b1220">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
@@ -2246,6 +2246,73 @@
         }
 
 
+        /* ── Obsidian wallet theme ──────────────────────────────────────────
+           The wallet uses the same layered navy language as the Community
+           feed, with a warmer G$ accent for money actions. Keep the portfolio
+           card colourful, but make every surrounding surface dark so forms,
+           sheets and status copy do not fall back to white. */
+        :root {
+            --bg: #0b1220; --bg2: #101b2b; --card: #152235; --card-border: #263b53;
+            --card-soft: rgba(125, 211, 252, 0.10); --card-shadow: 0 10px 28px rgba(0,0,0,.24);
+            --blue: #7dd3fc; --accent: #38bdf8; --accent-rgb: 56,189,248;
+            --accent-secondary: #2dd4bf; --accent-secondary-rgb: 45,212,191;
+            --green: #4ade80; --gold: #fbbf24; --gold-rgb: 251,191,36; --gold-deep: #d97706;
+            --primary-button-text: #1f1300; --red: #f87171;
+            --text: #eef6ff; --text-dim: #a9bbcf; --text-muted: #8297ad;
+        }
+        body { background: var(--bg); color: var(--text); }
+        @media (min-width: 481px) { body { border-left-color: #1c3047; border-right-color: #1c3047; } }
+        .top-bar { background: rgba(11,18,32,.92); border-bottom-color: var(--card-border); box-shadow: 0 1px 8px rgba(0,0,0,.24); }
+        .top-bar-title { color: var(--text); } .top-bar-subtitle { color: var(--text-dim); }
+        .icon-btn { background: #18283c; border-color: #304861; color: #dcecff; box-shadow: none; }
+        .icon-btn:hover { background: #203650; }
+        .wallet-reminder-banner, .xdc-rpc-banner { background: rgba(251,191,36,.12); border-color: rgba(251,191,36,.36); color: #f8d98a; }
+        .xdc-rpc-banner .xrb-title { color: #f8d98a; } .xdc-rpc-banner .xrb-copy, .xdc-rpc-banner .xrb-status { color: var(--text-dim); }
+        .join-community-banner { background: linear-gradient(135deg, rgba(56,189,248,.14), rgba(45,212,191,.10)); border-color: rgba(45,212,191,.36); }
+        .join-community-banner .jcb-title { color: #c4b5fd; } .join-community-banner .jcb-copy { color: var(--text-dim); }
+        .raffle-modal-overlay, .modal-overlay { background: rgba(1,7,14,.84); }
+        .raffle-card { background: linear-gradient(135deg,#18283c,#142438); border-color: #304861; box-shadow: 0 24px 80px rgba(0,0,0,.55); color: var(--text); }
+        .raffle-kicker, .raffle-title, .raffle-stat-value, .raffle-how-to-title, .raffle-explainer-title { color: var(--text); }
+        .raffle-copy, .raffle-stat-label, .raffle-how-to-list, .raffle-explainer-copy, .raffle-explainer-list { color: var(--text-dim); }
+        .raffle-stat, .raffle-how-to, .raffle-alert, .raffle-btn.info { background: #101b2b; border-color: #304861; color: var(--text-dim); }
+        .raffle-explainer { background: rgba(56,189,248,.10); border-color: rgba(56,189,248,.30); }
+        .raffle-close-btn { background: #1b2c42; color: #dcecff; }
+        .action-item, .token-list, .tx-list { background: var(--card); border-color: var(--card-border); box-shadow: var(--card-shadow); }
+        .action-item:hover, .bn-sheet-item:hover { background: #203650; border-color: rgba(56,189,248,.45); }
+        .action-circle { background: #1b2c42; border-color: rgba(56,189,248,.24); }
+        .action-item:hover .action-circle { background: rgba(56,189,248,.18); border-color: rgba(56,189,248,.48); }
+        .action-label, .token-symbol, .token-amount, .tx-dir, .claim-box-title, .modal-title { color: var(--text); }
+        .claim-button-box, .claim-network-card, .ubi-pool-row, .countdown-box, .pk-box { background: #18283c; border-color: var(--card-border); box-shadow: none; }
+        .claim-button-box:hover { background: #203650; }
+        .claim-box-amount, .claim-box-arrow, .claim-box-timer, .section-label, .token-name, .token-usd, .tx-time { color: var(--text-dim); }
+        .section-label { border-left-color: var(--accent); } .tab-bar { border-bottom-color: var(--card-border); }
+        .tab { color: var(--text-muted); } .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .token-item, .tx-item { border-bottom-color: #263b53; } .tx-hash-link { color: #7dd3fc; }
+        .modal-sheet { background: #101b2b; border-color: #304861; box-shadow: 0 24px 80px rgba(0,0,0,.55); color: var(--text); }
+        .modal-sheet .modal-sheet-footer { background: #101b2b; border-top-color: #304861; } .modal-handle { background: #55718b; }
+        .form-label, .form-group label { color: var(--text-dim); }
+        .form-input, .token-chip { background: #18283c; border-color: #3b5872; color: var(--text); }
+        .form-input::placeholder { color: var(--text-muted); } .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56,189,248,.16); }
+        .token-chip.active { background: rgba(56,189,248,.16); border-color: var(--accent); color: #dcecff; }
+        .max-btn { background: rgba(251,191,36,.12); border-color: rgba(251,191,36,.36); color: #f8d98a; }
+        .address-box { background: #18283c; border-color: #3b5872; } .address-short { color: #8edcff; }
+        .btn-secondary { background: #1b2c42; border-color: #3b5872; color: #dcecff; }
+        .btn-secondary:hover { background: #263e58; border-color: var(--accent); color: #fff; }
+        .btn-danger { background: rgba(248,113,113,.12); border-color: rgba(248,113,113,.36); color: #fca5a5; }
+        .alert-success { background: rgba(34,197,94,.12); border-color: rgba(74,222,128,.34); color: #86efac; }
+        .alert-error { background: rgba(248,113,113,.12); border-color: rgba(248,113,113,.36); color: #fca5a5; }
+        .alert-info { background: rgba(56,189,248,.12); border-color: rgba(56,189,248,.34); color: #8edcff; }
+        .nav-feedback-box { background: #101b2b; border-color: #304861; color: var(--text); box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+        .spinner { border-color: rgba(56,189,248,.22); border-top-color: var(--accent); }
+        .wallet-bottom-nav { background: rgba(13,21,34,.96); border-top-color: var(--card-border); box-shadow: 0 -8px 24px rgba(0,0,0,.32); }
+        .bn-item { color: var(--text-muted); } .bn-item .bn-label { color: var(--nav-c, var(--text-dim)); }
+        .bn-sheet-overlay { background: rgba(1,7,14,.84); }
+        .bn-sheet { background: #101b2b; border-top-color: #304861; box-shadow: 0 -18px 50px rgba(0,0,0,.55); }
+        .bn-sheet-handle { background: #55718b; } .bn-sheet-title { color: var(--text); }
+        .bn-sheet-item { background: #18283c; border-color: #304861; } .bn-sheet-item .bn-sheet-name { color: var(--text-dim); }
+        #walletMaintenanceOverlay { background: #0b1220 !important; color: var(--text) !important; }
+
+
     </style>
 </head>
 {# `gm-embed-claim` is set by /wallet?embed=claim — the community feed's Claim
@@ -2267,7 +2334,7 @@
             <img class="top-bar-brand-mark" src="/static/branding/kwentofi/kwentofi-symbol-64.png?v={{ ASSET_VERSION }}" alt="" width="34" height="34">
             <div class="top-bar-brand-copy">
                 <div class="top-bar-title">KwentoFi</div>
-                <div class="top-bar-subtitle">Powered by the KwentoFi Community</div>
+            <div class="top-bar-subtitle">Your community-powered wallet</div>
             </div>
         </div>
         <div style="display:flex;gap:0.3rem;align-items:center;">
@@ -2626,7 +2693,7 @@
 
             <!-- Crypto Tab -->
             <div id="cryptoPanel">
-        <div class="section-label">Supported Tokens · Celo Network</div>
+        <div class="section-label">Celo assets</div>
         <div class="token-list">
             <div class="token-item">
                 <div class="token-icon" style="background:rgba(127,140,255,0.14);">
@@ -2696,7 +2763,7 @@
         </div>
 
         <!-- XDC Network Section -->
-        <div class="section-label" style="margin-top:1rem;">Supported Tokens · XDC Network</div>
+        <div class="section-label" style="margin-top:1rem;">XDC assets</div>
         <div class="token-list">
             <div class="token-item">
                 <div class="token-icon" style="background:rgba(127,140,255,0.14);">
@@ -3575,11 +3642,11 @@
     <!-- Celo protocol-update maintenance (admin-toggled via the dashboard).
          Buong wallet page  ay pinapalitan ng maintenance block — walang
          nababasa/feature na makikita ang user habang naka-ON ang maintenance. -->
-    <div id="walletMaintenanceOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:999999;background:#f7f1e8;display:flex;align-items:center;justify-content:center;padding:1.5rem;">
-        <div style="max-width:560px;width:100%;text-align:center;background:#ffffff;border:1px solid rgba(217,119,6,0.28);border-radius:24px;padding:2rem 1.6rem;box-shadow:0 18px 50px rgba(95,72,40,0.16);">
+    <div id="walletMaintenanceOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:999999;background:#0b1220;display:flex;align-items:center;justify-content:center;padding:1.5rem;">
+        <div style="max-width:560px;width:100%;text-align:center;background:#101b2b;border:1px solid #304861;border-radius:24px;padding:2rem 1.6rem;box-shadow:0 24px 80px rgba(0,0,0,.55);">
             <div style="font-size:3rem;line-height:1;margin-bottom:1rem;">🔧</div>
-            <div style="font-size:1.35rem;font-weight:800;color:#9a3412;margin-bottom:0.5rem;">Wallet Maintenance — Celo Protocol Update</div>
-            <div style="display:inline-block;background:rgba(251,191,36,0.18);border:1px solid rgba(251,191,36,0.35);color:#92400e;font-size:0.75rem;font-weight:700;border-radius:20px;padding:0.3rem 0.8rem;margin-bottom:1rem;">⏳ Ongoing maintenance — features are temporarily paused</div>
+            <div style="font-size:1.35rem;font-weight:800;color:#eef6ff;margin-bottom:0.5rem;">Wallet Maintenance — Celo Protocol Update</div>
+            <div style="display:inline-block;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.35);color:#f8d98a;font-size:0.75rem;font-weight:700;border-radius:20px;padding:0.3rem 0.8rem;margin-bottom:1rem;">⏳ Ongoing maintenance — features are temporarily paused</div>
             <p style="color:var(--text-dim);margin:0;font-size:0.95rem;line-height:1.6;white-space:pre-line;">{{ wallet_maintenance_message|default("Maintenance due to a Celo protocol update.\n\nPlease check back later.", true) }}</p>
         </div>
     </div>
