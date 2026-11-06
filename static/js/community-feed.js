@@ -1537,6 +1537,9 @@
         }
         var video = document.createElement('video');
         video.controls = true;
+        // Hide the browser's built-in download button where controlsList is supported.
+        // This is a UI affordance only; public media URLs remain retrievable.
+        video.setAttribute('controlslist', 'nodownload');
         video.preload = 'metadata';
         video.playsInline = true;
         video.muted = false;
@@ -2625,6 +2628,7 @@
             // The full-size view of a bounded in-feed frame.
             var video = document.createElement('video');
             video.controls = true;
+            video.setAttribute('controlslist', 'nodownload');
             video.autoplay = true;
             video.playsInline = true;
             video.muted = false;
