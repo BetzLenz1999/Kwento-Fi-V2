@@ -43,23 +43,23 @@
     --set-overlay: rgba(13, 18, 38, 0.48);
 }
 
-/* Wallet page palette. Kept in sync with wallet.html's :root — these are the
-   names the rest of the wallet already uses. */
+/* Wallet page palette. Kept in sync with wallet.html's Obsidian theme — these
+   are the names the rest of the wallet already uses. */
 body:not(.cf-page) {
-    --set-surface: #ffffff;
-    --set-card: #faf7f2;
-    --set-border: #eadfcb;
-    --set-ink: #2b241a;
-    --set-ink-dim: #6b5d48;
-    --set-ink-muted: #a0907a;
-    --set-accent: #7c3aed;
-    --set-danger: #b91c1c;
-    --set-danger-surface: #fef2f2;
-    --set-danger-border: #fca5a5;
-    --set-warn: #92400e;
-    --set-warn-surface: #fffbeb;
-    --set-ok: #15803d;
-    --set-ok-surface: #f0fdf4;
+    --set-surface: #101b2b;
+    --set-card: #18283c;
+    --set-border: #304861;
+    --set-ink: #eef6ff;
+    --set-ink-dim: #a9bbcf;
+    --set-ink-muted: #8297ad;
+    --set-accent: #38bdf8;
+    --set-danger: #fca5a5;
+    --set-danger-surface: rgba(248,113,113,.12);
+    --set-danger-border: rgba(248,113,113,.36);
+    --set-warn: #f8d98a;
+    --set-warn-surface: rgba(251,191,36,.12);
+    --set-ok: #86efac;
+    --set-ok-surface: rgba(34,197,94,.12);
 }
 
 /* Community feed palette. `.cf-page` is the feed's body class, so this wins
