@@ -112,6 +112,18 @@ def _supabase():
     return get_supabase_admin_client()
 
 
+def _rpc_urls() -> list[str]:
+    """Return the primary Celo RPC followed by configured fallbacks."""
+    values = [os.getenv("CELO_RPC_URL", "https://forno.celo.org")]
+    values.extend((os.getenv("CELO_RPC_FALLBACKS", "") or "").split(","))
+    urls = []
+    for value in values:
+        url = str(value or "").strip()
+        if url and url not in urls:
+            urls.append(url)
+    return urls or ["https://forno.celo.org"]
+
+
 def _context():
     """Verify V2 deployment and the independent gas-sponsor signing key."""
     from eth_account import Account
@@ -123,9 +135,28 @@ def _context():
     if enabled not in {"1", "true", "yes", "on", "enabled"}:
         raise FarmingGasSponsorError("Farming gas sponsorship is not enabled.", status_code=503)
 
-    runtime = farming_v2_runtime()
-    if not runtime.get("verified") or not runtime.get("enabled"):
-        raise FarmingGasSponsorError("Farming V2 is unavailable or unverified; no gas was sent.", status_code=503)
+    # Do not let a stale or rate-limited primary RPC make a low-balance wallet
+    # look ineligible. Pick one endpoint that can both verify V2 and read the
+    # wallet before preparing the sponsor transaction.
+    runtime = None
+    w3 = None
+    last_reason = "Farming V2 is unavailable or unverified; no gas was sent."
+    for candidate_rpc in _rpc_urls():
+        try:
+            candidate_runtime = farming_v2_runtime(rpc_url=candidate_rpc)
+            if not candidate_runtime.get("verified") or not candidate_runtime.get("enabled"):
+                continue
+            candidate_w3 = Web3(make_provider(candidate_rpc, timeout=15))
+            if int(candidate_w3.eth.chain_id) != CHAIN_ID:
+                last_reason = "Gas sponsorship is available only on Celo Mainnet."
+                continue
+            runtime, w3 = candidate_runtime, candidate_w3
+            break
+        except Exception as exc:
+            logger.warning("Farming gas sponsor RPC unavailable (%s)", type(exc).__name__)
+            last_reason = "Farming gas support is temporarily unavailable."
+    if runtime is None or w3 is None:
+        raise FarmingGasSponsorError(last_reason, status_code=503)
 
     private_key = (os.getenv("FARMING_GAS_SPONSOR_PRIVATE_KEY") or "").strip()
     expected_signer = (os.getenv("FARMING_GAS_SPONSOR_SIGNER_ADDRESS") or "").strip()
@@ -141,10 +172,6 @@ def _context():
     if account.address.lower() == str(runtime.get("admin_signer") or "").lower():
         raise FarmingGasSponsorError("Use a dedicated Farming gas-sponsor key, not the Farming V2 admin signer.", status_code=503)
 
-    rpc_url = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
-    w3 = Web3(make_provider(rpc_url, timeout=15))
-    if int(w3.eth.chain_id) != CHAIN_ID:
-        raise FarmingGasSponsorError("Gas sponsorship is available only on Celo Mainnet.", status_code=503)
     contract_address = Web3.to_checksum_address(runtime["contract"])
     token_address = Web3.to_checksum_address(runtime["token"])
     if not w3.eth.get_code(contract_address):
@@ -262,12 +289,6 @@ def sponsor_for_start(wallet_value, principal_value, request_id_value) -> dict:
     if db is None:
         raise FarmingGasSponsorError("Farming gas support is temporarily unavailable.", status_code=503)
 
-    prior = _result_rows(db.table("farming_gas_sponsorships").select(
-        "request_id,wallet_address,principal_wei,amount_wei,estimated_fee_wei,sponsor_tx_hash,signed_tx_hex,status"
-    ).eq("request_id", request_id).limit(1).execute())
-    if prior:
-        return _resume_existing(context, db, prior[0], wallet, principal)
-
     try:
         required = principal
         if int(context["token"].functions.balanceOf(wallet).call()) < required:
@@ -307,6 +328,23 @@ def sponsor_for_start(wallet_value, principal_value, request_id_value) -> dict:
         estimate = {"estimated_gas": total_gas, "estimated_fee_wei": str(estimated_fee),
                     "estimated_fee_celo": f"{estimated_fee / WEI_PER_CELO:.8f}",
                     "user_balance_celo": f"{balance / WEI_PER_CELO:.8f}"}
+
+        # Match Daily Task's recovery point: check for an existing signed
+        # sponsorship after estimating the fee but before the threshold branch.
+        # A retry must reuse the persisted top-up even if that earlier credit
+        # has since moved the wallet above the sponsorship threshold.
+        try:
+            prior = _result_rows(db.table("farming_gas_sponsorships").select(
+                "request_id,wallet_address,principal_wei,amount_wei,estimated_fee_wei,sponsor_tx_hash,signed_tx_hex,status"
+            ).eq("request_id", request_id).limit(1).execute())
+            if prior:
+                return _resume_existing(context, db, prior[0], wallet, principal)
+        except FarmingGasSponsorError:
+            raise
+        except Exception:
+            # The atomic reservation below remains the final duplicate guard.
+            pass
+
         if not _should_sponsor(balance, threshold):
             if balance < estimated_fee:
                 threshold_label = format((Decimal(threshold) / Decimal(WEI_PER_CELO)).normalize(), "f")
