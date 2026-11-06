@@ -25,13 +25,11 @@ const IS_PRIVY_LOGIN = (LOGIN_METHOD || '').toLowerCase() === 'privy';
 // Pure self-custody mode: never use server-side signing.
 window.useServerSigning = ['turnkey_google', 'turnkey_email'].includes((LOGIN_METHOD || '').toLowerCase());
 const WC_PROJECT_ID = window.GM_SWAP_BOOT.walletConnectProjectId;
-// Robust WalletConnect detection: LOGIN_METHOD is primary, but sessions
-// created before login_method was persisted report "injected" for
-// WalletConnect users too. prefersWcSigning() recovers those via a saved
-// WC session for this wallet so they never sign with injected MetaMask.
-const PREFER_WC_SIGNING = (typeof GMWalletConnect !== 'undefined' && typeof GMWalletConnect.prefersWcSigning === 'function')
-    ? GMWalletConnect.prefersWcSigning()
-    : ['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase());
+// WalletConnect is authoritative only for WC-family logins. A stale saved WC
+// session must not hide the authenticated injected wallet (MiniPay/MetaMask/
+// Trust); legacy injected sessions may use WC only if no matching injection exists.
+const SWAP_WC_LOGIN_METHODS = ['walletconnect', 'manual', 'manual_address'];
+const PREFER_WC_SIGNING = SWAP_WC_LOGIN_METHODS.includes((LOGIN_METHOD || '').toLowerCase());
 const CELO_RPC       = "https://forno.celo.org";
 let _wcSessionId = null;
 let _wcAddress = null;
@@ -88,6 +86,10 @@ function _swapEip6963Providers() {
 function _isSwapTrustProvider(provider) {
     if (!provider) return false;
     if (provider.isTrust || provider.isTrustWallet) return true;
+    const walletDetection = window.GMCommunityWalletDetection;
+    if (walletDetection && typeof walletDetection.isTrustProvider === 'function') {
+        try { if (walletDetection.isTrustProvider(provider)) return true; } catch (_) {}
+    }
     return [window.trustwallet, window.trustWallet].some(function (root) {
         return root && _coerceSwapProvider(root) === provider;
     });
@@ -96,10 +98,19 @@ function _isTrustWalletMobileContext() {
     const ua = (navigator.userAgent || '').toLowerCase();
     const uaTrust = ua.includes('trust') || ua.includes('trustwallet');
     const touchMobile = /android|iphone|ipad|ipod/i.test(ua);
+    const walletDetection = window.GMCommunityWalletDetection;
+    let sharedTrustProvider = false;
+    if (walletDetection && typeof walletDetection.collect === 'function'
+        && typeof walletDetection.isTrustProvider === 'function') {
+        try {
+            sharedTrustProvider = walletDetection.collect().some(walletDetection.isTrustProvider);
+        } catch (_) {}
+    }
     const hasTrustInjection = !!(
         window.trustwallet ||
         window.trustWallet ||
-        (window.ethereum && (window.ethereum.isTrust || window.ethereum.isTrustWallet))
+        (window.ethereum && (window.ethereum.isTrust || window.ethereum.isTrustWallet)) ||
+        sharedTrustProvider
     );
     return (uaTrust || hasTrustInjection) && touchMobile;
 }
@@ -139,6 +150,8 @@ function _collectSwapProviders() {
         const provider = _coerceSwapProvider(p);
         if (provider && !out.includes(provider)) out.push(provider);
     };
+    const loginMethod = (LOGIN_METHOD || '').toLowerCase();
+    if (PREFER_WC_SIGNING || IS_PRIVY_LOGIN || loginMethod === 'local' || window.useServerSigning) return out;
     if (window.ethereum) {
         if (Array.isArray(window.ethereum.providers)) window.ethereum.providers.forEach(push);
         push(window.ethereum);
@@ -148,6 +161,10 @@ function _collectSwapProviders() {
     if (window.trustWallet) push(window.trustWallet);
     if (window.trustWallet && window.trustWallet.ethereum) push(window.trustWallet.ethereum);
     for (const d of _swapEip6963Providers()) push(d.provider);
+    const walletDetection = window.GMCommunityWalletDetection;
+    if (walletDetection && typeof walletDetection.collect === 'function') {
+        try { walletDetection.collect().forEach(push); } catch (_) {}
+    }
     return out;
 }
 // Handles EIP-5749 multi-wallet: prefer Trust Wallet in Trust mobile;
@@ -158,7 +175,8 @@ function _getEthProvider() {
     // logged-in GoodMarket wallet, so signing fails with "Wrong wallet
     // connected". Block injected discovery so all flows route through the
     // WalletConnect signer. LOGIN_METHOD is Jinja-rendered and reliable.
-    if (PREFER_WC_SIGNING) return null;
+    const loginMethod = (LOGIN_METHOD || '').toLowerCase();
+    if (PREFER_WC_SIGNING || IS_PRIVY_LOGIN || loginMethod === 'local' || window.useServerSigning) return null;
     try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
     const providers = _collectSwapProviders();
     if (!providers.length) return null;
@@ -174,31 +192,46 @@ function _getEthProvider() {
         if (trust6963 && trust6963.provider) return trust6963.provider;
         return providers[0];
     }
-    if (window.ethereum && window.ethereum.providers && window.ethereum.providers.length) {
-        const miniPay = window.ethereum.providers.find(p => p && p.isMiniPay);
-        if (miniPay) return miniPay;
-        const trust = window.ethereum.providers.find(p => _isSwapTrustProvider(p));
-        if (trust) return trust;
-        const mm = window.ethereum.providers.find(p => p.isMetaMask && !p.isBraveWallet);
-        if (mm) return mm;
-        return window.ethereum.providers[0];
-    }
-    return window.ethereum || providers[0];
+    const miniPay = providers.find(p => p && (p.isMiniPay || p.isMiniPayWallet));
+    if (miniPay) return miniPay;
+    const trust = providers.find(p => _isSwapTrustProvider(p));
+    if (trust) return trust;
+    const mm = providers.find(p => p && p.isMetaMask && !p.isBraveWallet);
+    if (mm) return mm;
+    return providers[0] || null;
 }
-async function _awaitEthProvider(timeoutMs) {
+async function _awaitEthProvider(timeoutMs, options) {
+    options = options || {};
+    const loginMethod = (LOGIN_METHOD || '').toLowerCase();
+    if (PREFER_WC_SIGNING || IS_PRIVY_LOGIN || loginMethod === 'local' || window.useServerSigning) return null;
     const budget = typeof timeoutMs === 'number'
         ? timeoutMs
         : (_isTrustWalletMobileContext() ? 4200 : (_isLikelyMobileWalletContext() ? 2200 : 800));
-    const start = Date.now();
-    let p = _getEthProvider();
-    if (p) return p;
-    while (Date.now() - start < budget) {
-        try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
-        await _delay(120);
-        p = _getEthProvider();
+    const walletDetection = window.GMCommunityWalletDetection;
+    if (walletDetection && typeof walletDetection.resolveInjectedProvider === 'function') {
+        const injected = await walletDetection.resolveInjectedProvider({
+            wallet: WALLET_ADDRESS,
+            loginMethod: loginMethod || 'injected',
+            timeoutMs: budget,
+        });
+        if (injected) return _coerceSwapProvider(injected);
+    } else {
+        const start = Date.now();
+        let p = _getEthProvider();
         if (p) return p;
+        while (Date.now() - start < budget) {
+            try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
+            await _delay(120);
+            p = _getEthProvider();
+            if (p) return p;
+        }
     }
-    if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred()) {
+    // Legacy injected sessions sometimes have no provider in this browser but
+    // do still have their saved WalletConnect session. Fall back only after
+    // same-origin/current-frame injection discovery found no session signer;
+    // a connected injected provider with a different account is never bypassed.
+    if (!options.miniPayOnly && typeof GMWalletConnect !== "undefined" && typeof GMWalletConnect.isPreferred === 'function'
+        && GMWalletConnect.isPreferred()) {
         try {
             const wcProvider = await GMWalletConnect.getProvider();
             if (wcProvider) return wcProvider;
@@ -218,12 +251,11 @@ if (_isTrustWalletMobileContext()) {
 function _isMiniPay() {
     // The in-app wallet pays gas in CELO — CIP-64 feeCurrency params
     // would break its plain eth_sendTransaction path.
-    if ((LOGIN_METHOD || '').toLowerCase() === 'local') return false;
+    const loginMethod = (LOGIN_METHOD || '').toLowerCase();
+    if (PREFER_WC_SIGNING || IS_PRIVY_LOGIN || loginMethod === 'local' || window.useServerSigning) return false;
     const ep = _getEthProvider();
-    if (ep && ep.isMiniPay) return true;
-    if (window.ethereum && window.ethereum.isMiniPay) return true;
-    if (window.ethereum && window.ethereum.providers
-        && window.ethereum.providers.some(p => p && p.isMiniPay)) return true;
+    if (ep && (ep.isMiniPay || ep.isMiniPayWallet)) return true;
+    if (window.GM_SWAP_BOOT && window.GM_SWAP_BOOT.isMiniPay === true) return true;
     if (typeof navigator !== 'undefined' && /minipay/i.test(navigator.userAgent || '')) return true;
     return false;
 }
@@ -433,21 +465,27 @@ function _buildMiniPayDiagError(opName, toAddr, errorLog, gasEstimateError) {
 
 async function _miniPayResolveFrom(ep) {
     const accounts = await ep.request({ method: 'eth_requestAccounts' });
-    const from = (accounts && accounts[0]) || WALLET_ADDRESS;
-    if (from && WALLET_ADDRESS && from.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+    const expected = (WALLET_ADDRESS || '').toLowerCase();
+    if (!expected) throw new Error('Your signed-in wallet address is unavailable. No transaction was sent.');
+    const from = Array.isArray(accounts)
+        ? accounts.find(account => String(account || '').toLowerCase() === expected)
+        : null;
+    if (!from) {
+        const walletLabel = WALLET_ADDRESS.slice(0, 6) + '…' + WALLET_ADDRESS.slice(-4);
         throw new Error(
-            'Wrong MiniPay account. Please switch to ' +
-            WALLET_ADDRESS.slice(0, 6) + '…' + WALLET_ADDRESS.slice(-4) + ' and try again.'
+            'The MiniPay wallet account does not match your signed-in account. Please switch to ' +
+            walletLabel + ' and try again.'
         );
     }
     return from;
 }
 
 async function _miniPayTx(toAddr, abiFragment, args, valueHex) {
-    const ep = _getEthProvider();
+    const ep = await _awaitEthProvider(undefined, { miniPayOnly: true });
     if (!ep) throw new Error('No injected wallet provider available.');
 
     const from = await _miniPayResolveFrom(ep);
+    await _ensureCeloWalletChain(ep);
     const iface = new ethers.Interface([abiFragment]);
     const fnName = abiFragment.match(/function (\w+)/)[1];
     const data = iface.encodeFunctionData(fnName, args);
@@ -474,10 +512,11 @@ async function _miniPayTx(toAddr, abiFragment, args, valueHex) {
 }
 
 async function _miniPayRawTx(toAddr, data, valueHex, opName) {
-    const ep = _getEthProvider();
+    const ep = await _awaitEthProvider(undefined, { miniPayOnly: true });
     if (!ep) throw new Error('No injected wallet provider available.');
 
     const from = await _miniPayResolveFrom(ep);
+    await _ensureCeloWalletChain(ep);
     const value = valueHex || '0x0';
     const op = opName || 'rawTx';
 
@@ -515,6 +554,54 @@ function _normalizeChainIdHex(chainId) {
         return `0x${chainId.toString(16)}`;
     }
     return String(chainId).toLowerCase();
+}
+
+function _isSwapUserRejection(err) {
+    return !!(err && (err.code === 4001 || /user rejected|user denied|cancelled|canceled/i.test(String(err.message || ''))));
+}
+
+async function _ensureCeloWalletChain(provider) {
+    if (!provider || typeof provider.request !== 'function') {
+        throw new Error('Wallet provider is unavailable. No transaction was sent.');
+    }
+    const targetChain = '0x' + CELO_CHAIN_ID.toString(16);
+    let current = await provider.request({ method: 'eth_chainId' });
+    if (_normalizeChainIdHex(current) === targetChain) return true;
+
+    try {
+        try {
+            await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: targetChain }] });
+        } catch (switchErr) {
+            if (!(switchErr && (switchErr.code === 4902 || /unrecognized chain/i.test(String(switchErr.message || ''))))) {
+                throw switchErr;
+            }
+            await provider.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                    chainId: targetChain,
+                    chainName: 'Celo Mainnet',
+                    nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+                    rpcUrls: [CELO_RPC],
+                    blockExplorerUrls: ['https://celoscan.io'],
+                }],
+            });
+            current = await provider.request({ method: 'eth_chainId' });
+            if (_normalizeChainIdHex(current) !== targetChain) {
+                await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: targetChain }] });
+            }
+        }
+    } catch (err) {
+        if (_isSwapUserRejection(err)) {
+            throw new Error('Celo network switch was cancelled. No transaction was sent.');
+        }
+        throw err;
+    }
+
+    current = await provider.request({ method: 'eth_chainId' });
+    if (_normalizeChainIdHex(current) !== targetChain) {
+        throw new Error('Please switch to Celo Mainnet in your wallet. No transaction was sent.');
+    }
+    return true;
 }
 
 function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -1190,36 +1277,17 @@ async function getConnectedSwapSigner() {
     }
 
     const accounts = await ethProvider.request({ method: "eth_requestAccounts" });
-    if (!accounts || !accounts.length) throw new Error("No wallet account available.");
-    const account = accounts[0];
-    if (account.toLowerCase() !== WALLET_ADDRESS.toLowerCase()) {
+    const account = Array.isArray(accounts)
+        ? accounts.find(a => String(a || '').toLowerCase() === (WALLET_ADDRESS || '').toLowerCase())
+        : null;
+    if (!account) {
         throw new Error("Wrong wallet connected. Please switch to your " + SWAP_DISPLAY_BRAND + " wallet.");
     }
 
-    const celoChainHex = "0xa4ec";
-    const currentChain = await ethProvider.request({ method: "eth_chainId" });
-    if (_normalizeChainIdHex(currentChain) !== celoChainHex) {
-        try {
-            await ethProvider.request({
-                method: "wallet_switchEthereumChain",
-                params: [{ chainId: celoChainHex }]
-            });
-        } catch (switchErr) {
-            await ethProvider.request({
-                method: "wallet_addEthereumChain",
-                params: [{
-                    chainId: celoChainHex,
-                    chainName: "Celo Mainnet",
-                    nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
-                    rpcUrls: ["https://forno.celo.org"],
-                    blockExplorerUrls: ["https://celoscan.io"]
-                }]
-            });
-        }
-    }
+    await _ensureCeloWalletChain(ethProvider);
 
     const browserProvider = new ethers.BrowserProvider(ethProvider);
-    const signer = await browserProvider.getSigner();
+    const signer = await browserProvider.getSigner(account);
     return signer;
 }
 
