@@ -1199,12 +1199,13 @@
         }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (data) {
                 var hash = String(data.sponsor_tx_hash || "");
+                // Match Daily Task: do not ask for G$ approval or startFarm
+                // after a failed sponsorship request. A persisted transaction
+                // hash is recoverable and continues through the wait path.
                 if ((!response.ok || !data.success) && hash) data.sponsored = true;
                 if (!response.ok || !data.success) {
                     if (hash) return { data: data, hash: hash };
-                    v2TxStatus("Gas sponsorship is unavailable. Your wallet can continue only if it has enough CELO to pay the transaction fees. " + String(data.error || ""), "info");
-                    v2Processing("Gas check complete", "Automatic gas support is unavailable. Your wallet will need enough CELO for approval and farm start.");
-                    return null;
+                    throw new Error(data.error || "Farming gas support is temporarily unavailable. Retry before approving the farm.");
                 }
                 if (!data.sponsored) {
                     v2ClearGasRequest(requestId);
