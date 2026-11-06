@@ -58,10 +58,16 @@ def _garden_address() -> str:
 
 
 def _token_address() -> str:
-    address = os.getenv(
-        "CELO_GD_TOKEN_CONTRACT",
-        os.getenv("GOODDOLLAR_TOKEN_ADDRESS", post_support.GD_TOKEN_ADDRESS),
-    ).strip()
+    """Resolve the G$ token, treating a blank setting as "use the default".
+
+    Precedence is preserved (``CELO_GD_TOKEN_CONTRACT`` first) but a blank
+    variable no longer shadows the fallback.
+    """
+    from env_utils import get_env_str
+
+    address = (get_env_str("CELO_GD_TOKEN_CONTRACT")
+               or get_env_str("GOODDOLLAR_TOKEN_ADDRESS")
+               or post_support.GD_TOKEN_ADDRESS)
     if not _ADDRESS_RE.fullmatch(address):
         raise ValueError("G$ token address is not configured")
     return address
