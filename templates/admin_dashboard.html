@@ -765,12 +765,6 @@
                     </a>
                 </li>
                 <li class="menu-item">
-                    <a class="menu-link" onclick="showSection('discourse-task-section')">
-                        <span class="menu-icon">💬</span>
-                        <span>Discourse Task</span>
-                    </a>
-                </li>
-                <li class="menu-item">
                     <a class="menu-link" onclick="showSection('trustpilot-task-section')">
                         <span class="menu-icon">⭐</span>
                         <span>Trustpilot Review</span>
@@ -1746,45 +1740,6 @@ CORRECT: C
                             <div class="spinner"></div>
                             <p>Loading questions from Supabase...</p>
                         </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Discourse Task Section -->
-            <section id="discourse-task-section" class="section">
-                <div class="page-header">
-                    <h1 class="page-title">💬 Discourse Task</h1>
-                    <p style="color: rgba(241, 245, 249, 0.7);">Manage the Discourse Task link, reward, and approve submissions</p>
-                </div>
-
-                <!-- Settings Box -->
-                <div class="content-box" style="margin-bottom: 2rem;">
-                    <h2 style="margin-bottom: 1rem;">⚙️ Task Settings</h2>
-                    <div id="discourse-settings-status">
-                        <div class="loading"><div class="spinner"></div><p>Loading settings...</p></div>
-                    </div>
-                    <div id="discourse-settings-controls" style="display:none;">
-                        <div style="margin-bottom: 1.5rem;">
-                            <label class="form-label" style="display:block; margin-bottom:0.4rem;">Discourse Post Link</label>
-                            <input type="url" id="discourse-link-input" placeholder="https://discourse.gooddollar.org/t/..." class="form-control" style="width:100%;">
-                            <small id="discourse-current-link" style="color:rgba(241,245,249,0.5); margin-top:0.3rem; display:block;"></small>
-                        </div>
-                        <div style="margin-bottom: 1.5rem;">
-                            <label class="form-label" style="display:block; margin-bottom:0.4rem;">Reward Amount (G$)</label>
-                            <input type="number" id="discourse-reward-input" min="10" max="100000" step="10" class="form-control" placeholder="500">
-                            <small id="discourse-current-reward" style="color:rgba(241,245,249,0.5); margin-top:0.3rem; display:block;"></small>
-                        </div>
-                        <button class="btn btn-primary" onclick="saveDiscourseSettings()" style="width:100%; padding:1rem; font-size:1.1rem;">
-                            💾 Save Settings
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Pending Submissions Box -->
-                <div class="content-box">
-                    <h2 style="color: #fbbf24; margin-bottom: 1rem;">⏳ Pending Submissions</h2>
-                    <div id="discourse-pending-content">
-                        <div class="loading"><div class="spinner"></div><p>Loading submissions...</p></div>
                     </div>
                 </div>
             </section>
@@ -3019,7 +2974,6 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                             <option value="">— Choose a recipient —</option>
                             <option value="learn_earn">📚 Learn &amp; Earn Contract</option>
                             <option value="daily_task">✅ Daily Task Contract</option>
-                            <option value="discourse">💬 Discourse Wallet</option>
                             <option value="minigames">🎮 Minigames Wallet</option>
                             <option value="community_stories">📖 Community Stories Wallet</option>
                             <option value="referral">🤝 Referral Wallet</option>
@@ -3689,10 +3643,6 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                 case 'reward-config':
                     loadFarmingRewardPool();
                     loadRewardConfig();
-                    break;
-                case 'discourse-task':
-                    loadDiscourseAdminSettings();
-                    loadDiscoursePendingSubmissions();
                     break;
                 case 'collaboration-review':
                     loadCollaborationSubmissions();
@@ -8215,178 +8165,6 @@ async function loadMinigamesMaintenance() {
         }
 
         // ============================================================
-        // DISCOURSE TASK ADMIN FUNCTIONS
-        // ============================================================
-
-        async function loadDiscourseAdminSettings() {
-            try {
-                const response = await fetch('/api/admin/discourse-task/settings');
-                const data = await response.json();
-                const statusDiv = document.getElementById('discourse-settings-status');
-                const controlsDiv = document.getElementById('discourse-settings-controls');
-
-                if (data.success) {
-                    statusDiv.style.display = 'none';
-                    controlsDiv.style.display = 'block';
-                    document.getElementById('discourse-link-input').value = data.link || '';
-                    document.getElementById('discourse-reward-input').value = data.reward_amount || 500;
-                    document.getElementById('discourse-current-link').textContent = `Current: ${data.link || 'Not set'}`;
-                    document.getElementById('discourse-current-reward').textContent = `Current: ${(data.reward_amount || 500).toLocaleString()} G$`;
-                } else {
-                    statusDiv.innerHTML = `<p style="color:#ef4444;">Error loading settings: ${data.error}</p>`;
-                }
-            } catch (error) {
-                console.error('Error loading discourse settings:', error);
-                document.getElementById('discourse-settings-status').innerHTML = '<p style="color:#ef4444;">Failed to load settings.</p>';
-            }
-        }
-
-        async function saveDiscourseSettings() {
-            const link = document.getElementById('discourse-link-input').value.trim();
-            const reward = parseFloat(document.getElementById('discourse-reward-input').value);
-
-            if (!link) { alert('Please enter a Discourse link.'); return; }
-            if (!reward || reward < 10) { alert('Please enter a valid reward amount (min 10 G$).'); return; }
-
-            try {
-                const response = await fetch('/api/admin/discourse-task/settings', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({discourse_link: link, reward_amount: reward})
-                });
-                const data = await response.json();
-                if (data.success) {
-                    alert(`✅ Settings saved!\nLink: ${link}\nReward: ${reward.toLocaleString()} G$`);
-                    document.getElementById('discourse-current-link').textContent = `Current: ${link}`;
-                    document.getElementById('discourse-current-reward').textContent = `Current: ${reward.toLocaleString()} G$`;
-                } else {
-                    alert(`❌ Error: ${data.error}`);
-                }
-            } catch (error) {
-                console.error('Error saving discourse settings:', error);
-                alert('Failed to save settings.');
-            }
-        }
-
-        async function loadDiscoursePendingSubmissions() {
-            const contentDiv = document.getElementById('discourse-pending-content');
-            try {
-                const response = await fetch('/api/admin/discourse-task/pending');
-                const data = await response.json();
-
-                if (!data.success) {
-                    contentDiv.innerHTML = `<p style="color:#ef4444;">Error: ${data.error}</p>`;
-                    return;
-                }
-
-                const submissions = data.submissions || [];
-
-                if (submissions.length === 0) {
-                    contentDiv.innerHTML = `
-                        <div style="padding:2rem; text-align:center; background:rgba(16,185,129,0.1); border-radius:8px; border:1px dashed rgba(16,185,129,0.3);">
-                            <p style="color:#10b981; font-size:1.1rem;">✅ No pending submissions</p>
-                            <p style="color:rgba(241,245,249,0.6); font-size:0.9rem; margin-top:0.5rem;">All discourse tasks have been reviewed!</p>
-                        </div>`;
-                    return;
-                }
-
-                let html = `
-                    <div style="margin-bottom:1rem; padding:1rem; background:rgba(251,191,36,0.1); border-left:4px solid #fbbf24; border-radius:8px;">
-                        <strong style="color:#fbbf24;">⏳ ${submissions.length} pending submission(s) waiting for review</strong>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Wallet</th>
-                                <th>Discourse Username</th>
-                                <th>Reward</th>
-                                <th>Submitted</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>`;
-
-                submissions.forEach((sub, index) => {
-                    const wallet = sub.wallet_address || '';
-                    const shortWallet = wallet.length > 10 ? wallet.substring(0,8) + '...' + wallet.substring(wallet.length - 6) : wallet;
-                    html += `
-                        <tr id="discourse-row-${sub.id}">
-                            <td>${index + 1}</td>
-                            <td style="font-family:monospace;">${shortWallet}</td>
-                            <td style="color:#a5b4fc; font-weight:600;">@${sub.discourse_username}</td>
-                            <td>${sub.reward_amount} G$</td>
-                            <td style="font-size:0.9rem;">${new Date(sub.submitted_at).toLocaleString()}</td>
-                            <td>
-                                <button class="btn btn-primary" onclick="approveDiscourseSubmission(${sub.id})"
-                                    style="margin-right:0.5rem; padding:0.4rem 0.8rem; font-size:0.85rem; background:linear-gradient(135deg,#10b981,#059669);">
-                                    ✅ Approve
-                                </button>
-                                <button class="btn btn-danger" onclick="rejectDiscourseSubmission(${sub.id})"
-                                    style="padding:0.4rem 0.8rem; font-size:0.85rem;">
-                                    ❌ Reject
-                                </button>
-                            </td>
-                        </tr>`;
-                });
-
-                html += '</tbody></table>';
-                contentDiv.innerHTML = html;
-
-            } catch (error) {
-                console.error('Error loading discourse submissions:', error);
-                contentDiv.innerHTML = '<p style="color:#ef4444;">Error loading submissions.</p>';
-            }
-        }
-
-        async function approveDiscourseSubmission(submissionId) {
-            if (!confirm(`Approve this Discourse submission and disburse ${document.querySelector(`#discourse-row-${submissionId} td:nth-child(4)`)?.textContent || ''} reward?`)) return;
-
-            try {
-                const response = await fetch('/api/admin/discourse-task/approve', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({submission_id: submissionId})
-                });
-                const data = await response.json();
-                if (data.success) {
-                    alert(`✅ ${data.message}\nTX: ${data.tx_hash}`);
-                    const row = document.getElementById(`discourse-row-${submissionId}`);
-                    if (row) row.remove();
-                } else {
-                    alert(`❌ Error: ${data.error}`);
-                }
-            } catch (error) {
-                console.error('Error approving discourse submission:', error);
-                alert('❌ Error approving submission: ' + error.message);
-            }
-        }
-
-        async function rejectDiscourseSubmission(submissionId) {
-            const reason = prompt('Enter rejection reason (optional):');
-            if (reason === null) return;
-
-            try {
-                const response = await fetch('/api/admin/discourse-task/reject', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({submission_id: submissionId, reason: reason})
-                });
-                const data = await response.json();
-                if (data.success) {
-                    alert('✅ Submission rejected.');
-                    const row = document.getElementById(`discourse-row-${submissionId}`);
-                    if (row) row.remove();
-                } else {
-                    alert(`❌ Error: ${data.error}`);
-                }
-            } catch (error) {
-                console.error('Error rejecting discourse submission:', error);
-                alert('❌ Error rejecting submission: ' + error.message);
-            }
-        }
-
-        // ============================================================
         // TRUSTPILOT REVIEW ADMIN FUNCTIONS
         // ============================================================
         async function loadTrustpilotStats() {
@@ -9685,7 +9463,6 @@ async function loadMinigamesMaintenance() {
                     const labelMap = {
                         learn_earn:        '📚 Learn & Earn Contract',
                         daily_task:        '✅ Daily Task Contract',
-                        discourse:         '💬 Discourse Wallet',
                         minigames:         '🎮 Minigames Wallet',
                         community_stories: '📖 Community Stories Wallet',
                         referral:          '🤝 Referral Wallet',
@@ -9735,7 +9512,6 @@ async function loadMinigamesMaintenance() {
         const _treasuryLabelMap = {
             learn_earn:        'Learn & Earn Contract',
             daily_task:        'Daily Task Contract',
-            discourse:         'Discourse Wallet',
             minigames:         'Minigames Wallet',
             community_stories: 'Community Stories Wallet',
             referral:          'Referral Wallet',
