@@ -606,6 +606,16 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
     owner = (row.get("wallet_address") or "").lower()
     # Strip a stored `@` (a legacy/imported row): the card draws its own prefix.
     username = (row.get("username") or "").strip().lstrip("@")
+    paid_video_eligible = (
+        bool(row.get("is_permanent")) and len(media or []) == 1
+        and (media or [{}])[0].get("type") == "video"
+    )
+    try:
+        download_price = int(row.get("download_price_gd")) if paid_video_eligible else None
+    except (TypeError, ValueError):
+        download_price = None
+    if download_price is not None and not 1000 <= download_price <= 10000:
+        download_price = None
     return {
         "id": row.get("id"),
         "post_type": row.get("post_type") or "user",
@@ -626,6 +636,9 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
         "edited_at": row.get("edited_at"),
         "is_pinned": bool(row.get("is_pinned")),
         "is_permanent": bool(row.get("is_permanent")),
+        "download_price_gd": download_price,
+        "download_listing_status": (row.get("download_listing_status") or "none")
+            if download_price is not None else "none",
     }
 
 
@@ -2188,7 +2201,8 @@ def _record_media(supabase, post_id: int, media_items: list[dict]) -> list[dict]
 
 def create_post(wallet: str, caption: str | None, media_items: list[dict],
                 prompt_id: str | None = None,
-                is_permanent: bool = False) -> dict:
+                is_permanent: bool = False,
+                download_price_gd: int | None = None) -> dict:
     """Create a post from already-verified media descriptors.
 
     ``media_items`` must have been through ``verify_uploaded_object`` — this
@@ -2199,6 +2213,23 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict],
     if not isinstance(is_permanent, bool):
         return {"success": False, "error": "Invalid permanent-post setting.",
                 "code": "invalid_permanent"}
+    if download_price_gd is not None:
+        if (isinstance(download_price_gd, bool)
+                or not isinstance(download_price_gd, int)
+                or not 1000 <= download_price_gd <= 10000):
+            return {"success": False,
+                    "error": "Download price must be a whole amount from 1,000 to 10,000 G$.",
+                    "code": "invalid_download_price"}
+        if not is_permanent or len(media_items or []) != 1 \
+                or (media_items or [{}])[0].get("media_type") != "video":
+            return {"success": False,
+                    "error": "A download price is only allowed for a permanent post with exactly one video and no photos.",
+                    "code": "ineligible_download_post"}
+    elif is_permanent and len(media_items or []) == 1 \
+            and (media_items or [{}])[0].get("media_type") == "video":
+        return {"success": False,
+                "error": "Set a download price from 1,000 to 10,000 G$ for a permanent video post.",
+                "code": "download_price_required"}
     if is_banned(wallet):
         return {"success": False, "error": "You cannot post in the community.",
                 "code": "banned"}
@@ -2243,6 +2274,8 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict],
         "username": username,
         "body": clean or None,
         "is_permanent": is_permanent,
+        "download_price_gd": download_price_gd,
+        "download_listing_status": "pending" if download_price_gd is not None else "none",
     }
     if prompt_id:
         payload["prompt_id"] = prompt_id
@@ -2277,6 +2310,8 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict],
                         avatar_url=avatar, earned_badges=earned)
     # Preserve the immediate UI state if PostgREST omits defaulted columns.
     post["is_permanent"] = is_permanent
+    post["download_price_gd"] = download_price_gd
+    post["download_listing_status"] = payload["download_listing_status"]
     return {"success": True, "post": post}
 
 
