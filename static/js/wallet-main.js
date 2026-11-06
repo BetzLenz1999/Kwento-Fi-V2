@@ -3418,8 +3418,18 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
                         ...backendFeeHints,
                         includePlain: true,
                     });
+                    // MiniPay's documented behavior is to choose the funded
+                    // USD stablecoin with the largest balance when no
+                    // feeCurrency is requested. Put that automatic path first:
+                    // an explicit cUSD adapter can report "available 0" for a
+                    // USDT-only wallet before MiniPay gets a chance to select
+                    // the USDT balance. Keep explicit adapters as fallbacks for
+                    // providers/builds that do not auto-select reliably.
+                    const orderedFeeCurrencies = [null].concat(
+                        feeCurrencies.filter(fc => fc)
+                    );
                     let lastErr;
-                    for (const fc of feeCurrencies) {
+                    for (const fc of orderedFeeCurrencies) {
                         const params = { ...txParams };
                         // An omitted feeCurrency is not a native-only request
                         // in MiniPay: it lets MiniPay choose the user's funded
