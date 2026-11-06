@@ -27,25 +27,12 @@ _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _TX_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,24}$")
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
-DEFAULT_GD_TOKEN_ADDRESS = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"
+GD_TOKEN_ADDRESS = os.getenv(
+    "GOODDOLLAR_TOKEN_ADDRESS",
+    os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+)
 CELO_RPC_URL = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
 CELO_EXPLORER_TX = "https://celoscan.io/tx/"
-
-
-def _resolve_token_address() -> str:
-    """Resolve the G$ token, treating a blank setting as "use the default".
-
-    A Vercel variable created but left empty is still present, so it used to
-    shadow the official address and disable the paid flows.
-    """
-    from env_utils import get_env_str
-
-    return (get_env_str("GOODDOLLAR_TOKEN_ADDRESS")
-            or get_env_str("CELO_GD_TOKEN_CONTRACT")
-            or DEFAULT_GD_TOKEN_ADDRESS)
-
-
-GD_TOKEN_ADDRESS = _resolve_token_address()
 
 
 def _truthy(value: str | None) -> bool:
