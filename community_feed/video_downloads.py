@@ -38,20 +38,31 @@ def contract_address() -> str:
     return (os.getenv("COMMUNITY_VIDEO_DOWNLOADS_CONTRACT_ADDRESS") or "").strip()
 
 
-def is_available() -> bool:
+def unavailable_reason() -> str:
+    """Which setting keeps paid downloads off, or "" when they are available.
+
+    The codes are safe to publish: they name the missing setting, never its
+    value, so a deployment can surface "enabled flag missing" instead of the
+    old catch-all that read as a contract problem.
+    """
+    if not _truthy(os.getenv("COMMUNITY_VIDEO_DOWNLOADS_ENABLED", "")):
+        return "disabled"
     contract = contract_address()
-    return (
-        _truthy(os.getenv("COMMUNITY_VIDEO_DOWNLOADS_ENABLED", ""))
-        and bool(ADDRESS_RE.fullmatch(contract))
-        and contract.lower() != ZERO_ADDRESS
-        and bool(ADDRESS_RE.fullmatch(GD_TOKEN_ADDRESS))
-        and GD_TOKEN_ADDRESS.lower() != ZERO_ADDRESS
-    )
+    if not ADDRESS_RE.fullmatch(contract) or contract.lower() == ZERO_ADDRESS:
+        return "contract"
+    if not ADDRESS_RE.fullmatch(GD_TOKEN_ADDRESS) or GD_TOKEN_ADDRESS.lower() == ZERO_ADDRESS:
+        return "token"
+    return ""
+
+
+def is_available() -> bool:
+    return unavailable_reason() == ""
 
 
 def public_config() -> dict:
-    if not is_available():
-        return {"enabled": False}
+    reason = unavailable_reason()
+    if reason:
+        return {"enabled": False, "reason": reason}
     return {
         "enabled": True,
         "contract_address": contract_address(),
