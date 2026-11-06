@@ -811,13 +811,6 @@ if not init_twitter_task(app):
 else:
     logger.info("✅ Twitter Task initialized successfully")
 
-# Initialize Discourse Task
-from discourse_task import init_discourse_task
-if not init_discourse_task(app):
-    logger.warning("⚠️ Discourse Task initialization failed")
-else:
-    logger.info("✅ Discourse Task initialized successfully")
-
 # Initialize Trustpilot Task
 from trustpilot_task import init_trustpilot_task
 if not init_trustpilot_task(app):
@@ -1680,32 +1673,7 @@ def get_unified_transaction_history():
         except Exception as e:
             logger.warning(f"⚠️ Could not fetch community stories history: {e}")
 
-        # 5. Discourse Task
-        try:
-            from supabase_client import supabase as sb
-            if sb:
-                disc_result = sb.table('discourse_task_log')\
-                    .select('*')\
-                    .eq('wallet_address', wallet.lower())\
-                    .order('submitted_at', desc=True)\
-                    .limit(50)\
-                    .execute()
-                for row in (disc_result.data or []):
-                    status = row.get('status', 'pending')
-                    all_transactions.append({
-                        'type': 'discourse_task',
-                        'source': 'Discourse Task',
-                        'icon': '💬',
-                        'label': f"Discourse Task (@{row.get('discourse_username', 'unknown')})",
-                        'amount': float(row.get('reward_amount', 0)) if status == 'approved' else 0,
-                        'timestamp': row.get('submitted_at', ''),
-                        'status': status,
-                        'tx_hash': row.get('tx_hash')
-                    })
-        except Exception as e:
-            logger.warning(f"⚠️ Could not fetch discourse task history: {e}")
-
-        # 6. Reloadly Orders (mobile top-up, gift cards, utility bills)
+        # 5. Reloadly Orders (mobile top-up, gift cards, utility bills)
         try:
             from reloadly.service import get_user_orders
             reloadly_orders = get_user_orders(wallet, 50)
