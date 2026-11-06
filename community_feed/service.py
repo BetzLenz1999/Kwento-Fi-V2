@@ -2227,9 +2227,14 @@ def create_post(wallet: str, caption: str | None, media_items: list[dict],
                     "code": "ineligible_download_post"}
     elif is_permanent and len(media_items or []) == 1 \
             and (media_items or [{}])[0].get("media_type") == "video":
-        return {"success": False,
-                "error": "Set a download price from 1,000 to 10,000 G$ for a permanent video post.",
-                "code": "download_price_required"}
+        # A paid download is only possible where the feature is deployed. With no
+        # contract there is nothing to price against, so the permanent video must
+        # publish as an ordinary permanent post instead of being rejected.
+        from . import video_downloads
+        if video_downloads.is_available():
+            return {"success": False,
+                    "error": "Set a download price from 1,000 to 10,000 G$ for a permanent video post.",
+                    "code": "download_price_required"}
     if is_banned(wallet):
         return {"success": False, "error": "You cannot post in the community.",
                 "code": "banned"}
