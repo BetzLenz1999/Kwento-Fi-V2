@@ -468,15 +468,18 @@
         </label>
 
         <div class="cf-download-price" id="cfDownloadPricePanel" hidden>
-            <label for="cfDownloadPrice"><strong>Download price (G$)</strong></label>
-            <p class="cf-download-warning">Double-check that this is the correct video before publishing. This post is permanent. Other members may pay this amount to download it. Video URLs are public, so payment does not prevent direct access to the file.</p>
-            <div class="cf-download-price-row">
-                <input id="cfDownloadPrice" type="number" min="1000" max="10000" step="1"
-                       inputmode="numeric" placeholder="1,000–10,000" aria-describedby="cfDownloadPriceHint cfDownloadPriceError">
-                <span>G$ per download</span>
+            <p class="cf-download-warning" id="cfDownloadUnavailable" hidden>Paid downloads are not available on this deployment yet, so no download price is needed. Your video will publish as a normal permanent post.</p>
+            <div id="cfDownloadPriceFields">
+                <label for="cfDownloadPrice"><strong>Download price (G$)</strong></label>
+                <p class="cf-download-warning">Double-check that this is the correct video before publishing. This post is permanent. Other members may pay this amount to download it. Video URLs are public, so payment does not prevent direct access to the file.</p>
+                <div class="cf-download-price-row">
+                    <input id="cfDownloadPrice" type="number" min="1000" max="10000" step="1"
+                           inputmode="numeric" placeholder="1,000–10,000" aria-describedby="cfDownloadPriceHint cfDownloadPriceError">
+                    <span>G$ per download</span>
+                </div>
+                <small id="cfDownloadPriceHint">Set a whole amount from 1,000 to 10,000 G$. No G$ posting fee; network gas is separate.</small>
+                <small id="cfDownloadPriceError" class="cf-download-price-error" role="alert" hidden></small>
             </div>
-            <small id="cfDownloadPriceHint">Set a whole amount from 1,000 to 10,000 G$. No G$ posting fee; network gas is separate.</small>
-            <small id="cfDownloadPriceError" class="cf-download-price-error" role="alert" hidden></small>
             <p id="cfDownloadListingStatus" class="cf-download-listing-status" role="status" aria-live="polite" hidden></p>
         </div>
 
