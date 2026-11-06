@@ -37,6 +37,7 @@ from . import notifications as community_notifications
 from . import withdrawals as withdrawal_vault
 from . import post_support
 from . import garden_sponsors
+from . import video_downloads
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +331,7 @@ def community_feed_home():
         messages_enabled=_community_messages_enabled(),
         vault_donations_enabled=vault_donations.donations_enabled(),
         post_support_config=post_support.public_config(),
+        video_downloads_config=video_downloads.public_config(),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
         avatar_url=svc.get_avatar_url(wallet) if wallet else None,
@@ -399,6 +401,7 @@ def community_feed_post(post_id: int):
         messages_enabled=_community_messages_enabled(),
         vault_donations_enabled=vault_donations.donations_enabled(),
         post_support_config=post_support.public_config(),
+        video_downloads_config=video_downloads.public_config(),
         display_name=svc.display_name(wallet) if wallet else None,
         username=svc.get_username(wallet) if wallet else None,
         avatar_url=svc.get_avatar_url(wallet) if wallet else None,
@@ -2582,9 +2585,89 @@ def api_create_post():
     if not isinstance(is_permanent, bool):
         return jsonify({"success": False, "code": "invalid_permanent",
                         "error": "Invalid permanent-post setting."}), 400
+    download_price_gd = body.get("download_price_gd")
+    if download_price_gd is not None and (
+            isinstance(download_price_gd, bool) or not isinstance(download_price_gd, int)):
+        return jsonify({"success": False, "code": "invalid_download_price",
+                        "error": "Download price must be a whole G$ amount."}), 400
     result = svc.create_post(wallet, body.get("caption"), verified,
-                             prompt_id=prompt_id, is_permanent=is_permanent)
+                             prompt_id=prompt_id, is_permanent=is_permanent,
+                             download_price_gd=download_price_gd)
     return jsonify(result), (200 if result.get("success") else 400)
+
+
+@community_feed_bp.route("/api/posts/<int:post_id>/download/listing/prepare", methods=["POST"])
+def api_prepare_video_download_listing(post_id: int):
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Sign in with the author wallet to register this download price."}, 401)
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "This request could not be verified."}, 403)
+    wait = _throttle("video-listing-prepare:" + wallet.lower(), 30, allow=5)
+    if wait:
+        return _private_withdrawal_json({"success": False, "error": "Please wait before preparing another listing."}, 429)
+    result = video_downloads.prepare_listing(wallet, post_id)
+    status = 503 if result.get("code") in {"disabled", "database", "contract"} else (200 if result.get("success") else 400)
+    return _private_withdrawal_json(result, status)
+
+
+@community_feed_bp.route("/api/posts/<int:post_id>/download/listing/confirm", methods=["POST"])
+def api_confirm_video_download_listing(post_id: int):
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Sign in with the author wallet to confirm this listing."}, 401)
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "This request could not be verified."}, 403)
+    wait = _throttle("video-listing-confirm:" + wallet.lower(), 30, allow=20)
+    if wait:
+        return _private_withdrawal_json({"success": False, "status": "confirming", "error": "Please wait before checking this listing transaction again."}, 429)
+    result = video_downloads.confirm_listing(wallet, post_id, _json_body().get("tx_hash") or "")
+    if result.get("success"):
+        return _private_withdrawal_json(result)
+    status = 202 if result.get("status") == "confirming" else (503 if result.get("code") == "database" else 400)
+    return _private_withdrawal_json(result, status)
+
+
+@community_feed_bp.route("/api/posts/<int:post_id>/download/prepare", methods=["POST"])
+def api_prepare_video_download(post_id: int):
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Sign in with your KwentoFi wallet to download this video."}, 401)
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "This request could not be verified."}, 403)
+    wait = _throttle("video-download-prepare:" + wallet.lower(), 30, allow=5)
+    if wait:
+        return _private_withdrawal_json({"success": False, "error": "Please wait before preparing another download."}, 429)
+    result = video_downloads.prepare_purchase(wallet, post_id, _json_body().get("purchase_ref") or "")
+    status = 503 if result.get("code") in {"disabled", "database", "contract"} else (200 if result.get("success") else 400)
+    return _private_withdrawal_json(result, status)
+
+
+@community_feed_bp.route("/api/posts/<int:post_id>/download/confirm", methods=["POST"])
+def api_confirm_video_download(post_id: int):
+    if not svc.is_enabled():
+        return _disabled_response()
+    wallet = _session_wallet()
+    if not wallet:
+        return _private_withdrawal_json({"success": False, "error": "Sign in with your KwentoFi wallet to confirm the download."}, 401)
+    if not _withdrawal_origin_ok():
+        return _private_withdrawal_json({"success": False, "error": "This request could not be verified."}, 403)
+    wait = _throttle("video-download-confirm:" + wallet.lower(), 30, allow=20)
+    if wait:
+        return _private_withdrawal_json({"success": False, "status": "confirming", "error": "Please wait before checking this transaction again."}, 429)
+    body = _json_body()
+    result = video_downloads.confirm_purchase(wallet, post_id,
+        body.get("purchase_ref") or "", body.get("tx_hash") or "")
+    if result.get("success"):
+        return _private_withdrawal_json(result)
+    status = 202 if result.get("status") == "confirming" else (503 if result.get("code") == "database" else 400)
+    return _private_withdrawal_json(result, status)
 
 
 @community_feed_bp.route("/api/posts/<int:post_id>", methods=["PATCH"])
