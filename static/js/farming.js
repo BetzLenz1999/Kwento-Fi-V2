@@ -413,26 +413,51 @@
         });
     }
 
+    function _parseChainId(value) {
+        var raw = String(value || "").trim();
+        var parsed = /^0x[0-9a-f]+$/i.test(raw) ? parseInt(raw, 16) : (/^\d+$/.test(raw) ? parseInt(raw, 10) : NaN);
+        return Number.isSafeInteger(parsed) ? parsed : null;
+    }
+
     function ensureCelo(provider) {
-        if (!provider || !provider.request) return Promise.resolve();
-        return provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] })
-            .catch(function (err) {
-                if (err && (err.code === 4902 || String(err.message || "").indexOf("Unrecognized chain") !== -1)) {
-                    return provider.request({
-                        method: "wallet_addEthereumChain",
-                        params: [{
-                            chainId: CHAIN_HEX,
-                            chainName: "Celo Mainnet",
-                            rpcUrls: [CELO_RPC],
-                            nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
-                            blockExplorerUrls: ["https://celoscan.io"],
-                        }],
-                    });
-                }
-                // 4001 here means the user declined the switch; the signature
-                // itself will surface it. Not fatal to the flow.
-                return null;
-            });
+        if (!provider || typeof provider.request !== "function") {
+            return Promise.reject(new Error("Wallet provider is unavailable. No transaction was sent."));
+        }
+        return provider.request({ method: "eth_chainId" }).then(function (chainId) {
+            if (_parseChainId(chainId) === CHAIN_ID) return true;
+            return provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] })
+                .catch(function (err) {
+                    if (err && (err.code === 4902 || String(err.message || "").indexOf("Unrecognized chain") !== -1)) {
+                        return provider.request({
+                            method: "wallet_addEthereumChain",
+                            params: [{
+                                chainId: CHAIN_HEX,
+                                chainName: "Celo Mainnet",
+                                rpcUrls: [CELO_RPC],
+                                nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
+                                blockExplorerUrls: ["https://celoscan.io"],
+                            }],
+                        }).then(function () {
+                            return provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] });
+                        });
+                    }
+                    throw err;
+                })
+                .then(function () {
+                    return provider.request({ method: "eth_chainId" });
+                })
+                .then(function (activeChainId) {
+                    if (_parseChainId(activeChainId) !== CHAIN_ID) {
+                        throw new Error("Please switch to Celo Mainnet in your wallet. No transaction was sent.");
+                    }
+                    return true;
+                });
+        }).catch(function (err) {
+            if (_isUserRejection(err)) {
+                throw new Error("Celo network switch was cancelled. No transaction was sent.");
+            }
+            throw err;
+        });
     }
 
     // ── transaction tracking ────────────────────────────────────────────────
