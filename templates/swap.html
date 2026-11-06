@@ -1987,6 +1987,7 @@
 <script src="{{ url_for('static', filename='js/local-wallet-passkey.js', v=ASSET_VERSION) }}"></script>
     <script src="/static/js/tx-preview.js?v={{ ASSET_VERSION }}"></script>
     <script src="/static/js/tx-error.js?v={{ ASSET_VERSION }}"></script>
+    <script src="{{ url_for('static', filename='js/community-wallet-detection.js', v=ASSET_VERSION) }}"></script>
     <!--
         MiniPay gas top-up: detect users with CELO but no stablecoin and
         auto-prompt a CELO -> cUSD swap before swap-bound actions so
@@ -2010,6 +2011,8 @@
         window.GM_SWAP_BOOT = {
             wallet: {{ wallet|tojson }},
             loginMethod: {{ login_method|tojson }},
+            isMiniPay: {{ is_minipay|default(false)|tojson }},
+            communityEmbed: {{ (community_embed|default(false))|tojson }},
             walletConnectProjectId: {{ walletconnect_project_id|tojson }},
             assetVersion: {{ ASSET_VERSION|tojson }},
             wcBundleUrl: {{ url_for("static", filename="js/wc-bundle.js", v=ASSET_VERSION)|tojson }},
