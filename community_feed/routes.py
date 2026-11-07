@@ -320,6 +320,7 @@ def community_feed_home():
     # report/ban path. Re-add a human_verification_redirect only if the product
     # decision changes.
     from routes import _claim_boot_context
+    from . import leaderboard_card, weekly_exp
 
     return _render_private_community_page(
         **_claim_boot_context(
@@ -351,6 +352,8 @@ def community_feed_home():
         today_label=datetime.now(timezone.utc).strftime("%d %b").lstrip("0"),
         referral_program_eligible=referral_access.get("eligible", False),
         garden_boot=_community_garden_boot(),
+        leaderboard_enabled=leaderboard_card.is_enabled(),
+        leaderboard_checkin_enabled=weekly_exp.is_enabled(),
     )
 
 
@@ -2184,6 +2187,140 @@ def api_admin_set_reward_rates():
     if not result.get("success"):
         return jsonify(result), 400
     return jsonify(result)
+
+
+@community_feed_bp.route("/api/leaderboard/check-in", methods=["POST"])
+def weekly_exp_checkin():
+    """Record an explicit, authenticated check-in; page views never award EXP."""
+    from . import weekly_exp
+
+    if not svc.is_enabled() or not weekly_exp.is_enabled():
+        return jsonify({"success": False, "enabled": False,
+                        "error": "Weekly EXP is not available."}), 404
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "A verified wallet session is required."}), 401
+    if not _withdrawal_origin_ok():
+        return jsonify({"success": False, "error": "Same-origin request required."}), 403
+    wait = _throttle(f"weekly-exp-checkin:{wallet}", 2, allow=1)
+    if wait:
+        response = jsonify({"success": False, "error": "Please wait before checking in again."})
+        response.headers["Retry-After"] = str(wait)
+        return response, 429
+    try:
+        result = weekly_exp.record_checkin(wallet)
+        response = jsonify({"success": True, "activity_day": result.get("activity_day"),
+                            "recorded": bool(result.get("recorded", True)),
+                            "inserted": bool(result.get("inserted", False))})
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        response.headers["Vary"] = "Cookie"
+        return response
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("weekly EXP check-in failed: %s", exc)
+        return jsonify({"success": False, "error": "Check-in is temporarily unavailable."}), 503
+
+
+@community_feed_bp.route("/api/leaderboard/current", methods=["GET"])
+def api_weekly_leaderboard_current():
+    """Read the saved board; feed/API requests never scan chain logs."""
+    from . import leaderboard_card
+
+    if not svc.is_enabled():
+        return _disabled_response()
+    if not leaderboard_card.is_enabled():
+        return jsonify({"success": False, "enabled": False,
+                        "error": "The leaderboard card is not available."}), 404
+    response = jsonify({"success": True,
+                        **leaderboard_card.current_board(viewer=_session_wallet())})
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
+@community_feed_bp.route("/api/leaderboard/claims", methods=["GET"])
+def api_weekly_leaderboard_claims():
+    """Return only the authenticated member's verified claim proof, if any."""
+    from . import leaderboard_claims, weekly_exp
+
+    if not svc.is_enabled() or not leaderboard_claims.claims_enabled():
+        return jsonify({"success": False, "enabled": False,
+                        "error": "Leaderboard claims are not available."}), 404
+    wallet = _session_wallet()
+    if not wallet:
+        return jsonify({"success": False, "error": "A verified wallet session is required."}), 401
+    wait = _throttle(f"weekly-exp-claim-proof:{wallet.lower()}", 2, allow=5)
+    if wait:
+        response = jsonify({"success": False, "error": "Please wait before checking claims again."})
+        response.headers["Retry-After"] = str(wait)
+        return response, 429
+    try:
+        payload = leaderboard_claims.wallet_claims(wallet, db=weekly_exp._admin_db())
+        response = jsonify(payload)
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        response.headers["Vary"] = "Cookie"
+        return response
+    except Exception as exc:  # noqa: BLE001 - claim details fail closed on DB/RPC errors
+        logger.warning("weekly claim proof lookup unavailable (%s)", type(exc).__name__)
+        return jsonify({"success": False, "error": "Claim details are temporarily unavailable."}), 503
+
+
+@community_feed_bp.route("/weekly-leaderboard/archive", methods=["GET"])
+def weekly_leaderboard_archive():
+    """List previously published weekly result posts without private score data."""
+    from . import leaderboard_card, leaderboard_posts, weekly_exp
+
+    if (not svc.is_enabled() or not weekly_exp.is_enabled()
+            or not leaderboard_card.is_enabled()):
+        return _disabled_response()
+    try:
+        entries = leaderboard_posts.archive(db=weekly_exp._admin_db())
+    except Exception as exc:  # noqa: BLE001 - unavailable is not an empty archive
+        logger.warning("weekly leaderboard archive unavailable: %s", type(exc).__name__)
+        return render_template("weekly_leaderboard_archive.html",
+                               entries=[], unavailable=True), 503
+    return render_template("weekly_leaderboard_archive.html",
+                           entries=entries, unavailable=False)
+
+
+@community_feed_bp.route("/api/cron/weekly-leaderboard-refresh", methods=["POST"])
+def cron_weekly_leaderboard_refresh():
+    """Credentialed worker endpoint; never called by the Community page."""
+    from . import leaderboard_card, weekly_exp
+
+    expected = (os.getenv("WEEKLY_EXP_LEADERBOARD_CRON_TOKEN", "") or "").strip()
+    authorization = request.headers.get("Authorization", "")
+    supplied = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+    if not expected or not hmac.compare_digest(supplied, expected):
+        return jsonify({"success": False, "error": "Worker authorization required."}), 403
+    if not leaderboard_card.is_enabled() or not weekly_exp.is_enabled():
+        return jsonify({"success": False, "enabled": False,
+                        "error": "Leaderboard refresh is disabled."}), 404
+    try:
+        result = leaderboard_card.refresh_current_snapshot()
+        return jsonify(result), (200 if result.get("success") else 503)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly leaderboard snapshot refresh failed: %s", exc)
+        return jsonify({"success": False, "status": "stale",
+                        "error": "Leaderboard refresh failed; previous values remain provisional or stale."}), 503
+
+
+@community_feed_bp.route("/api/cron/weekly-leaderboard-claim-reconcile", methods=["POST"])
+def cron_weekly_leaderboard_claim_reconcile():
+    """Credentialed worker endpoint; reconciles on-chain weekly claim events."""
+    from . import leaderboard_claim_events
+
+    expected = (os.getenv("WEEKLY_EXP_LEADERBOARD_CRON_TOKEN", "") or "").strip()
+    authorization = request.headers.get("Authorization", "")
+    supplied = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
+    if not expected or not hmac.compare_digest(supplied, expected):
+        return jsonify({"success": False, "error": "Worker authorization required."}), 403
+    try:
+        result = leaderboard_claim_events.reconcile_claim_events()
+        return jsonify(result), (200 if result.get("success") else 503)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly leaderboard claim reconciliation failed: %s", exc)
+        return jsonify({"success": False, "status": "stale",
+                        "error": "Claim reconciliation failed; previous claim states remain unchanged."}), 503
 
 
 @community_feed_bp.route("/api/feed", methods=["GET"])
