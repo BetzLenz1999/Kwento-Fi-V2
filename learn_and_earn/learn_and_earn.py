@@ -579,7 +579,7 @@ class LearnEarnQuizManager:
                 {
                     'question_id': 'Q005',
                     'question': 'Where can you claim your GoodDollar UBI?',
-                    'answer_a': 'goodmarket.com',
+                    'answer_a': 'amazon.com',
                     'answer_b': 'goodwallet.xyz',
                     'answer_c': 'facebook.com',
                     'answer_d': 'google.com',
