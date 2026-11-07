@@ -386,7 +386,7 @@ body {
     border: 1px solid rgba(146, 64, 14, 0.22); border-radius: 12px;
     background: linear-gradient(135deg, #fffbeb, #fff7ed);
 }
-.cf-download-price[hidden], .cf-download-price-error[hidden],
+.cf-download-price[hidden], .cf-download-price [hidden], .cf-download-price-error[hidden],
 .cf-download-listing-status[hidden] { display: none; }
 .cf-download-price > label { color: #78350f; font-size: 0.82rem; }
 .cf-download-warning { margin: 0; color: #78350f; font-size: 0.72rem; line-height: 1.45; }
