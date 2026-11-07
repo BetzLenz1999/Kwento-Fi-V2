@@ -187,16 +187,16 @@ class TwitterTaskService:
         ]
 
         closing_phrases = [
-            "If you want to start, this is the link I used: https://goodmarket.live",
-            "My link, in case it helps: https://goodmarket.live",
-            "I started here: https://goodmarket.live",
-            "This is where I claim mine: https://goodmarket.live",
-            "Same place I use every day: https://goodmarket.live",
-            "Here is where I started learning: https://goodmarket.live",
-            "Start with the daily task here: https://goodmarket.live",
-            "The site I use for this: https://goodmarket.live",
-            "You can try it here: https://goodmarket.live",
-            "Link for anyone curious: https://goodmarket.live",
+            "If you want to start, this is the link I used: https://kwentofi.live",
+            "My link, in case it helps: https://kwentofi.live",
+            "I started here: https://kwentofi.live",
+            "This is where I claim mine: https://kwentofi.live",
+            "Same place I use every day: https://kwentofi.live",
+            "Here is where I started learning: https://kwentofi.live",
+            "Start with the daily task here: https://kwentofi.live",
+            "The site I use for this: https://kwentofi.live",
+            "You can try it here: https://kwentofi.live",
+            "Link for anyone curious: https://kwentofi.live",
         ]
 
 
@@ -224,7 +224,7 @@ class TwitterTaskService:
         7:59 was different from the one they actually posted at 8:01 — the
         admin reviewing the submission saw text that did not match the post.
 
-        Domain re-anchoring: the static pool text says 'goodmarket.live', but
+        Domain re-anchoring: the static pool text says 'kwentofi.live', but
         the referral link and bare-domain text are re-anchored to the origin
         the requesting client actually used (Vercel preview / custom domain),
         same convention as referral_service.build_referral_link."""
@@ -260,7 +260,7 @@ class TwitterTaskService:
         # Replace the static domain URL with this wallet's saved referral code.
         try:
             referral_link = build_user_referral_link(wallet_address)
-            message = message.replace("https://goodmarket.live", referral_link)
+            message = message.replace("https://kwentofi.live", referral_link)
             logger.info(f"🔗 Personal referral link injected for {wallet_address[:8]}...")
         except Exception as ref_err:
             logger.exception(
@@ -271,13 +271,13 @@ class TwitterTaskService:
                 "Could not build a referral link for this Daily Task message"
             ) from ref_err
 
-        # Re-anchor any remaining bare 'goodmarket.live' text (opening/middle
+        # Re-anchor any remaining bare 'kwentofi.live' text (opening/middle
         # phrases) to the current origin domain. Lambda repl avoids re's
         # backreference escaping on domain strings containing digits.
         try:
             domain = current_origin_domain()
-            if domain != 'goodmarket.live':
-                message = re.sub(r'goodmarket\.live', lambda _: domain, message, flags=re.IGNORECASE)
+            if domain != 'kwentofi.live':
+                message = re.sub(r'kwentofi\.live', lambda _: domain, message, flags=re.IGNORECASE)
         except Exception as anchor_err:
             logger.warning(f"⚠️ Could not re-anchor message domain: {anchor_err}")
         
