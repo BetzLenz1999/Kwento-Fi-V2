@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,follow">
+  <title>Weekly EXP Results | KwentoFi Community</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
+    body { margin: 0; padding: 32px 16px; }
+    main { width: min(760px, 100%); margin: 0 auto; }
+    a { color: #83e6c4; }
+    h1 { font-size: clamp(1.7rem, 4vw, 2.3rem); margin-bottom: 8px; }
+    p { color: #a8b3c2; line-height: 1.6; }
+    .item { border: 1px solid #263343; background: #141c26; border-radius: 14px; padding: 18px; margin: 14px 0; }
+    .item h2 { font-size: 1.1rem; margin: 0 0 8px; }
+    .status { display: inline-block; border-radius: 999px; padding: 3px 9px; margin-left: 8px; font-size: .8rem; background: #263343; color: #d9e2ee; }
+    .empty { border-left: 3px solid #83e6c4; padding-left: 14px; }
+    .back { display: inline-block; margin: 6px 0 18px; }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back" href="/community">← Back to Community</a>
+    <h1>Weekly EXP results</h1>
+    <p>Each result belongs to its own UTC week. Previous weeks are retained as history; this archive does not combine EXP across weeks.</p>
+    {% if unavailable %}
+      <p role="status">The archive is temporarily unavailable. Please try again later.</p>
+    {% elif entries %}
+      {% for item in entries %}
+      <article class="item">
+        <h2>Week of {{ item.week_start }} <span class="status">{{ item.status|title }}</span></h2>
+        {% if item.week_end_exclusive %}<p>Through {{ item.week_end_exclusive }} exclusive, UTC</p>{% endif %}
+        <a href="{{ item.url }}">Open weekly leaderboard post</a>
+      </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty">No weekly leaderboard posts have been published yet.</p>
+    {% endif %}
+  </main>
+</body>
+</html>
