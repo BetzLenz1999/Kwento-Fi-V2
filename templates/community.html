@@ -627,6 +627,52 @@
     <div class="cf-rail" id="cfRail" aria-label="Recent posters" hidden></div>
 
         <section class="cf-posts" aria-labelledby="cfPostsTitle">
+            {% if leaderboard_enabled|default(false) %}
+            <section class="cf-leaderboard-card" id="cfWeeklyLeaderboard"
+                     aria-labelledby="cfWeeklyLeaderboardTitle" aria-live="polite">
+                <header class="cf-leaderboard-head">
+                    <div>
+                        <p class="cf-leaderboard-eyebrow">KwentoFi · Community</p>
+                        <h2 id="cfWeeklyLeaderboardTitle">Weekly EXP Leaderboard</h2>
+                    </div>
+                    <span class="cf-leaderboard-status" id="cfLeaderboardStatus">Loading</span>
+                </header>
+                <p class="cf-leaderboard-period" id="cfLeaderboardPeriod">Loading saved weekly standings…</p>
+                <p class="cf-leaderboard-updated" id="cfLeaderboardUpdated"></p>
+                <ol class="cf-leaderboard-standings" id="cfLeaderboardStandings"
+                    aria-label="Top weekly standings"></ol>
+                <p class="cf-leaderboard-empty" id="cfLeaderboardEmpty" hidden></p>
+                {% if not is_guest %}
+                <section class="cf-leaderboard-viewer" id="cfLeaderboardViewer" aria-label="Your private weekly score" hidden>
+                    <h3>Your weekly score</h3>
+                    <p class="cf-leaderboard-viewer-total" id="cfLeaderboardViewerTotal"></p>
+                    <p class="cf-leaderboard-breakdown" id="cfLeaderboardViewerBreakdown"></p>
+                </section>
+                {% if leaderboard_checkin_enabled|default(false) %}
+                <div class="cf-leaderboard-checkin-wrap">
+                    <button type="button" class="cf-leaderboard-checkin"
+                            id="cfLeaderboardCheckin"
+                            onclick="GMCommunity.checkinForLeaderboard()">Check in today</button>
+                    <p class="cf-leaderboard-checkin-status" id="cfLeaderboardCheckinStatus"
+                       role="status" aria-live="polite"></p>
+                </div>
+                {% endif %}
+                {% endif %}
+                <details class="cf-leaderboard-rules">
+                    <summary>How points work</summary>
+                    <p id="cfLeaderboardRules">1 EXP for explicit check-in; 3 EXP for an approved Daily Task; 3 EXP for a verified Garden V2 action. The base daily cap is 7 EXP. A qualifying seven-day substantive streak adds 5 EXP.</p>
+                </details>
+                <p class="cf-leaderboard-prizes" id="cfLeaderboardPrizes">Prize terms are pending admin review; no payout is promised.</p>
+                <p class="cf-leaderboard-disclosure">Standings are provisional until reviewed. Wallet labels are shortened; no claim action is available here.</p>
+                {% if not is_guest %}
+                <section class="cf-leaderboard-claims" id="cfLeaderboardClaims" aria-label="Your weekly reward claims" hidden>
+                    <h3>Your weekly rewards</h3>
+                    <p class="cf-leaderboard-claims-status" id="cfLeaderboardClaimsStatus" role="status" aria-live="polite"></p>
+                    <ul class="cf-leaderboard-claims-list" id="cfLeaderboardClaimsList"></ul>
+                </section>
+                {% endif %}
+            </section>
+            {% endif %}
             <section class="cf-pinned-donations" id="cfPinnedDonations" aria-labelledby="cfPinnedDonationsTitle" hidden>
                 <div class="cf-feed-section-head cf-pinned-donations-head">
                     <div>
@@ -1206,6 +1252,8 @@ window.GM_COMMUNITY_BOOT = {
     messagesEnabled: {{ 'true' if messages_enabled else 'false' }},
     postSupport: {{ post_support_config|default({'enabled': false}, true)|tojson }},
     videoDownloads: {{ video_downloads_config|default({'enabled': false}, true)|tojson }},
+    leaderboardEnabled: {{ 'true' if leaderboard_enabled|default(false, true) else 'false' }},
+    leaderboardCheckinEnabled: {{ 'true' if leaderboard_checkin_enabled|default(false, true) else 'false' }},
     wallet: {{ (wallet or '')|tojson }},
     fvVerified: {{ 'true' if fv_verified|default(false, true) else 'false' }},
     username: {{ (username or '')|tojson }},
