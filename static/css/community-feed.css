@@ -2349,6 +2349,58 @@ body.cf-modal-open { overflow: hidden; }
     flex-direction: column;
     gap: 0.62rem;
 }
+.cf-leaderboard-card {
+    display: grid;
+    gap: 0.72rem;
+    min-width: 0;
+    padding: 0.9rem;
+    border: 1px solid var(--cf-accent-border);
+    border-radius: 16px;
+    color: var(--cf-ink);
+    background: linear-gradient(145deg, var(--cf-card), var(--cf-soft));
+    box-shadow: var(--cf-shadow);
+}
+.cf-leaderboard-card[hidden] { display: none !important; }
+.cf-leaderboard-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.65rem; }
+.cf-leaderboard-eyebrow { margin: 0 0 0.12rem; color: var(--cf-accent-ink); font-size: 0.68rem; font-weight: 850; letter-spacing: 0.08em; text-transform: uppercase; }
+.cf-leaderboard-head h2 { margin: 0; font-size: 1.12rem; line-height: 1.25; font-weight: 900; }
+.cf-leaderboard-status { flex: none; padding: 0.22rem 0.5rem; border: 1px solid var(--cf-accent-border); border-radius: 999px; color: var(--cf-accent-ink); background: var(--cf-accent-soft); font-size: 0.68rem; font-weight: 850; }
+.cf-leaderboard-status.is-stale { border-color: var(--cf-danger); color: var(--cf-danger); background: transparent; }
+.cf-leaderboard-period { margin: 0; color: var(--cf-ink); font-size: 0.84rem; font-weight: 800; overflow-wrap: anywhere; }
+.cf-leaderboard-updated { margin: -0.48rem 0 0; color: var(--cf-dim); font-size: 0.73rem; }
+.cf-leaderboard-standings { display: grid; gap: 0.38rem; margin: 0; padding: 0; list-style: none; }
+.cf-leaderboard-row { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) auto; align-items: center; gap: 0.55rem; min-height: 2.35rem; padding: 0.42rem 0.55rem; border: 1px solid var(--cf-hairline); border-radius: 10px; background: var(--cf-card); }
+.cf-leaderboard-rank { color: var(--cf-accent-ink); font-size: 0.8rem; font-weight: 900; }
+.cf-leaderboard-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; font-weight: 750; }
+.cf-leaderboard-score { white-space: nowrap; color: var(--cf-ink); font-size: 0.8rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+.cf-leaderboard-empty { margin: 0; color: var(--cf-dim); font-size: 0.8rem; line-height: 1.45; }
+.cf-leaderboard-viewer { display: grid; gap: 0.26rem; padding: 0.62rem 0.68rem; border-left: 3px solid var(--cf-accent); border-radius: 0 10px 10px 0; background: var(--cf-accent-soft); }
+.cf-leaderboard-viewer[hidden] { display: none !important; }
+.cf-leaderboard-viewer h3 { margin: 0; font-size: 0.78rem; font-weight: 900; }
+.cf-leaderboard-viewer-total { margin: 0; font-size: 0.85rem; font-weight: 900; }
+.cf-leaderboard-breakdown { margin: 0; color: var(--cf-dim); font-size: 0.72rem; line-height: 1.45; }
+.cf-leaderboard-checkin-wrap { display: grid; gap: 0.3rem; }
+.cf-leaderboard-checkin { justify-self: start; min-height: 40px; padding: 0.48rem 0.82rem; border: 1px solid var(--cf-accent-border); border-radius: 10px; color: var(--cf-accent-ink); background: var(--cf-accent-soft); font: inherit; font-size: 0.8rem; font-weight: 900; cursor: pointer; }
+.cf-leaderboard-checkin:hover { filter: brightness(0.97); }
+.cf-leaderboard-checkin:disabled { opacity: 0.65; cursor: wait; }
+.cf-leaderboard-checkin-status { min-height: 1.1em; margin: 0; color: var(--cf-dim); font-size: 0.72rem; line-height: 1.4; }
+.cf-leaderboard-rules { border-top: 1px solid var(--cf-hairline); padding-top: 0.58rem; }
+.cf-leaderboard-rules summary { cursor: pointer; color: var(--cf-accent-ink); font-size: 0.78rem; font-weight: 850; }
+.cf-leaderboard-rules p { margin: 0.45rem 0 0; color: var(--cf-dim); font-size: 0.75rem; line-height: 1.5; }
+.cf-leaderboard-prizes { margin: 0; color: var(--cf-ink); font-size: 0.75rem; font-weight: 800; line-height: 1.45; }
+.cf-leaderboard-disclosure { margin: -0.5rem 0 0; color: var(--cf-dim); font-size: 0.68rem; line-height: 1.4; }
+.cf-leaderboard-claims { display: grid; gap: 0.5rem; padding: 0.62rem 0.68rem; border-left: 3px solid var(--cf-accent); border-radius: 0 10px 10px 0; background: var(--cf-accent-soft); }
+.cf-leaderboard-claims[hidden] { display: none !important; }
+.cf-leaderboard-claims h3 { margin: 0; font-size: 0.78rem; font-weight: 900; }
+.cf-leaderboard-claims-status { margin: 0; color: var(--cf-ink); font-size: 0.72rem; line-height: 1.45; }
+.cf-leaderboard-claims-status.is-error { color: #f87171; }
+.cf-leaderboard-claims-list { display: grid; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.cf-leaderboard-claim { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.74rem; }
+.cf-leaderboard-claim-week { font-weight: 800; }
+.cf-leaderboard-claim-amount { font-weight: 900; }
+.cf-leaderboard-claim-state { color: var(--cf-dim); text-transform: capitalize; }
+.cf-leaderboard-claim-button { margin-left: auto; padding: 0.34rem 0.7rem; border: 0; border-radius: 8px; background: var(--cf-accent); color: #04110b; font-weight: 900; cursor: pointer; }
+.cf-leaderboard-claim-button:disabled { opacity: 0.6; cursor: default; }
 .cf-feed-section-head { padding: 0 0.12rem; }
 .cf-feed-section-head h2 {
     margin: 0;
@@ -2721,6 +2773,16 @@ body.cf-support-modal-open { overflow: hidden; }
     background: var(--cf-soft); color: var(--cf-accent-ink); font-size: 0.72rem; font-weight: 900;
 }
 .cf-donation-card-copy { margin: 0; font-size: 0.95rem; line-height: 1.5; overflow-wrap: anywhere; }
+.cf-weekly-leaderboard-copy { white-space: pre-line; }
+.cf-weekly-post-claim { display: grid; gap: 0.5rem; margin-top: 0.7rem; padding: 0.62rem 0.68rem; border-left: 3px solid var(--cf-accent); border-radius: 0 10px 10px 0; background: var(--cf-accent-soft); }
+.cf-weekly-post-claim[hidden] { display: none !important; }
+.cf-weekly-post-claim-title { margin: 0; font-size: 0.78rem; font-weight: 900; }
+.cf-weekly-post-claim-status { margin: 0; color: var(--cf-ink); font-size: 0.74rem; line-height: 1.45; }
+.cf-weekly-post-claim-status.is-error { color: #f87171; }
+.cf-weekly-post-claim-note { margin: 0; color: var(--cf-dim); font-size: 0.7rem; line-height: 1.4; }
+.cf-weekly-post-claim-actions { display: flex; }
+.cf-weekly-post-claim-button { padding: 0.4rem 0.85rem; border: 0; border-radius: 8px; background: var(--cf-accent); color: #04110b; font-weight: 900; cursor: pointer; }
+.cf-weekly-post-claim-button:disabled { opacity: 0.6; cursor: default; }
 .cf-support-profile-link { color: var(--cf-accent-ink); font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
 .cf-support-profile-link:focus-visible { outline: 2px solid var(--cf-accent); outline-offset: 2px; }
 .cf-donation-card-meta { display: block; margin-top: 0.35rem; color: var(--cf-dim); font-size: 0.78rem; }
