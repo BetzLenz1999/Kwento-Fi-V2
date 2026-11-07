@@ -516,7 +516,8 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
                  reactions: dict[str, int] | None = None,
                  earned_badges: list[dict] | None = None,
                  donation: dict | None = None,
-                 support: dict | None = None) -> dict:
+                 support: dict | None = None,
+                 week_start: str | None = None) -> dict:
     """Shape a post for the browser.
 
     The wallet address is dropped and ownership is reduced to ``is_mine`` — a
@@ -526,6 +527,29 @@ def _public_post(row: dict, media: list[dict], viewer: str | None,
     ``reactions`` is a ``{key: count}`` breakdown (no
     wallet, just tallies) so a card can show WHICH reactions were used.
     """
+    if row.get("post_type") == "system_weekly_leaderboard":
+        return {
+            "id": row.get("id"),
+            "post_type": "system_weekly_leaderboard",
+            "username": "KwentoFi",
+            "body": row.get("body") or "Weekly EXP leaderboard results.",
+            "avatar_url": None,
+            "media": [],
+            "reaction_count": int(row.get("reaction_count") or 0),
+            "reaction_breakdown": _clean_breakdown(reactions),
+            "comment_count": int(row.get("comment_count") or 0),
+            "prompt_id": None,
+            "badges": [],
+            "my_reaction": my_reaction,
+            "is_mine": False,
+            "is_following": False,
+            "is_edited": False,
+            "is_pinned": bool(row.get("is_pinned")),
+            "is_interactive": True,
+            "created_at": row.get("created_at"),
+            "edited_at": None,
+            "week_start": week_start or None,
+        }
     if row.get("post_type") == "system_vault_donation":
         donation = donation or {}
         try:
@@ -1163,6 +1187,26 @@ def _donation_rows_for_posts(supabase, post_ids: list) -> dict[int, dict]:
         return {}
 
 
+def _weekly_post_weeks(supabase, rows: list) -> dict[int, str]:
+    """Map weekly leaderboard post ids to their UTC Monday period start.
+
+    Only ``system_weekly_leaderboard`` posts are looked up, in one batched read,
+    so the private per-user claim panel can address the right period. A failed
+    read only hides the panel; it never breaks the feed.
+    """
+    post_ids = [r.get("id") for r in rows
+                if r.get("post_type") == "system_weekly_leaderboard"
+                and r.get("id") is not None]
+    if not post_ids:
+        return {}
+    try:
+        from . import leaderboard_posts
+        return leaderboard_posts.weeks_for_posts(supabase, post_ids)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("community_feed: weekly post week lookup failed: %s", exc)
+        return {}
+
+
 def _support_rows_for_posts(supabase, post_ids: list) -> dict[int, dict]:
     """Load confirmed post-support metadata in one batch without exposing wallets."""
     if not post_ids:
@@ -1287,7 +1331,8 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
             query = supabase.table("community_feed_posts").select("*")
             if use_post_type_filter:
                 query = query.in_(
-                    "post_type", ["user", "system_support", "system_vault_donation"])
+                    "post_type", ["user", "system_support", "system_vault_donation",
+                                  "system_weekly_leaderboard"])
             query = query.eq("is_deleted", False).eq("is_hidden", False)
             # Keep pinned posts out of the main stream when the pin migration
             # is present. NULL means an ordinary legacy post, not a pinned one.
@@ -1341,6 +1386,7 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
         [r.get("wallet_address") for r in rows], client=supabase)
     supports = _support_rows_for_posts(supabase, post_ids)
     donations = _donation_rows_for_posts(supabase, post_ids)
+    leaderboard_weeks = _weekly_post_weeks(supabase, rows)
 
     posts = [
         _public_post(
@@ -1352,6 +1398,7 @@ def get_feed(viewer: str | None = None, cursor: int | None = None,
             earned_badges=badges_by_wallet.get((row.get("wallet_address") or "").lower(), []),
             support=supports.get(row.get("id")),
             donation=donations.get(row.get("id")),
+            week_start=leaderboard_weeks.get(row.get("id")),
         )
         for row in rows
     ]
@@ -1495,6 +1542,15 @@ def get_post(post_id: int, viewer: str | None = None) -> dict:
     if not rows or rows[0].get("is_deleted") or rows[0].get("is_hidden"):
         return {"success": False, "error": "Post not found", "code": "not_found"}
     row = rows[0]
+    if row.get("post_type") == "system_weekly_leaderboard":
+        reactions = _reactions_for_posts(supabase, [row.get("id")], viewer)
+        breakdown = _reaction_breakdowns_for_posts(supabase, [row.get("id")])
+        weeks = _weekly_post_weeks(supabase, [row])
+        return {"success": True,
+                "post": _public_post(
+                    row, [], viewer, reactions.get(row.get("id")),
+                    reactions=breakdown.get(row.get("id")),
+                    week_start=weeks.get(row.get("id")))}
     if row.get("post_type") == "system_vault_donation":
         donations = _donation_rows_for_posts(supabase, [row.get("id")])
         donation = donations.get(int(row["id"]))
@@ -2751,7 +2807,8 @@ def set_reaction(wallet: str, post_id: int, reaction: str) -> dict:
     post = _load_visible_post(supabase, post_id)
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
-    post_owner = (None if post.get("post_type") == "system_vault_donation"
+    post_owner = (None if post.get("post_type") in {
+                      "system_vault_donation", "system_weekly_leaderboard"}
                   else post.get("wallet_address"))
 
     previous = _current_reaction(supabase, post_id, wallet)
@@ -2842,7 +2899,8 @@ def clear_reaction(wallet: str, post_id: int, *, _supabase=None,
     post = _post or _load_visible_post(supabase, post_id)
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
-    post_owner = (None if post.get("post_type") == "system_vault_donation"
+    post_owner = (None if post.get("post_type") in {
+                      "system_vault_donation", "system_weekly_leaderboard"}
                   else post.get("wallet_address"))
 
     previous = _current_reaction(supabase, post_id, wallet)
@@ -3086,7 +3144,8 @@ def add_comment(wallet: str, post_id: int, body: str,
     post = _load_visible_post(supabase, post_id)
     if not post:
         return {"success": False, "error": "Post not found", "code": "not_found"}
-    post_owner = (None if post.get("post_type") == "system_vault_donation"
+    post_owner = (None if post.get("post_type") in {
+                      "system_vault_donation", "system_weekly_leaderboard"}
                   else post.get("wallet_address"))
 
     parent = None
@@ -3197,7 +3256,7 @@ def _notify_comment_reply(*, actor_wallet: str, actor_username: str,
     actor = (actor_wallet or "").lower()
     parent_wallet = (parent.get("wallet_address") or "").lower()
     post_wallet = (post.get("wallet_address") or "").lower()
-    if post.get("post_type") == "system_vault_donation":
+    if post.get("post_type") in {"system_vault_donation", "system_weekly_leaderboard"}:
         post_wallet = ""
     recipients: dict[str, str] = {}
     if parent_wallet and parent_wallet != actor:
