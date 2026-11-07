@@ -113,7 +113,7 @@ _HTTP_TIMEOUT = get_env_int("LI_FI_HTTP_TIMEOUT", 30)
 # UA (or any Mozilla-shaped string) passes. Do not remove this header.
 _USER_AGENT = os.getenv(
     "LI_FI_USER_AGENT",
-    "Mozilla/5.0 (compatible; GoodMarketBridge/1.0; +https://goodmarketph.live)",
+    "Mozilla/5.0 (compatible; GoodMarketBridge/1.0; +https://kwentofi.live)",
 )
 
 
