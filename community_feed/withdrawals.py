@@ -190,7 +190,7 @@ def build_runtime(env: dict | None = None, *, web3_instance=None,
         )
 
     vault_address = _env_address(env, "COMMUNITY_VAULT_ADDRESS", Web3)
-    token_address = _env_address(env, "GOODDOLLAR_TOKEN_ADDRESS", Web3)
+    token_address = _env_address(env, "GOODDOLLAR_CONTRACT_ADDRESS", Web3)
     issuer_address_text = str(env.get("COMMUNITY_ISSUER_SIGNER_ADDRESS", "")).strip()
     expected_issuer = _env_address(env, "COMMUNITY_ISSUER_SIGNER_ADDRESS", Web3) if issuer_address_text else None
     private_key_text = str(env.get("COMMUNITY_ISSUER_PRIVATE_KEY", "")).strip()
@@ -274,9 +274,9 @@ def build_runtime(env: dict | None = None, *, web3_instance=None,
             )
         if not w3.eth.get_code(token_address) or bytes(w3.eth.get_code(token_address)) in (b"", b"\x00"):
             raise WithdrawalConfigError(
-                "GOODDOLLAR_TOKEN_ADDRESS has no contract code.",
+                "GOODDOLLAR_CONTRACT_ADDRESS has no contract code.",
                 code="token_not_deployed",
-                hint="Set GOODDOLLAR_TOKEN_ADDRESS to the live G$ token on Celo.",
+                hint="Set GOODDOLLAR_CONTRACT_ADDRESS to the live G$ token on Celo.",
             )
         vault = w3.eth.contract(address=vault_address, abi=VAULT_ABI)
         token = w3.eth.contract(address=token_address, abi=TOKEN_ABI)
@@ -294,7 +294,7 @@ def build_runtime(env: dict | None = None, *, web3_instance=None,
             raise WithdrawalConfigError(
                 "Vault token does not match the approved runtime settings.",
                 code="vault_token_mismatch",
-                hint="Set GOODDOLLAR_TOKEN_ADDRESS to the token the vault was deployed with.",
+                hint="Set GOODDOLLAR_CONTRACT_ADDRESS to the token the vault was deployed with.",
             )
         if expected_issuer and onchain["issuer"] != expected_issuer:
             raise WithdrawalConfigError(
