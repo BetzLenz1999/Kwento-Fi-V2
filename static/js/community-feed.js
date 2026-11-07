@@ -1077,7 +1077,7 @@
             return 'the download contract address is missing or invalid (COMMUNITY_VIDEO_DOWNLOADS_CONTRACT_ADDRESS).';
         }
         if (reason === 'token') {
-            return 'the G$ token address is missing or invalid (GOODDOLLAR_TOKEN_ADDRESS).';
+            return 'the G$ token address is missing or invalid (GOODDOLLAR_CONTRACT_ADDRESS).';
         }
         return 'the download contract is not configured.';
     }
