@@ -1553,7 +1553,9 @@ const WALLET = window.GM_WALLET_BOOT.wallet;
     }
 
     async function handleVirtualCardAction() {
-        const virtualCardArticleUrl = 'https://goodmarket.live/news/article/26';
+        // Same-origin path: hardcoding an absolute domain here broke once the
+        // brand moved to a new domain (the old host no longer serves the article).
+        const virtualCardArticleUrl = '/news/article/26';
         const hiddenMessage = "This virtual card will be available in Year 2027. No KYC needed. You get an instant card that you can use for online purchases.";
         try {
             const res = await fetch('/api/feature-visibility', { cache: 'no-store' });
