@@ -2230,6 +2230,9 @@ def api_weekly_leaderboard_current():
     if not leaderboard_card.is_enabled():
         return jsonify({"success": False, "enabled": False,
                         "error": "The leaderboard card is not available."}), 404
+    # On hosts without a scheduler, kick off a throttled refresh so a fresh
+    # snapshot can appear. The current snapshot is still served immediately.
+    leaderboard_card.maybe_refresh_async()
     response = jsonify({"success": True,
                         **leaderboard_card.current_board(viewer=_session_wallet())})
     response.headers["Cache-Control"] = "private, no-store, max-age=0"
