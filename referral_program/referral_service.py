@@ -29,16 +29,16 @@ def _origin_base() -> str:
 
 def build_referral_link(code: str) -> str:
     """Build a referral link on the domain the requesting client actually used
-    (e.g. good-market-community.vercel.app vs goodmarket.live). Background
+    (e.g. a preview/Vercel origin vs the canonical domain). Background
     contexts (reconciler, schedulers) fall back to BASE_URL."""
     return f"{_origin_base()}/?ref={code}"
 
 
 def current_origin_domain() -> str:
-    """Current request domain WITHOUT scheme (e.g. 'goodmarket.live',
-    'good-market-community.vercel.app'). Used to re-anchor hardcoded
-    'goodmarket.live' text (task message pools) to the origin actually in
-    use. Falls back to BASE_URL's domain off-request."""
+    """Current request domain WITHOUT scheme (e.g. the canonical host or a
+    preview/Vercel origin). Used to re-anchor hardcoded canonical-domain text
+    (task message pools) to the origin actually in use. Falls back to
+    BASE_URL's domain off-request."""
     base = _origin_base()
     return base.split('://', 1)[-1]
 
