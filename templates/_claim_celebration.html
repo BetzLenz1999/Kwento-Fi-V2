@@ -296,7 +296,7 @@
     };
 
     // ── referral link: instant from cache, then refresh in background ──
-    // Always re-anchor on the current domain (goodmarket.live vs Vercel URL).
+    // Always re-anchor on the current domain (canonical vs Vercel URL).
     function withCurrentOrigin(link) {
         var m = String(link || '').match(/^(https?:)?\/\/[^/]+/);
         return m ? String(link).replace(m[0], window.location.origin) : String(link || '');
