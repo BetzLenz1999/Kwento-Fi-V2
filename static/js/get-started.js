@@ -2384,7 +2384,9 @@ function _renderWalletConnectDeepLinks(uri) {
     // version pushed the status message below the phone fold.
     box.style.cssText = 'margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;';
     const btnStyle = 'flex:1 1 0;min-width:104px;text-align:center;padding:8px 6px;border-radius:9px;text-decoration:none;font-weight:600;font-size:0.76rem;color:#fff;white-space:nowrap;';
-    const metaMaskDappLink = 'https://link.metamask.io/dapp/' + encodeURIComponent(window.location.host || 'kwentofi.live');
+    // window.location.host is always present in a browser; never fall back to a
+    // hardcoded alias, which could point at a domain that no longer serves the app.
+    const metaMaskDappLink = 'https://link.metamask.io/dapp/' + encodeURIComponent(window.location.host);
     box.innerHTML =
         // Keep the existing KwentoFi page as the active browser entry.
         // In Trust Wallet's in-app browser, opening the universal link in a
