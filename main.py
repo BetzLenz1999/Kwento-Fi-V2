@@ -400,10 +400,10 @@ _BLOCKED_PATH_PATTERNS = tuple(_re.compile(p, _re.IGNORECASE) for p in (
 
 @app.before_request
 def _redirect_alias_hosts_to_canonical():
-    """308-redirect alias hosts (*.vercel.app, goodmarketph.live) to the
-    canonical domain (kwentofi.live). See canonical_host.py — the
-    vercel.app origin is a phishing risk signal with wallet security vendors,
-    so pages must only be served on the canonical domain."""
+    """308-redirect alias hosts (the *.vercel.app origin and retired legacy
+    domains) to the canonical domain (kwentofi.live). See canonical_host.py —
+    the vercel.app origin is a phishing risk signal with wallet security
+    vendors, so pages must only be served on the canonical domain."""
     try:
         from canonical_host import canonical_redirect_target
         target = canonical_redirect_target(request.host, request.full_path)
