@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from env_utils import get_env_decimal, get_env_int
+from config import GOODDOLLAR_CONTRACT_ADDRESS
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ TOKENS = {
         "chain_id": CELO_CHAIN_ID,
         "decimals": TOKEN_DECIMALS,
         "native": False,
-        "address": os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+        "address": GOODDOLLAR_CONTRACT_ADDRESS,
         "explorer": "https://celoscan.io/tx/",
         "rpc": os.getenv("CELO_RPC_URL", "https://forno.celo.org"),
     },
