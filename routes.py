@@ -4222,6 +4222,311 @@ def update_reward_config():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@routes.route("/api/admin/weekly-exp/preview", methods=["POST"])
+@admin_required
+def preview_weekly_exp_allocation():
+    """Preview current-week liability and verified funding; never save/finalize."""
+    if not _daily_task_same_origin():
+        return jsonify({"success": False, "error": "Cross-origin request rejected."}), 403
+    if request.content_length and request.content_length > 16_384:
+        return jsonify({"success": False, "error": "Preview request is too large."}), 413
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "A JSON preview configuration is required."}), 400
+    try:
+        from community_feed import leaderboard_card, weekly_exp
+        from community_feed.leaderboard_preview import (
+            PreviewInputError, build_admin_preview, read_treasury_balance,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly EXP admin preview modules unavailable: %s", exc)
+        return jsonify({"success": False, "error": "Preview is unavailable; no allocation was saved."}), 503
+    try:
+        if not weekly_exp.is_enabled() or not leaderboard_card.is_enabled():
+            return jsonify({"success": False, "error": "Weekly EXP preview is disabled until both feature flags are enabled."}), 409
+        now = datetime.now(timezone.utc)
+        week_start = date.fromordinal(now.date().toordinal() - now.weekday())
+        db = weekly_exp._admin_db()
+        snapshot_result = (db.table("leaderboard_weekly_snapshots")
+                           .select("week_start,data_status,generated_at,top_n,source_status")
+                           .eq("week_start", week_start.isoformat())
+                           .limit(1).execute())
+        snapshot_rows = getattr(snapshot_result, "data", None) or []
+        if not snapshot_rows:
+            return jsonify({"success": False, "error": "No current UTC-week snapshot is available to preview."}), 409
+        score_rows = weekly_exp._bounded_rows(lambda: (
+            db.table("leaderboard_weekly_scores")
+            .select("wallet_address,rank,total_exp,breakdown")
+            .eq("week_start", week_start.isoformat())
+            .order("rank")
+        ), maximum=10_000)
+        age_limit = get_env_int("WEEKLY_EXP_PREVIEW_MAX_SNAPSHOT_AGE_HOURS", 36)
+        preview = build_admin_preview(
+            snapshot_rows[0], score_rows, data,
+            os.getenv("WEEKLY_EXP_MAX_BUDGET_GD"),
+            read_treasury_balance(), now=now,
+            max_snapshot_age_hours=age_limit,
+        )
+        allocation = preview.get("allocation") or {}
+        log_admin_action(
+            admin_wallet=session.get("wallet", "unknown"),
+            action_type="weekly_exp_allocation_preview",
+            action_details={
+                "week_start": preview.get("snapshot", {}).get("week_start"),
+                "preview_status": preview.get("preview_status"),
+                "distribution": allocation.get("distribution"),
+                "top_n": allocation.get("top_n"),
+                "ranked_recipient_count": allocation.get("ranked_recipient_count"),
+                "consolation_recipient_count": allocation.get("consolation_recipient_count"),
+                "total_liability_gd": allocation.get("total_liability_gd"),
+                "budget_passed": allocation.get("budget_passed"),
+            },
+        )
+        response = jsonify({"success": True, **preview})
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        response.headers["Vary"] = "Cookie"
+        return response
+    except PreviewInputError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly EXP admin preview failed: %s", exc)
+        return jsonify({"success": False, "error": "Preview is unavailable; no allocation was saved."}), 503
+
+
+def _weekly_exp_config_week(value) -> str | None:
+    """Validate an optional Monday UTC boundary; default to the next period."""
+    from datetime import date as _date
+    if value:
+        try:
+            day = _date.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
+        return day.isoformat() if day.weekday() == 0 else None
+    today = datetime.now(timezone.utc).date()
+    return (today - timedelta(days=today.weekday()) + timedelta(days=7)).isoformat()
+
+
+@routes.route("/api/admin/weekly-exp/config", methods=["GET"])
+@admin_required
+def get_weekly_exp_config():
+    """Read the effective persisted weekly reward configuration for a period."""
+    try:
+        from community_feed import leaderboard_config
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly reward config module unavailable: %s", exc)
+        return jsonify({"success": False, "error": "Reward configuration is unavailable."}), 503
+    week_start = _weekly_exp_config_week(request.args.get("week_start"))
+    if week_start is None:
+        return jsonify({"success": False, "error": "week_start must be a Monday UTC boundary."}), 400
+    result = leaderboard_config.get_config(week_start)
+    status = 200 if result.get("success") else 503
+    return jsonify(result), status
+
+
+@routes.route("/api/admin/weekly-exp/config", methods=["POST"])
+@admin_required
+def save_weekly_exp_config():
+    """Schedule or update the reward configuration for a future period."""
+    if not _daily_task_same_origin():
+        return jsonify({"success": False, "error": "Cross-origin request rejected."}), 403
+    if request.content_length and request.content_length > 16_384:
+        return jsonify({"success": False, "error": "Configuration request is too large."}), 413
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "A JSON configuration is required."}), 400
+    try:
+        from community_feed import leaderboard_config
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly reward config module unavailable: %s", exc)
+        return jsonify({"success": False, "error": "Reward configuration is unavailable."}), 503
+    week_start = _weekly_exp_config_week(data.get("week_start"))
+    if week_start is None:
+        return jsonify({"success": False, "error": "week_start must be a Monday UTC boundary."}), 400
+    settings = data.get("settings") if isinstance(data.get("settings"), dict) else {
+        key: data[key] for key in (
+            "distribution", "pool_gd", "fixed_prizes_gd", "consolation_gd",
+            "top_n", "minimum_exp", "minimum_substantive_days", "tie_policy",
+            "claim_deadline",
+        ) if key in data
+    }
+    result = leaderboard_config.save_config(
+        week_start, settings, session.get("wallet", ""),
+        reason=data.get("reason") or "",
+        expected_version=data.get("config_version", data.get("expected_version")),
+    )
+    if result.get("success"):
+        log_admin_action(
+            admin_wallet=session.get("wallet", "unknown"),
+            action_type="weekly_exp_reward_config_save",
+            action_details={"week_start": week_start,
+                            "config_version": result.get("config_version")},
+        )
+        return jsonify(result)
+    return jsonify(result), (409 if result.get("code") == "version_conflict"
+                             else 400 if result.get("code") != "configuration_unavailable"
+                             else 503)
+
+
+@routes.route("/api/admin/weekly-exp/config/lock", methods=["POST"])
+@admin_required
+def lock_weekly_exp_config():
+    """Freeze a period's configuration so scoring/allocation uses it unchanged."""
+    if not _daily_task_same_origin():
+        return jsonify({"success": False, "error": "Cross-origin request rejected."}), 403
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "A JSON body is required."}), 400
+    try:
+        from community_feed import leaderboard_config
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly reward config module unavailable: %s", exc)
+        return jsonify({"success": False, "error": "Reward configuration is unavailable."}), 503
+    week_start = _weekly_exp_config_week(data.get("week_start"))
+    if week_start is None:
+        return jsonify({"success": False, "error": "week_start must be a Monday UTC boundary."}), 400
+    result = leaderboard_config.lock_config(
+        week_start, session.get("wallet", ""),
+        expected_version=data.get("config_version", data.get("expected_version")),
+    )
+    if result.get("success"):
+        log_admin_action(
+            admin_wallet=session.get("wallet", "unknown"),
+            action_type="weekly_exp_reward_config_lock",
+            action_details={"week_start": week_start,
+                            "already_locked": result.get("already_locked")},
+        )
+        return jsonify(result)
+    return jsonify(result), (409 if result.get("code") == "version_conflict"
+                             else 400 if result.get("code") != "configuration_unavailable"
+                             else 503)
+
+
+@routes.route("/api/admin/weekly-exp/config/void", methods=["POST"])
+@admin_required
+def void_weekly_exp_config():
+    """Void a period's configuration with an audit reason."""
+    if not _daily_task_same_origin():
+        return jsonify({"success": False, "error": "Cross-origin request rejected."}), 403
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "A JSON body is required."}), 400
+    try:
+        from community_feed import leaderboard_config
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly reward config module unavailable: %s", exc)
+        return jsonify({"success": False, "error": "Reward configuration is unavailable."}), 503
+    week_start = _weekly_exp_config_week(data.get("week_start"))
+    if week_start is None:
+        return jsonify({"success": False, "error": "week_start must be a Monday UTC boundary."}), 400
+    result = leaderboard_config.void_config(
+        week_start, session.get("wallet", ""), data.get("reason") or "")
+    if result.get("success"):
+        log_admin_action(
+            admin_wallet=session.get("wallet", "unknown"),
+            action_type="weekly_exp_reward_config_void",
+            action_details={"week_start": week_start},
+        )
+        return jsonify(result)
+    return jsonify(result), (400 if result.get("code") != "configuration_unavailable"
+                             else 503)
+
+
+@routes.route("/api/admin/weekly-exp/finalize", methods=["POST"])
+@admin_required
+def finalize_weekly_exp_week():
+    """Close a past UTC week into an immutable final recipient ledger."""
+    if not _daily_task_same_origin():
+        return jsonify({"success": False, "error": "Cross-origin request rejected."}), 403
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "A JSON body is required."}), 400
+    try:
+        from community_feed import leaderboard_finalize
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly finalize module unavailable: %s", exc)
+        return jsonify({"success": False, "error": "Finalization is unavailable."}), 503
+    week_start = data.get("week_start")
+    try:
+        from datetime import date as _date
+        day = _date.fromisoformat(str(week_start))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "week_start must be a Monday UTC boundary."}), 400
+    if day.weekday() != 0:
+        return jsonify({"success": False, "error": "week_start must be a Monday UTC boundary."}), 400
+    funding = None
+    try:
+        from community_feed.leaderboard_preview import read_treasury_balance
+        funding = read_treasury_balance()
+    except Exception as exc:  # noqa: BLE001 - funding gate degrades to budget only
+        logger.warning("Weekly finalize treasury read failed: %s", type(exc).__name__)
+    result = leaderboard_finalize.finalize_week(
+        day, session.get("wallet", ""), funding=funding)
+    if result.get("success"):
+        log_admin_action(
+            admin_wallet=session.get("wallet", "unknown"),
+            action_type="weekly_exp_finalize",
+            action_details={"week_start": day.isoformat(),
+                            "config_version": result.get("config_version"),
+                            "recipient_count": result.get("recipient_count"),
+                            "total_liability_gd": result.get("total_liability_gd"),
+                            "already_finalized": result.get("already_finalized")},
+        )
+        return jsonify(result)
+    return jsonify(result), (503 if result.get("code") in {
+        "configuration_unavailable", "finalization_unavailable", "scores_unavailable"
+    } else 409 if result.get("code") in {"not_configured", "not_locked",
+                                          "budget_exceeded", "funding_insufficient",
+                                          "already_finalized"} else 400)
+
+
+@routes.route("/api/admin/weekly-exp/publish", methods=["POST"])
+@admin_required
+def publish_weekly_exp_period():
+    """Publish the funded, rooted claim period for a finalized week."""
+    if not _daily_task_same_origin():
+        return jsonify({"success": False, "error": "Cross-origin request rejected."}), 403
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "error": "A JSON body is required."}), 400
+    try:
+        from community_feed import leaderboard_publish
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Weekly publish module unavailable: %s", exc)
+        return jsonify({"success": False, "error": "Publication is unavailable."}), 503
+    try:
+        from datetime import date as _date
+        day = _date.fromisoformat(str(data.get("week_start")))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "week_start must be a Monday UTC boundary."}), 400
+    if day.weekday() != 0:
+        return jsonify({"success": False, "error": "week_start must be a Monday UTC boundary."}), 400
+    root_tx_hash = data.get("root_tx_hash")
+    root_block_number = data.get("root_block_number")
+    if root_block_number is not None:
+        try:
+            root_block_number = int(root_block_number)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "root_block_number must be an integer."}), 400
+    result = leaderboard_publish.publish_period(
+        day, session.get("wallet", ""),
+        root_tx_hash=root_tx_hash, root_block_number=root_block_number)
+    if result.get("success"):
+        log_admin_action(
+            admin_wallet=session.get("wallet", "unknown"),
+            action_type="weekly_exp_publish",
+            action_details={"week_start": day.isoformat(),
+                            "period_id": result.get("period_id"),
+                            "recipient_count": result.get("recipient_count"),
+                            "already_published": result.get("already_published")},
+        )
+        return jsonify(result)
+    return jsonify(result), (503 if result.get("code") in {
+        "configuration_unavailable", "publish_unavailable", "ledger_unavailable"
+    } else 409 if result.get("code") in {
+        "not_configured", "not_locked", "not_finalized", "funding_insufficient",
+        "root_unregistered", "root_mismatch", "root_unverified"
+    } else 400)
+
 
 @routes.route("/api/admin/quiz-questions", methods=["GET"])
 @admin_required
@@ -7436,6 +7741,12 @@ def admin_dashboard():
 
     logger.info(f"✅ Admin access granted to {wallet[:8]}...")
 
+    try:
+        from community_feed import weekly_exp
+        weekly_exp_max_top_n = weekly_exp.max_top_n()
+    except Exception:  # noqa: BLE001 - template must still render if module unavailable
+        weekly_exp_max_top_n = 10_000
+
     response = make_response(render_template(
         "admin_dashboard.html",
         wallet=wallet,
@@ -7444,6 +7755,7 @@ def admin_dashboard():
         privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         privy_client_id=os.environ.get("PRIVY_CLIENT_ID", ""),
         garden_v2_admin_contract_address=os.environ.get("COMMUNITY_GARDEN_CONTRACT_ADDRESS", ""),
+        weekly_exp_max_top_n=weekly_exp_max_top_n,
     ))
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
@@ -8567,7 +8879,7 @@ def _claim_boot_context(wallet: str, login_method: str = "", *, claim_only: bool
         "raffle_contract_address": os.environ.get("GOODMARKET_RAFFLE_CONTRACT_ADDRESS", ""),
         "walletconnect_project_id": os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         "bridge_contract": os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5"),
-        "celo_gd_token_contract": os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+        "celo_gd_token_contract": os.getenv("GOODDOLLAR_CONTRACT_ADDRESS", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
         "xdc_gd_token_contract": os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c"),
         "xdc_chain_id": get_env_int("XDC_MAINNET_CHAIN_ID", 50),
         "celo_chain_id": get_env_int("CELO_MAINNET_CHAIN_ID", 42220),
@@ -8890,7 +9202,7 @@ def community_uniswap_v3_embed():
         reserve_swap_visible=False,
         is_minipay="minipay" in ua,
         bridge_contract=os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5"),
-        celo_gd_token_contract=os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+        celo_gd_token_contract=os.getenv("GOODDOLLAR_CONTRACT_ADDRESS", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
         xdc_gd_token_contract=os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c"),
         xdc_chain_id=get_env_int("XDC_MAINNET_CHAIN_ID", 50),
         celo_chain_id=get_env_int("CELO_MAINNET_CHAIN_ID", 42220),
