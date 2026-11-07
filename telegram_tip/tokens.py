@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import re
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from config import GOODDOLLAR_CONTRACT_ADDRESS
 
 CELO_CHAIN_ID = 42220
 XDC_CHAIN_ID = 50
@@ -31,7 +32,7 @@ TOKENS = {
         "chain_id": CELO_CHAIN_ID,
         "decimals": TOKEN_DECIMALS,
         "native": False,
-        "address": os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+        "address": GOODDOLLAR_CONTRACT_ADDRESS,
         "explorer": "https://celoscan.io/tx/",
         "rpc": os.getenv("CELO_RPC_URL", "https://forno.celo.org"),
     },
