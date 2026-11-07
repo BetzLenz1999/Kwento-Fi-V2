@@ -190,7 +190,7 @@ def reloadly_home():
         gd_price=gd_price,
         is_sandbox=reloadly_client.is_sandbox,
         merchant_address=os.getenv("MERCHANT_ADDRESS", ""),
-        gd_contract=os.getenv("GOODDOLLAR_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+        gd_contract=os.getenv("GOODDOLLAR_CONTRACT_ADDRESS", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
         walletconnect_project_id=os.getenv("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=wc_sidecar,
         login_method=session.get("login_method", ""),
