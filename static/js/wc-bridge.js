@@ -100,8 +100,8 @@
         walletAddress: "",
         loginMethod: "",
         projectId: "",
-        dappName: "GoodMarket",
-        dappDescription: "GoodMarket on Celo",
+        dappName: "KwentoFi",
+        dappDescription: "KwentoFi on Celo",
         dappUrl: "",
         dappIcon: "",
         assetVersion: "",
@@ -452,8 +452,8 @@
             return SignClient.init({
                 projectId: _config.projectId,
                 metadata: {
-                    name: 'GoodMarket',
-                    description: 'GoodMarket on Celo',
+                    name: 'KwentoFi',
+                    description: 'KwentoFi on Celo',
                     url: (typeof window !== "undefined" ? window.location.origin : ""),
                     icons: [(typeof window !== "undefined" ? window.location.origin : "") + "/static/icons/kwentofi-pwa-192.png"]
                 }
@@ -853,13 +853,20 @@
         instructionsContainer.style.cssText =
             "display:none;text-align:left;font-size:0.7rem;line-height:1.6;color:rgba(248,250,252,0.8);";
 
+        // Re-anchor to the host the user is actually on: the static copy used
+        // to name a retired domain, which sent people to a site we no longer own.
+        var _siteHost = (typeof window !== "undefined" && window.location)
+            ? window.location.host : "";
+        var _siteUrl = (typeof window !== "undefined" && window.location)
+            ? window.location.origin : "";
+
         var trustWalletSection = document.createElement("div");
         trustWalletSection.style.cssText = "margin-bottom:1rem;padding-bottom:1rem;border-bottom:1px solid rgba(124,58,237,0.2);";
         trustWalletSection.innerHTML =
             "<strong style='color:#e0e7ff;font-size:0.75rem;'>1. Trust Wallet</strong><br>" +
             "• Open Trust Wallet app<br>" +
             "• Tap \"Discover\" button (bottom right)<br>" +
-            "• Search for or tap \"goodmarket.live\"<br>" +
+            "• Search for or tap \"" + _siteHost + "\"<br>" +
             "• Better transaction experience";
 
         var metamaskSection = document.createElement("div");
@@ -868,7 +875,7 @@
             "<strong style='color:#e0e7ff;font-size:0.75rem;'>2. MetaMask Mobile</strong><br>" +
             "• Open MetaMask wallet app<br>" +
             "• Tap \"Explore\" icon<br>" +
-            "• Paste https://goodmarket.live<br>" +
+            "• Paste " + _siteUrl + "<br>" +
             "• Better transaction experience";
 
         instructionsContainer.appendChild(trustWalletSection);
