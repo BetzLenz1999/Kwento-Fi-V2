@@ -58,10 +58,7 @@ def _garden_address() -> str:
 
 
 def _token_address() -> str:
-    address = os.getenv(
-        "CELO_GD_TOKEN_CONTRACT",
-        os.getenv("GOODDOLLAR_TOKEN_ADDRESS", post_support.GD_TOKEN_ADDRESS),
-    ).strip()
+    address = post_support.GD_TOKEN_ADDRESS.strip()
     if not _ADDRESS_RE.fullmatch(address):
         raise ValueError("G$ token address is not configured")
     return address
