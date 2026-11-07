@@ -3270,7 +3270,7 @@ def _notify_comment_reply(*, actor_wallet: str, actor_username: str,
         from telegram_notify import notify_user_by_wallet_async
         actor_label = escape((actor_username or "Community member").strip().lstrip("@")[:80])
         post_label = escape((post.get("username") or "Community member").strip().lstrip("@")[:80])
-        post_url = f"{os.getenv('PRODUCTION_DOMAIN', 'https://goodmarketph.live').rstrip('/')}/community/p/{int(post_id)}"
+        post_url = f"{os.getenv('PRODUCTION_DOMAIN', 'https://kwentofi.live').rstrip('/')}/community/p/{int(post_id)}"
         safe_post_url = escape(post_url, quote=True)
         for recipient, kind in recipients.items():
             if kind == "parent":
