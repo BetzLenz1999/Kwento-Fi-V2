@@ -244,8 +244,8 @@
                 // wc-bridge.js (different encryption keys, same origin).
                 customStoragePrefix: "gmdapp",
                 metadata: {
-                    name: "GoodMarket",
-                    description: "GoodMarket in-app wallet",
+                    name: "KwentoFi",
+                    description: "KwentoFi in-app wallet",
                     url: (global.location ? global.location.origin : ""),
                     icons: [(global.location ? global.location.origin : "") + "/static/icons/kwentofi-pwa-192.png"]
                 }
