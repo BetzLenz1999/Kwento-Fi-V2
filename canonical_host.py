@@ -1,10 +1,16 @@
-"""Canonical domain redirect (2026-08).
+"""Canonical domain redirect (2026-08, re-pointed 2026-11).
 
-The app is served at ONE canonical domain — goodmarketph.live. Alias hosts
-(the *.vercel.app deployment origin, the expired goodmarket.live) must never
-serve pages directly: the vercel.app origin carries a phishing risk signal
-with wallet security vendors (Blockaid — see MetaMask/eth-phishing-detect
-issue #286646), and a split origin confuses WalletConnect session metadata.
+The app is served at ONE canonical domain — kwentofi.live. Alias hosts (the
+*.vercel.app deployment origin, the retired goodmarketph.live, and the expired
+goodmarket.live) must never serve pages directly: the vercel.app origin carries
+a phishing risk signal with wallet security vendors (Blockaid — see
+MetaMask/eth-phishing-detect issue #286646), a split origin confuses
+WalletConnect session metadata, and a domain that answers an empty/404 page is
+itself a strong phishing signal.
+
+Do NOT list the canonical host as an alias: an alias that redirects to a host
+which redirects back is an infinite loop. goodmarketph.live is kept as an alias
+so any edge that has not yet been re-pointed still lands on the live domain.
 
 Only requests whose Host is on the alias allowlist are redirected — localhost,
 dev hosts, and preview hosts are NEVER redirected, so local development and
@@ -16,12 +22,17 @@ code change. Set it to an empty string only if the redirect must be disabled.
 
 import os
 
-CANONICAL_HOST = (os.getenv("CANONICAL_HOST") or "goodmarketph.live").strip().lower()
+CANONICAL_HOST = (os.getenv("CANONICAL_HOST") or "kwentofi.live").strip().lower()
 
 # Hosts that permanently redirect to the canonical host. Deliberately an
 # allowlist — unknown hosts are left alone so dev/preview never breaks.
 _ALIAS_SUFFIXES = (".vercel.app",)
-_ALIAS_HOSTS = frozenset({"goodmarket.live", "www.goodmarket.live"})
+_ALIAS_HOSTS = frozenset({
+    "goodmarketph.live",
+    "www.goodmarketph.live",
+    "goodmarket.live",
+    "www.goodmarket.live",
+})
 
 # Server-to-server endpoints whose callers do not follow redirects. Telegram
 # treats a 3xx webhook response as a failed delivery, so the webhook keeps
