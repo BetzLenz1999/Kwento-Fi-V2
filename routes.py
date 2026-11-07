@@ -3553,6 +3553,32 @@ def get_kpi_data():
         return jsonify({"success": False, "error": "KPI data is temporarily unavailable"}), 500
 
 
+@routes.route("/api/data/retention", methods=["GET"])
+@admin_required
+def get_retention_kpi():
+    """Weekly cohort retention from the durable user_activity_daily rollup.
+
+    user_sessions is purged to a rolling 7-day window, so it cannot answer
+    weekly-retention questions; see sql/user_activity_daily.sql.
+    """
+    try:
+        from retention_service import get_retention_summary
+
+        try:
+            weeks = int(request.args.get("weeks", 4))
+        except (TypeError, ValueError):
+            weeks = 4
+        data = get_retention_summary(weeks_horizon=weeks)
+    except Exception:
+        logger.exception("Retention KPI unavailable")
+        data = {"status": "error", "error": "Retention data is temporarily unavailable"}
+
+    response = jsonify({"success": True, "retention": data})
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
 @routes.route("/api/admin/stats", methods=["GET"])
 @admin_required
 def get_admin_stats():
@@ -8541,7 +8567,7 @@ def _claim_boot_context(wallet: str, login_method: str = "", *, claim_only: bool
         "raffle_contract_address": os.environ.get("GOODMARKET_RAFFLE_CONTRACT_ADDRESS", ""),
         "walletconnect_project_id": os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         "bridge_contract": os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5"),
-        "celo_gd_token_contract": os.getenv("GOODDOLLAR_CONTRACT_ADDRESS", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+        "celo_gd_token_contract": os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
         "xdc_gd_token_contract": os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c"),
         "xdc_chain_id": get_env_int("XDC_MAINNET_CHAIN_ID", 50),
         "celo_chain_id": get_env_int("CELO_MAINNET_CHAIN_ID", 42220),
@@ -8864,7 +8890,7 @@ def community_uniswap_v3_embed():
         reserve_swap_visible=False,
         is_minipay="minipay" in ua,
         bridge_contract=os.getenv("XDC_CELO_BRIDGE_CONTRACT", "0xa3247276DbCC76Dd7705273f766eB3E8a5ecF4a5"),
-        celo_gd_token_contract=os.getenv("GOODDOLLAR_CONTRACT_ADDRESS", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
+        celo_gd_token_contract=os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
         xdc_gd_token_contract=os.getenv("XDC_GD_TOKEN_CONTRACT", "0xEC2136843a983885AebF2feB3931F73A8eBEe50c"),
         xdc_chain_id=get_env_int("XDC_MAINNET_CHAIN_ID", 50),
         celo_chain_id=get_env_int("CELO_MAINNET_CHAIN_ID", 42220),
