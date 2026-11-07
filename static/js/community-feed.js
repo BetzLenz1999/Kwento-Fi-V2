@@ -30,6 +30,9 @@
     var STORAGE_READY = !!BOOT.storageReady;
     var VIDEO_DOWNLOADS = BOOT.videoDownloads || {};
     var PAID_DOWNLOADS_ENABLED = !!VIDEO_DOWNLOADS.enabled;
+    var LEADERBOARD_ENABLED = BOOT.leaderboardEnabled === true;
+    var LEADERBOARD_CHECKIN_ENABLED = BOOT.leaderboardCheckinEnabled === true;
+    var _leaderboardCheckinBusy = false;
     var FOCUS_POST_ID = String(BOOT.focusPostId || '');
     var FOCUS_POST = BOOT.focusPost || null;
     var _discoverCursor = null;
@@ -636,6 +639,332 @@
                     return { ok: response.ok, status: response.status, data: data };
                 });
         });
+    }
+
+    function renderLeaderboard(payload) {
+        var card = $('cfWeeklyLeaderboard');
+        if (!card || !LEADERBOARD_ENABLED) return;
+        if (!payload || payload.enabled === false) {
+            card.hidden = true;
+            return;
+        }
+        card.hidden = false;
+        var status = $('cfLeaderboardStatus');
+        var period = $('cfLeaderboardPeriod');
+        var updated = $('cfLeaderboardUpdated');
+        var list = $('cfLeaderboardStandings');
+        var empty = $('cfLeaderboardEmpty');
+        var rows = Array.isArray(payload.standings) ? payload.standings : [];
+        if (status) {
+            var state = payload.status === 'stale' ? 'Stale' :
+                (payload.available ? 'Provisional' :
+                    (payload.status === 'awaiting_snapshot' ? 'Starting soon' : 'Unavailable'));
+            status.textContent = state;
+            status.className = 'cf-leaderboard-status' + (state === 'Stale' ? ' is-stale' : '');
+        }
+        if (period) {
+            period.textContent = payload.week_label
+                ? payload.week_label + ' · UTC week ' + (payload.week_start || '')
+                    + ' to ' + (payload.week_end_exclusive || '')
+                : 'Current UTC week';
+        }
+        if (updated) {
+            if (payload.last_updated_at) {
+                var updatedDate = new Date(payload.last_updated_at);
+                updated.textContent = Number.isNaN(updatedDate.getTime())
+                    ? 'Last updated time unavailable.'
+                    : 'Last updated ' + new Intl.DateTimeFormat('en', {
+                        dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC'
+                    }).format(updatedDate) + ' UTC';
+            } else {
+                updated.textContent = payload.available
+                    ? 'Update time unavailable.' : 'Waiting for the first verified snapshot.';
+            }
+        }
+        if (list) {
+            list.textContent = '';
+            rows.forEach(function (row) {
+                var item = el('li', 'cf-leaderboard-row');
+                var rank = el('span', 'cf-leaderboard-rank', '#' + String(row.rank || '—'));
+                var name = el('span', 'cf-leaderboard-name', row.display_name || 'Community member');
+                var score = el('span', 'cf-leaderboard-score', String(Number(row.total_exp) || 0) + ' EXP');
+                item.appendChild(rank);
+                item.appendChild(name);
+                item.appendChild(score);
+                list.appendChild(item);
+            });
+        }
+        if (empty) {
+            empty.hidden = rows.length > 0;
+            empty.textContent = payload.status === 'awaiting_snapshot'
+                ? 'The first verified weekly snapshot has not been published yet.'
+                : (payload.status === 'unavailable'
+                    ? 'Standings are temporarily unavailable; no live score has been calculated on this page.'
+                    : 'No qualifying activity has been recorded for this week yet.');
+        }
+        var viewer = $('cfLeaderboardViewer');
+        var viewerTotal = $('cfLeaderboardViewerTotal');
+        var viewerBreakdown = $('cfLeaderboardViewerBreakdown');
+        if (viewer) {
+            var own = payload.viewer;
+            viewer.hidden = !own;
+            if (own) {
+                if (viewerTotal) viewerTotal.textContent = 'Rank #' + String(own.rank || '—')
+                    + ' · ' + String(Number(own.total_exp) || 0) + ' EXP';
+                if (viewerBreakdown) {
+                    var parts = own.breakdown || {};
+                    viewerBreakdown.textContent = 'Check-in ' + (Number(parts.checkin_exp) || 0)
+                        + ' · Daily Task ' + (Number(parts.daily_task_exp) || 0)
+                        + ' · Garden ' + (Number(parts.garden_exp) || 0)
+                        + ' · Streak ' + (Number(parts.streak_exp) || 0) + ' EXP';
+                }
+            }
+        }
+        var prizes = $('cfLeaderboardPrizes');
+        if (prizes && payload.prize_terms && payload.prize_terms.message) {
+            prizes.textContent = payload.prize_terms.message;
+        }
+    }
+
+    function loadLeaderboard() {
+        if (!LEADERBOARD_ENABLED || !$('cfWeeklyLeaderboard')) return Promise.resolve();
+        return api('/community/api/leaderboard/current').then(function (result) {
+            if (!result.ok || !result.data || !result.data.success) {
+                throw new Error('Leaderboard is temporarily unavailable.');
+            }
+            renderLeaderboard(result.data);
+        }).catch(function () {
+            renderLeaderboard({ enabled: true, available: false, status: 'unavailable', standings: [] });
+        }).then(function () {
+            return loadLeaderboardClaims();
+        });
+    }
+
+    function setClaimStatus(message, isError) {
+        var node = $('cfLeaderboardClaimsStatus');
+        if (!node) return;
+        node.textContent = message || '';
+        node.classList.toggle('is-error', !!isError);
+    }
+
+    function renderClaims(claims) {
+        var section = $('cfLeaderboardClaims');
+        var list = $('cfLeaderboardClaimsList');
+        if (!section || !list) return;
+        while (list.firstChild) list.removeChild(list.firstChild);
+        if (!claims || !claims.length) {
+            section.hidden = true;
+            return;
+        }
+        section.hidden = false;
+        claims.forEach(function (claim) {
+            var item = el('li', 'cf-leaderboard-claim');
+            var label = el('span', 'cf-leaderboard-claim-week', 'Week of ' + (claim.week_start || ''));
+            item.appendChild(label);
+            var units = claim.amount_units ? (Number(claim.amount_units) / 1e18).toFixed(4).replace(/0+$/, '').replace(/\.$/, '') : '0';
+            item.appendChild(el('span', 'cf-leaderboard-claim-amount', units + ' G$'));
+            if (claim.status === 'claimable') {
+                var button = el('button', 'cf-leaderboard-claim-button', 'Claim');
+                button.type = 'button';
+                button.addEventListener('click', function () {
+                    claimWeeklyReward(claim, button);
+                });
+                item.appendChild(button);
+            } else {
+                item.appendChild(el('span', 'cf-leaderboard-claim-state', claimStateLabel(claim.status)));
+            }
+            list.appendChild(item);
+        });
+    }
+
+    function loadLeaderboardClaims() {
+        if (!LEADERBOARD_ENABLED || !$('cfLeaderboardClaims') || !WALLET) return Promise.resolve();
+        return api('/community/api/leaderboard/claims').then(function (result) {
+            if (!result.ok || !result.data || !result.data.success) {
+                renderClaims([]);
+                return;
+            }
+            if (result.data.enabled === false) { renderClaims([]); return; }
+            renderClaims(result.data.claims || []);
+        }).catch(function () {
+            renderClaims([]);
+        });
+    }
+
+    function claimWeeklyReward(claim, button, statusNode, onSubmitted) {
+        var setStatus = statusNode
+            ? function (message, isError) {
+                statusNode.textContent = message || '';
+                statusNode.classList.toggle('is-error', !!isError);
+            }
+            : setClaimStatus;
+        if (!WALLET) { requiresLogin(); return; }
+        if (!claim || !claim.proof || !claim.period_id || !claim.amount_units) {
+            setStatus('This reward is not claimable right now.', true);
+            return;
+        }
+        if (!window.P2PWallet || typeof window.P2PWallet.sendTx !== 'function') {
+            setStatus('Connect a wallet to claim your weekly reward.', true);
+            return;
+        }
+        if (button) { button.disabled = true; button.textContent = 'Claiming…'; }
+        setStatus('Confirm the claim in your wallet.', false);
+        Promise.resolve().then(function () {
+            return window.P2PWallet.sendTx(
+                claim.contract_address,
+                'function claim(bytes32 periodId,uint256 amount,bytes32[] proof)',
+                [claim.period_id, String(claim.amount_units), claim.proof]);
+        }).then(function (txHash) {
+            if (!txHash) throw new Error('The wallet did not return a transaction hash. Check your wallet activity before retrying.');
+            setStatus('Claim submitted. Your reward confirms after a few blocks.', false);
+            if (typeof onSubmitted === 'function') {
+                pollClaimConfirmation(onSubmitted);
+            }
+        }).catch(function (error) {
+            setStatus((error && error.message) || 'The claim could not be submitted.', true);
+        }).then(function () {
+            if (button) { button.disabled = false; button.textContent = 'Claim'; }
+        });
+    }
+
+    // A submitted claim is only "claimed" after the server reconciles the
+    // confirmed on-chain event. Re-check a bounded number of times; the panel
+    // stops polling on a terminal state or when the lookups stop changing.
+    function pollClaimConfirmation(refresh) {
+        var attempts = 0;
+        function tick() {
+            attempts += 1;
+            Promise.resolve(refresh()).then(function (claim) {
+                if (!claim || claim.status === 'claimed' || claim.status === 'unavailable') {
+                    return;
+                }
+                if (claim.status === 'pending_confirmation' && attempts < 10) {
+                    setTimeout(tick, 30000);
+                }
+            }).catch(function () { /* keep the last known status */ });
+        }
+        setTimeout(tick, 30000);
+    }
+
+    // Private per-user reward panel inside the official weekly post. The wallet
+    // comes from the verified session server-side; this client only renders the
+    // authenticated member's own entitlement and never another viewer's.
+    function mountWeeklyPostClaimPanel(post, card) {
+        var panel = el('section', 'cf-weekly-post-claim');
+        panel.setAttribute('aria-label', 'Your weekly reward');
+        panel.hidden = true;
+        var heading = el('h4', 'cf-weekly-post-claim-title', 'Your weekly reward');
+        var status = el('p', 'cf-weekly-post-claim-status', 'Checking your reward…');
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        var actions = el('div', 'cf-weekly-post-claim-actions');
+        panel.appendChild(heading);
+        panel.appendChild(status);
+        panel.appendChild(actions);
+        card.appendChild(panel);
+        loadWeeklyPostClaim(panel, status, actions, post);
+    }
+
+    function loadWeeklyPostClaim(panel, status, actions, post) {
+        return api('/community/api/leaderboard/claims').then(function (result) {
+            if (!result.ok || !result.data || !result.data.success) {
+                return null;
+            }
+            if (result.data.enabled === false) {
+                return null;
+            }
+            var claims = result.data.claims || [];
+            var claim = null;
+            for (var i = 0; i < claims.length; i++) {
+                if (String(claims[i].week_start || '') === String(post.week_start)) {
+                    claim = claims[i];
+                    break;
+                }
+            }
+            renderWeeklyPostClaim(panel, status, actions, claim, post);
+            return claim;
+        }).catch(function () {
+            // A failed lookup simply leaves the panel hidden; the leaderboard
+            // card above still shows the member's standing.
+            return null;
+        });
+    }
+
+    function renderWeeklyPostClaim(panel, status, actions, claim, post) {
+        while (actions.firstChild) actions.removeChild(actions.firstChild);
+        panel.hidden = false;
+        if (!claim) {
+            status.textContent = 'Not eligible — no finalized reward was recorded for this week.';
+            status.classList.remove('is-error');
+            return;
+        }
+        var units = claim.amount_units
+            ? (Number(claim.amount_units) / 1e18).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+            : '0';
+        status.textContent = units + ' G$ — ' + claimStateLabel(claim.status);
+        status.classList.toggle('is-error', claim.status === 'unavailable');
+        var deadline = claim.claim_deadline ? new Date(claim.claim_deadline) : null;
+        if (deadline && !isNaN(deadline.getTime())) {
+            panel.appendChild(el('p', 'cf-weekly-post-claim-note',
+                'Celo network. Claim by ' + deadline.toUTCString() + '. You pay Celo network fees.'));
+        }
+        if (claim.status !== 'claimable' || !claim.proof) {
+            return;
+        }
+        var button = el('button', 'cf-weekly-post-claim-button', 'Claim ' + units + ' G$');
+        button.type = 'button';
+        button.addEventListener('click', function () {
+            claimWeeklyReward(claim, button, status, function () {
+                return loadWeeklyPostClaim(panel, status, actions, post);
+            });
+        });
+        actions.appendChild(button);
+    }
+
+    function claimStateLabel(state) {
+        var labels = {
+            not_eligible: 'not eligible',
+            rules_pending: 'reward rules pending',
+            claimable: 'ready to claim',
+            awaiting_funding: 'reward recorded — payout pending funding',
+            reward_finalized: 'reward finalized — awaiting funding',
+            pending_confirmation: 'pending confirmation',
+            claimed: 'claimed',
+            paused: 'claims paused',
+            expired: 'claim window expired',
+            unavailable: 'details temporarily unavailable',
+            reconciliation_required: 'verification in progress'
+        };
+        return labels[state] || state || 'unavailable';
+    }
+
+    function checkinForLeaderboard() {
+        if (!LEADERBOARD_CHECKIN_ENABLED || _leaderboardCheckinBusy) return Promise.resolve();
+        if (!WALLET) { requiresLogin(); return Promise.resolve(); }
+        var button = $('cfLeaderboardCheckin');
+        var status = $('cfLeaderboardCheckinStatus');
+        _leaderboardCheckinBusy = true;
+        if (button) { button.disabled = true; button.textContent = 'Checking in…'; }
+        if (status) status.textContent = '';
+        return api('/community/api/leaderboard/check-in', { method: 'POST', body: '{}' })
+            .then(function (result) {
+                if (!result.ok || !result.data || !result.data.success) {
+                    throw new Error((result.data && result.data.error)
+                        || 'Check-in is temporarily unavailable.');
+                }
+                if (status) {
+                    status.textContent = result.data.recorded
+                        ? 'Check-in recorded for ' + String(result.data.activity_day || 'today')
+                            + '. EXP appears after the next verified snapshot.'
+                        : 'Today’s check-in is already recorded. EXP appears after the next verified snapshot.';
+                }
+            }).catch(function (error) {
+                if (status) status.textContent = (error && error.message)
+                    || 'Check-in is temporarily unavailable.';
+            }).then(function () {
+                _leaderboardCheckinBusy = false;
+                if (button) { button.disabled = false; button.textContent = 'Check in today'; }
+            });
     }
 
     function requiresLogin() {
@@ -1984,7 +2313,43 @@
         return card;
     }
 
+    function buildWeeklyLeaderboardCard(post) {
+        var card = el('article', 'cf-donation-card cf-weekly-leaderboard-post');
+        card.setAttribute('data-post-id', post.id);
+        var head = el('div', 'cf-donation-card-head');
+        var author = el('div', 'cf-donation-system-author');
+        author.appendChild(el('span', 'cf-donation-system-mark', 'EXP'));
+        author.appendChild(el('strong', null, DISPLAY_BRAND));
+        head.appendChild(author);
+        card.appendChild(head);
+        var body = el('div', 'cf-card-body');
+        var copy = el('p', 'cf-donation-card-copy cf-weekly-leaderboard-copy');
+        formatInlineInto(copy, post.body || 'Weekly EXP leaderboard results.');
+        body.appendChild(copy);
+        var stamp = timeAgo(post.created_at);
+        if (stamp) body.appendChild(el('time', 'cf-donation-card-time', stamp));
+        var summary = el('div', 'cf-summary');
+        var summaryLeft = el('div', 'cf-summary-left');
+        summaryLeft.appendChild(buildReactionUsersTrigger(post));
+        summary.appendChild(summaryLeft);
+        var comments = countLabel(post.comment_count);
+        summary.appendChild(el('span', null, comments
+            ? comments + ' comment' + (comments === 1 ? '' : 's') : ''));
+        body.appendChild(summary);
+        var engagement = el('div', 'cf-engagement');
+        engagement.appendChild(buildActionRow(post, engagement));
+        body.appendChild(engagement);
+        card.appendChild(body);
+        if (!BOOT.isGuest && WALLET && LEADERBOARD_ENABLED && post.week_start) {
+            mountWeeklyPostClaimPanel(post, card);
+        }
+        return card;
+    }
+
     function buildCard(post) {
+        if (post && post.post_type === 'system_weekly_leaderboard') {
+            return buildWeeklyLeaderboardCard(post);
+        }
         if (post && post.post_type === 'system_vault_donation') {
             return buildDonationCard(post);
         }
@@ -4211,6 +4576,7 @@
 
     function refresh() {
         loadFeed(true);
+        loadLeaderboard();
         loadMessageUnread();
     }
 
@@ -6106,11 +6472,13 @@
             checkPendingVaultDonation(pendingDonation);
         }
         loadFeed(true);
+        loadLeaderboard();
     }
 
     window.GMCommunity = {
         init: init,
         refresh: refresh,
+        checkinForLeaderboard: checkinForLeaderboard,
         loadRewards: loadRewards,
         syncTodayHub: syncTodayHub,
         loadSuggestedMembers: loadSuggestedMembers,
