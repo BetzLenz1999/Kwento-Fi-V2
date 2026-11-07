@@ -1,15 +1,20 @@
 """Read-only Community leaderboard card backed by persisted weekly snapshots.
 
-Page/API reads never scan Garden logs or rebuild rankings. A separately
-credentialed worker refreshes snapshots after both evidence sources reconcile.
+Page/API reads never scan Garden logs or rebuild rankings. A snapshot is
+refreshed either by the separately credentialed worker endpoint or, on hosts
+without a scheduler, by a throttled background refresh kicked off from the read
+path (``maybe_refresh_async``).
 """
 from __future__ import annotations
 
 import logging
 import os
 import re
-from datetime import date, datetime, time, timedelta, timezone
+import threading
+import time
+from datetime import date, datetime, timedelta, timezone
 
+from env_utils import get_env_int
 from . import weekly_exp
 
 logger = logging.getLogger(__name__)
@@ -17,7 +22,12 @@ SNAPSHOT_TABLE = "leaderboard_weekly_snapshots"
 PRIVATE_SCORE_TABLE = "leaderboard_weekly_scores"
 STALE_AFTER = timedelta(hours=36)
 MAX_PARTICIPANTS = 10_000
+DEFAULT_AUTO_REFRESH_INTERVAL_SEC = 900
 _SHORT_WALLET_LABEL = re.compile(r"^0x[a-fA-F0-9]{4}…[a-fA-F0-9]{4}$")
+
+_refresh_state_lock = threading.Lock()
+_refresh_in_flight = False
+_last_refresh_started_at = 0.0
 
 
 def is_enabled() -> bool:
@@ -184,6 +194,62 @@ def _mark_stale(db, week_start: date) -> None:
             .eq("week_start", week_start.isoformat()).execute()
     except Exception as exc:  # noqa: BLE001
         logger.warning("weekly leaderboard stale marker failed: %s", exc)
+
+
+def auto_refresh_enabled() -> bool:
+    """Opt-in page-view refresh for hosts that run no external scheduler."""
+    return (os.getenv("COMMUNITY_LEADERBOARD_AUTO_REFRESH_ENABLED", "0") or "0").strip().lower() in {
+        "1", "true", "yes", "on", "enabled"
+    }
+
+
+def auto_refresh_interval_sec() -> int:
+    """Minimum seconds between page-view-triggered refreshes (floor of 60s)."""
+    return max(60, get_env_int("COMMUNITY_LEADERBOARD_AUTO_REFRESH_INTERVAL_SEC",
+                               DEFAULT_AUTO_REFRESH_INTERVAL_SEC))
+
+
+def _claim_refresh_slot(now: float | None = None) -> bool:
+    """Reserve the next refresh window; True for exactly one caller per interval."""
+    global _refresh_in_flight, _last_refresh_started_at
+    moment = time.monotonic() if now is None else now
+    with _refresh_state_lock:
+        if _refresh_in_flight or moment - _last_refresh_started_at < auto_refresh_interval_sec():
+            return False
+        _refresh_in_flight = True
+        _last_refresh_started_at = moment
+        return True
+
+
+def _release_refresh_slot() -> None:
+    global _refresh_in_flight
+    with _refresh_state_lock:
+        _refresh_in_flight = False
+
+
+def maybe_refresh_async(now: float | None = None) -> bool:
+    """Start at most one throttled refresh in the background; never blocks the caller.
+
+    Returns True when a refresh was started. The snapshot save is idempotent and
+    serialized by ``weekly_leaderboard_save_snapshot``, so overlapping hosts stay
+    safe. The read path keeps serving the previous snapshot until it lands.
+    """
+    if not (is_enabled() and weekly_exp.is_enabled() and auto_refresh_enabled()):
+        return False
+    if not _claim_refresh_slot(now):
+        return False
+
+    def _run() -> None:
+        try:
+            refresh_current_snapshot()
+        except Exception as exc:  # noqa: BLE001 - the next interval is the retry
+            logger.warning("weekly leaderboard auto-refresh failed: %s", exc)
+        finally:
+            _release_refresh_slot()
+
+    threading.Thread(target=_run, daemon=True,
+                     name="weekly-leaderboard-auto-refresh").start()
+    return True
 
 
 def refresh_current_snapshot(now: datetime | None = None) -> dict:
