@@ -621,6 +621,7 @@
             background: #dc2626;
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-weekly-exp-preview.css', v=ASSET_VERSION) }}">
 </head>
 <body>
     <nav class="navbar">
@@ -762,6 +763,12 @@
                     <a class="menu-link" onclick="showSection('garden-v2-admin-section')">
                         <span class="menu-icon">🌱</span>
                         <span>Garden V2</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a class="menu-link" onclick="showSection('weekly-exp-leaderboard-section')">
+                        <span class="menu-icon">🏆</span>
+                        <span>Weekly EXP Leaderboard</span>
                     </a>
                 </li>
                 <li class="menu-item">
@@ -3462,6 +3469,119 @@ CREATE INDEX IF NOT EXISTS idx_jumble_contents_created ON jumble_contents (creat
                     <div id="localWalletVerificationList" style="display:flex;flex-direction:column;gap:0.5rem;">
                         <p style="color:rgba(241,245,249,0.6);">Loading…</p>
                     </div>
+                </div>
+            </section>
+
+            <section id="weekly-exp-leaderboard-section" class="section">
+                <div class="page-header">
+                    <h1 class="page-title">🏆 Weekly EXP Leaderboard</h1>
+                    <p>Preview current-week allocations and verify the server budget cap and Celo G$ treasury balance. The allocation/configuration is not saved or finalized and no G$ is transferred; an audit summary records the preview action.</p>
+                </div>
+                <div class="weekly-exp-safety-note" role="note">
+                    This preview uses the latest current UTC-week provisional snapshot. The displayed tie-break is provisional and is not an approved final winner policy. Stale evidence, an unset maximum budget, or an unverified treasury balance blocks review readiness. The on-chain balance is point-in-time only; it does not prove funds are reserved or unencumbered.
+                </div>
+                <div class="weekly-exp-config-grid">
+                    <label>Top N
+                        <input id="weeklyExpTopN" class="admin-input" type="number" inputmode="numeric"
+                               min="1" max="{{ weekly_exp_max_top_n or 10000 }}" step="1" value="5"
+                               data-max="{{ weekly_exp_max_top_n or 10000 }}" autocomplete="off">
+                        <small>Any Top N up to {{ weekly_exp_max_top_n or 10000 }} (system capacity). No fixed Top 10/20 limit.</small>
+                    </label>
+                    <label>Ranked distribution
+                        <select id="weeklyExpDistribution" class="admin-input">
+                            <option value="equal_pool">Split pool equally</option>
+                            <option value="fixed_by_rank">Fixed amount per rank</option>
+                        </select>
+                    </label>
+                    <label id="weeklyExpPoolField">Ranked pool (G$)
+                        <input id="weeklyExpRankedPool" class="admin-input" type="text" inputmode="decimal" value="0" autocomplete="off">
+                    </label>
+                    <label id="weeklyExpFixedField" hidden>Fixed prizes by rank (G$, comma-separated)
+                        <input id="weeklyExpFixedPrizes" class="admin-input" type="text" inputmode="decimal" placeholder="e.g. 100,50,25,10,5" autocomplete="off">
+                    </label>
+                    <label>Minimum EXP for consolation
+                        <input id="weeklyExpMinimumExp" class="admin-input" type="number" min="0" max="100000000" step="1" value="0">
+                    </label>
+                    <label>Minimum substantive days
+                        <input id="weeklyExpMinimumDays" class="admin-input" type="number" min="0" max="7" step="1" value="0">
+                    </label>
+                    <label>Consolation amount per eligible member (G$)
+                        <input id="weeklyExpConsolation" class="admin-input" type="text" inputmode="decimal" value="0" autocomplete="off">
+                    </label>
+                    <div class="weekly-exp-budget-cap">
+                        <span>Server maximum budget</span>
+                        <strong id="weeklyExpMaxBudget">Not loaded</strong>
+                        <small>Read-only; configured by WEEKLY_EXP_MAX_BUDGET_GD.</small>
+                    </div>
+                </div>
+                <div class="weekly-exp-actions">
+                    <button type="button" class="admin-btn" id="weeklyExpPreviewButton">Preview allocation &amp; budget</button>
+                    <span id="weeklyExpPreviewStatus" role="status" aria-live="polite">No preview run yet.</span>
+                </div>
+                <div class="weekly-exp-config-persist">
+                    <label>Target week (Monday UTC)
+                        <input id="weeklyExpConfigWeek" class="admin-input" type="date" autocomplete="off">
+                    </label>
+                    <label>Reason / note (optional)
+                        <input id="weeklyExpConfigReason" class="admin-input" type="text" maxlength="240" autocomplete="off">
+                    </label>
+                    <div class="weekly-exp-actions">
+                        <button type="button" class="admin-btn" id="weeklyExpSaveConfigButton">Save as scheduled</button>
+                        <button type="button" class="admin-btn" id="weeklyExpLockConfigButton">Lock period</button>
+                        <button type="button" class="admin-btn" id="weeklyExpLoadConfigButton">Load saved config</button>
+                    </div>
+                    <span id="weeklyExpConfigStatus" role="status" aria-live="polite">No configuration saved from this page yet.</span>
+                    <small>The saved configuration is scheduled for the selected week and only affects that future period. A locked period cannot be edited; save a different week instead. The preview above never saves or pays.</small>
+                </div>
+                <div class="weekly-exp-config-persist">
+                    <label>Finalize week (Monday UTC, must be closed)
+                        <input id="weeklyExpFinalizeWeek" class="admin-input" type="date" autocomplete="off">
+                    </label>
+                    <div class="weekly-exp-actions">
+                        <button type="button" class="admin-btn" id="weeklyExpFinalizeButton">Finalize ledger</button>
+                    </div>
+                    <span id="weeklyExpFinalizeStatus" role="status" aria-live="polite">No week finalized from this page yet.</span>
+                    <small>Finalizing writes the immutable recipient ledger for the closed week using the locked configuration. It is blocked when the total liability exceeds the approved budget or the verified funding. It does not pay claims.</small>
+                </div>
+                <div class="weekly-exp-config-persist">
+                    <label>Publish week (Monday UTC, finalized + funded)
+                        <input id="weeklyExpPublishWeek" class="admin-input" type="date" autocomplete="off">
+                    </label>
+                    <label>Registered root tx hash
+                        <input id="weeklyExpPublishTx" class="admin-input" type="text" placeholder="0x…" autocomplete="off">
+                    </label>
+                    <label>Root block number
+                        <input id="weeklyExpPublishBlock" class="admin-input" type="number" min="0" step="1">
+                    </label>
+                    <div class="weekly-exp-actions">
+                        <button type="button" class="admin-btn" id="weeklyExpPublishButton">Publish claim period</button>
+                    </div>
+                    <span id="weeklyExpPublishStatus" role="status" aria-live="polite">No period published from this page yet.</span>
+                    <small>Publishing exposes the private claim proofs only after the treasury funding and the on-chain Merkle root are verified to match the finalized ledger. It never signs a transaction or transfers G$.</small>
+                </div>
+                <div id="weeklyExpPreviewResult" hidden>
+                    <div class="weekly-exp-metrics" id="weeklyExpPreviewMetrics"></div>
+                    <div class="weekly-exp-checks-wrap">
+                        <h2>Snapshot and budget checks</h2>
+                        <ul id="weeklyExpPreviewChecks" class="weekly-exp-checks"></ul>
+                    </div>
+                    <div class="weekly-exp-table-wrap">
+                        <h2>Ranked recipients and EXP breakdown</h2>
+                        <div class="weekly-exp-table-scroll"><table class="weekly-exp-table">
+                            <thead><tr><th>Rank</th><th>Wallet</th><th>Total EXP</th><th>Check-in</th><th>Daily Task</th><th>Garden</th><th>Streak</th><th>Substantive days</th><th>Preview G$</th></tr></thead>
+                            <tbody id="weeklyExpRankedRows"></tbody>
+                        </table></div>
+                        <div class="weekly-exp-pagination"><button type="button" id="weeklyExpRankedPrev" disabled>Previous</button><span id="weeklyExpRankedPageInfo">Page 0 of 0</span><button type="button" id="weeklyExpRankedNext" disabled>Next</button></div>
+                    </div>
+                    <div class="weekly-exp-table-wrap">
+                        <h2>Eligible consolation recipients</h2>
+                        <div class="weekly-exp-table-scroll"><table class="weekly-exp-table">
+                            <thead><tr><th>Rank</th><th>Wallet</th><th>Total EXP</th><th>Substantive days</th><th>Preview G$</th></tr></thead>
+                            <tbody id="weeklyExpConsolationRows"></tbody>
+                        </table></div>
+                        <div class="weekly-exp-pagination"><button type="button" id="weeklyExpConsolationPrev" disabled>Previous</button><span id="weeklyExpConsolationPageInfo">Page 0 of 0</span><button type="button" id="weeklyExpConsolationNext" disabled>Next</button></div>
+                    </div>
+                    <div class="weekly-exp-tie-note" id="weeklyExpTieNotes"></div>
                 </div>
             </section>
 
@@ -10149,5 +10269,6 @@ async function loadMinigamesMaintenance() {
             };
         }
     </script>
+    <script src="{{ url_for('static', filename='js/admin-weekly-exp-preview.js', v=ASSET_VERSION) }}"></script>
 </body>
 </html>
