@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # G$ token decimals on Celo
 GD_DECIMALS = 18
-GD_TOKEN_CONTRACT = os.getenv("GOODDOLLAR_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A")
+GD_TOKEN_CONTRACT = os.getenv("GOODDOLLAR_CONTRACT_ADDRESS", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A")
 CELO_RPC_URL = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
 CHAIN_ID = get_env_int("CHAIN_ID", 42220)
 
