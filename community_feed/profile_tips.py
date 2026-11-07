@@ -20,7 +20,7 @@ MAX_AMOUNT = get_env_decimal("COMMUNITY_PROFILE_TIP_MAX_AMOUNT", "1000000")
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 TRANSFER_SELECTOR = "a9059cbb"
 TOKENS = {
-    "GD": {"label":"G$", "decimals":18, "native":False, "address":os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A")},
+    "GD": {"label":"G$", "decimals":18, "native":False, "address":GOODDOLLAR_CONTRACT_ADDRESS},
     "CUSD": {"label":"cUSD", "decimals":18, "native":False, "address":os.getenv("CUSD_CONTRACT", "0x765DE816845861e75A25fCA122bb6898B8B1282a")},
     "USDT": {"label":"USDT", "decimals":6, "native":False, "address":os.getenv("USDT_CONTRACT", "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e")},
     "CELO": {"label":"CELO", "decimals":18, "native":True, "address":""},
