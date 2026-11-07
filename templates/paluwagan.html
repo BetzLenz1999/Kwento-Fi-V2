@@ -7,8 +7,9 @@
     <meta name="theme-color" content="#0B0F2A">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <link rel="manifest" href="/static/manifest.json?v={{ ASSET_VERSION }}">
-    <link rel="icon" type="image/png" href="/static/icons/goodmarket-icon.png?v={{ ASSET_VERSION }}">
-    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/kwentofi-favicon-32.png?v={{ ASSET_VERSION }}">
+    <link rel="icon" type="image/x-icon" href="/static/icons/favicon.ico?v={{ ASSET_VERSION }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/kwentofi-apple-touch-180.png?v={{ ASSET_VERSION }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
           integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0"
           crossorigin="anonymous" referrerpolicy="no-referrer"/>
@@ -320,7 +321,7 @@
             <input id="joinName" type="text" maxlength="64" placeholder="e.g. teambetz" autocapitalize="off" autocomplete="off" spellcheck="false" />
             <label class="field" for="joinId">Group id (optional)</label>
             <input id="joinId" type="number" min="1" step="1" placeholder="e.g. 3" />
-            <p class="note">You can paste the whole invite link (e.g. goodmarketph.live/paluwagan/teambetz) &mdash; the group is looked up on-chain.</p>
+            <p class="note">You can paste the whole invite link (e.g. kwentofi.live/paluwagan/teambetz) &mdash; the group is looked up on-chain.</p>
             <div class="btn-row" style="margin-top:1rem;">
                 <button class="btn btn-ghost" onclick="showOverview()">Cancel</button>
                 <button class="btn btn-palu" id="joinPreviewBtn" onclick="previewJoin()">Preview Group</button>
@@ -485,6 +486,7 @@
     });
     {% endif %}
 </script>
+{% if not is_guest %}{% include "_reown_appkit_loader.html" %}{% endif %}
 <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"
         integrity="sha384-6Zl0Pc8zjSz8KvmNeXRvUQgY4ryFb+BwDvKCmLYcBME0joAaru491tQgi9B7zsMM"
