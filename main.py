@@ -600,7 +600,7 @@ def _root_service_worker_unregister():
 # Blockchain configuration for wallet balance checking
 CELO_RPC_URL = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')  # Default to Celo's public RPC
 # Use the main G$ token contract for balance checking
-GOODDOLLAR_CONTRACT_ADDRESS = os.getenv('GOODDOLLAR_CONTRACT', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
+GOODDOLLAR_CONTRACT_ADDRESS = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
 
 # Global blockchain variables
 w3 = None
