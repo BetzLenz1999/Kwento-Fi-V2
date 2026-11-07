@@ -248,7 +248,8 @@ def _community_garden_boot() -> dict[str, object]:
         "COMMUNITY_GARDEN_V1_CONTRACT_ADDRESS",
         "0xcCD5F87c74d876347aAA9b85ADaF1EEFC75CE3d4",
     ) or "").strip()
-    token_address = (os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A") or "").strip()
+    from config import GOODDOLLAR_CONTRACT_ADDRESS
+    token_address = (GOODDOLLAR_CONTRACT_ADDRESS or "").strip()
     valid_address = lambda value: bool(re.fullmatch(r"0x[a-fA-F0-9]{40}", value))
     token_configured = valid_address(token_address)
     v2_configured = valid_address(garden_address) and token_configured
