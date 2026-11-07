@@ -13,6 +13,8 @@ import os
 import re
 from decimal import Decimal
 
+from config import GOODDOLLAR_CONTRACT_ADDRESS as GD_TOKEN_ADDRESS
+
 logger = logging.getLogger(__name__)
 CELO_CHAIN_ID = 42220
 TOKEN_DECIMALS = 18
@@ -23,10 +25,6 @@ TX_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 PURCHASE_REF_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 EXPLORER_TX = "https://celoscan.io/tx/"
-GD_TOKEN_ADDRESS = os.getenv(
-    "GOODDOLLAR_TOKEN_ADDRESS",
-    os.getenv("CELO_GD_TOKEN_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
-)
 CELO_RPC_URL = os.getenv("CELO_RPC_URL", "https://forno.celo.org")
 
 
