@@ -222,7 +222,7 @@ class LearnEarnContractService:
     def __init__(self):
         self.celo_rpc_url = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
         self.chain_id = get_env_int('CHAIN_ID', 42220)
-        self.gooddollar_address = os.getenv('GOODDOLLAR_CONTRACT', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
+        self.gooddollar_address = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
         self.contract_address = _CONFIG_LEARN_EARN_ADDRESS or None
         self.learn_wallet_key = os.getenv('LEARN_WALLET_PRIVATE_KEY')
 
