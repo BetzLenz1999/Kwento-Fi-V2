@@ -15,7 +15,7 @@ class MinigamesBlockchainService:
         # Network configuration
         self.celo_rpc_url = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
         self.chain_id = get_env_int('CHAIN_ID', 42220)
-        self.gooddollar_contract = os.getenv('GOODDOLLAR_CONTRACT', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
+        self.gooddollar_contract = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
         
         # GamesRewards Smart Contract (deployed contract for secure disbursement)
         self.games_rewards_contract = os.getenv('GAMES_REWARDS_CONTRACT', '0x230770E2a19b33923a046de107e41cA00F55685F')
