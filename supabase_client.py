@@ -18,6 +18,12 @@ SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 supabase: Client = None
 supabase_enabled = False
 
+# Process-local memo of wallets already written to user_activity_daily for the
+# current UTC day. The rollup is idempotent per (wallet, day), so this only
+# removes repeat round trips; it is not a correctness guarantee across workers.
+# Reset whenever the UTC day rolls over so it cannot grow without bound.
+_daily_activity_memo = {"day": None, "wallets": set()}
+
 def retry_on_connection_error(max_retries=3, delay=1):
     """Decorator to retry database operations on connection errors"""
     def decorator(func):
@@ -1006,10 +1012,51 @@ class SupabaseLogger:
 
             result = self.client.table("user_sessions").insert(activity_record).execute()
             logger.info(f"✅ Logged {activity_type} for wallet: {wallet_address}")
+            self.touch_daily_activity(wallet_address)
             return result
 
         except Exception as e:
             logger.error(f"❌ Error logging activity: {e}")
+            return None
+
+    def touch_daily_activity(self, wallet_address: str, activity_day=None):
+        """Record one durable (wallet, UTC day) activity row for retention.
+
+        ``user_sessions`` is purged to a rolling 7-day window, so it cannot
+        answer weekly-retention questions. This is the durable side-write.
+
+        Deliberately best-effort: retention telemetry must never break the
+        activity path it piggybacks on, so every failure is logged and
+        swallowed. Addresses are lowercased to match the community_* tables.
+        """
+        if not self.enabled:
+            return None
+        try:
+            from datetime import timezone
+
+            from retention_service import normalize_wallet
+
+            wallet = normalize_wallet(wallet_address)
+            if not wallet:
+                return None
+            day = activity_day or datetime.now(timezone.utc).date()
+            if _daily_activity_memo["day"] != day:
+                # Only the current day can be re-touched, so carrying older
+                # entries would grow without bound in a long-lived worker.
+                _daily_activity_memo["day"] = day
+                _daily_activity_memo["wallets"] = set()
+            if wallet in _daily_activity_memo["wallets"]:
+                return None
+            _daily_activity_memo["wallets"].add(wallet)
+            return self.client.rpc(
+                "user_activity_daily_touch",
+                {"p_wallet_address": wallet, "p_day_utc": day.isoformat()},
+            ).execute()
+        except Exception as e:
+            # Best-effort telemetry: this runs on every page view, so a failure
+            # (typically the migration not being applied yet) is logged once and
+            # the memo is kept, rather than retrying the RPC on every request.
+            logger.debug("daily activity touch skipped for %s: %s", wallet_address, e)
             return None
 
     def log_login(self, wallet_address: str, session_data: dict = None):
