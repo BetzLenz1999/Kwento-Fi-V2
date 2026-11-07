@@ -14,6 +14,7 @@ from datetime import date
 from urllib.parse import urlsplit
 
 from env_utils import get_env_int
+from canonical_host import CANONICAL_HOST
 
 logger = logging.getLogger(__name__)
 POST_TABLE = "leaderboard_weekly_posts"
@@ -45,7 +46,14 @@ def _rows(result) -> list[dict]:
 
 
 def _origin() -> str:
-    candidate = (os.getenv("PRODUCTION_DOMAIN") or "https://kwentofi.live").strip().rstrip("/")
+    """Resolve the public origin for post links, defaulting to the canonical host.
+
+    A stale or unassigned host (e.g. a domain pointed at a deleted deployment)
+    makes every generated post link a dead end, which reads as a phishing signal
+    to wallet security vendors. Fall back to the same canonical host the app is
+    actually served on, never a hardcoded alias.
+    """
+    candidate = (os.getenv("PRODUCTION_DOMAIN") or f"https://{CANONICAL_HOST}").strip().rstrip("/")
     parts = urlsplit(candidate)
     hostname = (parts.hostname or "").lower()
     loopback = hostname == "localhost"
@@ -56,7 +64,7 @@ def _origin() -> str:
     if ((parts.scheme != "https" and not (parts.scheme == "http" and loopback)) or not parts.netloc
             or parts.path not in {"", "/"}
             or parts.username or parts.password or parts.query or parts.fragment):
-        return "https://kwentofi.live"
+        return f"https://{CANONICAL_HOST}"
     return candidate
 
 
